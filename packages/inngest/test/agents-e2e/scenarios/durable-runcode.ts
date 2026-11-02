@@ -81,7 +81,7 @@ export const durableRuncode = scenario({
       output: 'exit 0\nsum 3\ndone 3 string\n\nreturned:\n{"sum":3}',
     });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.process" })
+      .posts({ source: "sandbox", method: "sandbox.process" })
       .toHaveCount(3);
   },
 });

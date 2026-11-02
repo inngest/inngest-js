@@ -11,7 +11,6 @@ import { Inngest } from "inngest";
 import {
   agent,
   createAgents,
-  createKv,
   getThread,
   type Kv,
   kv,
@@ -19,6 +18,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 

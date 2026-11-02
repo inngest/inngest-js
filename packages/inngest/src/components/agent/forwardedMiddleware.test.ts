@@ -84,8 +84,6 @@ describe("the AgentTypes bag", () => {
     expectTypeOf<AgentTypesOf<Record<never, never>>>().toEqualTypeOf<{
       event: AgentTypeDefaults["event"];
       output: unknown;
-      request: unknown;
-      reply: unknown;
       sandboxes: AgentTypeDefaults["sandboxes"];
       client: AgentTypeDefaults["client"];
       middleware: undefined;
@@ -93,7 +91,9 @@ describe("the AgentTypes bag", () => {
       sources: undefined;
     }>();
     expectTypeOf<AgentTypesOf<{ output: number }>["output"]>().toBeNumber();
-    expectTypeOf<AgentTypesOf<{ output: number }>["request"]>().toBeUnknown();
+    expectTypeOf<AgentTypesOf<{ output: number }>["event"]>().toEqualTypeOf<
+      AgentTypeDefaults["event"]
+    >();
     expectTypeOf<AgentBody>().toEqualTypeOf<AgentBody<Record<never, never>>>();
   });
 

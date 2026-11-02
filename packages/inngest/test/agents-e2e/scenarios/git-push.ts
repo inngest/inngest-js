@@ -230,7 +230,7 @@ export const gitPush = scenario({
       heads: ["refs/heads/agent/ok", "refs/heads/main"],
     });
 
-    const calls = JSON.stringify(ctx.fakes.posts({ channel: "sandbox" }));
+    const calls = JSON.stringify(ctx.fakes.posts({ source: "sandbox" }));
 
     ctx.check("the sandbox saw git commands", calls.includes("bundle"), calls);
     ctx.check("the token was never in the sandbox", !calls.includes(token));

@@ -11,13 +11,13 @@ import { compileTriggers, singletonKey } from "./threadTrigger.ts";
 
 const kv = createKv({ adapter: memoryKvAdapter() });
 
-const slackThread =
-  'event.data.channel + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)';
+const chatThread =
+  'event.data.room + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)';
 
-const slackMessage = {
-  name: "slack/message",
+const chatMessage = {
+  name: "chat/message",
   id: "evt1",
-  data: { channel: "C1", thread_ts: "1.2", ts: "1.3", text: "hi" },
+  data: { room: "C1", thread_ts: "1.2", ts: "1.3", text: "hi" },
 };
 
 const makeClient = () => {
@@ -44,7 +44,7 @@ describe("thread key from a trigger", () => {
       opts.triggers.map((t) => {
         return t.event;
       }),
-    ).toEqual(["agent/message", "agent/steer", "agent/request"]);
+    ).toEqual(["agent/message", "agent/steer"]);
     expect(opts.singleton.key).toBe("event.data.thread");
   });
 
@@ -56,9 +56,9 @@ describe("thread key from a trigger", () => {
         kv,
         on: [
           {
-            event: "slack/message",
+            event: "chat/message",
             if: "event.data.bot != true",
-            thread: slackThread,
+            thread: chatThread,
           },
           {
             event: "gh/comment",
@@ -73,17 +73,16 @@ describe("thread key from a trigger", () => {
     expect(opts.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
       expect.objectContaining({ event: "agent/steer" }),
-      expect.objectContaining({ event: "agent/request" }),
-      { event: "slack/message", if: "event.data.bot != true" },
+      { event: "chat/message", if: "event.data.bot != true" },
       { event: "gh/comment" },
     ]);
     expect(opts.singleton.mode).toBe("skip");
     expect(opts.singleton.key).toBe(
-      `event.name == "slack/message" ? (${slackThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + event.data.pr) : event.data.thread`,
+      `event.name == "chat/message" ? (${chatThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + event.data.pr) : event.data.thread`,
     );
   });
 
-  test("the run starts from the trigger event: its thread, session and a subscription per event", async () => {
+  test("the run starts from the trigger event: its thread and a subscription per event", async () => {
     const seen: { event?: string; if?: string }[] = [];
     let message: unknown;
     const agent = createAgentFunction(
@@ -92,21 +91,20 @@ describe("thread key from a trigger", () => {
         id: "bot",
         kv,
         on: {
-          event: "slack/message",
+          event: "chat/message",
           if: "event.data.bot != true",
-          thread: slackThread,
-          session: '"slack:" + event.data.channel',
+          thread: chatThread,
         },
       },
       async ({ inbox, thread }) => {
         message = await inbox.next();
 
-        return thread.session;
+        return thread.key;
       },
     );
 
     const { output } = await run(agent.fn, {
-      event: slackMessage,
+      event: chatMessage,
       onOp: (op) => {
         const opts = op.opts as { sources?: { event: string; if?: string }[] };
 
@@ -114,11 +112,11 @@ describe("thread key from a trigger", () => {
       },
     });
 
-    expect(output).toBe("slack:C1");
+    expect(output).toBe("C1/1.2");
     expect(message).toMatchObject({
-      name: "slack/message",
+      name: "chat/message",
       id: "evt1",
-      data: { channel: "C1", text: "hi" },
+      data: { room: "C1", text: "hi" },
     });
 
     const opened = seen;
@@ -126,15 +124,10 @@ describe("thread key from a trigger", () => {
       opened.map((s) => {
         return s.event;
       }),
-    ).toEqual([
-      "agent/message",
-      "agent/steer",
-      "agent/request",
-      "slack/message",
-    ]);
+    ).toEqual(["agent/message", "agent/steer", "chat/message"]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[3]?.if).toBe(
-      `(event.data.bot != true) && (${slackThread}) == "C1/1.2"`.replaceAll(
+    expect(opened[2]?.if).toBe(
+      `(event.data.bot != true) && (${chatThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",
       ),
@@ -144,7 +137,7 @@ describe("thread key from a trigger", () => {
   test("a message to the thread still starts it by its own thread", async () => {
     const agent = createAgentFunction(
       makeClient(),
-      { id: "bot", kv, on: { event: "slack/message", thread: slackThread } },
+      { id: "bot", kv, on: { event: "chat/message", thread: chatThread } },
       async ({ inbox }) => {
         return (await inbox.next())?.data.thread;
       },
@@ -160,15 +153,13 @@ describe("thread key from a trigger", () => {
     expect(output).toBe("T9");
   });
 
-  test("the agent's thread and session options win over the trigger's", () => {
+  test("the agent's thread option wins over the trigger's", () => {
     const [trigger] = compileTriggers("bot", {
       on: { event: "e", thread: '"ignored"' },
-      thread: '"box:" + event.data.channel',
-      session: '"s1"',
+      thread: '"box:" + event.data.room',
     });
 
-    expect(trigger?.thread.key({ data: { channel: "C" } })).toBe("box:C");
-    expect(trigger?.session?.key({})).toBe("s1");
+    expect(trigger?.thread.key({ data: { room: "C" } })).toBe("box:C");
     expect(singletonKey([trigger as never])).toContain('"box:"');
   });
 

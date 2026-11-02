@@ -1,15 +1,13 @@
 /**
  * @module
  * Type tests: the events of an agent's `on` type the handler's `event`, the
- * inbox messages and the sandbox config, and `agent.invoke()` takes the input
- * of the target's `invoke()` trigger.
+ * inbox messages and the sandbox config.
  */
 import { z } from "zod";
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { eventType, invoke } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
-import { agent } from "./loop.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
@@ -39,11 +37,7 @@ describe("typed events", () => {
         // The message is the trigger event, flat; a plain thread message is
         // `agent/message`.
         expectTypeOf(message?.name).toEqualTypeOf<
-          | "shop/order.created"
-          | "agent/message"
-          | "agent/steer"
-          | "agent/request"
-          | undefined
+          "shop/order.created" | "agent/message" | "agent/steer" | undefined
         >();
 
         if (message?.name === "shop/order.created") {
@@ -58,10 +52,6 @@ describe("typed events", () => {
           case "agent/steer":
             expectTypeOf(message.data.text).toBeString();
             expectTypeOf(message.data.thread).toBeString();
-            break;
-          case "agent/request":
-            expectTypeOf(message.data.replyTo).toBeString();
-            expectTypeOf(message.reply).toBeFunction();
             break;
           default:
             break;
@@ -103,8 +93,8 @@ describe("typed events", () => {
     );
   });
 
-  test("a list of bare event types types the inbox and the invoke input", () => {
-    const worker = agents.agent(
+  test("a list of bare event types types the inbox", () => {
+    agents.agent(
       { id: "a-bare", on: [order, refund, asked], thread: "event.data.id" },
       async ({ inbox }) => {
         const message = await inbox.next();
@@ -121,16 +111,6 @@ describe("typed events", () => {
         return undefined;
       },
     );
-
-    // Never called: the test is the types.
-    const types = async () => {
-      await agent.invoke(worker, { question: "why" });
-
-      // @ts-expect-error the invoke trigger's input has a question
-      await agent.invoke(worker, { nope: 1 });
-    };
-
-    expect(types).toBeTypeOf("function");
   });
 
   test("trigger is the event of on, flat and typed, with no casts", () => {
@@ -174,11 +154,9 @@ describe("typed events", () => {
     );
 
     agents.agent(
-      { id: "t3", on: { event: "slack/message", thread: "event.data.ts" } },
+      { id: "t3", on: { event: "chat/message", thread: "event.data.ts" } },
       async ({ trigger }) => {
-        expectTypeOf(trigger?.name).toEqualTypeOf<
-          "slack/message" | undefined
-        >();
+        expectTypeOf(trigger?.name).toEqualTypeOf<"chat/message" | undefined>();
 
         return undefined;
       },
@@ -214,19 +192,15 @@ describe("typed events", () => {
 
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
-      { id: "a3", on: { event: "slack/message", thread: "event.data.ts" } },
+      { id: "a3", on: { event: "chat/message", thread: "event.data.ts" } },
       async ({ inbox }) => {
         const message = await inbox.next();
 
         expectTypeOf(message?.name).toEqualTypeOf<
-          | "slack/message"
-          | "agent/message"
-          | "agent/steer"
-          | "agent/request"
-          | undefined
+          "chat/message" | "agent/message" | "agent/steer" | undefined
         >();
 
-        if (message?.name === "slack/message") {
+        if (message?.name === "chat/message") {
           expectTypeOf(message.data.anything).toBeAny();
         }
 
@@ -238,11 +212,7 @@ describe("typed events", () => {
       const message = await inbox.next();
 
       expectTypeOf(message?.name).toEqualTypeOf<
-        | "inngest/scheduled.timer"
-        | "agent/message"
-        | "agent/steer"
-        | "agent/request"
-        | undefined
+        "inngest/scheduled.timer" | "agent/message" | "agent/steer" | undefined
       >();
 
       if (message?.name === "inngest/scheduled.timer") {
@@ -268,40 +238,5 @@ describe("typed events", () => {
         return undefined;
       },
     );
-  });
-});
-
-describe("agent.invoke", () => {
-  const worker = agents.agent(
-    { id: "worker", on: asked },
-    async ({ event }) => {
-      return { answer: event.data.event?.data.question ?? "" };
-    },
-  );
-  const plain = agents.agent(
-    { id: "plain", on: { event: "x/y", thread: "event.data.id" } },
-    async () => {
-      return 1;
-    },
-  );
-
-  // Never called: the test is the types.
-  const types = async () => {
-    const result = await agent.invoke(worker, { question: "why" });
-
-    expectTypeOf(result).toEqualTypeOf<{ answer: string }>();
-
-    // @ts-expect-error the invoke trigger's input has a question
-    await agent.invoke(worker, { nope: 1 });
-
-    // An agent with no invoke trigger takes any record.
-    expectTypeOf(await agent.invoke(plain, { any: 1 })).toBeNumber();
-
-    // A string target stays untyped.
-    expectTypeOf(await agent.invoke("app/other", { a: 1 })).toBeUnknown();
-  };
-
-  test("the target's invoke trigger types the input and its body the output", () => {
-    expect(types).toBeTypeOf("function");
   });
 });

@@ -11,13 +11,13 @@
 import { Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   redisKvAdapter,
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 
 const agentId = "thread-sandboxes-agent";
@@ -83,7 +83,7 @@ export const threadSandboxes = scenario({
     const alpha = getThread(client, ref, `alpha-${stamp}`, { kv: store });
     const beta = getThread(client, ref, `beta-${stamp}`, { kv: store });
     const calls = (method: string) => {
-      return ctx.fakes.posts({ channel: "sandbox", method });
+      return ctx.fakes.posts({ source: "sandbox", method });
     };
     const runEnded = async (destroyed: number) => {
       // A cancelled run is finalized and cleaned up by the executor: give that
@@ -107,7 +107,7 @@ export const threadSandboxes = scenario({
     await alpha.send("write:remember the milk");
     await runEnded(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(1);
     ctx.check(
       "the snapshot is named under the thread scope",
@@ -127,7 +127,7 @@ export const threadSandboxes = scenario({
       },
     );
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(1);
     ctx.check(
       "a run that never used the sandbox creates none",
@@ -151,11 +151,11 @@ export const threadSandboxes = scenario({
       },
     );
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(2);
     // The previous generation stays as a spare.
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.delete" })
+      .posts({ source: "sandbox", method: "snapshot.delete" })
       .toHaveCount(0);
 
     await beta.send("read");
@@ -200,7 +200,7 @@ export const threadSandboxes = scenario({
     );
     await runEnded(4);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(4);
 
     await gamma.send("read");

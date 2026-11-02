@@ -96,8 +96,8 @@ const fakeInbox = () => {
 const config: InboxToolsConfig = {
   listen: [
     {
-      event: "github/check_run",
-      thread: '"slack:" + event.data.slackThread',
+      event: "ci/check_run",
+      thread: '"chat:" + event.data.chatThread',
       if: 'event.data.repo == "app"',
       maxPerRun: 2,
     },
@@ -125,17 +125,17 @@ describe("inbox_listen", () => {
 
     await expect(
       call("inbox_listen", {
-        source: "github/check_run",
+        source: "ci/check_run",
         match: { "data.pr": 12, "data.user": "U123" },
         as: "checks",
       }),
-    ).resolves.toEqual({ listening: "checks", source: "github/check_run" });
+    ).resolves.toEqual({ listening: "checks", source: "ci/check_run" });
     expect(calls[0]).toEqual([
       "open",
       "checks",
-      "github/check_run",
+      "ci/check_run",
       {
-        thread: '"slack:" + event.data.slackThread',
+        thread: '"chat:" + event.data.chatThread',
         if: '(event.data.repo == "app") && (async.data.pr == 12 && async.data.user == "U123")',
       },
     ]);
@@ -147,7 +147,7 @@ describe("inbox_listen", () => {
     await expect(
       call("inbox_listen", { source: "stripe/charge", as: "x" }),
     ).rejects.toThrow(
-      "stripe/charge is not a source you can listen to. Allowed: github/check_run, ci/status.",
+      "stripe/charge is not a source you can listen to. Allowed: ci/check_run, ci/status.",
     );
     expect(calls).toEqual([]);
   });
@@ -242,7 +242,7 @@ describe("inbox_listen", () => {
   test("caps the listeners at once, and per source in a run", async () => {
     const { call } = setup();
 
-    await call("inbox_listen", { source: "github/check_run", as: "a" });
+    await call("inbox_listen", { source: "ci/check_run", as: "a" });
     await call("inbox_listen", { source: "ci/status", as: "b" });
     await expect(
       call("inbox_listen", { source: "ci/status", as: "c" }),
@@ -251,15 +251,15 @@ describe("inbox_listen", () => {
     const perSource = setup({ maxListeners: 10 });
 
     await perSource.call("inbox_listen", {
-      source: "github/check_run",
+      source: "ci/check_run",
       as: "a",
     });
     await perSource.call("inbox_listen", {
-      source: "github/check_run",
+      source: "ci/check_run",
       as: "b",
     });
     await expect(
-      perSource.call("inbox_listen", { source: "github/check_run", as: "c" }),
+      perSource.call("inbox_listen", { source: "ci/check_run", as: "c" }),
     ).rejects.toThrow("can be listened to 2 times in a run");
   });
 
@@ -284,7 +284,7 @@ describe("inbox_listen", () => {
 
     const named = await Promise.allSettled([
       same.call("inbox_listen", { source: "ci/status", as: "a" }),
-      same.call("inbox_listen", { source: "github/check_run", as: "a" }),
+      same.call("inbox_listen", { source: "ci/check_run", as: "a" }),
     ]);
 
     expect(named.map((result) => result.status)).toEqual([
@@ -367,14 +367,14 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
     const { call, push } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await call("inbox_listen", { source: "github/check_run", as: "gh" });
-    push("github/check_run", { name: "github/check_run", data: { n: 1 } });
+    await call("inbox_listen", { source: "ci/check_run", as: "gh" });
+    push("ci/check_run", { name: "ci/check_run", data: { n: 1 } });
 
     const got = (await call("inbox_next", { timeout: "1m", as: "gh" })) as {
       message: { source: string };
     };
 
-    expect(got.message.source).toBe("github/check_run");
+    expect(got.message.source).toBe("ci/check_run");
     await expect(
       call("inbox_next", { timeout: "1m", as: "nope" }),
     ).rejects.toThrow("No inbox named nope. Open: ci, gh.");
@@ -422,16 +422,16 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
     const { call, push } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await call("inbox_listen", { source: "github/check_run", as: "gh" });
+    await call("inbox_listen", { source: "ci/check_run", as: "gh" });
     push("ci/status", { name: "ci/status", data: { n: 1 } });
-    push("github/check_run", { name: "github/check_run", data: { n: 99 } });
+    push("ci/check_run", { name: "ci/check_run", data: { n: 99 } });
 
     const only = (await call("inbox_next_batch", { as: "gh" })) as {
       messages: { source: string }[];
     };
 
     expect(only.messages.map((message) => message.source)).toEqual([
-      "github/check_run",
+      "ci/check_run",
     ]);
   });
 
@@ -444,7 +444,7 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
       as: "x",
     });
     await call("inbox_listen", {
-      source: "github/check_run",
+      source: "ci/check_run",
       match: { "data.title": "a\nb\u2028c\\" },
       as: "y",
     });
@@ -454,7 +454,7 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
       if: '(async.data.title == "\\") || (true")',
     });
     expect(calls[1]?.[3]).toEqual({
-      thread: '"slack:" + event.data.slackThread',
+      thread: '"chat:" + event.data.chatThread',
       if: '(event.data.repo == "app") && (async.data.title == "a\\nb\\u2028c\\\\")',
     });
   });

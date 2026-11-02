@@ -10,7 +10,6 @@ import { tool } from "inngest/experimental";
 import {
   agent,
   createAgents,
-  createKv,
   getThread,
   type Kv,
   kv,
@@ -18,6 +17,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { withKeys } from "../kit/threads.ts";
 
 const sleep = (ms: number) => {

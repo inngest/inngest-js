@@ -6,8 +6,8 @@
  * that triggers on one gets its `event.data` typed.
  *
  * Everything a thread receives is a plain event. `agent/message` carries text
- * for the model; `agent/steer` and `agent/request` are the
- * agent's own control events, and show up in the thread's inbox like any other.
+ * for the model; `agent/steer` is the agent's own
+ * control event, and shows up in the thread's inbox like any other.
  */
 import { eventType, staticSchema } from "../triggers/triggers.ts";
 
@@ -50,26 +50,6 @@ export type AgentSteerData = AgentRouting & {
 };
 
 /**
- * The data of `agent/request`: a question from another thread.
- */
-export type AgentRequestData<TRequest = unknown> = AgentRouting & {
-  /**
-   * What the other thread asks.
-   */
-  payload: TRequest;
-
-  /**
-   * The signal the reply is sent to.
-   */
-  replyTo: string;
-
-  /**
-   * The key of the thread that asked, when it is a thread.
-   */
-  from?: string;
-};
-
-/**
  * Text that starts the next turn (and a run, if none is live).
  */
 export const agentMessage = eventType("agent/message", {
@@ -81,11 +61,4 @@ export const agentMessage = eventType("agent/message", {
  */
 export const agentSteer = eventType("agent/steer", {
   schema: staticSchema<AgentSteerData>(),
-});
-
-/**
- * A question from another thread, answered with `message.reply()`.
- */
-export const agentRequest = eventType("agent/request", {
-  schema: staticSchema<AgentRequestData>(),
 });

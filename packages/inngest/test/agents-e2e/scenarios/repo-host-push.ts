@@ -138,7 +138,7 @@ export const repoHostPush = scenario({
       output.heads,
     );
 
-    const calls = JSON.stringify(ctx.fakes.posts({ channel: "sandbox" }));
+    const calls = JSON.stringify(ctx.fakes.posts({ source: "sandbox" }));
 
     ctx.check(
       "the write token was never in the sandbox",

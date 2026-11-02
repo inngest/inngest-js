@@ -15,7 +15,6 @@ import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { agentMessage, agentSteer } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { skillsBake } from "./skills.ts";
 import { run } from "./test-helpers.ts";
 import { agentMessageEvent, agentSteerEvent } from "./thread.ts";
 import {
@@ -83,8 +82,6 @@ describe("types", () => {
       .parameter(0)
       .toExtend<{ agent: string; thread: string; text: string }>();
 
-    expectTypeOf(skillsBake.name).toEqualTypeOf<"agent/skills.bake">();
-
     // @ts-expect-error a message needs its thread
     agentMessage.create({ agent: "app/bot", text: "hi" });
   });
@@ -93,7 +90,6 @@ describe("types", () => {
 describe("events", () => {
   test("the agent's events keep their names", () => {
     expect(agentMessage.name).toBe("agent/message");
-    expect(skillsBake.name).toBe("agent/skills.bake");
   });
 
   test("a created message carries the schema it is validated against", async () => {
@@ -126,7 +122,6 @@ describe("triggers", () => {
     expect(options.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
       expect.objectContaining({ event: "agent/steer" }),
-      expect.objectContaining({ event: "agent/request" }),
       { event: order, if: "event.data.total > 5" },
       { event: ping },
     ]);
@@ -183,7 +178,7 @@ describe("triggers", () => {
     const agent = agents.agent({ id: "u2", on: { cron: "0 3 * * *" } }, noop);
     const options = fnOptions(agent.fn);
 
-    expect(options.triggers[3]).toEqual({ cron: "0 3 * * *" });
+    expect(options.triggers[2]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );
@@ -226,9 +221,6 @@ describe("triggers", () => {
       return compileTriggers("bot", { on: agentSteer });
     }).toThrow(/"agent\/steer" is an event the agent layer owns/);
     expect(() => {
-      return compileTriggers("bot", { on: skillsBake });
-    }).toThrow(/"agent\/skills.bake" is an event the agent layer owns/);
-    expect(() => {
       return compileTriggers("bot", {
         on: { event: "inngest/scheduled.timer", thread: '"a"' },
       });
@@ -248,14 +240,6 @@ describe("triggers", () => {
         on: { cron: "* * * * *", event: "shop/x" } as never,
       });
     }).toThrow(/not both/);
-  });
-
-  test("only the first of several crons sets session", () => {
-    expect(() => {
-      return compileTriggers("bot", {
-        on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *", session: '"s"' }],
-      });
-    }).toThrow(/first cron/);
   });
 
   test("an event type's name is checked like a name", () => {

@@ -108,10 +108,10 @@ export interface AsyncContext {
     insideExperimentSelect?: boolean;
 
     /**
-     * If present, the thread and session of an agent run whose trigger event
+     * If present, the thread of an agent run whose trigger event
      * does not carry them. Set by the agent function; read by the agent KV.
      */
-    agent?: { thread: string; session: string };
+    agent?: { thread: string };
 
     /**
      * What the executor said it supports on this request. Undefined when

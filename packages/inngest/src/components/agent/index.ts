@@ -68,13 +68,7 @@ export type {
   InboxToolsOf,
 } from "./inboxTools.ts";
 export { createInboxTools } from "./inboxTools.ts";
-export type { AgentInvokeOptions } from "./invoke.ts";
-export {
-  AgentCancelledError,
-  agentInvokeCancelOn,
-  agentInvokeDepth,
-  agentInvokeInput,
-} from "./invoke.ts";
+export { AgentCancelledError } from "./invoke.ts";
 export type { Json, JsonSchema } from "./json.ts";
 export type { AgentBudget, AgentLimits } from "./limits.ts";
 export { AgentLimitError } from "./limits.ts";

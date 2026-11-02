@@ -13,7 +13,6 @@ import {
   kvKey,
   memoryKvAdapter,
 } from "./kv.ts";
-import { skills } from "./skills.ts";
 import {
   cleanupThreadSandbox,
   sandboxGeneration,
@@ -1442,38 +1441,6 @@ describe("lazy sandboxes of a thread", () => {
     await ok.work?.get();
     expect(await s.scope.get(sandboxReadyKey(ref, "work", "01A"))).toBe(true);
     expect(s.defer).toHaveBeenCalledTimes(2);
-  });
-
-  test("a failed skills fetch leaves a cleanup armed that cannot save", async () => {
-    const w = world();
-    const s = setup(w, "01A");
-    const broken = w.durable("sb-x");
-
-    (broken.commands.run as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("fetch failed"),
-    );
-
-    const opened = openSandboxes(
-      {
-        work: sandbox({
-          id: "skilled",
-          skills: [skills.git("a/b", { freshness: "boot", into: "/skills/a" })],
-        }),
-      },
-      { create: vi.fn(async () => broken) } as unknown as DurableSandboxTools,
-      runtimeOf(w),
-      s.owner(),
-    );
-
-    await expect(opened.work?.get()).rejects.toThrow("fetch failed");
-    expect(
-      s.defer.mock.calls.map((call) => {
-        return call[1];
-      }),
-    ).toEqual([{ name: "work", sandboxId: "sb-x", idle: "pause" }]);
-    expect(
-      await s.scope.get(sandboxReadyKey(ref, "work", "01A")),
-    ).toBeUndefined();
   });
 });
 

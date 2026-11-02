@@ -68,11 +68,11 @@ The driver (`kit/driver.ts`, the `ctx` your `run` gets):
 - `ctx.send(name, data, { startsRun })` sends the scenario's event `agents-e2e/<id>/<name>` (use `event(name)` in `functions`) and returns the event ID; pass `startsRun: true` for an event whose run you wait for with `finished`, so it is resent once if no run starts. `ctx.finished(eventId)` waits for its run to end.
 - `ctx.expect.run(run)`: `toComplete()`, `toHaveSteps(...ids)` (the IDs your function gave them, such as `agent:model:1`), `toOutput(value)`.
 - `ctx.expect.kv(key).toEqual(value)` reads a Redis key (JSON) of the real Redis.
-- `ctx.expect.posts({ channel, method }).toHaveCount(n)` (exactly n, after a 1s settle) and `.toInclude({ field: value })` assert on the calls the fakes recorded since your scenario began (`channel` is `"sandbox"` or `"model"`).
+- `ctx.expect.posts({ source, method }).toHaveCount(n)` (exactly n, after a 1s settle) and `.toInclude({ field: value })` assert on the calls the fakes recorded since your scenario began (`source` is `"sandbox"` or `"model"`).
 - `ctx.restartApp()` kills the app process and starts it again (Dev Server and Redis stay), returning once it has synced; requests in flight are lost, as in a worker crash or deploy.
 - `ctx.eventually(name, read, ok)`, `ctx.until(read, ok)`, `ctx.check(name, ok, detail)` for anything else. Poll with `until`; never `sleep` over 3s and never assert on wall-clock time.
 - `script([...])` is the scripted model: steps answer by turn (`{ say }` or `{ call: { name, input } }`), a step with `when(request)` answers the first request it matches, and the model echoes after the script.
-- `sandbox: "fake"` serves the Sandboxes API from memory (see `scenarios/sandbox-fake.ts`); `sandboxCommands` cans command output. Operations show up as `channel: "sandbox"` calls (`sandbox.create`, `sandbox.exec`, `sandbox.upload`, `sandbox.destroy`).
+- `sandbox: "fake"` serves the Sandboxes API from memory (see `scenarios/sandbox-fake.ts`); `sandboxCommands` cans command output. Operations show up as `source: "sandbox"` calls (`sandbox.create`, `sandbox.exec`, `sandbox.upload`, `sandbox.destroy`).
 
 Limits: `sandboxCommands` of all scenarios in one run are merged, so keep command keys specific.
 

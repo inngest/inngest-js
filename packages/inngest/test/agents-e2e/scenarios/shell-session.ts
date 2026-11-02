@@ -59,7 +59,7 @@ export const shellSession = scenario({
       text: "done",
     });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.exec" })
+      .posts({ source: "sandbox", method: "sandbox.exec" })
       .toHaveCount(7);
   },
 });

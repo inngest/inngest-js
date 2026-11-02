@@ -54,11 +54,7 @@ describe("composition", () => {
         const next = await inbox.next();
 
         expectTypeOf(next?.name).toEqualTypeOf<
-          | "shop/order.created"
-          | "agent/message"
-          | "agent/steer"
-          | "agent/request"
-          | undefined
+          "shop/order.created" | "agent/message" | "agent/steer" | undefined
         >();
 
         return agent.loop({

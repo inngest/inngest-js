@@ -12,7 +12,7 @@ export const untrustedTag = "untrusted";
 
 export interface UntrustedOptions {
   /**
-   * Where the text came from, such as `github issue #12`, shown as the tag's
+   * Where the text came from, such as `tracker issue #12`, shown as the tag's
    * `source` attribute so the model can tell sources apart.
    */
   source?: string;

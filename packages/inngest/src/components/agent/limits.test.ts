@@ -20,9 +20,8 @@ import type { AgentUsage } from "./loop.ts";
 const state = (
   limits: LimitState["limits"],
   used: AgentUsage = { input: 0, output: 0 },
-  spawned = 0,
 ): LimitState => {
-  return { limits, used, spawned };
+  return { limits, used };
 };
 
 const refusal = (fn: () => void) => {
@@ -53,13 +52,12 @@ describe("narrowLimits", () => {
     expect(narrowLimits(undefined, { depth: 0 }).depth).toBe(0);
   });
 
-  test("spawn and budget take the lower value, field by field", () => {
+  test("budget takes the lower value, field by field", () => {
     const narrowed = narrowLimits(
-      { spawn: 5, budget: { tokens: 100, output: 10 } },
-      { spawn: 2, budget: { tokens: 500, input: 50 } },
+      { budget: { tokens: 100, output: 10 } },
+      { budget: { tokens: 500, input: 50 } },
     );
 
-    expect(narrowed.spawn).toBe(2);
     expect(narrowed.budget).toEqual({ tokens: 100, input: 50, output: 10 });
   });
 
@@ -99,16 +97,6 @@ describe("checkInvoke", () => {
     expect(error).toBeInstanceOf(AgentLimitError);
     expect(error.limit).toBe("depth");
     expect(error.message).toContain("app/leaf was not started");
-  });
-
-  test("refuses the call after spawn calls", () => {
-    checkInvoke(state({ spawn: 2 }, undefined, 1), "app/a");
-
-    expect(
-      refusal(() => {
-        checkInvoke(state({ spawn: 2 }, undefined, 2), "app/a");
-      }).limit,
-    ).toBe("spawn");
   });
 
   test("refuses a target outside any mayCall list", () => {
@@ -198,14 +186,13 @@ describe("budget", () => {
   test("a child gets one less depth and what is left", () => {
     const child = childLimits(
       state(
-        { depth: 2, spawn: 3, mayCall: [["a/*"]], budget: { tokens: 100 } },
+        { depth: 2, mayCall: [["a/*"]], budget: { tokens: 100 } },
         { input: 30, output: 20 },
       ),
     );
 
     expect(child).toEqual({
       depth: 1,
-      spawn: 3,
       mayCall: [["a/*"]],
       budget: { tokens: 50 },
     });
@@ -230,9 +217,6 @@ test("Infinity in a config limit means no cap", () => {
   expect(
     narrowLimits({ depth: Number.POSITIVE_INFINITY }, undefined).depth,
   ).toBe(1);
-  expect(
-    narrowLimits({ spawn: Number.POSITIVE_INFINITY }, { spawn: 3 }).spawn,
-  ).toBe(3);
 });
 
 describe("withoutUsdBudget", () => {

@@ -23,7 +23,6 @@ import { image } from "../sandbox/image.ts";
 import { hasCode } from "../sandbox/snapshotCache.ts";
 import {
   type AgentTool,
-  type AgentToolSource,
   type SandboxToolEntry,
   type SandboxTools,
   validateTools,
@@ -38,14 +37,6 @@ import {
 } from "../sandbox/types.ts";
 import type { AgentConfigContext } from "./agentFunction.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
-import {
-  createWithSkills,
-  fetchBootSkills,
-  isSkillsSource,
-  maxBakeSize,
-  type SkillsRuntime,
-  type SkillsSource,
-} from "./skills.ts";
 import {
   defaultSandboxIdle,
   type SandboxIdle,
@@ -82,8 +73,8 @@ export type SandboxToolsFactory<TTool extends string = string> = (
 ) => Record<TTool, SandboxToolEntry>;
 
 /**
- * Options of `sandbox()`: the sandbox's ID, image, size, environment, tools,
- * skills and setup.
+ * Options of `sandbox()`: the sandbox's ID, image, size, environment, tools
+ * and setup.
  */
 export interface SandboxDefinitionOptions<TTool extends string = string> {
   /**
@@ -124,14 +115,6 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
    * `sandbox.tools.code()`.
    */
   tools?: SandboxToolsFactory<TTool>;
-
-  /**
-   * Git sources of skills, made with `skills.git()`. Each is fetched when the
-   * sandbox is created or baked into a snapshot, by its `freshness`. A baked
-   * source can't be combined with `environment` or `secrets`: a sandbox
-   * started from a snapshot takes neither.
-   */
-  skills?: SkillsSource[];
 
   /**
    * Runs once, right after the sandbox is created and ready, before anything
@@ -185,13 +168,18 @@ export interface SandboxSetupContext {
 export type SandboxSetup = (context: SandboxSetupContext) => Promise<void>;
 
 /**
- * What a sandbox's skills and `setup` need from the running function.
+ * What a sandbox's `setup` needs from the running function.
  */
-export interface SandboxRuntime extends SkillsRuntime {
+export interface SandboxRuntime {
   /**
    * The event that started the run.
    */
   event?: AgentConfigContext["event"];
+
+  /**
+   * Runs `fn` once per run, such as `(id, fn) => step.run(id, fn)`.
+   */
+  run: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
 }
 
 /**
@@ -245,9 +233,7 @@ export interface SandboxBinding<
    *   creates a new sandbox from the snapshot. Pick it when a paused sandbox
    *   should not be held, at the cost of a snapshot per thread.
    *
-   * A resumed sandbox keeps the skills it was first created with (only
-   * `"boot"` sources are fetched again) and runs `setup` again with `restored`
-   * true. A sandbox that belongs to no thread is destroyed.
+   * A resumed sandbox runs `setup` again with `restored` true. A sandbox that belongs to no thread is destroyed.
    */
   idle?: SandboxIdle;
 }
@@ -299,51 +285,6 @@ const defineSandbox = <TTool extends string = never>(
     throw new SandboxValidationError(
       `Invalid sandbox id "${options.id}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
     );
-  }
-
-  const places = (options.skills ?? []).map((source) => {
-    return source.into;
-  });
-  const overlapping = places.find((place, index) => {
-    return places.some((other, otherIndex) => {
-      return (
-        otherIndex !== index &&
-        (other === place || place.startsWith(`${other}/`))
-      );
-    });
-  });
-
-  if (overlapping) {
-    throw new SandboxValidationError(
-      `Sandbox "${options.id}" has skills that overlap at "${overlapping}": give each its own \`into\``,
-    );
-  }
-
-  for (const source of options.skills ?? []) {
-    if (!isSkillsSource(source)) {
-      throw new SandboxValidationError(
-        `Sandbox "${options.id}" has skills that were not made with skills.git()`,
-      );
-    }
-
-    if (
-      source.freshness === "bake" &&
-      (options.environment || options.secrets)
-    ) {
-      throw new SandboxValidationError(
-        `Sandbox "${options.id}" bakes skills, which can't be combined with environment or secrets: use freshness "boot" for "${source.repo}"`,
-      );
-    }
-
-    if (
-      source.freshness === "bake" &&
-      ((options.vcpu ?? 0) > maxBakeSize.vcpu ||
-        (options.memoryMb ?? 0) > maxBakeSize.memoryMb)
-    ) {
-      throw new SandboxValidationError(
-        `Sandbox "${options.id}" bakes skills, which allows at most ${maxBakeSize.vcpu} vCPUs and ${maxBakeSize.memoryMb} MB: use freshness "boot" for "${source.repo}"`,
-      );
-    }
   }
 
   return Object.freeze({ ...options, kind: "inngest/sandbox.definition" });
@@ -609,8 +550,8 @@ const lazySandbox = (
   let observed = false;
 
   // The cleanup that destroys the sandbox if the run ends without closing it.
-  // It saves the sandbox only once `owner.ready()` says its skills and setup
-  // have finished.
+  // It saves the sandbox only once `owner.ready()` says its setup has
+  // finished.
   const arm = (sandbox: DurableSandbox) => {
     guard = owner?.guard(name, sandbox, epoch, idle);
   };
@@ -652,7 +593,6 @@ const lazySandbox = (
           // here pauses it again.
           await owner?.ready(name);
           arm(sandbox);
-          await fetchBootSkills(name, sandbox, definition.skills ?? []);
 
           return sandbox;
         }
@@ -672,26 +612,7 @@ const lazySandbox = (
 
     restored = candidates.length > 0;
 
-    const withSkills = (from: string | undefined) => {
-      return createWithSkills({
-        name,
-        sources: definition.skills ?? [],
-        fresh: options,
-        image: definition.image,
-        sandboxes,
-        runtime: runtime as SandboxRuntime,
-        restoreFrom: from,
-        onCreated: (sandbox) => {
-          existed = true;
-          arm(sandbox);
-        },
-      });
-    };
     const make = async (from: string | undefined) => {
-      if (definition.skills?.length) {
-        return withSkills(from);
-      }
-
       const sandbox = from
         ? await sandboxes.create(name, {
             name: options.name,
@@ -748,10 +669,10 @@ const lazySandbox = (
       return created;
     }
 
-    if ((definition.skills?.length || definition.setup) && !runtime) {
+    if (definition.setup && !runtime) {
       return Promise.reject(
         new SandboxValidationError(
-          `Sandbox "${name}" has skills or a setup, which need the agent's run: open it through an agent's sandboxes`,
+          `Sandbox "${name}" has a setup, which needs the agent's run: open it through an agent's sandboxes`,
         ),
       );
     }
@@ -760,8 +681,7 @@ const lazySandbox = (
 
     raw = acquire(options);
 
-    // Setup runs after the sandbox exists, so after skills are in place.
-    // `raw` stays the bare sandbox, so close() destroys it even when setup
+    // Setup runs after the sandbox exists. `raw` stays the bare sandbox, so close() destroys it even when setup
     // failed.
     created = raw.then(async (sandbox) => {
       if (setup) {
@@ -776,8 +696,8 @@ const lazySandbox = (
     return created;
   };
 
-  // Marks the sandbox ready to be saved by the run's cleanup: its skills and
-  // setup are done and something used it.
+  // Marks the sandbox ready to be saved by the run's cleanup: its setup is
+  // done and something used it.
   let ready: Promise<void> | undefined;
 
   const get = async (): Promise<DurableSandbox> => {
@@ -1137,7 +1057,7 @@ export const openSandboxes = (
   sandboxes: DurableSandboxTools,
 
   /**
-   * What sandboxes with skills or a setup need from the run.
+   * What a sandbox with a setup needs from the run.
    */
   runtime?: SandboxRuntime,
 
@@ -1207,17 +1127,12 @@ export const sandboxTools = (
 };
 
 /**
- * Agent tools by name, for `agent.loop()`. The name is the tool's `id`; an
- * agent in the list is named by its sanitised ID.
+ * Agent tools by name, for `agent.loop()`. The name is the tool's `id`.
  */
-export const agentTools = (
-  tools: readonly (AgentTool | AgentToolSource)[],
-): SandboxTools => {
+export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
   return toolsByName(
     tools.map((entry) => {
-      const name = "~tool" in entry ? entry["~tool"].id : entry.id;
-
-      return [name, entry] as const;
+      return [entry.id, entry] as const;
     }),
   );
 };

@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   kvKey,
@@ -20,6 +19,7 @@ import {
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 
 const agentId = "recovery-agent";

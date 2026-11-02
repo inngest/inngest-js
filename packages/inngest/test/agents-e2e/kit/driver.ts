@@ -12,7 +12,7 @@ import { isDeepStrictEqual } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
 import type { sandboxMiddleware } from "inngest/experimental";
 import type { AgentModel } from "inngest/experimental/agents";
-import type { CallFilter, Fakes } from "./channels.ts";
+import type { CallFilter, Fakes } from "./fakes.ts";
 import { type ModelCall, type ScriptStep, script } from "./model.ts";
 import { redisCommand } from "./redis.ts";
 
@@ -575,7 +575,7 @@ export const createCtx = (
       return {
         calls: async () => {
           return scoped
-            .posts({ channel: "model", method: modelName(id, name) })
+            .posts({ source: "model", method: modelName(id, name) })
             .map((call) => {
               return call.body as unknown as ModelCall;
             });

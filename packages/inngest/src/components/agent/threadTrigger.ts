@@ -20,7 +20,7 @@
  * with typed input. A cron has no event data to key a thread on, so its
  * thread is one per agent (the agent's ID) unless the cron trigger sets
  * `thread`; a tick while a run is live starts nothing and is not delivered.
- * An invocation by `agent.invoke()` runs on the thread it names (its own, per
+ * An invocation by another agent runs on the thread it names (its own, per
  * call); any other invocation is keyed by `thread` or, without one, is the
  * agent's one thread. Only one run is live per thread, so a second such
  * invocation while a run is live is skipped.
@@ -37,10 +37,8 @@ import {
   type EventTypeWithAnySchema,
 } from "../triggers/triggers.ts";
 import { compileKey, toAsync } from "./cel.ts";
-import { skillsBakeEvent } from "./skills.ts";
 import {
   agentMessageEvent,
-  agentRequestEvent,
   agentSteerEvent,
   type TriggerEvent,
 } from "./thread.ts";
@@ -100,12 +98,6 @@ export interface ThreadTriggerFields {
    * events apart.
    */
   thread?: string;
-
-  /**
-   * The session the thread belongs to, an expression like `thread`. Default:
-   * the thread key.
-   */
-  session?: string;
 }
 
 /**
@@ -220,12 +212,6 @@ export interface ThreadKeyConfig<TOn = ThreadTriggers> {
    * own `thread`.
    */
   thread?: string;
-
-  /**
-   * The session expression for event triggers. Default: the thread key. A
-   * cron has its own `session`.
-   */
-  session?: string;
 }
 
 export interface CompiledTrigger {
@@ -256,7 +242,6 @@ export interface CompiledTrigger {
     | { event: ThreadTriggerEventSource; if?: string }
     | { cron: string; jitter?: string };
   thread: ReturnType<typeof compileKey>;
-  session?: ReturnType<typeof compileKey>;
 
   /**
    * The schema of the event's data, when the trigger is an event type that has
@@ -271,12 +256,7 @@ const cronEvent = internalEvents.ScheduledTimer;
 /**
  * The events the agent layer owns, which cannot trigger an agent.
  */
-const reservedEvents: string[] = [
-  agentMessageEvent,
-  agentSteerEvent,
-  agentRequestEvent,
-  skillsBakeEvent,
-];
+const reservedEvents: string[] = [agentMessageEvent, agentSteerEvent];
 
 /**
  * Quotes a string as a CEL literal.
@@ -399,7 +379,7 @@ export function compileTriggers(
     const thread = cron
       ? (own?.thread ?? literal(id))
       : invoked
-        ? // `agent.invoke()` names the callee's thread in `_agent`; any other
+        ? // A call from another agent names the callee's thread in `_agent`; any other
           // invocation is keyed by `thread`, or is the agent's own thread.
           `has(event.data._agent) && has(event.data._agent.thread) ? event.data._agent.thread : (${supplied ?? literal(id)})`
         : supplied;
@@ -414,15 +394,6 @@ export function compileTriggers(
         `Agent "${id}": cron triggers share one thread key; set the same \`thread\` on each.`,
       );
     }
-
-    // The first cron's `session` applies to every tick.
-    if (same && own?.session) {
-      throw new Error(
-        `Agent "${id}": set \`session\` on the first cron trigger only; it applies to every tick.`,
-      );
-    }
-
-    const session = cron ? own?.session : (config.session ?? own?.session);
 
     const condition = cron
       ? undefined
@@ -447,7 +418,6 @@ export function compileTriggers(
             },
         schema: source instanceof EventType ? source.schema : undefined,
         thread: compileKey(thread),
-        session: session ? compileKey(session) : undefined,
       });
     } catch (err) {
       throw new Error(

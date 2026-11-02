@@ -3,13 +3,9 @@
  * Scoped KV operations a Redis-backed app relies on: keys with a time to live,
  * set-if-absent claims and a sorted index, all step-backed inside a function.
  */
-import {
-  createKv,
-  kv,
-  kvKey,
-  redisKvAdapter,
-} from "inngest/experimental/agents";
+import { kv, kvKey, redisKvAdapter } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 
 export const kvOps = scenario({
   id: "kv-ops",

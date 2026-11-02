@@ -1,7 +1,7 @@
 /**
  * @module
- * EXPERIMENTAL: a counter per execution of a function, so repeated calls such
- * as `agent.invoke()` and `thread.request()` can tell themselves apart.
+ * EXPERIMENTAL: a counter per execution of a function, so repeated calls of one
+ * kind can tell themselves apart.
  */
 
 const counters = new WeakMap<object, Map<string, number>>();

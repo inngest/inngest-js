@@ -14,7 +14,7 @@ export interface Call {
   /**
    * Which fake received the call.
    */
-  channel: "sandbox" | "model";
+  source: "sandbox" | "model";
 
   /**
    * What was called, such as `sandbox.exec`.
@@ -34,7 +34,7 @@ export interface CallFilter {
   /**
    * Only calls of this fake.
    */
-  channel?: Call["channel"];
+  source?: Call["source"];
 
   /**
    * Only calls of this method.
@@ -149,7 +149,7 @@ export const startFakes = async (): Promise<Fakes> => {
 
     if (model && req.method === "POST") {
       calls.push({
-        channel: "model",
+        source: "model",
         method: decodeURIComponent(model[1] as string),
         body,
       });
@@ -160,7 +160,7 @@ export const startFakes = async (): Promise<Fakes> => {
 
     if (path === "/record" && req.method === "POST") {
       calls.push({
-        channel: "sandbox",
+        source: "sandbox",
         method: String(body.method),
         body,
       });
@@ -195,12 +195,12 @@ export const startFakes = async (): Promise<Fakes> => {
     url: `http://127.0.0.1:${address.port}`,
     calls,
     record: (method, body) => {
-      calls.push({ channel: "sandbox", method, body: { method, ...body } });
+      calls.push({ source: "sandbox", method, body: { method, ...body } });
     },
     posts: (filter = {}) => {
       return calls.filter((call) => {
         return (
-          (!filter.channel || call.channel === filter.channel) &&
+          (!filter.source || call.source === filter.source) &&
           (!filter.method || call.method === filter.method)
         );
       });

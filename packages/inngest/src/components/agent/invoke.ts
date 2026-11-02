@@ -1,22 +1,16 @@
 /**
  * @module
- * EXPERIMENTAL: `agent.invoke()`, which starts another agent from inside a
- * function and returns its result. The agent is the one `createAgents()`
- * returned (its input is typed from its `invoke()` trigger and its result from
- * its body) or a plain `"appId/functionId"` string (untyped).
- *
- * It is a `step.invoke` to a function reference, so the target resolves the
- * way every `step.invoke` target does. The call adds what an agent needs on
- * top of it: the callee keeps the caller's session, gets a thread of its own,
- * and is told how deep in a chain of agents it is.
+ * EXPERIMENTAL: how one agent starts another and waits for its result, for
+ * `callAgent()` and the discovery tools. It is a `step.invoke` to a function
+ * reference, so the target resolves the way every `step.invoke` target does.
+ * The call adds what an agent needs on top of it: the callee gets a thread of
+ * its own and is told how deep in a chain of agents it is.
  */
 
-import type { EventMeta } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { referenceFunction } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { AgentFunction } from "./agentFunction.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -34,63 +28,11 @@ import { currentSessions } from "./sessions.ts";
 const invokeKey = "_agent";
 
 /**
- * Options of `agent.invoke()`.
- */
-export interface AgentInvokeOptions {
-  /**
-   * The ID of the step. Default: `agent:invoke:<target>`; calls with the same
-   * ID in one run are numbered by the SDK.
-   */
-  id?: string;
-
-  /**
-   * The key of the callee's thread (`agent_thread`), chosen by the caller and
-   * handed to the callee as `data._agent.thread`. Default:
-   * `<functionId>:<runId>.<n>`, where `n` counts this run's `agent.invoke()`
-   * calls, so a replay gives the same key.
-   */
-  thread?: string;
-
-  /**
-   * Event meta of the invocation. `meta.sessions` wins over the session and
-   * thread this call sets, key by key.
-   */
-  meta?: EventMeta;
-
-  /**
-   * How long to wait for the callee, as for `step.invoke()`.
-   */
-  timeout?: number | string | Date;
-}
-
-/**
- * The `cancelOn` entry that ends a run when the run that invoked it is
- * cancelled. Put it in the `cancelOn` of an agent or function that only
- * `agent.invoke()` starts. A cancelled run sends `inngest/function.cancelled`,
- * which carries its own run ID, and `agent.invoke()` hands that ID to the
- * callee as `data._agent.parent`. A callee of the callee follows in turn.
- *
- * `agents.agent()` throws if an agent lists it while `on` has a trigger other
- * than `invoke()`: the expression reads `_agent`, which other events lack, and
- * the server then cancels the run when any other run is cancelled. Do not use
- * it on a plain function that other events also start for the same reason.
- * The check covers `on` only: a message sent to the agent's thread while it is
- * idle also starts a run without `_agent`, so only `agent.invoke()` should
- * start an agent that has this entry.
- */
-export const agentInvokeCancelOn = {
-  event: "inngest/function.cancelled",
-  if: "event.data.run_id == async.data._agent.parent",
-} as const;
-
-/**
- * Thrown by `agent.invoke()` when the agent it started was cancelled (a stop
- * now, a `cancelOn` event, or the cancellation of the caller's own parent), so
- * the caller never takes a cancelled run's non-answer for a result. Code that
- * can carry on without the callee catches it; anything else lets it fail the
- * caller. It is not retried. Inside an agent tool, the loop reports a thrown
- * error to the model as the tool's result, as it does an `AgentLimitError`,
- * so the model reads that the agent was cancelled.
+ * Thrown when the agent a call started was cancelled (a stop now, a `cancelOn`
+ * event, or the cancellation of the caller's own parent), so the caller never
+ * takes a cancelled run's non-answer for a result. It is not retried. Inside
+ * an agent tool, the loop reports a thrown error to the model as the tool's
+ * result, as it does an `AgentLimitError`.
  */
 export class AgentCancelledError extends NonRetriableError {
   /**
@@ -114,7 +56,7 @@ export class AgentCancelledError extends NonRetriableError {
     run?: { functionId?: string; runId?: string },
   ) {
     super(
-      `agent.invoke(): ${target} was cancelled${run?.runId ? ` (run ${run.runId})` : ""}, so it returned no result.`,
+      `${target} was cancelled${run?.runId ? ` (run ${run.runId})` : ""}, so it returned no result.`,
     );
     this.name = "AgentCancelledError";
     this.functionId = run?.functionId;
@@ -158,11 +100,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 /**
  * How many agents deep an invoked function is: 1 for one started by a function
  * that is not an agent, 2 for the next, and so on. 0 for an event that did
- * not come from `agent.invoke()`. Call it with the `event` of a plain
- * function that `agent.invoke()` starts; an agent body gets the same number
- * as `depth`, because its `trigger` has the SDK's data removed.
+ * not come from an agent call.
  */
-export const agentInvokeDepth = (
+export const invokeDepthOf = (
   /**
    * The event the function was started with.
    */
@@ -172,23 +112,6 @@ export const agentInvokeDepth = (
   const depth = isRecord(info) ? info.depth : undefined;
 
   return typeof depth === "number" && depth > 0 ? depth : 0;
-};
-
-/**
- * The data `agent.invoke()` was given, without the SDK's own key. Use it in a
- * plain function that `agent.invoke()` starts. It returns a copy and leaves
- * the event as it is, so `agentInvokeDepth()` still works. An agent body does
- * not need it: its `trigger.data` is already the caller's input.
- */
-export const agentInvokeInput = (
-  /**
-   * The event the function was started with.
-   */
-  event: { data?: Record<string, unknown> },
-): Record<string, unknown> => {
-  const { [invokeKey]: _info, ...input } = event.data ?? {};
-
-  return input;
 };
 
 /**
@@ -206,7 +129,7 @@ const parseTarget = (
 
   if (slash < 1 || !functionId) {
     throw new Error(
-      `agent.invoke() takes an agent as "appId/functionId"; got ${JSON.stringify(target)}`,
+      `An agent address is "appId/functionId"; got ${JSON.stringify(target)}`,
     );
   }
 
@@ -214,77 +137,7 @@ const parseTarget = (
 };
 
 /**
- * EXPERIMENTAL: Starts the agent `target` with `data` and waits for its
- * result. Call it inside a function. `target` is the agent, or
- * `"appId/functionId"` for one this code has no handle on. The callee finds
- * the thread this call names in `data._agent.thread`.
- *
- * If the callee is cancelled (a stop now, a `cancelOn` event), the call throws
- * an `AgentCancelledError`: the executor resumes the caller with the callee's
- * finish event instead of an output, and this call does not hand that over as
- * a result. The other way round, cancelling the caller
- * cancels an agent or function it invoked only if that one lists
- * `agentInvokeCancelOn` in its `cancelOn`.
- *
- * The agent runs in the caller's session (`agent_session`) on a new thread
- * (`agent_thread`). Without a session, the caller's run starts one. Other
- * sessions of the caller reach it through session propagation. The agent
- * reads how deep it is as `depth` in its body, a plain function with
- * `agentInvokeDepth(event)`.
- *
- * An agent's `limits` apply: a call they refuse throws an `AgentLimitError`
- * whose message says why, so inside a tool the model reads it as the result.
- * The agent started inherits the limits, narrowed.
- *
- * @example
- * ```ts
- * const found = await agent.invoke<{ answer: string }>("scout-app/researcher", {
- *   question,
- * });
- * ```
- */
-export function invoke<TInput extends Record<string, unknown>, TOutput>(
-  /**
-   * The agent, as `createAgents()` returned it.
-   */
-  target: AgentFunction<TInput, TOutput>,
-
-  /**
-   * The agent's input.
-   */
-  data: TInput,
-
-  /**
-   * Step ID, thread key, meta and timeout.
-   */
-  options?: AgentInvokeOptions,
-): Promise<TOutput>;
-export function invoke<TOutput = unknown>(
-  /**
-   * The agent as `"appId/functionId"`, for one this code has no handle on.
-   */
-  target: string,
-
-  /**
-   * The agent's input. Untyped.
-   */
-  data?: Record<string, unknown>,
-
-  /**
-   * Step ID, thread key, meta and timeout.
-   */
-  options?: AgentInvokeOptions,
-): Promise<TOutput>;
-export async function invoke(
-  agentOrRef: string | { ref: string },
-  data: Record<string, unknown> = {},
-  options: AgentInvokeOptions = {},
-): Promise<unknown> {
-  return invokeAgent(agentOrRef, data, options, false);
-}
-
-/**
- * Starts an agent for `invoke()` and for an agent used as a tool.
+ * Starts an agent and waits for its result.
  */
 export async function invokeAgent(
   /**
@@ -299,22 +152,16 @@ export async function invokeAgent(
   data: Record<string, unknown> | ((thread: string) => Record<string, unknown>),
 
   /**
-   * Step ID, thread key, meta and timeout.
+   * The step ID. Default: `agent:invoke:<target>`.
    */
-  options: AgentInvokeOptions,
-
-  /**
-   * Whether the agent is a tool of the caller. Being in its `tools` allows it,
-   * so `mayCall` does not apply.
-   */
-  asTool: boolean,
+  options: { id?: string },
 ): Promise<unknown> {
   const target = typeof agentOrRef === "string" ? agentOrRef : agentOrRef.ref;
   const { appId, functionId } = parseTarget(target);
   const execution = getAsyncCtxSync()?.execution;
 
   if (!execution) {
-    throw new Error("agent.invoke() must be called inside an Inngest function");
+    throw new Error("An agent call must be made inside an Inngest function");
   }
 
   const { ctx, instance } = execution;
@@ -324,22 +171,17 @@ export async function invokeAgent(
   const limits = limitStateOf(instance, readInheritedLimits(info));
 
   if (limits) {
-    checkInvoke(limits, target, { asTool });
-    limits.spawned += 1;
+    checkInvoke(limits, target);
   }
 
   const n = nextCount(instance, "invoke");
 
   const parent = currentSessions(ctx);
   const sessions = {
-    agent_session:
-      execution.agent?.session ?? parent.agent_session ?? ctx.runId,
-    agent_thread: options.thread ?? `${functionId}:${ctx.runId}.${n}`,
-    ...options.meta?.sessions,
+    agent_session: parent.agent_session ?? ctx.runId,
+    agent_thread: `${functionId}:${ctx.runId}.${n}`,
   };
-  const depth = agentInvokeDepth(
-    ctx.event as { data?: Record<string, unknown> },
-  );
+  const depth = invokeDepthOf(ctx.event as { data?: Record<string, unknown> });
   const id = options.id ?? `agent:invoke:${target}`;
 
   const result = await step.invoke(
@@ -355,8 +197,7 @@ export async function invokeAgent(
           ...(limits && { limits: childLimits(limits) }),
         },
       },
-      meta: { ...options.meta, sessions },
-      timeout: options.timeout,
+      meta: { sessions },
     },
   );
 

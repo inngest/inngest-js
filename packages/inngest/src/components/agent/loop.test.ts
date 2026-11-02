@@ -550,7 +550,7 @@ describe("agent.loop", () => {
 
   test("format words events as text or content blocks, and blocks pass through as the prompt", async () => {
     const { requests } = await run([say("ok")], {
-      prompt: { name: "slack/message", data: { text: "look", image: "u" } },
+      prompt: { name: "chat/message", data: { text: "look", image: "u" } },
       format: (event) => {
         const data = event.data as { text: string; image: string };
 

@@ -9,13 +9,13 @@
 import { Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 import { withKeys } from "../kit/threads.ts";
 
@@ -48,7 +48,7 @@ export const threadKey = scenario({
         on: {
           event: event("msg"),
           thread:
-            'event.data.channel + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)',
+            'event.data.room + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)',
         },
       },
       async ({ inbox }) => {
@@ -123,20 +123,20 @@ export const threadKey = scenario({
       baseUrl: ctx.devUrl,
       isDev: true,
     });
-    const channel = `C${Date.now()}`;
+    const room = `C${Date.now()}`;
     const handle = (key: string) => {
       return withKeys(getThread(client, ref, key, { kv: store }));
     };
-    const t1 = handle(`${channel}/1.0`);
-    const t2 = handle(`${channel}/2.0`);
+    const t1 = handle(`${room}/1.0`);
+    const t2 = handle(`${room}/2.0`);
 
     // Two trigger events for one thread: one run, the second delivered.
-    await ctx.send("msg", { channel, thread_ts: "1.0", text: "first" });
+    await ctx.send("msg", { room, thread_ts: "1.0", text: "first" });
     await ctx.eventually("first message starts the thread", t1.state, (s) => {
       return list(s, "turns").includes("first");
     });
     await ctx.send("msg", {
-      channel,
+      room,
       ts: "9.9",
       thread_ts: "1.0",
       text: "second",
@@ -156,7 +156,7 @@ export const threadKey = scenario({
     };
     for (let i = 0; i < 4; i++) {
       await ctx.send("msg", {
-        channel,
+        room,
         ts: `9.${i}`,
         thread_ts: "1.0",
         text: sent.event[i],
@@ -209,7 +209,7 @@ export const threadKey = scenario({
     ctx.check("one run for the numeric key", numbers.runs === 1, numbers);
 
     // Another thread starts its own run.
-    await ctx.send("msg", { channel, ts: "2.0", text: "other" });
+    await ctx.send("msg", { room, ts: "2.0", text: "other" });
     const other = await ctx.eventually(
       "another thread starts its own run",
       t2.state,
@@ -223,13 +223,13 @@ export const threadKey = scenario({
     // the thread key is computed (a path joined with a suffix); the next event
     // starts a new run.
     const s1 = withKeys(
-      getThread(client, stopRef, `${channel}-stop/s`, { kv: store }),
+      getThread(client, stopRef, `${room}-stop/s`, { kv: store }),
     );
-    await ctx.send("stop-msg", { key: `${channel}-stop` });
+    await ctx.send("stop-msg", { key: `${room}-stop` });
     await ctx.eventually("a path key starts its thread", s1.state, (s) => {
       return list(s, "turns").length === 1;
     });
-    const s1Handle = getThread(client, stopRef, `${channel}-stop/s`, {
+    const s1Handle = getThread(client, stopRef, `${room}-stop/s`, {
       kv: store,
     });
     const s1Stop = await s1.stop();
@@ -246,7 +246,7 @@ export const threadKey = scenario({
       },
       60_000,
     );
-    await ctx.send("stop-msg", { key: `${channel}-stop` });
+    await ctx.send("stop-msg", { key: `${room}-stop` });
     const after = await ctx.eventually(
       "an event after a stop now starts a new run",
       s1.state,

@@ -84,13 +84,13 @@ export const defs = scenario({
       .run(run)
       .toOutput({ text: "done", workStarted: true, spareStarted: false });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.create" })
+      .posts({ source: "sandbox", method: "sandbox.create" })
       .toHaveCount(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.exec" })
+      .posts({ source: "sandbox", method: "sandbox.exec" })
       .toHaveCount(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.destroy" })
+      .posts({ source: "sandbox", method: "sandbox.destroy" })
       .toHaveCount(1);
   },
 });

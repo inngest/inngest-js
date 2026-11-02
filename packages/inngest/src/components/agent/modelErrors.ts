@@ -156,7 +156,7 @@ export const classifyModelError = (error: unknown): unknown => {
  *   id: "get_issue",
  *   input: z.object({ number: z.number() }),
  *   run: async ({ number }) => {
- *     const issue = await github.issues.get(number);
+ *     const issue = await tracker.issues.get(number);
  *
  *     return agent.untrusted(issue.body, { source: `issue #${number}` });
  *   },

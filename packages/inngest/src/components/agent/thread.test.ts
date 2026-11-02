@@ -2,11 +2,10 @@
  * @module
  * Tests for thread handles with a fake client.
  */
-import { z } from "zod";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { getThread, type ThreadRequests } from "./thread.ts";
+import { getThread } from "./thread.ts";
 
 const fakeClient = (
   cancelAnswer: { ok: boolean; error?: { error: string; status: number } } = {
@@ -56,16 +55,6 @@ describe("thread handle", () => {
         data: { agent: "app/bot", thread: "t1", text: "faster" },
         meta: { sessions },
       },
-    ]);
-  });
-
-  test("a session other than the thread can be named", async () => {
-    const { client, sent } = fakeClient();
-
-    await getThread(client, "app/bot", "t1", { session: "s9" }).send("hi");
-
-    expect(sent).toMatchObject([
-      { meta: { sessions: { agent_session: "s9", agent_thread: "t1" } } },
     ]);
   });
 
@@ -162,19 +151,10 @@ describe("thread handle", () => {
     expect((await thread.state()).status).toBe("waiting");
   });
 
-  test("request outside a function says why it cannot wait", async () => {
-    const { client } = fakeClient();
-
-    await expect(
-      getThread(client, "app/bot", "t1").request({ question: "q" }),
-    ).rejects.toThrow("inside a function");
-  });
-
   describe("inside a function", () => {
     const event = { name: "go", data: {} };
     const setup = (
       body: (thread: ReturnType<typeof getThread>) => Promise<unknown>,
-      requests?: ThreadRequests["request"],
     ) => {
       const bodies: unknown[] = [];
       const client = new Inngest({
@@ -186,9 +166,7 @@ describe("thread handle", () => {
           return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
         }) as unknown as typeof fetch,
       });
-      const thread = getThread(client, `${testClientId}/bot`, "t1", {
-        requests: requests && { request: requests, reply: requests },
-      });
+      const thread = getThread(client, `${testClientId}/bot`, "t1");
       const fn = client.createFunction(
         { id: "caller", triggers: [{ event: "go" }] },
         async () => {
@@ -219,78 +197,6 @@ describe("thread handle", () => {
           },
         ],
       ]);
-    });
-
-    test("request sends the message and waits for the signal, wait first", async () => {
-      const { fn } = setup(async (thread) => {
-        return thread.request({ question: "q" }, { timeout: "5m" });
-      });
-
-      const result = await runFnWithStack(fn, {}, { event });
-
-      expect(result).toMatchObject({
-        type: "steps-found",
-        steps: [
-          {
-            op: StepOpCode.WaitForSignal,
-            opts: { signal: "thread-request:run:1", timeout: "5m" },
-          },
-          { displayName: "thread:t1:request" },
-        ],
-      });
-    });
-
-    test("request checks its payload against the requests schema before sending", async () => {
-      const { fn, bodies } = setup(
-        async (thread) => {
-          return thread.request({ question: 7 } as never);
-        },
-        z.object({ question: z.string() }),
-      );
-
-      await expect(runFnWithStack(fn, {}, { event })).resolves.toMatchObject({
-        type: "function-rejected",
-      });
-      expect(bodies).toEqual([]);
-    });
-
-    test("request resolves to the reply, or null when the wait times out", async () => {
-      const { fn } = setup(async (thread) => {
-        return thread.request({ question: "q" });
-      });
-      const found = (await runFnWithStack(fn, {}, { event })) as {
-        steps: { id: string }[];
-      };
-      const [waitId, sendId] = found.steps.map((step) => {
-        return step.id;
-      }) as [string, string];
-      const sent = { id: sendId, data: { ids: ["1"] } };
-
-      const answered = await runFnWithStack(
-        fn,
-        {
-          [waitId]: {
-            id: waitId,
-            data: { signal: "thread-request:run:1", data: { answer: 42 } },
-          },
-          [sendId]: sent,
-        },
-        { event },
-      );
-      const timedOut = await runFnWithStack(
-        fn,
-        { [waitId]: { id: waitId, data: null }, [sendId]: sent },
-        { event },
-      );
-
-      expect(answered).toMatchObject({
-        type: "function-resolved",
-        data: { answer: 42 },
-      });
-      expect(timedOut).toMatchObject({
-        type: "function-resolved",
-        data: null,
-      });
     });
   });
 });

@@ -11,7 +11,6 @@ import { Inngest, invoke } from "inngest";
 import {
   agent,
   createAgents,
-  createKv,
   discoveryTools,
   getThread,
   kv,
@@ -19,6 +18,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 
 const lead = "agents-e2e/disc-lead";
 
@@ -150,13 +150,6 @@ export const agentsDiscovery = scenario({
         description: "Answers documentation questions",
         share: "team",
         effects: "read",
-        skills: [
-          {
-            id: "docs-qa",
-            description: "Finds how to do something in the documentation",
-            examples: ["how do I add a cron"],
-          },
-        ],
         on: invoke(z.object({ question: z.string() })),
       },
       async ({ event }) => {

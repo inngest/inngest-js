@@ -12,8 +12,8 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startFakes } from "./kit/channels.ts";
 import { createCtx, type Scenario } from "./kit/driver.ts";
+import { startFakes } from "./kit/fakes.ts";
 import {
   devstack,
   devstackBin,

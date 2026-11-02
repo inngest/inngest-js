@@ -31,13 +31,6 @@ const docs = agents.agent(
     owner: "docs-team",
     effects: "read",
     speed: "seconds",
-    skills: [
-      {
-        id: "docs-qa",
-        description: "Finds the page that answers a question",
-        examples: ["How do I set up a cron?"],
-      },
-    ],
     on: invoke(z.object({ question: z.string() })),
   },
   async () => {
@@ -75,7 +68,6 @@ describe("an agent's card", () => {
       effects: "read",
       speed: "seconds",
     });
-    expect(docs.card.skills?.[0]?.id).toBe("docs-qa");
     expect(docs.card.version).toMatch(/^[0-9a-f]{8}$/);
   });
 
@@ -127,19 +119,17 @@ describe("sharing and matching", () => {
     expect(mayUse(b, "a")).toBe(true);
   });
 
-  test("a query matches the description and skills, best first", () => {
+  test("a query matches the description, best first", () => {
     const cards = [
       card({
         app: "a",
         agentId: "one",
         does: "Writes code",
-        skills: undefined,
       }),
       card({
         app: "a",
         agentId: "two",
         does: "Answers questions",
-        skills: undefined,
       }),
     ];
 

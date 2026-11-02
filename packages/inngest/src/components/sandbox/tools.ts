@@ -165,24 +165,7 @@ export type SandboxToolEntry =
   | ((...args: never[]) => unknown)
   | InngestFunction.Any
   | InngestFunctionReference.Any
-  | McpServer
-  | AgentToolSource;
-
-/**
- * Something that is a tool by carrying one, such as an agent. It goes in
- * `tools` as it is.
- */
-export interface AgentToolSource<TInput = unknown, TOutput = unknown> {
-  /**
-   * The tool the model calls to use it. Its `id` is the sanitised ID of the
-   * agent.
-   */
-  readonly "~tool": AgentTool<TInput, TOutput>;
-}
-
-const isToolSource = (entry: unknown): entry is AgentToolSource => {
-  return typeof entry === "object" && entry !== null && "~tool" in entry;
-};
+  | McpServer;
 
 export type SandboxTools = Record<string, SandboxToolEntry>;
 
@@ -195,9 +178,7 @@ export type ToolInputType<TEntry> = TEntry extends SandboxTool<
   unknown
 >
   ? TInput
-  : TEntry extends AgentToolSource<infer TInput, unknown>
-    ? TInput
-    : unknown;
+  : unknown;
 
 /**
  * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
@@ -208,9 +189,7 @@ export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
   infer TOutput
 >
   ? TOutput
-  : TEntry extends AgentToolSource<unknown, infer TOutput>
-    ? TOutput
-    : unknown;
+  : unknown;
 
 export interface SandboxToolOptions {
   /**
@@ -585,10 +564,6 @@ const toTool = (entry: SandboxToolEntry): SandboxTool => {
 
   if (typeof entry === "function") {
     return { run: entry };
-  }
-
-  if (isToolSource(entry)) {
-    return entry["~tool"];
   }
 
   return entry instanceof InngestFunction ||

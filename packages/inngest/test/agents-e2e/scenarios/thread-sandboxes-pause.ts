@@ -11,7 +11,6 @@
 import { Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   kvKey,
@@ -19,6 +18,7 @@ import {
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 
 const agentId = "thread-sandboxes-pause-agent";
@@ -89,7 +89,7 @@ export const threadSandboxesPause = scenario({
     const alpha = getThread(client, ref, `alpha-${stamp}`, { kv: store });
     const beta = getThread(client, ref, `beta-${stamp}`, { kv: store });
     const calls = (method: string) => {
-      return ctx.fakes.posts({ channel: "sandbox", method });
+      return ctx.fakes.posts({ source: "sandbox", method });
     };
     const waitFor = async (method: string, count: number) => {
       await ctx.until(

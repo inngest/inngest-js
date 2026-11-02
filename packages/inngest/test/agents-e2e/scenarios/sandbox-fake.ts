@@ -41,13 +41,13 @@ export const sandboxFake = scenario({
     ctx.expect.run(run).toComplete();
     ctx.expect.run(run).toOutput({ status: "clean", text: "done" });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.create" })
+      .posts({ source: "sandbox", method: "sandbox.create" })
       .toHaveCount(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.exec" })
+      .posts({ source: "sandbox", method: "sandbox.exec" })
       .toHaveCount(2);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.destroy" })
+      .posts({ source: "sandbox", method: "sandbox.destroy" })
       .toHaveCount(1);
   },
 });

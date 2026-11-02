@@ -9,12 +9,12 @@ import { Inngest } from "inngest";
 import {
   agent,
   createAgents,
-  createKv,
   getThread,
   redisKvAdapter,
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 
 const agentId = "sandbox-setup-agent";
@@ -84,13 +84,13 @@ export const sandboxSetup = scenario({
 
     await thread.send("go");
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.exec" })
+      .posts({ source: "sandbox", method: "sandbox.exec" })
       .toHaveCount(2);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.create" })
+      .posts({ source: "sandbox", method: "sandbox.create" })
       .toHaveCount(1);
 
-    const calls = ctx.fakes.posts({ channel: "sandbox" }).map((call) => {
+    const calls = ctx.fakes.posts({ source: "sandbox" }).map((call) => {
       return `${call.method}:${JSON.stringify(call.body.command ?? call.body.text ?? "")}`;
     });
 

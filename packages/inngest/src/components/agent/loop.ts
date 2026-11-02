@@ -31,7 +31,6 @@ import {
 } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
 import { nextCount } from "./executionCounter.ts";
-import { invoke } from "./invoke.ts";
 import { classifyModelError, untrusted } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
 
@@ -1179,7 +1178,7 @@ const model = (fn: AgentModel): AgentModel => {
 /**
  * EXPERIMENTAL: The agent helpers: `agent.loop()` runs the model-and-tools
  * loop, `agent.model()` makes a model function, `agent.toolError()` returns an
- * error result from a tool, `agent.invoke()` starts another agent,
+ * error result from a tool,
  * `agent.classifyModelError()` marks model errors no retry can fix and
  * `agent.untrusted()` marks text from outside and `agent.anthropic()` is a
  * model for the Anthropic API.
@@ -1195,7 +1194,6 @@ export const agent = {
   loop,
   model,
   toolError,
-  invoke,
   classifyModelError,
   untrusted,
   anthropic,

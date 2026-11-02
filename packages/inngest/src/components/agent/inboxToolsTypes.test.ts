@@ -10,7 +10,7 @@ import { eventType } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
 import { agent } from "./loop.ts";
 
-const check = eventType("github/check_run", {
+const check = eventType("ci/check_run", {
   schema: z.object({ pr: z.number() }),
 });
 const agents = createAgents(new Inngest({ id: testClientId }));

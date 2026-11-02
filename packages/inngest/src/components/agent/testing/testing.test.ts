@@ -164,7 +164,7 @@ describe("startFakes", () => {
     });
 
     expect(
-      fakes.posts({ channel: "sandbox", method: "sandbox.create" }),
+      fakes.posts({ source: "sandbox", method: "sandbox.create" }),
     ).toHaveLength(1);
     expect(fakes.posts({ method: "sandbox.destroy" })).toHaveLength(1);
     expect(fakes.calls).toHaveLength(2);
@@ -243,7 +243,7 @@ describe("fakeSandbox", () => {
     await create(sandbox);
 
     expect(
-      fakes.posts({ channel: "sandbox", method: "sandbox.create" }),
+      fakes.posts({ source: "sandbox", method: "sandbox.create" }),
     ).toHaveLength(1);
   });
 

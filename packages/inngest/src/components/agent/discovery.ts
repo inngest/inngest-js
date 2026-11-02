@@ -46,29 +46,8 @@ export type AgentShare = "private" | "team";
 export type AgentEffects = "read" | "write" | "needs-approval";
 
 /**
- * One thing an agent is good at. Models pick agents by these.
- */
-export interface AgentSkill {
-  /**
-   * A short ID.
-   */
-  id: string;
-
-  /**
-   * What the agent does for this skill.
-   */
-  description: string;
-
-  /**
-   * Example requests.
-   */
-  examples: string[];
-}
-
-/**
  * What an agent publishes about itself. The SDK writes every field from the
- * agent's definition, except the authored ones (`skills`, `owner`, `effects`,
- * `speed`), which the config sets.
+ * agent's definition, except the authored ones (`owner`, `effects`, `speed`), which the config sets.
  *
  * TODO: `describe_agent` may add live stats (success rate, duration, scores)
  * derived from runs. They are not part of the card.
@@ -144,11 +123,6 @@ export interface AgentCard {
   mode: "call" | "conversation" | "both";
 
   /**
-   * What the agent is good at. Authored.
-   */
-  skills?: AgentSkill[];
-
-  /**
    * The team or person who owns the agent. Authored.
    */
   owner?: string;
@@ -178,11 +152,6 @@ export interface AgentCardConfig {
    * Who may find and use the agent. Default `"private"`.
    */
   share?: AgentShare;
-
-  /**
-   * What the agent is good at. This drives which agent a model picks most.
-   */
-  skills?: AgentSkill[];
 
   /**
    * The team or person who owns the agent.
@@ -280,11 +249,7 @@ export const cardOf = (
     }
   }
 
-  const own = new Set<string>([
-    "agent/message",
-    "agent/steer",
-    "agent/request",
-  ]);
+  const own = new Set<string>(["agent/message", "agent/steer"]);
   const all: { event?: string; cron?: string }[] = (
     (fn.opts.triggers ?? []) as { event?: unknown; cron?: string }[]
   ).map((trigger) => {
@@ -325,7 +290,6 @@ export const cardOf = (
     triggers,
     share: config.share ?? "private",
     mode: invokable ? "both" : "conversation",
-    ...(config.skills && { skills: config.skills }),
     ...(config.owner !== undefined && { owner: config.owner }),
     effects: config.effects ?? "write",
     ...(config.speed && { speed: config.speed }),
@@ -451,9 +415,6 @@ export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
       const text = [
         addressOf(card),
         card.does ?? "",
-        ...(card.skills ?? []).flatMap((skill) => {
-          return [skill.id, skill.description, ...skill.examples];
-        }),
         ...card.triggers.map((trigger) => {
           return trigger.event ?? trigger.cron ?? "";
         }),
@@ -516,7 +477,6 @@ const summary = (card: AgentCard) => {
     description: card.does,
     mode: card.mode,
     effects: card.effects,
-    skills: card.skills,
     share: card.share,
     typedInput: card.call.input !== undefined,
   };
@@ -547,7 +507,6 @@ const startCall = (
           return { agent: addressOf(card), thread, text };
         },
     options.id ? { id: options.id } : {},
-    false,
   );
 };
 

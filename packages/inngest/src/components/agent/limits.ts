@@ -1,12 +1,12 @@
 /**
  * @module
  * EXPERIMENTAL: limits on what an agent may start and spend. An agent
- * declares `limits` in its config; `agent.invoke()` enforces `depth`, `spawn`
- * and `mayCall` and the loop enforces `budget`. An agent it starts inherits
+ * declares `limits` in its config; calls to other agents enforce `depth` and
+ * `mayCall` and the loop enforces `budget`. An agent it starts inherits
  * the limits narrowed, so a sub-agent is never allowed more than its parent.
  *
- * Limits gate `agent.invoke()` only. A raw `step.invoke` or `sendEvent` to
- * another agent is not checked, and `budget` only stops a loop that is given
+ * Limits gate calls made through the SDK only. A raw `step.invoke` or
+ * `sendEvent` to another agent is not checked, and `budget` only stops a loop that is given
  * the body's `control` (see {@link AgentLimits.budget}).
  */
 import type { AgentPrice } from "./cost.ts";
@@ -54,17 +54,9 @@ export interface AgentLimits {
   depth?: number;
 
   /**
-   * The most `agent.invoke()` calls one run may make. A refused call does not
-   * count. A sub-agent gets this as its own cap at most.
-   */
-  spawn?: number;
-
-  /**
    * The agents this agent may start, as `"appId/functionId"` patterns where
    * `*` matches any text (`"research/*"`). Default: any. A sub-agent may
-   * start only agents that match its parent's list and its own. It limits
-   * `agent.invoke()` only: an agent in the `tools` of `agent.loop()` is
-   * allowed by being listed there.
+   * start only agents that match its parent's list and its own.
    */
   mayCall?: string[];
 
@@ -73,8 +65,7 @@ export interface AgentLimits {
    * its next model call once it is spent. This only applies to a loop that is
    * passed `...control` (or `budget` and `onTurn` from it): a body that
    * calls `agent.loop()` without them runs with no budget at all. A
-   * sub-agent gets what is left at most; the sub-agents' total is not capped,
-   * so pair it with `spawn`.
+   * sub-agent gets what is left at most; the sub-agents' total is not capped.
    */
   budget?: AgentBudget;
 
@@ -95,7 +86,6 @@ export interface EffectiveLimits {
    * Levels of sub-agents still allowed below. 0 means none.
    */
   depth?: number;
-  spawn?: number;
 
   /**
    * One list per agent in the chain that set `mayCall`. A target must match
@@ -106,11 +96,11 @@ export interface EffectiveLimits {
 }
 
 /**
- * Thrown by `agent.invoke()` when a limit refuses the call. The message says
+ * Thrown when a limit refuses a call to another agent. The message says
  * which limit and why, so a model reading it as a tool error can react.
  */
 export class AgentLimitError extends Error {
-  public readonly limit: "depth" | "spawn" | "mayCall" | "budget";
+  public readonly limit: "depth" | "mayCall" | "budget";
 
   constructor(
     /**
@@ -129,13 +119,12 @@ export class AgentLimitError extends Error {
 }
 
 /**
- * The running state of one execution's limits: what applies, what the thread
- * has spent so far and how many sub-agents the run has started.
+ * The running state of one execution's limits: what applies, and what the thread
+ * has spent so far.
  */
 export interface LimitState {
   limits: EffectiveLimits;
   used: AgentUsage;
-  spawned: number;
 }
 
 const budgetFields = ["tokens", "input", "output", "usd"] as const;
@@ -240,7 +229,6 @@ export const narrowLimits = (
 
   return {
     depth: lower(own?.depth, inherited?.depth) ?? 1,
-    spawn: lower(own?.spawn, inherited?.spawn),
     ...(mayCall.length > 0 && { mayCall }),
     budget: narrowBudget(own?.budget, inherited?.budget),
   };
@@ -283,7 +271,6 @@ export const narrowInherited = (
 
   return {
     depth: lower(a.depth, b.depth),
-    spawn: lower(a.spawn, b.spawn),
     ...(mayCall.length > 0 && { mayCall }),
     ...(budget && { budget }),
   };
@@ -363,7 +350,6 @@ export const readInheritedLimits = (
 
   return {
     depth: number(raw.depth),
-    spawn: number(raw.spawn),
     ...(mayCall.length > 0 && { mayCall }),
     ...(Object.keys(budget).length > 0 && { budget }),
   };
@@ -455,7 +441,7 @@ export const budgetReason = (
 };
 
 /**
- * Refuses an `agent.invoke()` the limits do not allow, by throwing an
+ * Refuses a call to another agent that the limits do not allow, by throwing an
  * `AgentLimitError`.
  */
 export const checkInvoke = (
@@ -467,13 +453,8 @@ export const checkInvoke = (
    * The agent to start, as `"appId/functionId"`.
    */
   target: string,
-  /**
-   * How the agent is started. An agent used as a tool is allowed by being in
-   * the caller's `tools`, so `mayCall` does not apply to it.
-   */
-  via: { asTool?: boolean } = {},
 ): void => {
-  const { depth, spawn, mayCall } = state.limits;
+  const { depth, mayCall } = state.limits;
 
   if (depth !== undefined && depth < 1) {
     throw new AgentLimitError(
@@ -482,14 +463,7 @@ export const checkInvoke = (
     );
   }
 
-  if (spawn !== undefined && state.spawned >= spawn) {
-    throw new AgentLimitError(
-      "spawn",
-      `Refused: ${target} was not started. This run already started ${spawn} agent${spawn === 1 ? "" : "s"}, the most it may (limits.spawn).`,
-    );
-  }
-
-  for (const list of via.asTool ? [] : (mayCall ?? [])) {
+  for (const list of mayCall ?? []) {
     const allowed = list.some((pattern) => {
       return matchesTarget(pattern, target);
     });
@@ -522,11 +496,10 @@ export const childLimits = (
    */
   state: LimitState,
 ): EffectiveLimits => {
-  const { depth, spawn, mayCall, budget } = state.limits;
+  const { depth, mayCall, budget } = state.limits;
 
   return {
     ...(depth !== undefined && { depth: depth - 1 }),
-    ...(spawn !== undefined && { spawn }),
     ...(mayCall && { mayCall }),
     ...(budget && { budget: remaining(budget, state.used) }),
   };
@@ -534,7 +507,7 @@ export const childLimits = (
 
 /**
  * The limit state of each running execution. The agent function registers it
- * when its body starts; `agent.invoke()` reads it.
+ * when its body starts; calls to other agents read it.
  */
 const states = new WeakMap<object, LimitState>();
 
@@ -557,7 +530,7 @@ export const registerLimits = (
    */
   used: AgentUsage,
 ): LimitState => {
-  const state = { limits, used, spawned: 0 };
+  const state = { limits, used };
 
   states.set(instance, state);
 

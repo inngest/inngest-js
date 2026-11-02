@@ -333,7 +333,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
   // In this process first, so `calls` is complete the moment the sandbox
   // answers; a fakes server in another process is posted to and awaited.
   const record = async (method: string, body: Record<string, unknown>) => {
-    calls.push({ channel: "sandbox", method, body: { method, ...body } });
+    calls.push({ source: "sandbox", method, body: { method, ...body } });
     options.fakes?.record(method, body);
 
     if (options.recordUrl) {

@@ -16,9 +16,9 @@ import {
 import { createAgents } from "./agents.ts";
 import { sandbox } from "./defs.ts";
 import { agentMessage } from "./events.ts";
+import { invokeAgent } from "./invoke.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentModelResponse, agent, type ModelMessage } from "./loop.ts";
-import { skills } from "./skills.ts";
 import { run, textOf } from "./test-helpers.ts";
 
 const say = (text: string): AgentModelResponse => {
@@ -30,7 +30,7 @@ const say = (text: string): AgentModelResponse => {
 };
 
 const message = (
-  kind: "user" | "steer" | "request",
+  kind: "user" | "steer",
   content?: string,
   thread = "t1",
   extra: Record<string, unknown> = {},
@@ -48,12 +48,6 @@ const message = (
         name: "agent/steer",
         ...carried,
         data: { ...routing, text: content, ...data },
-      };
-    case "request":
-      return {
-        name: "agent/request",
-        ...carried,
-        data: { ...routing, ...data },
       };
     default:
       return {
@@ -98,7 +92,6 @@ describe("agent function", () => {
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
       "agent/steer",
-      "agent/request",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -209,12 +202,12 @@ describe("agent function", () => {
       event: trigger("go"),
       saved: [
         message("user", undefined, "t1", {
-          event: { id: "evt9", name: "slack/message", data: { text: "hi" } },
+          event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
         }),
       ],
     });
 
-    expect(output).toEqual(["slack/message", "evt9", { text: "hi" }]);
+    expect(output).toEqual(["chat/message", "evt9", { text: "hi" }]);
   });
 
   test("an invoke of a plain agent with { agent, thread, text } is message 1, an agent/message", async () => {
@@ -358,101 +351,6 @@ describe("inbox arrival", () => {
 
     expect(output).toEqual([["agent/message", "agent/steer"], null]);
   });
-
-  describe("onArrival", () => {
-    const arrivalFn = (calls: string[]) => {
-      const kv = createKv({ adapter: memoryKvAdapter() });
-      const { arrival } = createAgentFunction(
-        makeClient(),
-        {
-          id: "bot",
-          kv,
-          onArrival: async ({ event: arrived, thread }) => {
-            calls.push(`${thread}:${(arrived.data as { text?: string }).text}`);
-          },
-        },
-        async () => {},
-      );
-
-      return { kv, arrival: arrival as NonNullable<typeof arrival> };
-    };
-
-    // The message arrived at 200. What counts is what the thread was doing then.
-    const arrive = { ...message("user", "hello"), id: "evt-2", ts: 200 };
-    const seed = async (
-      kv: ReturnType<typeof createKv>,
-      status: string,
-      transitions: { status: string; at: number }[],
-    ) => {
-      await kv
-        .with({ id: testClientId, env: null })
-        .scope("thread", "t1")
-        .set("__state", {
-          status,
-          turn: 0,
-          usage: { input: 0, output: 0 },
-          transitions,
-        });
-    };
-
-    test("is a function of its own, listed only when the config has the hook", () => {
-      const { arrival } = arrivalFn([]);
-
-      expect(arrival.id(testClientId)).toBe(`${testClientId}-bot-arrival`);
-      expect(
-        createAgentFunction(
-          makeClient(),
-          { id: "plain", kv: createKv({ adapter: memoryKvAdapter() }) },
-          async () => {},
-        ).arrival,
-      ).toBeUndefined();
-    });
-
-    test("runs for a message that reaches a thread busy with a turn", async () => {
-      const calls: string[] = [];
-      const { kv, arrival } = arrivalFn(calls);
-
-      await seed(kv, "running", [{ status: "running", at: 100 }]);
-      await run(arrival, { event: arrive });
-
-      expect(calls).toEqual(["t1:hello"]);
-    });
-
-    test("is judged by what the thread was doing when the message arrived, not when it is looked at", async () => {
-      const calls: string[] = [];
-      const { kv, arrival } = arrivalFn(calls);
-
-      // The message started the run (it arrived before the run did).
-      await seed(kv, "running", [{ status: "running", at: 300 }]);
-      await run(arrival, { event: arrive });
-
-      // It woke a waiting run, which is running again by now.
-      await seed(kv, "running", [
-        { status: "running", at: 100 },
-        { status: "waiting", at: 150 },
-        { status: "running", at: 300 },
-      ]);
-      await run(arrival, { event: arrive });
-
-      // The run had ended when it arrived, though the record is read later.
-      await seed(kv, "idle", [
-        { status: "running", at: 100 },
-        { status: "idle", at: 150 },
-      ]);
-      await run(arrival, { event: arrive });
-
-      expect(calls).toEqual([]);
-
-      // It arrived mid-turn, and the run has gone back to waiting since.
-      await seed(kv, "waiting", [
-        { status: "running", at: 100 },
-        { status: "waiting", at: 300 },
-      ]);
-      await run(arrival, { event: arrive });
-
-      expect(calls).toEqual(["t1:hello"]);
-    });
-  });
 });
 
 describe("inbox sources", () => {
@@ -595,7 +493,7 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "agent/steer", "agent/request", "ci/status"]);
+    ).toEqual(["agent/message", "agent/steer", "ci/status"]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event", async () => {
@@ -685,7 +583,7 @@ describe("inbox sources", () => {
         kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: names.map((name) => {
           return {
-            event: `slack/${name}`,
+            event: `chat/${name}`,
             if: "async.data.thread == event.data.thread",
           };
         }),
@@ -707,11 +605,11 @@ describe("inbox sources", () => {
     const { output, ops } = await run(fn, {
       event: trigger("go"),
       incoming: names.map((name) => {
-        return { name: `slack/${name}`, data: { thread: "t1" }, stream: 4 };
+        return { name: `chat/${name}`, data: { thread: "t1" }, stream: 4 };
       }),
     });
 
-    expect(output).toEqual(names.map((name) => `slack/${name}`));
+    expect(output).toEqual(names.map((name) => `chat/${name}`));
 
     const sources = ops.flatMap((op) => {
       return (
@@ -723,12 +621,12 @@ describe("inbox sources", () => {
     // The if is handed to the executor as written: `event` is the trigger.
     expect(
       sources.filter((source) => {
-        return source.event.startsWith("slack/");
+        return source.event.startsWith("chat/");
       }),
     ).toEqual(
       names.map((name) => {
         return {
-          event: `slack/${name}`,
+          event: `chat/${name}`,
           if: "(async.data.thread == event.data.thread)",
         };
       }),
@@ -872,7 +770,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/message", "agent/steer", "agent/request"]);
+    ).toEqual(["agent/message", "agent/steer"]);
   });
 });
 
@@ -909,36 +807,6 @@ describe("createAgents", () => {
     createAgents(client).agent({ id: "a", kv }, async () => {});
 
     expect(createAgents(client).functions()).toEqual([]);
-  });
-
-  test("every instance with an agent that bakes skills lists the client's one bake function", () => {
-    const client = makeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const baking = {
-      id: "b",
-      kv,
-      sandboxes: {
-        work: sandbox({
-          id: "w",
-          skills: [skills.git("a/b")],
-        }),
-      },
-    };
-    const first = createAgents(client);
-    const second = createAgents(client);
-
-    first.agent(baking, async () => {});
-    second.agent({ ...baking, id: "c" }, async () => {});
-    createAgents(client).agent({ id: "plain", kv }, async () => {});
-
-    const bakeOf = (agents: ReturnType<typeof createAgents>) => {
-      return agents.functions().filter((fn) => {
-        return fn.id(client.id).endsWith("agent-skills-bake");
-      });
-    };
-
-    expect(bakeOf(first)).toHaveLength(1);
-    expect(bakeOf(second)).toEqual(bakeOf(first));
   });
 });
 
@@ -1298,274 +1166,6 @@ describe("trigger", () => {
   });
 });
 
-describe("request and reply", () => {
-  test("a request message replies to the thread that asked, through its signal", async () => {
-    const client = makeClient();
-    const signals: unknown[] = [];
-    client.sendSignal = (async (signal: unknown) => {
-      signals.push(signal);
-
-      return { runId: "r" };
-    }) as typeof client.sendSignal;
-    const { fn } = createAgentFunction(
-      client,
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        for await (const m of inbox) {
-          if (m.name === "agent/request") {
-            await m.reply({ answer: (m.data.payload as { n: number }).n * 2 });
-
-            break;
-          }
-        }
-      },
-    );
-
-    await run(fn, {
-      event: message("request", undefined, "t1", {
-        payload: { n: 21 },
-        replyTo: "sig-1",
-        from: "asker",
-      }),
-    });
-
-    expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
-  });
-
-  describe("with requests schemas", () => {
-    const requests = {
-      request: z.object({ n: z.number() }),
-      reply: z.object({ answer: z.number() }),
-    };
-    const answering = (signals: unknown[], client = makeClient()) => {
-      client.sendSignal = (async (signal: unknown) => {
-        signals.push(signal);
-
-        return { runId: "r" };
-      }) as typeof client.sendSignal;
-
-      return createAgentFunction(
-        client,
-        { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), requests },
-        async ({ inbox }) => {
-          const seen: unknown[] = [];
-
-          for (let i = 0; i < 2; i++) {
-            const m = await inbox.next();
-            if (m?.name === "agent/request") {
-              seen.push(m.data.payload);
-              await m.reply({
-                answer: (m.data.payload as { n: number }).n * 2,
-              });
-            } else if (m) {
-              seen.push(textOf(m));
-            }
-          }
-
-          return seen;
-        },
-      );
-    };
-
-    test("a request that fits the schema is delivered and answered", async () => {
-      const signals: unknown[] = [];
-
-      const { output } = await run(answering(signals).fn, {
-        event: message("request", undefined, "t1", {
-          payload: { n: 21 },
-          replyTo: "sig-1",
-        }),
-        saved: [message("user", "next")],
-      });
-
-      expect(output).toEqual([{ n: 21 }, "next"]);
-      expect(signals).toEqual([{ signal: "sig-1", data: { answer: 42 } }]);
-    });
-
-    test("a request that breaks the schema is dropped, whether it started the run or came later", async () => {
-      const signals: unknown[] = [];
-      const client = makeClient();
-      const warn = vi.spyOn(
-        (client as unknown as Record<symbol, { warn: (m: string) => void }>)[
-          Symbol.for("inngest.internalLogger")
-        ] as { warn: (m: string) => void },
-        "warn",
-      );
-
-      const { output } = await run(answering(signals, client).fn, {
-        event: message("request", undefined, "t1", {
-          payload: { n: "x" },
-          replyTo: "sig-1",
-        }),
-        saved: [
-          message("request", undefined, "t1", {
-            payload: {},
-            replyTo: "sig-2",
-          }),
-          message("request", undefined, "t1", { replyTo: "sig-4" }),
-          message("user", "ok"),
-          message("request", undefined, "t1", {
-            payload: { n: 5 },
-            replyTo: "sig-3",
-          }),
-        ],
-      });
-
-      expect(output).toEqual(["ok", { n: 5 }]);
-      expect(signals).toEqual([{ signal: "sig-3", data: { answer: 10 } }]);
-
-      // One warning per dropped request: the starting one, one with the wrong
-      // shape and one with no payload at all.
-      const dropped = warn.mock.calls.filter(([text]) => {
-        return String(text).includes("Dropped agent/request");
-      });
-
-      expect(dropped).toHaveLength(3);
-      expect(String(dropped[0]?.[0])).toContain("n:");
-      warn.mockRestore();
-    });
-
-    test("a request without a payload is delivered when the schema allows it", async () => {
-      const signals: unknown[] = [];
-      const client = makeClient();
-      client.sendSignal = (async (signal: unknown) => {
-        signals.push(signal);
-
-        return { runId: "r" };
-      }) as typeof client.sendSignal;
-
-      const { output } = await run(
-        createAgentFunction(
-          client,
-          {
-            id: "bot",
-            kv: createKv({ adapter: memoryKvAdapter() }),
-            requests: {
-              request: z.object({ n: z.number() }).optional(),
-              reply: z.object({ answer: z.string() }),
-            },
-          },
-          async ({ inbox }) => {
-            const m = await inbox.next();
-            if (m?.name !== "agent/request") {
-              return "not a request";
-            }
-
-            await m.reply({ answer: "no payload" });
-
-            return m.data.payload ?? "undefined payload";
-          },
-        ).fn,
-        { event: message("request", undefined, "t1", { replyTo: "sig-1" }) },
-      );
-
-      expect(output).toBe("undefined payload");
-      expect(signals).toEqual([
-        { signal: "sig-1", data: { answer: "no payload" } },
-      ]);
-    });
-
-    test("an async schema works", async () => {
-      const asyncRequests = {
-        request: {
-          "~standard": {
-            version: 1,
-            vendor: "test",
-            validate: async (value: unknown) => {
-              return { value: value as { n: number } };
-            },
-          },
-        } as StandardSchemaV1<{ n: number }, { n: number }>,
-        reply: {
-          "~standard": {
-            version: 1,
-            vendor: "test",
-            validate: async (value: unknown) => {
-              return { value: value as { answer: number } };
-            },
-          },
-        } as StandardSchemaV1<{ answer: number }, { answer: number }>,
-      };
-      const signals: unknown[] = [];
-      const client = makeClient();
-      client.sendSignal = (async (signal: unknown) => {
-        signals.push(signal);
-
-        return { runId: "r" };
-      }) as typeof client.sendSignal;
-
-      await run(
-        createAgentFunction(
-          client,
-          {
-            id: "bot",
-            kv: createKv({ adapter: memoryKvAdapter() }),
-            requests: asyncRequests,
-          },
-          async ({ inbox }) => {
-            const m = await inbox.next();
-            if (m?.name === "agent/request") {
-              await m.reply({ answer: (m.data.payload as { n: number }).n });
-            }
-          },
-        ).fn,
-        {
-          event: message("request", undefined, "t1", {
-            payload: { n: 3 },
-            replyTo: "sig-1",
-          }),
-        },
-      );
-
-      expect(signals).toEqual([{ signal: "sig-1", data: { answer: 3 } }]);
-    });
-  });
-
-  test("a reply that does not fit the requests schema throws and sends nothing", async () => {
-    const client = makeClient();
-    const signals: unknown[] = [];
-    client.sendSignal = (async (signal: unknown) => {
-      signals.push(signal);
-
-      return { runId: "r" };
-    }) as typeof client.sendSignal;
-    const { fn } = createAgentFunction(
-      client,
-      {
-        id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
-        requests: {
-          request: staticSchema<{ n: number }>(),
-          reply: z.object({ answer: z.number() }),
-        },
-      },
-      async ({ inbox }) => {
-        const m = await inbox.next();
-
-        try {
-          if (m?.name === "agent/request") {
-            await m.reply({ answer: "forty-two" } as never);
-          }
-        } catch (error) {
-          return (error as Error).message;
-        }
-
-        return "replied";
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: message("request", undefined, "t1", {
-        payload: { n: 21 },
-        replyTo: "sig-1",
-      }),
-    });
-
-    expect(output).toContain("message.reply() data");
-    expect(signals).toEqual([]);
-  });
-});
-
 describe("agent limits", () => {
   test("a dollar budget without a price throws when the agent is defined", () => {
     const define = (limits: AgentFunctionConfig["limits"]) => {
@@ -1732,7 +1332,7 @@ describe("agent limits", () => {
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async () => {
         try {
-          await agent.invoke("team/leaf");
+          await invokeAgent("team/leaf", {}, {});
         } catch (error) {
           return (error as Error).message;
         }
@@ -1760,7 +1360,7 @@ describe("inherited limits persist on the thread", () => {
       { id: "bot", kv: store },
       async () => {
         try {
-          await agent.invoke("team/leaf");
+          await invokeAgent("team/leaf", {}, {});
         } catch (error) {
           return (error as Error).message;
         }

@@ -20,7 +20,7 @@ import {
   createAgentFunction,
   type InboxSource,
 } from "./agentFunction.ts";
-import { definitionOf, type SandboxToolNames } from "./defs.ts";
+import type { SandboxToolNames } from "./defs.ts";
 import {
   agentsAnnounceEvent,
   announcement,
@@ -28,13 +28,6 @@ import {
 } from "./discovery.ts";
 import type { InboxToolsConfig } from "./inboxTools.ts";
 import { type KvStore, setAppKvStore } from "./kv.ts";
-import {
-  allowBake,
-  allowDynamicBake,
-  type BakeAllowance,
-  bakeAllowanceOf,
-  createSkillsBakeFunction,
-} from "./skills.ts";
 import type {
   ThreadCronEvent,
   ThreadCronTrigger,
@@ -61,8 +54,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   agent<
     TType extends EventTypeWithAnySchema<string>,
     TOutput = unknown,
-    TRequest = unknown,
-    TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
@@ -72,8 +63,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TType,
       {
         event: ThreadTriggerEventOf<TType>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
@@ -83,8 +72,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     body: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TType>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
@@ -92,17 +79,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<
-    InvokeInput<ThreadTriggerEventOf<TType>>,
-    TOutput,
-    TRequest,
-    TReply
-  >;
+  ): AgentFunction<TOutput>;
   agent<
     const TTypes extends readonly EventTypeWithAnySchema<string>[],
     TOutput = unknown,
-    TRequest = unknown,
-    TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
@@ -112,8 +92,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       TTypes,
       {
         event: ThreadTriggerListEvent<TTypes>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
@@ -123,8 +101,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     body: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TTypes>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
@@ -132,17 +108,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<
-    InvokeInput<ThreadTriggerListEvent<TTypes>>,
-    TOutput,
-    TRequest,
-    TReply
-  >;
+  ): AgentFunction<TOutput>;
   agent<
     const TOne extends ThreadTriggerEventSource,
     TOutput = unknown,
-    TRequest = unknown,
-    TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
@@ -152,8 +121,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
       {
         event: ThreadTriggerEventOf<TOne>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
@@ -163,8 +130,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     body: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TOne>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
@@ -172,16 +137,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<
-    InvokeInput<ThreadTriggerEventOf<TOne>>,
-    TOutput,
-    TRequest,
-    TReply
-  >;
+  ): AgentFunction<TOutput>;
   agent<
     TOutput = unknown,
-    TRequest = unknown,
-    TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
@@ -191,8 +149,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       ThreadCronTrigger,
       {
         event: ThreadCronEvent;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
@@ -202,8 +158,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     body: (
       context: AgentBodyContext<{
         event: ThreadCronEvent;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
@@ -211,12 +165,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
+  ): AgentFunction<TOutput>;
   agent<
     const TMany extends readonly unknown[],
     TOutput = unknown,
-    TRequest = unknown,
-    TReply = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
@@ -226,8 +178,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
       ThreadTriggerList<TMany>,
       {
         event: ThreadTriggerListEvent<TMany>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
@@ -237,8 +187,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     body: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TMany>;
-        request: TRequest;
-        reply: TReply;
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
@@ -246,22 +194,11 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<
-    InvokeInput<ThreadTriggerListEvent<TMany>>,
-    TOutput,
-    TRequest,
-    TReply
-  >;
+  ): AgentFunction<TOutput>;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
-   * cleanup. Call it after the agents are defined. The function that bakes
-   * skills snapshots is one per client, however many `createAgents()` calls it
-   * has: an instance with an agent that may bake lists it, so serving
-   * any one of them is enough. Spreading the lists of several such instances
-   * together repeats it (drop repeats by `id`). One client
-   * instance per app ID: two clients with the same ID each have a bake
-   * function with the same function ID.
+   * cleanup. Call it after the agents are defined.
    *
    * ```ts
    * export const { GET, POST, PUT } = serve({
@@ -281,58 +218,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
    */
   announce(): Promise<void>;
 }
-
-/**
- * What `agent.invoke(agent, input)` takes: the data of the agent's
- * `invoke()` triggers, or any record for an agent without one.
- */
-export type InvokeInput<TEvent> = [
-  Extract<TEvent, { name: "inngest/function.invoked" }>,
-] extends [never]
-  ? Record<string, unknown>
-  : DataOf<Extract<TEvent, { name: "inngest/function.invoked" }>>;
-
-type DataOf<T> = T extends { data: infer TData } ? TData : never;
-
-const mayBakeSkills = (
-  sandboxes: AgentFunctionConfig["sandboxes"],
-): boolean => {
-  if (!sandboxes) {
-    return false;
-  }
-
-  if (typeof sandboxes === "function") {
-    return true;
-  }
-
-  return Object.values(sandboxes).some((binding) => {
-    return (definitionOf(binding).skills ?? []).some((source) => {
-      return source.freshness === "bake";
-    });
-  });
-};
-
-const allowBakes = (
-  allowance: BakeAllowance,
-  agent: string,
-  sandboxes: AgentFunctionConfig["sandboxes"],
-): void => {
-  if (typeof sandboxes === "function") {
-    allowDynamicBake(allowance, agent);
-
-    return;
-  }
-
-  for (const binding of Object.values(sandboxes ?? {})) {
-    allowBake(allowance, agent, definitionOf(binding));
-  }
-};
-
-/**
- * The bake function of each client: one, however many `createAgents()` calls
- * the client has.
- */
-const bakeFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
  * The heartbeat function of each client: one, however many `createAgents()`
@@ -377,8 +262,6 @@ export const createAgents = <TClient extends Inngest.Any>(
   }
 
   const made: AgentFunction[] = [];
-  const allowance = bakeAllowanceOf(client);
-  let bakes = false;
 
   return {
     // One implementation backs every overload of `Agents["agent"]`. The
@@ -413,38 +296,17 @@ export const createAgents = <TClient extends Inngest.Any>(
         );
       }
 
-      // Baked skills are built by a function of its own, served once however
-      // many agents there are. A sandboxes config that is a function can't be
-      // read ahead, so it counts as possibly having skills.
-      if (mayBakeSkills(config.sandboxes)) {
-        bakes = true;
-
-        if (!bakeFunctions.has(client)) {
-          bakeFunctions.set(
-            client,
-            createSkillsBakeFunction(client, allowance),
-          );
-        }
-      }
-
-      allowBakes(allowance, created.ref, config.sandboxes);
-
       return created;
     }) as unknown as Agents<TClient>["agent"],
     functions: () => {
       const functions = made.flatMap((created) => {
-        return [
-          created.fn,
-          created.cleanup,
-          created.finished,
-          ...(created.arrival ? [created.arrival] : []),
-        ];
+        return [created.fn, created.cleanup, created.finished];
       });
-      const shared = bakeFunctions.get(client);
       const heartbeat = announceFunctions.get(client);
-      const all = bakes && shared ? [...functions, shared] : functions;
 
-      return heartbeat && made.length > 0 ? [...all, heartbeat] : all;
+      return heartbeat && made.length > 0
+        ? [...functions, heartbeat]
+        : functions;
     },
     async announce() {
       await client.send(announcement(client));
@@ -459,7 +321,6 @@ export type {
   ReadOptions,
 } from "../inbox/Inbox.ts";
 export type {
-  AgentArrivalContext,
   AgentBody,
   AgentBodyContext,
   AgentBodyFields,
@@ -475,7 +336,6 @@ export type {
   ThreadInbox,
   ThreadInboxMessage,
 } from "./agentFunction.ts";
-export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
 export type {
   AgentCard,
   AgentShare,
@@ -491,14 +351,12 @@ export {
 } from "./discovery.ts";
 export type {
   AgentMessageData,
-  AgentRequestData,
   AgentResendData,
   AgentRouting,
   AgentSteerData,
 } from "./events.ts";
 export {
   agentMessage,
-  agentRequest,
   agentSteer,
 } from "./events.ts";
 export type {
@@ -526,7 +384,6 @@ export type {
   KvWrite,
 } from "./kv.ts";
 export {
-  createKv,
   kv,
   kvKey,
   memoryKvAdapter,
@@ -540,20 +397,15 @@ export type {
   RunOutcome,
 } from "./recovery.ts";
 export type { AgentScoreName, AgentScores } from "./scores.ts";
-export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
-export { skills, skillsBake } from "./skills.ts";
 export type {
-  RequestOptions,
   ThreadHandle,
   ThreadOptions,
-  ThreadRequests,
   ThreadState,
   ThreadStatus,
   TriggerEvent,
 } from "./thread.ts";
 export {
   agentMessageEvent,
-  agentRequestEvent,
   agentSteerEvent,
   getThread,
 } from "./thread.ts";

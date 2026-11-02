@@ -10,12 +10,12 @@ import { Inngest } from "inngest";
 import {
   agent,
   createAgents,
-  createKv,
   getThread,
   redisKvAdapter,
   sandbox,
 } from "inngest/experimental/agents";
 import { scenario, script } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 import { textOf } from "../kit/text.ts";
 
 const agentId = "sandbox-start-agent";
@@ -84,18 +84,18 @@ export const sandboxStart = scenario({
 
     await thread.send("go");
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.exec" })
+      .posts({ source: "sandbox", method: "sandbox.exec" })
       .toHaveCount(1);
     // The eager sandbox nothing used is destroyed; the one the tool used is
     // paused for the thread's next run.
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.destroy" })
+      .posts({ source: "sandbox", method: "sandbox.destroy" })
       .toHaveCount(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.pause" })
+      .posts({ source: "sandbox", method: "sandbox.pause" })
       .toHaveCount(1);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "sandbox.create" })
+      .posts({ source: "sandbox", method: "sandbox.create" })
       .toHaveCount(2);
   },
 });

@@ -6,13 +6,13 @@
 import { Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   kvKey,
   redisKvAdapter,
 } from "inngest/experimental/agents";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 
 const agentId = "cron-agent";
 const ref = `agents-e2e/${agentId}`;

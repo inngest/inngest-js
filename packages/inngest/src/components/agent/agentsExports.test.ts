@@ -31,8 +31,6 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
 
   type Bag = AgentTypes & {
     event: TriggerEvent;
-    request: { ask: string };
-    reply: { answer: string };
     sandboxes: SandboxToolNames;
     client: typeof client;
     middleware: Middleware.Class[] | undefined;
@@ -45,7 +43,7 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
   };
 
   expectTypeOf(helper).toBeFunction();
-  expectTypeOf<AgentTypesOf<Bag>["request"]>().toEqualTypeOf<{ ask: string }>();
+  expectTypeOf<AgentTypesOf<Bag>["event"]>().toEqualTypeOf<TriggerEvent>();
 });
 
 test("the inbox of an agent is a core Inbox, and InboxMessage names its messages", () => {

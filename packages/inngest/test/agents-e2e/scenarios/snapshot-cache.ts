@@ -66,7 +66,7 @@ export const snapshotCacheScenario = scenario({
     ctx.expect.run(first).toComplete();
     ctx.expect.run(first).toOutput({ built: true, name: `skills/${key}/sha1` });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(1);
 
     const second = await bake("sha1");
@@ -76,7 +76,7 @@ export const snapshotCacheScenario = scenario({
       .run(second)
       .toOutput({ built: false, name: `skills/${key}/sha1` });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(1);
 
     const third = await bake("sha2");
@@ -84,10 +84,10 @@ export const snapshotCacheScenario = scenario({
     ctx.expect.run(third).toComplete();
     ctx.expect.run(third).toOutput({ built: true, name: `skills/${key}/sha2` });
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.create" })
+      .posts({ source: "sandbox", method: "snapshot.create" })
       .toHaveCount(2);
     await ctx.expect
-      .posts({ channel: "sandbox", method: "snapshot.delete" })
+      .posts({ source: "sandbox", method: "snapshot.delete" })
       .toInclude({ name: `skills/${key}/sha1` });
   },
 });

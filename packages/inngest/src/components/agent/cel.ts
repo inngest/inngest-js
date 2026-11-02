@@ -8,7 +8,7 @@
  * and rejects anything else when the agent is defined.
  *
  * Supported: string and number literals, `true` and `false`, paths from
- * `event` (`event.data.channel`), `has(path)`, `+`
+ * `event` (`event.data.room`), `has(path)`, `+`
  * (string concatenation or addition), `==`, `!=`, `&&`, `||`, `!`,
  * `condition ? a : b`, parentheses, and `string(value)` to join a number into
  * a key. A path that is missing is an error, as in CEL, so guard optional

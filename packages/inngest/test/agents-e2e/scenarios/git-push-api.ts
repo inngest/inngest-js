@@ -290,7 +290,7 @@ export const gitPushApi = scenario({
       ],
     });
 
-    const calls = JSON.stringify(ctx.fakes.posts({ channel: "sandbox" }));
+    const calls = JSON.stringify(ctx.fakes.posts({ source: "sandbox" }));
     const reads = (pattern: RegExp) => {
       return run.steps.filter((step) => {
         return pattern.test(step);

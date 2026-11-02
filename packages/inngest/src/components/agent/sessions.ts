@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: the sessions of the running function, read the same way by KV
- * scopes and `agent.invoke()`.
+ * scopes and agent calls.
  */
 import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import type { Context } from "../../types.ts";

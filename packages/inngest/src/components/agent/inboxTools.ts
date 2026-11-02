@@ -305,7 +305,7 @@ const render = (message: InboxToolMessage) => {
  * @example
  * ```ts
  * const tools = createInboxTools(inbox, {
- *   listen: [{ event: "github/check_run", thread: "event.data.thread" }],
+ *   listen: [{ event: "ci/check_run", thread: "event.data.thread" }],
  *   maxWait: "20m",
  * });
  * ```

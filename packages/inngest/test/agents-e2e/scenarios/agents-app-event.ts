@@ -8,7 +8,6 @@
 import { eventType, Inngest } from "inngest";
 import {
   createAgents,
-  createKv,
   getThread,
   kv,
   kvKey,
@@ -16,6 +15,7 @@ import {
 } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario } from "../kit/driver.ts";
+import { createKv } from "../kit/kv.ts";
 
 const agentId = "app-event-agent";
 const ref = `agents-e2e/${agentId}`;

@@ -19,7 +19,7 @@
  *   fetch: fakeSandbox({ fakes, commands: { "npm test": { stdout: "ok" }, "": {} } }).fetch,
  * });
  * // agent.loop({ model: script([{ call: { name: "run", input: {} } }, { say: "done" }]), ... })
- * // expect(fakes.posts({ channel: "sandbox", method: "sandbox.exec" })).toHaveLength(1);
+ * // expect(fakes.posts({ source: "sandbox", method: "sandbox.exec" })).toHaveLength(1);
  * ```
  */
 export type {

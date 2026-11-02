@@ -49,12 +49,11 @@ import {
 } from "../inbox/Inbox.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
 import {
   addEventIs,
   type EventTypeWithAnySchema,
 } from "../triggers/triggers.ts";
-import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { toAsync } from "./cel.ts";
 import type { AgentPrice } from "./cost.ts";
 import {
@@ -72,7 +71,6 @@ import {
 import { type AgentCard, type AgentCardConfig, cardOf } from "./discovery.ts";
 import {
   type AgentMessageData,
-  type AgentRequestData,
   type AgentResendData,
   type AgentSteerData,
   agentMessage,
@@ -83,7 +81,7 @@ import {
   type InboxToolsConfig,
   type InboxToolsOf,
 } from "./inboxTools.ts";
-import { agentInvokeCancelOn, agentInvokeDepth } from "./invoke.ts";
+import { invokeDepthOf } from "./invoke.ts";
 import { type Kv, type KvSource, kvFrom } from "./kv.ts";
 import {
   type AgentLimits,
@@ -101,16 +99,13 @@ import {
   turnInFlight,
 } from "./recovery.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
-import type { SkillsRuntime } from "./skills.ts";
 import {
   agentMessageEvent,
-  agentRequestEvent,
   agentSteerEvent,
   getThread,
   type Inflight,
   type ThreadHandle,
   type ThreadRecord,
-  type ThreadRequests,
   type TriggerEvent,
   threadSessions,
 } from "./thread.ts";
@@ -184,9 +179,7 @@ export interface AgentFunctionOptions<
 
   /**
    * Events that cancel a live run, as for any function. The run's cleanup
-   * (sandboxes, run-scoped KV) happens as for `handle.stop()`. An agent that
-   * only `agent.invoke()` starts can end with the run that invoked it: add
-   * `agentInvokeCancelOn`.
+   * (sandboxes, run-scoped KV) happens as for `handle.stop()`.
    */
   cancelOn?: InngestFunction.Options["cancelOn"];
 
@@ -316,8 +309,6 @@ const functionOptions = (
  * - `output`: what the body returns. Only `AgentBody` reads it; `agents.agent`
  *   infers the output from the body's return type, so a config or context
  *   bag does not need it.
- * - `request` and `reply`: what other threads ask the agent and what it
- *   answers.
  * - `sandboxes`: for each sandbox name, the names of the tools it brings.
  * - `client`: the Inngest client, whose middleware types the body's context.
  * - `middleware`: the function-level middleware, which adds to the context.
@@ -335,16 +326,6 @@ export interface AgentTypes {
    * What the body returns.
    */
   output?: unknown;
-
-  /**
-   * What other threads ask the agent.
-   */
-  request?: unknown;
-
-  /**
-   * What the agent answers to a request.
-   */
-  reply?: unknown;
 
   /**
    * For each sandbox name, the names of the tools it brings.
@@ -387,16 +368,6 @@ export interface AgentTypeDefaults {
   output: unknown;
 
   /**
-   * Unknown.
-   */
-  request: unknown;
-
-  /**
-   * Unknown.
-   */
-  reply: unknown;
-
-  /**
    * Any sandbox names.
    */
   sandboxes: SandboxToolNames;
@@ -429,10 +400,6 @@ export interface AgentTypeDefaults {
 export type AgentTypesOf<TTypes extends AgentTypes> = {
   event: TTypes extends { event: infer V } ? V : AgentTypeDefaults["event"];
   output: TTypes extends { output: infer V } ? V : AgentTypeDefaults["output"];
-  request: TTypes extends { request: infer V }
-    ? V
-    : AgentTypeDefaults["request"];
-  reply: TTypes extends { reply: infer V } ? V : AgentTypeDefaults["reply"];
   sandboxes: TTypes extends { sandboxes: infer V extends SandboxToolNames }
     ? V
     : AgentTypeDefaults["sandboxes"];
@@ -480,11 +447,6 @@ export interface AgentFunctionConfig<
   share?: AgentCardConfig["share"];
 
   /**
-   * What the agent is good at, for the card. Models choose agents by these.
-   */
-  skills?: AgentCardConfig["skills"];
-
-  /**
    * The team or person who owns the agent, for the card.
    */
   owner?: AgentCardConfig["owner"];
@@ -507,34 +469,6 @@ export interface AgentFunctionConfig<
    * `createAgents(client, { store })`, else Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   kv?: KvSource;
-
-  /**
-   * The types of the requests other threads send this agent with
-   * `handle.request()`: schemas for what they ask and what you reply. They
-   * type `payload` of a `"request"` message, `message.reply()`, and
-   * `request()` on the handle from `agent.thread()`, which also checks its
-   * payload against `request`. `reply()` checks its data against `reply`.
-   */
-  requests?: ThreadRequests<
-    AgentTypesOf<TTypes>["request"],
-    AgentTypesOf<TTypes>["reply"]
-  >;
-
-  /**
-   * Runs once for every message that reaches this thread while a run of it is
-   * busy (a turn is in flight), as soon as the message is saved, so the agent
-   * can acknowledge it on its channel (a reaction, a line saying it will be
-   * folded in). It runs in a function of its own, `<id>-arrival`, served with
-   * the agent by `agents.functions()`, so it does not wait for the turn and
-   * does not touch the run. It does not run for the message that started the
-   * run, or for a thread that is waiting for its next message (the run reads
-   * that message at once). What counts is what the thread was doing when the
-   * message arrived. The edges are not exact: a message in the instant before a
-   * run records its first turn is not acknowledged, and one that arrives after
-   * the body returned but before the run is cleaned up may be. A `step` is
-   * given: use it for the posts.
-   */
-  onArrival?: (context: AgentArrivalContext) => Promise<void> | void;
 
   /**
    * Event sources that reach a live run of the thread they map to and never
@@ -563,7 +497,7 @@ export interface AgentFunctionConfig<
    * call. `"steer"` (default): only `agent/steer` events; the rest wait
    * for their own turn. `"all"`: every event that would start a turn too (an
    * `agent/message`, a trigger event, an inbox source's event), as steering
-   * messages; requests keep their meaning. A folded message is consumed: `next()` does
+   * messages. A folded message is consumed: `next()` does
    * not return it again.
    */
   foldMessages?: "steer" | "all";
@@ -585,10 +519,8 @@ export interface AgentFunctionConfig<
 
   /**
    * What this agent may start and spend: `depth` (default 1, so it may start
-   * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
-   * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
-   * do not allow, but only `agent.invoke()`: a raw `step.invoke` or
-   * `sendEvent` to another agent bypasses them. `budget` is not automatic:
+   * sub-agents and they may not), `mayCall` and `budget`. Sub-agents
+   * inherit the limits narrowed. `budget` is not automatic:
    * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
    */
   limits?: AgentLimits;
@@ -650,38 +582,6 @@ export type InboxSource = {
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
 
 /**
- * What `onArrival` is given.
- */
-export interface AgentArrivalContext {
-  /**
-   * The thread it reached.
-   */
-  thread: string;
-
-  /**
-   * The agent's address.
-   */
-  ref: string;
-
-  /**
-   * The event that arrived: a thread message (`agent/message`,
-   * `agent/steer`, `agent/request`) or an event of the
-   * agent's triggers or inbox sources.
-   */
-  event: { id?: string; name: string; data: unknown };
-
-  /**
-   * The function's step tools, so each post is a durable step.
-   */
-  step: typeof step;
-
-  /**
-   * The function's logger.
-   */
-  logger: Logger;
-}
-
-/**
  * The fields the agent adds to the function context in its body. See
  * `AgentBodyContext`.
  */
@@ -707,22 +607,17 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   trigger: AgentTypesOf<TTypes>["event"] | undefined;
 
   /**
-   * How many agents deep this run is when `agent.invoke()` started it: 1 for
+   * How many agents deep this run is when another agent started it: 1 for
    * an agent a function that is not an agent invoked, 2 for the next, and so
    * on. 0 when something else started the run (an event, a cron tick, a thread
    * message, including a later run of an invoked agent's thread).
-   * `agentInvokeDepth()` reads the same number from a plain function's event;
-   * in an agent body, where `trigger` has the SDK's own data removed, use this.
    */
   depth: number;
 
   /**
    * The handle of the thread this run belongs to.
    */
-  thread: ThreadHandle<
-    AgentTypesOf<TTypes>["request"],
-    AgentTypesOf<TTypes>["reply"]
-  >;
+  thread: ThreadHandle;
 
   /**
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
@@ -757,8 +652,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    */
   inbox: ThreadInbox<
     AgentTypesOf<TTypes>["event"],
-    AgentTypesOf<TTypes>["request"],
-    AgentTypesOf<TTypes>["reply"],
     AgentTypesOf<TTypes>["sources"]
   >;
 
@@ -863,48 +756,26 @@ type TriggerMessage<TEvent> = TEvent extends {
  * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
  *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
- * - `agent/request` is a question from another thread's `handle.request()`,
- *   answered with `reply()`.
  *
  * A message from an inbox source is its event too, under the event's own
  * `name`; it is not in the type of `on`, so narrow it with `is(type)`.
  */
-export type ThreadInboxMessage<
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-  TReply = unknown,
-  TSources = undefined,
-> =
+export type ThreadInboxMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
   | MessageOf<AgentMessageData, "agent/message">
-  | MessageOf<AgentSteerData, "agent/steer">
-  | (MessageOf<AgentRequestData<TRequest>, "agent/request"> & {
-      /**
-       * Answers the request: sends `data` to the thread that asked. It is a
-       * step.
-       */
-      reply(
-        /**
-         * The reply.
-         */
-        data: TReply,
-      ): Promise<void>;
-    });
+  | MessageOf<AgentSteerData, "agent/steer">;
 
 /**
  * The thread's inbox: an `Inbox` (`step.subscribe()`'s) whose first message is
- * the event that started the run, and whose messages can reply. A message that
+ * the event that started the run. A message that
  * breaks its schema is dropped. It is opened for you with the run's triggers,
  * the config's `inbox` sources and the agent's own messages, and has one
  * reader, like any inbox.
  */
-export type ThreadInbox<
-  TEvent = TriggerEvent,
-  TRequest = unknown,
-  TReply = unknown,
-  TSources = undefined,
-> = Inbox<ThreadInboxMessage<TEvent, TRequest, TReply, TSources>>;
+export type ThreadInbox<TEvent = TriggerEvent, TSources = undefined> = Inbox<
+  ThreadInboxMessage<TEvent, TSources>
+>;
 
 /**
  * An inbox the model opened with `inbox_listen`.
@@ -977,29 +848,13 @@ export type AgentBody<TTypes extends AgentTypes = AgentTypes> = (
 
 /**
  * An agent made by `createAgents().agent()`: the functions to serve, its
- * address, and handles to its threads. `TInput` and `TOutput` type
- * `agent.invoke(thisAgent, input)`.
+ * address, and handles to its threads. `TOutput` is what its body returns.
  */
-export interface AgentFunction<
-  TInput = Record<string, unknown>,
-  TOutput = unknown,
-  TRequest = unknown,
-  TReply = unknown,
-> {
+export interface AgentFunction<TOutput = unknown> {
   /**
-   * Types only: what `agent.invoke(thisAgent, input)` takes and returns. The
-   * input is the data of the agent's `invoke()` trigger; the output is what
-   * its body returns.
+   * Types only: what the agent's body returns.
    */
-  readonly "~types"?: { input: TInput; output: TOutput };
-
-  /**
-   * The agent as a tool, which is what an agent in `tools` becomes. Named by
-   * the agent's ID, described by its `description`. A call takes
-   * `{ message: string }`, or the agent's `invoke()` data when it declares a
-   * typed one, and returns what the agent returns.
-   */
-  readonly "~tool": AgentTool<AgentToolInput<TInput>, TOutput>;
+  readonly "~types"?: { output: TOutput };
 
   /**
    * The function that runs the body.
@@ -1011,12 +866,6 @@ export interface AgentFunction<
    * run-scoped KV keys.
    */
   cleanup: InngestFunction.Any;
-
-  /**
-   * The function that runs `onArrival` for every message that reaches a busy
-   * thread. Present only when the config has an `onArrival`.
-   */
-  arrival?: InngestFunction.Any;
 
   /**
    * Runs when the executor reports that a run of `fn` ended, whichever way,
@@ -1043,11 +892,7 @@ export interface AgentFunction<
      * Thread key.
      */
     key: string,
-    /**
-     * Session the thread belongs to. Default: the thread key.
-     */
-    session?: string,
-  ): ThreadHandle<TRequest, TReply>;
+  ): ThreadHandle;
 }
 
 /**
@@ -1075,15 +920,11 @@ const triggerOf = (event: TriggerEvent | undefined) => {
 /**
  * The events the agent layer sends to a thread.
  */
-const ownEvents: string[] = [
-  agentMessageEvent,
-  agentSteerEvent,
-  agentRequestEvent,
-];
+const ownEvents: string[] = [agentMessageEvent, agentSteerEvent];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
- * message that does not start a turn (a steer or a request).
+ * message that does not start a turn (a steer).
  * @param event The event.
  */
 const inflightOf = (event: {
@@ -1091,7 +932,7 @@ const inflightOf = (event: {
   name: string;
   data: unknown;
 }): Inflight | undefined => {
-  if (event.name === agentSteerEvent || event.name === agentRequestEvent) {
+  if (event.name === agentSteerEvent) {
     return undefined;
   }
 
@@ -1185,11 +1026,6 @@ function threadInbox(
   problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
 
   /**
-   * Inngest client, to send replies.
-   */
-  client: Inngest.Any,
-
-  /**
    * Records the thread's status: `waiting()` before the agent waits for a message after the first, `running()` once one is delivered.
    */
   recorder: Pick<
@@ -1198,7 +1034,6 @@ function threadInbox(
   >,
   log: { warn: (message: string) => void },
   runId: string,
-  replySchema?: ThreadRequests["reply"],
 
   // The event that started the run: the inbox's first message, and the one
   // message that is not checked against a schema, because core checked it.
@@ -1236,20 +1071,6 @@ function threadInbox(
             data: resent.data,
           }
         : {}),
-      ...(message.name === agentRequestEvent && {
-        async reply(answer: unknown) {
-          const checked = replySchema
-            ? await parseWithAsync(replySchema, answer, "message.reply() data")
-            : answer;
-
-          await step.run(`reply:${message.id}`, async () => {
-            await client.sendSignal({
-              signal: (message.data as AgentRequestData).replyTo,
-              data: checked,
-            });
-          });
-        },
-      }),
     });
     raws.set(unwrapped, message);
 
@@ -1580,28 +1401,6 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  // `agentInvokeCancelOn` reads `data._agent`, which only `agent.invoke()`
-  // sets; on any other event the server cancels the run when another run is
-  // cancelled.
-  const cancelsWithCaller = [config.cancelOn ?? []].flat().some((entry) => {
-    return (
-      typeof entry === "object" &&
-      entry.event === agentInvokeCancelOn.event &&
-      entry.if === agentInvokeCancelOn.if
-    );
-  });
-
-  if (
-    cancelsWithCaller &&
-    triggers.some((trigger) => {
-      return trigger.event !== internalEvents.FunctionInvoked;
-    })
-  ) {
-    throw new Error(
-      `Agent "${config.id}" has \`agentInvokeCancelOn\` in \`cancelOn\` but its \`on\` has triggers other than \`invoke()\`: a run those start has no \`data._agent\`, and the entry would cancel it whenever another run is cancelled. Use it only on an agent that \`agent.invoke()\` starts, and do not message its thread from elsewhere (a message to an idle thread starts a run the same way).`,
-    );
-  }
-
   const store = kvFrom(config.kv);
   const scoring = config.scores ?? true;
 
@@ -1650,63 +1449,6 @@ export function createAgentFunction(
       }
     },
   );
-
-  const onArrival = config.onArrival;
-  const arrival = onArrival
-    ? client.createFunction(
-        {
-          id: `${config.id}-arrival`,
-          triggers: [
-            ...ownEvents.map((name) => {
-              return { event: name, if: `event.data.agent == ${quote(ref)}` };
-            }),
-            ...triggers
-              .filter((trigger) => {
-                return trigger.listen;
-              })
-              .map((trigger) => {
-                return trigger.fnTrigger;
-              }),
-          ],
-        },
-        async ({ event, step: arrivalStep, logger }) => {
-          const found = triggers.find((t) => {
-            return t.event === event.name;
-          });
-          const start = startData(ref, found, event);
-          // An inbox drops a request that breaks its schema, so it is not
-          // acknowledged either.
-          if (
-            (event.name as string) === agentRequestEvent &&
-            config.requests &&
-            (await dataProblem(
-              config.requests.request,
-              (event.data as AgentRequestData).payload,
-            ))
-          ) {
-            return;
-          }
-
-          // The KV read is a durable step of its own, so a replay sees the same
-          // answer.
-          const busy = await threadBusyFor(store, start.thread, event.ts);
-
-          // A thread that is not working is not busy: its run, or the run this
-          // message starts, reads the message at once.
-          if (!busy) {
-            return;
-          }
-
-          await onArrival({
-            thread: start.thread,
-            ref,
-            event: event as unknown as AgentArrivalContext["event"],
-            step: arrivalStep as unknown as typeof step,
-            logger,
-          });
-        },
-      )
-    : undefined;
 
   const recovery: AgentRecovery | undefined =
     config.recovery === true ? {} : config.recovery || undefined;
@@ -1778,8 +1520,6 @@ export function createAgentFunction(
         return last;
       }
 
-      const session = found?.session?.key(start as never);
-
       await step.sendEvent(
         "recover-resend",
         agentMessage.create(
@@ -1792,7 +1532,7 @@ export function createAgentFunction(
           },
           {
             id: `recover-${runId}`,
-            meta: { sessions: threadSessions(message.thread, session) },
+            meta: { sessions: threadSessions(message.thread) },
           },
         ),
       );
@@ -1810,11 +1550,9 @@ export function createAgentFunction(
       // waiting beside its work never holds the run back.
       optimizeParallelism: false,
       triggers: [
-        ...[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(
-          (name) => {
-            return { event: name, if: `event.data.agent == ${quote(ref)}` };
-          },
-        ),
+        ...[agentMessageEvent, agentSteerEvent].map((name) => {
+          return { event: name, if: `event.data.agent == ${quote(ref)}` };
+        }),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
         }),
@@ -1831,8 +1569,6 @@ export function createAgentFunction(
         return t.event === event.name;
       });
       const data = startData(ref, found, event);
-      const session = found?.session?.key(event);
-
       // Read by `agent.loop()` once the body's inbox exists.
       const bridge: AgentBridge = {};
 
@@ -1842,11 +1578,7 @@ export function createAgentFunction(
         data: { runId, thread: data.thread },
       });
 
-      const thread = getThread(client, ref, data.thread, {
-        session,
-        kv: store,
-        requests: config.requests,
-      });
+      const thread = getThread(client, ref, data.thread, { kv: store });
 
       // The KV scopes of the thread and session come from the trigger, which
       // for an event of `on` does not carry them: the whole run reads them
@@ -1901,7 +1633,7 @@ export function createAgentFunction(
           restarts: started.restarts ?? 0,
         });
 
-        // Limits apply to what `agent.invoke()` starts and to the loop's budget.
+        // Limits apply to the agents this run starts and to the loop's budget.
         // The usage is the thread's so far, and each turn adds to it.
         const instance = getAsyncCtxSync()?.execution?.instance;
 
@@ -2026,17 +1758,14 @@ export function createAgentFunction(
                 stepSandboxes(step),
                 {
                   event: event as unknown as AgentConfigContext["event"],
-                  client: client as unknown as SkillsRuntime["client"],
-                  agent: ref,
                   run: (id, fn) => {
                     return step.run(id, fn) as ReturnType<typeof fn>;
                   },
-                  sendEvent: (id, payload) => {
-                    return step.sendEvent(id, payload);
-                  },
                 },
                 threadSandboxOwner({
-                  client: client as unknown as SkillsRuntime["client"],
+                  client: client as unknown as Parameters<
+                    typeof threadSandboxOwner
+                  >[0]["client"],
                   ref,
                   thread: data.thread,
                   runId,
@@ -2064,16 +1793,8 @@ export function createAgentFunction(
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
           async function problemOf(raw, started) {
-            // A request's payload is checked against `requests`, which core
-            // does not know. The asker gets no reply, so it times out: the
-            // same as for any event that breaks its schema.
             if (ownEvents.includes(raw.name)) {
-              return raw.name === agentRequestEvent && config.requests
-                ? dataProblem(
-                    config.requests.request,
-                    (raw.data as AgentRequestData).payload,
-                  )
-                : undefined;
+              return undefined;
             }
 
             // An event of an inbox source is checked against its event type.
@@ -2094,11 +1815,9 @@ export function createAgentFunction(
               raw,
             );
           },
-          client,
           recorder,
           client[internalLoggerSymbol],
           runId,
-          config.requests?.reply,
           startMessage,
         );
 
@@ -2180,7 +1899,7 @@ export function createAgentFunction(
             logger,
             event: { ...event, data } as AgentBodyContext["event"],
             trigger: triggerOf(data.event),
-            depth: agentInvokeDepth(
+            depth: invokeDepthOf(
               event as unknown as { data?: Record<string, unknown> },
             ),
             thread,
@@ -2283,9 +2002,7 @@ export function createAgentFunction(
               ...als,
               execution: {
                 ...als.execution,
-                ...(found
-                  ? { agent: { thread: thread.key, session: thread.session } }
-                  : {}),
+                ...(found ? { agent: { thread: thread.key } } : {}),
                 agentBridge: bridge,
               },
             },
@@ -2296,24 +2013,13 @@ export function createAgentFunction(
   );
 
   return {
-    "~tool": agentToolOf(
-      ref,
-      config.id,
-      fn,
-      config.description,
-    ) as AgentFunction["~tool"],
     fn,
     cleanup,
     finished,
-    ...(arrival && { arrival }),
     ref,
     card: cardOf(client.id, config.id, fn, config),
-    thread(key, session) {
-      return getThread(client, ref, key, {
-        session,
-        kv: store,
-        requests: config.requests,
-      });
+    thread(key) {
+      return getThread(client, ref, key, { kv: store });
     },
   };
 }
