@@ -369,7 +369,7 @@ export interface AgentFunctionConfig<
    * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
-   * is kept either way: see `previousRun` and `thread.state().lastRun`.
+   * is kept either way: see `previousRun`.
    */
   recovery?: boolean;
 }

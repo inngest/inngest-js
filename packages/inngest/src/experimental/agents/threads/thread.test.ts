@@ -36,19 +36,14 @@ const fakeClient = (
 const sessions = { agent_session: "t1", agent_thread: "t1" };
 
 describe("thread handle", () => {
-  test("message is an agent/message event in the thread's sessions", async () => {
+  test("message outside a function throws and sends nothing", () => {
     const { client, sent } = fakeClient();
     const thread = threadHandle(client, "app/bot", "t1");
 
-    await thread.message("hi");
-
-    expect(sent).toMatchObject([
-      {
-        name: "agent/message",
-        data: { agent: "app/bot", thread: "t1", content: "hi" },
-        meta: { sessions },
-      },
-    ]);
+    expect(() => {
+      thread.message("hi");
+    }).toThrow(/inside an Inngest function.*trigger event/);
+    expect(sent).toEqual([]);
   });
 
   test("stop cancels the live run by its run ID, whatever the thread key looks like", async () => {

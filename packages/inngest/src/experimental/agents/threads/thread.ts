@@ -79,7 +79,7 @@ export type TriggerEvent<TName extends string = string, TData = unknown> = {
 export type ThreadStatus = "running" | "waiting" | "idle";
 
 /**
- * What `handle.state()` returns.
+ * What the agent function keeps about a thread's state.
  */
 export interface ThreadState {
   status: ThreadStatus;
@@ -117,7 +117,7 @@ export interface ThreadState {
 
 /**
  * What the agent function keeps in the thread KV (key `__state`) for
- * `state()`. Keys starting with `__` are hidden from `state().keys`.
+ * the thread state. Keys starting with `__` are hidden from `keys`.
  */
 export interface ThreadRecord {
   status: ThreadStatus;
@@ -247,8 +247,9 @@ export interface ThreadHandle<TOutput = unknown> {
 
   /**
    * Sends a message to the thread: into the live run's inbox, or as the
-   * start of a run when the thread is idle. Inside a function it is a step,
-   * so a replay sends it once.
+   * start of a run when the thread is idle. It is a step, so a replay sends
+   * it once. Needs a function's step context and throws outside one: a route
+   * or an API handler sends the agent's trigger event instead.
    */
   message(content: Json): MessageCall<TOutput>;
 
@@ -323,8 +324,8 @@ export function threadStateOf(
 }
 
 /**
- * Sends a message to a thread and gives the call to wait on its result. Inside
- * a function it opens a private inbox on the result before the send, both in
+ * Sends a message to a thread and gives the call to wait on its result. It
+ * throws outside a function. It opens a private inbox on the result before the send, both in
  * one tick, so a message nobody awaits is still sent. `extra` is what `start()`
  * adds: fields of `from` for the receiver, and the sessions of the thread.
  * @param client Inngest client.
@@ -343,28 +344,10 @@ export function sendMessage<TOutput = unknown>(
   const meta = { sessions: extra.sessions ?? threadSessions(key) };
   const execution = stepContext();
 
-  // Outside a function there is no inbox to hear the result in: the
-  // message is sent and `result()` says so.
   if (!execution) {
-    const sent = client
-      .send(
-        agentMessage.create(
-          { agent, thread: key, content } satisfies AgentMessageData,
-          { meta },
-        ),
-      )
-      .then(() => {
-        return handle;
-      });
-    const handle: RunHandle<TOutput> = {
-      async result() {
-        throw new Error(
-          "result() needs a function's step context: call message() inside an Inngest function.",
-        );
-      },
-    };
-
-    return Object.assign(sent, { result: handle.result });
+    throw new Error(
+      "message() must be called inside an Inngest function. From a route or an API handler, send the agent's trigger event instead.",
+    );
   }
 
   const n = nextCount(execution.instance, "message");

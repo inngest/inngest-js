@@ -501,9 +501,10 @@ export interface AgentTool<TInput = unknown, TOutput = unknown>
   readonly kind: "inngest/tool";
 
   /**
-   * The name the model sees.
+   * The name the tool is listed under, when you gave one. In a `tools` record
+   * the key names the tool, whatever this is.
    */
-  readonly id: string;
+  readonly id?: string;
 }
 
 export interface AgentToolDefinition<
@@ -512,10 +513,11 @@ export interface AgentToolDefinition<
   TReturn = unknown,
 > extends WaitingToolDefinition<TInput, TOutput, TReturn> {
   /**
-   * The tool's name in the model's list. Letters, digits and underscores,
-   * starting with a letter, up to 64 characters.
+   * The tool's name for a list of tools without keys (`agentTools()`). Optional:
+   * in a `tools` record the key names the tool. Letters, digits and
+   * underscores, starting with a letter, up to 64 characters.
    */
-  id: string;
+  id?: string;
 
   /**
    * Runs `run` as a group of steps instead of one step, so it can use the
@@ -531,7 +533,9 @@ const defineTool = <
 >(
   definition: AgentToolDefinition<TInput, TOutput, TReturn>,
 ): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
-  validateTools({ [definition.id]: definition });
+  if (definition.id !== undefined) {
+    validateTools({ [definition.id]: definition });
+  }
 
   if (definition.waits && !definition.group) {
     throw new SandboxValidationError(
