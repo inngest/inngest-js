@@ -98,19 +98,37 @@ const callTools = async (
 
     return out;
   });
-  const invokes: { data: Record<string, unknown> }[] = [];
   const { output } = await run(caller.fn, {
     saved: options.saved,
     event: {
       name: "agent/message",
       data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
     },
-    onInvoke: (op) => {
-      invokes.push((op.opts as { payload: { data: never } }).payload);
-
-      return { data: "done" };
-    },
+    // What a run a start began answers once it ends, for `agent_result`.
+    incoming: [
+      {
+        name: "agent/message.result",
+        data: {
+          id: "msg:run.0",
+          run_id: "run-9",
+          status: "completed",
+          output: "done",
+        },
+      },
+    ],
   });
+  // The messages `start()` sent, as the child gets them.
+  const invokes = sent
+    .filter((event) => {
+      return (
+        event.name === "agent/message" &&
+        (event.data.from as { thread?: string } | undefined)?.thread !==
+          undefined
+      );
+    })
+    .map((event) => {
+      return { data: event.data };
+    });
 
   return { results: output as unknown[], invokes };
 };
@@ -180,7 +198,9 @@ describe("start_agent", () => {
       },
     ]);
 
-    expect(invokes).toMatchObject([{ data: { topic: "cats" } }]);
+    expect(invokes).toMatchObject([
+      { data: { content: { topic: "cats" }, from: { typed: true } } },
+    ]);
   });
 
   test("refuses an input that breaks the card's input before anything starts", async () => {
@@ -398,6 +418,8 @@ describe("the tools sandbox code gets", () => {
       [{ tool: "start_agent", input: { address: plain.card.address } }],
       { functions: live, forSandbox: true },
     );
+    sent = [];
+
     const { invokes: byModel } = await callTools([
       { tool: "start_agent", input: { address: plain.card.address } },
     ]);

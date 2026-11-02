@@ -22,7 +22,6 @@ import type { LastRun } from "../agent/recovery.ts";
 import {
   AgentStoppedError,
   AgentTimeoutError,
-  flush,
   noop,
   type ResultOptions,
 } from "../agent/runResults.ts";
@@ -225,9 +224,7 @@ export interface RunHandle<TOutput = unknown> {
    * folded into (which, for a trigger-started run, ends after its `idle`), or
    * a new run it started on an idle thread. It throws when the run failed or
    * was stopped. With a `timeout` it throws an `AgentTimeoutError` when the run
-   * is not done in time; the timeout works only when `result()` is chained
-   * onto the call in the same tick (`message(content).result({ timeout })`),
-   * and asking for one later throws an error that names the chained form.
+   * is not done in time, and the run keeps going. It works whenever it is called.
    */
   result(options?: ResultOptions): Promise<TOutput>;
 }
@@ -235,7 +232,9 @@ export interface RunHandle<TOutput = unknown> {
 /**
  * What `message()` returns: a promise of the run handle that also has its
  * methods, so `await thread.message(x).result()` needs one `await`. Without an
- * `await` the message is still sent.
+ * `await` the message is still sent when the caller is an agent; a plain
+ * function that returns at once may return before the engine reports the step,
+ * so `await` it there.
  */
 export type MessageCall<TOutput = unknown> = Promise<RunHandle<TOutput>> &
   RunHandle<TOutput>;
@@ -324,6 +323,113 @@ export function threadStateOf(
 }
 
 /**
+ * Sends a message to a thread and gives the call to wait on its result. Inside
+ * a function it opens a private inbox on the result before the send, both in
+ * one tick, so a message nobody awaits is still sent. `extra` is what `start()`
+ * adds: fields of `from` for the receiver, and the sessions of the thread.
+ * @param client Inngest client.
+ * @param agent The agent, as `"appId/functionId"`.
+ * @param key Thread key.
+ * @param content What to say.
+ * @param extra Fields of `from`, and the sessions, a `start()` adds.
+ */
+export function sendMessage<TOutput = unknown>(
+  client: Inngest.Any,
+  agent: string,
+  key: string,
+  content: Json,
+  extra: { from?: object; sessions?: Record<string, string> } = {},
+): MessageCall<TOutput> {
+  const meta = { sessions: extra.sessions ?? threadSessions(key) };
+  const execution = stepContext();
+
+  // Outside a function there is no inbox to hear the result in: the
+  // message is sent and `result()` says so.
+  if (!execution) {
+    const sent = client
+      .send(
+        agentMessage.create(
+          { agent, thread: key, content } satisfies AgentMessageData,
+          { meta },
+        ),
+      )
+      .then(() => {
+        return handle;
+      });
+    const handle: RunHandle<TOutput> = {
+      async result() {
+        throw new Error(
+          "result() needs a function's step context: call message() inside an Inngest function.",
+        );
+      },
+    };
+
+    return Object.assign(sent, { result: handle.result });
+  }
+
+  const n = nextCount(execution.instance, "message");
+  const id = `msg:${execution.ctx.runId}.${n}`;
+  const event = agentMessage.create(
+    {
+      agent,
+      thread: key,
+      content,
+      from: { ...senderOf(execution), ...extra.from },
+    } satisfies AgentMessageData,
+    { meta, id },
+  );
+
+  // Opened before the message is sent, so a result that comes quickly is
+  // not missed. It ends with the sender's run.
+  const answers = step.subscribe(id, {
+    event: agentMessageResultEvent,
+    if: `async.data.id == ${JSON.stringify(id)}`,
+  });
+  // Both ops are issued in this tick, the open first, so a message that
+  // is never awaited is still sent.
+  const opened = inboxOpenedPromise(answers);
+  const sent = step.sendEvent(`${id}:send`, event);
+  const ready = Promise.all([opened, sent]);
+  const handle: RunHandle<TOutput> = {
+    async result(options) {
+      await ready;
+
+      const got =
+        options?.timeout === undefined
+          ? await answers.next()
+          : await answers.next({ timeout: options.timeout });
+
+      if (got === null || got === undefined) {
+        throw new AgentTimeoutError(`${agent} (thread ${key})`);
+      }
+
+      const data = got.data as AgentMessageResultData;
+
+      if (data.status === "failed") {
+        throw new Error(data.error);
+      }
+
+      if (data.status === "stopped") {
+        throw new AgentStoppedError(agent, data.run_id);
+      }
+
+      return data.output as TOutput;
+    },
+  };
+  // The call is done when the message is sent: the open and the send are both
+  // issued above, so one that is never awaited is still sent, and one that is
+  // awaited does not run in parallel with the steps after it. A failure to send
+  // reaches whoever awaits it.
+  const called = ready.then(() => {
+    return handle;
+  });
+
+  called.catch(noop);
+
+  return Object.assign(called, { result: handle.result });
+}
+
+/**
  * The handle of a thread.
  * @param client Inngest client.
  * @param agent The agent, as `"appId/functionId"`.
@@ -339,97 +445,7 @@ export function threadHandle<TOutput = unknown>(
   return {
     key,
     message(content) {
-      const execution = stepContext();
-
-      // Outside a function there is no inbox to hear the result in: the
-      // message is sent and `result()` says so.
-      if (!execution) {
-        const sent = client
-          .send(
-            agentMessage.create(
-              { agent, thread: key, content } satisfies AgentMessageData,
-              { meta },
-            ),
-          )
-          .then(() => {
-            return handle;
-          });
-        const handle: RunHandle<TOutput> = {
-          async result() {
-            throw new Error(
-              "result() needs a function's step context: call message() inside an Inngest function.",
-            );
-          },
-        };
-
-        return Object.assign(sent, { result: handle.result });
-      }
-
-      const n = nextCount(execution.instance, "message");
-      const id = `msg:${execution.ctx.runId}.${n}`;
-      const event = agentMessage.create(
-        {
-          agent,
-          thread: key,
-          content,
-          from: senderOf(execution),
-        } satisfies AgentMessageData,
-        { meta, id },
-      );
-
-      // Opened before the message is sent, so a result that comes quickly is
-      // not missed. It ends with the sender's run.
-      const answers = step.subscribe(id, {
-        event: agentMessageResultEvent,
-        if: `async.data.id == ${JSON.stringify(id)}`,
-      });
-      let planned = false;
-      // Both ops are issued in this tick, the open first, so a message that
-      // is never awaited is still sent.
-      const opened = inboxOpenedPromise(answers);
-      const sent = step.sendEvent(`${id}:send`, event);
-      const ready = Promise.all([opened, sent]);
-      const handle: RunHandle<TOutput> = {
-        async result(options) {
-          if (planned && options?.timeout !== undefined) {
-            throw new Error(
-              "result({ timeout }) must be chained onto the call: write `await thread.message(content).result({ timeout })`. After `await thread.message(content)` the message is already planned, so a timeout would never fire.",
-            );
-          }
-
-          await ready;
-
-          const got =
-            options?.timeout === undefined
-              ? await answers.next()
-              : await answers.next({ timeout: options.timeout });
-
-          if (got === null || got === undefined) {
-            throw new AgentTimeoutError(`${agent} (thread ${key})`);
-          }
-
-          const data = got.data as AgentMessageResultData;
-
-          if (data.status === "failed") {
-            throw new Error(data.error);
-          }
-
-          if (data.status === "stopped") {
-            throw new AgentStoppedError(agent, data.run_id);
-          }
-
-          return data.output as TOutput;
-        },
-      };
-      const called = Promise.race([flush(), ready.then(noop, noop)]).then(
-        () => {
-          planned = true;
-
-          return handle;
-        },
-      );
-
-      return Object.assign(called, { result: handle.result });
+      return sendMessage<TOutput>(client, agent, key, content);
     },
     async ask(question, options) {
       const execution = stepContext();

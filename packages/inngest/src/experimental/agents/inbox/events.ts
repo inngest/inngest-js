@@ -39,7 +39,7 @@ export type AgentRouting = {
  * (`target` is the agent started and `thread` its thread); all of these are
  * internal and the public `Sender` leaves them out.
  */
-export type SenderData =
+export type SenderData = (
   | {
       kind: "agent";
       address: string;
@@ -47,9 +47,18 @@ export type SenderData =
       depth?: number;
       via?: "start_agent";
       target?: string;
-      thread?: string;
     }
-  | { kind: "function"; id: string; key: string; depth?: number };
+  | { kind: "function"; id: string; key: string; depth?: number }
+) & {
+  /**
+   * On the message `start()` sends: the key of the thread it opens, the
+   * limits it passes down, and whether the agent has an `invoke()` trigger,
+   * so `content` is that trigger's data and the run's event has its shape.
+   */
+  thread?: string;
+  limits?: unknown;
+  typed?: boolean;
+};
 
 /**
  * The data of `agent/message`: what starts the next turn. `content` is text

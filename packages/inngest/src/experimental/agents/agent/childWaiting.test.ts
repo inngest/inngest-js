@@ -73,6 +73,13 @@ const make = () => {
     }),
   });
 
+  // The start message goes out through the client; nothing here listens.
+  Object.defineProperty(client, "_send", {
+    configurable: true,
+    value: async () => {
+      return { ids: [], status: 200 };
+    },
+  });
   vi.spyOn(client, "queryInsights").mockRejectedValue(
     new Error("Insights query failed: 501 Not Implemented - no"),
   );
@@ -103,11 +110,6 @@ describe("a handle-opened model agent that started a child", () => {
     const { output, waiting, ops } = await run(parent.fn, {
       event: start,
       runId: "run-parent",
-      onInvoke: () => {
-        // The executor takes the invoke and the parent goes on; start_agent
-        // never awaits the child's result.
-        return { data: undefined };
-      },
     } as never);
 
     // The model answered ("started") and the run did not end: it is blocked
@@ -136,9 +138,6 @@ describe("a handle-opened model agent that started a child", () => {
         event: start,
         runId: "run-parent",
         timeouts: 1,
-        onInvoke: () => {
-          return { data: undefined };
-        },
       } as never);
       const finalTurn = requests.at(-1)?.at(-1) ?? "";
 

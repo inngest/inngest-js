@@ -57,15 +57,6 @@ export const run = async (
      * Called with each `step.run` step as it ran, metadata included.
      */
     onStep?: (op: OutgoingOp) => void;
-
-    /**
-     * Answers a `step.invoke` op the way the executor does once the invoked
-     * run ends: with its output, or with an error. Left out, an invoke is
-     * answered with `undefined`.
-     */
-    onInvoke?: (
-      op: OutgoingOp,
-    ) => { data?: unknown; error?: unknown } | "pending";
   } = {},
 ) => {
   const root = hashedStepId(options.key ?? "inbox");
@@ -102,7 +93,10 @@ export const run = async (
       },
     );
     const id = `message:${(event as { id: string }).id}`;
-    const data = { data: event, [inboxKey]: root, src };
+    // The inbox a message belongs to is the one that opened the pause it
+    // matched; a message no pause wants goes to the root inbox.
+    const owner = matching[0]?.id.split(":")[0] ?? root;
+    const data = { data: event, [inboxKey]: owner, src };
 
     saved.push(event);
     stack.push(id);
@@ -325,26 +319,6 @@ export const run = async (
       // A sleep ends at once.
       if (op.op === StepOpCode.Sleep) {
         answer(op.id, null);
-        continue;
-      }
-
-      if (op.op === StepOpCode.InvokeFunction && options.onInvoke) {
-        ops.push({ id: op.userland?.id ?? op.id, op: "invoke", opts });
-
-        if (!(op.id in state)) {
-          const answered = options.onInvoke(op);
-
-          if (answered === "pending") {
-            continue;
-          }
-
-          state = {
-            ...state,
-            [op.id]: { id: op.id, data: answered.data, error: answered.error },
-          };
-          stack.push(op.id);
-        }
-
         continue;
       }
 

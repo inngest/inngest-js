@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import * as entry from "../index.ts";
+import type { Json } from "../json.ts";
 import type { AgentModelResponse } from "../loop/loop.ts";
 import { agents, closed, created, typesOnly } from "./typeFixtures.ts";
 
@@ -359,5 +360,17 @@ test("agents: agents.agent returns an Agent with an id, an address and a card", 
     expectTypeOf(found.card).toEqualTypeOf<entry.AgentCard>();
     expectTypeOf(found).toHaveProperty("start");
     expectTypeOf(found).toHaveProperty("thread");
+  });
+});
+
+describe("me.message", () => {
+  test("agents: me has post, message and key: message takes JSON and resolves with nothing", () => {
+    typesOnly(() => {
+      agents.agent({ id: "me-types" }, async ({ me }) => {
+        expectTypeOf(me.key).toBeString();
+        expectTypeOf(me.message).parameter(0).toExtend<Json>();
+        expectTypeOf(me.message("x")).toEqualTypeOf<Promise<void>>();
+      });
+    });
   });
 });

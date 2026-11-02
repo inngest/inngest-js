@@ -36,6 +36,7 @@ import type {
   AgentMessageData,
   AgentQuestionData,
 } from "../inbox/events.ts";
+import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
@@ -389,6 +390,13 @@ export interface Me {
    * The thread's key.
    */
   readonly key: string;
+
+  /**
+   * Puts a message in the agent's own inbox. The run that takes it is the live
+   * run itself, so there is no result to wait for. Sent from a step, so a
+   * replay sends it once.
+   */
+  message(content: Json): Promise<void>;
 }
 
 /**
@@ -543,19 +551,29 @@ export type StartInput<TEvent> = [
  * A message from an inbox source is its event too, under the event's own
  * `name`; it is not in the type of `triggers`, so narrow it with `is(type)`.
  */
+type FromSender = {
+  /**
+   * Who sent the message: an agent is a handle you can message back, a plain
+   * function is its ID and key. Anyone can send an event with `data.from`, so
+   * a message from an agent is never an approval.
+   */
+  from?: Sender;
+};
+
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
-  | MessageOf<AgentMessageData, "agent/message">
-  | (MessageOf<AgentQuestionData, "agent/question"> & {
-      /**
-       * Answers the question: with text, or with `{ outcome: "refused" }`. Only
-       * the first answer counts; a second or late one is dropped.
-       */
-      reply(answer: string | { outcome: "refused" }): Promise<void>;
-    })
-  | MessageOf<AgentAnswerData, "agent/answer">
-  | MessageOf<AgentFinishedData, "agent/finished">;
+  | (MessageOf<AgentMessageData, "agent/message"> & FromSender)
+  | (MessageOf<AgentQuestionData, "agent/question"> &
+      FromSender & {
+        /**
+         * Answers the question: with text, or with `{ outcome: "refused" }`. Only
+         * the first answer counts; a second or late one is dropped.
+         */
+        reply(answer: string | { outcome: "refused" }): Promise<void>;
+      })
+  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender)
+  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender);
 
 /**
  * An inbox the model opened with `inbox_listen`.
@@ -692,7 +710,10 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * Starts the agent on a new thread with a generated key and returns at once.
    * The value is a promise of the thread's handle that also has its methods,
    * so `await agent.start(x).result()` needs one `await`. Needs a function's
-   * step context.
+   * step context. Called without `await`, the start is still sent when the
+   * caller is an agent. A plain function that returns at once may return before
+   * the engine reports the step (the default for plain functions is not to send
+   * an op nothing awaited), so `await` it there.
    * @param input What the agent is asked to do.
    */
   start(input: TInput): StartedThreadPromise<TOutput>;
