@@ -1,8 +1,9 @@
 /**
  * @module
- * `agent.start()`: the code side of calling an agent. A call opens a thread
- * with a generated key, sends the input with a sender that carries the chain
- * depth, and returns a handle whose `result()` is the callee's output.
+ * `agent.start()`: the code side of calling an agent. A start opens a new
+ * thread with a generated key and sends the input as a message to it, with a
+ * sender that carries the chain depth; the result comes back to a private inbox
+ * opened before the send, so no step waits for the child.
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
@@ -10,114 +11,186 @@ import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
-const makeAgents = () => {
-  return createAgents(new Inngest({ id: testClientId }), {
-    store: memoryKvAdapter(),
+type Sent = { id?: string; name: string; data: Record<string, unknown> };
+
+const setup = () => {
+  const sent: Sent[] = [];
+  const client = new Inngest({
+    id: testClientId,
+    eventKey: "key",
+    fetch: (async (_url: unknown, init?: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? "null");
+
+      sent.push(...(Array.isArray(body) ? body : [body]));
+
+      return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
+    }) as unknown as typeof fetch,
   });
+  const agents = createAgents(client, { store: memoryKvAdapter() });
+
+  return { agents, client, sent };
+};
+
+const trigger = (name: string) => {
+  return {
+    name: "agent/message",
+    data: { agent: `${testClientId}/${name}`, thread: "c1", content: "go" },
+  };
+};
+
+const resultFor = (data: object) => {
+  return {
+    name: "agent/message.result",
+    data: { id: "msg:r1.0", run_id: "run-9", ...data },
+  };
 };
 
 describe("agent.start()", () => {
   test("a plain agent gets an agent/message with the content and a sender", async () => {
-    const agents = makeAgents();
+    const { agents, sent } = setup();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
       const started = await callee.start("do it");
 
       return started.key;
     });
-    const sent: unknown[] = [];
-    const { output } = await run(caller.fn, {
-      event: {
-        name: "agent/message",
-        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
-      },
-      onInvoke: (op) => {
-        sent.push(op.opts);
-
-        return { data: "done" };
-      },
-    });
+    const { output } = await run(caller.fn, { event: trigger("caller") });
 
     expect(typeof output).toBe("string");
-    expect(sent).toMatchObject([
+    expect(
+      sent.filter((event) => event.name === "agent/message"),
+    ).toMatchObject([
       {
-        payload: {
-          data: {
-            agent: `${testClientId}/callee`,
+        id: expect.stringMatching(/^msg:/),
+        data: {
+          agent: `${testClientId}/callee`,
+          thread: output,
+          content: "do it",
+          from: {
+            kind: "agent",
+            address: `${testClientId}/caller`,
+            key: "c1",
+            depth: 1,
             thread: output,
-            content: "do it",
-            from: {
-              kind: "agent",
-              address: `${testClientId}/caller`,
-              key: "c1",
-              depth: 1,
-              thread: output,
-            },
           },
         },
       },
     ]);
   });
+
+  test("the thread key leads with the agent's address", async () => {
+    const { agents } = setup();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      return (await callee.start("x")).key;
+    });
+    const { output } = await run(caller.fn, { event: trigger("caller") });
+
+    expect(output).toMatch(new RegExp(`^${testClientId}/callee:`));
+  });
+
+  test("several starts get their own threads and none waits for the child", async () => {
+    const { agents, sent } = setup();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      const keys = await Promise.all([
+        callee.start("a"),
+        callee.start("b"),
+        callee.start("c"),
+      ]);
+
+      return keys.map((started) => started.key);
+    });
+    const { output } = await run(caller.fn, { event: trigger("caller") });
+    const threads = sent
+      .filter((event) => event.name === "agent/message")
+      .map((event) => event.data.thread);
+
+    expect(new Set(output as string[]).size).toBe(3);
+    expect(threads.sort()).toEqual([...(output as string[])].sort());
+  });
+
+  test("start outside a function throws", () => {
+    const callee = setup().agents.agent({ id: "callee" });
+
+    expect(() => {
+      return callee.start("x");
+    }).toThrow(/inside an Inngest function/);
+  });
+
+  test("the callee's address and id are on the agent", () => {
+    const callee = setup().agents.agent({ id: "callee" });
+
+    expect(callee.id).toBe("callee");
+    expect(callee.address).toBe(`${testClientId}/callee`);
+  });
+
+  test("an agent that has an invoke() trigger gets the typed input as the message content", async () => {
+    const { agents, sent } = setup();
+    const { z } = await import("zod");
+    const { invoke } = await import("../../../components/triggers/triggers.ts");
+    const typed = agents.agent({
+      id: "typed",
+      triggers: invoke(z.object({ q: z.string() })),
+    });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      await typed.start({ q: "why" });
+    });
+
+    await run(caller.fn, { event: trigger("caller") });
+
+    expect(
+      sent.filter((event) => event.name === "agent/message"),
+    ).toMatchObject([
+      { data: { content: { q: "why" }, from: { typed: true } } },
+    ]);
+  });
 });
 
+// A plain function has no inbox of its own, so the test helper's one inbox is
+// the private one the start opened.
 describe("start().result()", () => {
-  const event = (name: string) => {
+  const caller = (
+    body: (
+      callee: ReturnType<ReturnType<typeof setup>["agents"]["agent"]>,
+    ) => unknown,
+  ) => {
+    const made = setup();
+    const callee = made.agents.agent({ id: "callee" });
+    const fn = made.client.createFunction(
+      { id: "plain", triggers: [{ event: "go" }] },
+      async () => {
+        return body(callee);
+      },
+    );
+
+    return { fn, ...made };
+  };
+  const options = (extra: object = {}) => {
     return {
-      name: "agent/message",
-      data: { agent: `${testClientId}/${name}`, thread: "c1", content: "go" },
+      event: { name: "go", data: {} },
+      key: "msg:r1.0",
+      runId: "r1",
+      ...extra,
     };
   };
 
-  test("result resolves with the callee's output, in one await", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
+  test("resolves with the callee's output, in one await", async () => {
+    const { fn } = caller(async (callee) => {
       return await callee.start("do it").result();
     });
-    const { output } = await run(caller.fn, {
-      event: event("caller"),
-      onInvoke: () => {
-        return { data: { answer: 42 } };
-      },
-    });
+    const { output } = await run(
+      fn,
+      options({
+        incoming: [resultFor({ status: "completed", output: { n: 1 } })],
+      }),
+    );
 
-    expect(output).toEqual({ answer: 42 });
+    expect(output).toEqual({ n: 1 });
   });
 
-  test("several starts in parallel each get their own thread", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
-      const results = await Promise.all([
-        callee.start("a").result(),
-        callee.start("b").result(),
-        callee.start("c").result(),
-      ]);
-      const keys = await Promise.all([callee.start("d")]);
-
-      return [results, keys.length];
-    });
-    const threads: string[] = [];
-    const { output } = await run(caller.fn, {
-      event: event("caller"),
-      onInvoke: (op) => {
-        const data = (op.opts as { payload: { data: Record<string, string> } })
-          .payload.data;
-
-        threads.push(data.thread as string);
-
-        return { data: data.content };
-      },
-    });
-
-    expect(output).toEqual([["a", "b", "c"], 1]);
-    expect(new Set(threads).size).toBe(threads.length);
-  });
-
-  test("result throws when the callee failed", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
+  test("throws when the callee failed", async () => {
+    const { fn } = caller(async (callee) => {
       try {
         await callee.start("x").result();
       } catch (error) {
@@ -126,20 +199,16 @@ describe("start().result()", () => {
 
       return "no throw";
     });
-    const { output } = await run(caller.fn, {
-      event: event("caller"),
-      onInvoke: () => {
-        return { error: { name: "Error", message: "boom" } };
-      },
-    });
+    const { output } = await run(
+      fn,
+      options({ incoming: [resultFor({ status: "failed", error: "boom" })] }),
+    );
 
     expect(output).toBe("boom");
   });
 
-  test("result throws a stopped error for a cancelled run", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
+  test("throws a stopped error for a stopped run", async () => {
+    const { fn } = caller(async (callee) => {
       try {
         await callee.start("x").result();
       } catch (error) {
@@ -148,34 +217,49 @@ describe("start().result()", () => {
 
       return "no throw";
     });
-    const { output } = await run(caller.fn, {
-      event: event("caller"),
-      onInvoke: () => {
-        return {
-          data: {
-            name: "inngest/function.finished",
-            data: { _inngest: { status: "Cancelled" }, run_id: "r1" },
-          },
-        };
-      },
-    });
+    const { output } = await run(
+      fn,
+      options({ incoming: [resultFor({ status: "stopped" })] }),
+    );
 
     expect(output).toBe("AgentStoppedError");
   });
 
-  test("start outside a function throws", () => {
-    const callee = makeAgents().agent({ id: "callee" });
+  test("a timeout works on an awaited handle, called late", async () => {
+    const { fn } = caller(async (callee) => {
+      const started = await callee.start("slow");
 
-    expect(() => {
-      return callee.start("x");
-    }).toThrow(/inside an Inngest function/);
+      try {
+        await started.result({ timeout: "1s" });
+      } catch (error) {
+        return (error as Error).name;
+      }
+
+      return "no throw";
+    });
+    const { output } = await run(fn, options({ timeouts: 1 }));
+
+    expect(output).toBe("AgentTimeoutError");
   });
 
-  test("the callee's address and id are on the agent", () => {
-    const callee = makeAgents().agent({ id: "callee" });
+  test("a second result() after a timeout keeps waiting for the same run", async () => {
+    const { fn } = caller(async (callee) => {
+      const started = await callee.start("slow");
+      const first = await started.result({ timeout: "1s" }).catch((error) => {
+        return (error as Error).name;
+      });
 
-    expect(callee.id).toBe("callee");
-    expect(callee.address).toBe(`${testClientId}/callee`);
+      return [first, await started.result()];
+    });
+    const { output } = await run(
+      fn,
+      options({
+        timeouts: 1,
+        incoming: [resultFor({ status: "completed", output: "late" })],
+      }),
+    );
+
+    expect(output).toEqual(["AgentTimeoutError", "late"]);
   });
 });
 
@@ -191,7 +275,7 @@ describe("start() limits", () => {
   };
 
   test("a chain longer than limits.depth is refused with a readable error", async () => {
-    const agents = makeAgents();
+    const { agents } = setup();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
       try {
@@ -209,65 +293,26 @@ describe("start() limits", () => {
   });
 
   test("the depth comes from data.from and grows by one for the callee", async () => {
-    const agents = makeAgents();
+    const { agents, sent } = setup();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
       await callee.start("x");
     });
-    const sent: unknown[] = [];
 
     await run(caller.fn, {
       event: {
         ...event,
         data: { ...event.data, from: { depth: 2, limits: { depth: 3 } } },
       },
-      onInvoke: (op) => {
-        sent.push(op.opts);
-
-        return { data: null };
-      },
     });
 
-    expect(sent).toMatchObject([
-      {
-        payload: {
-          data: { from: { depth: 3, limits: { depth: 2 } } },
-        },
-      },
+    expect(sent.filter((e) => e.name === "agent/message")).toMatchObject([
+      { data: { from: { depth: 3, limits: { depth: 2 } } } },
     ]);
   });
-});
 
-describe("start().result({ timeout })", () => {
-  test("a result that is not there in time throws a timeout error and the run keeps going", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
-      try {
-        await callee.start("slow").result({ timeout: "1s" });
-      } catch (error) {
-        return (error as Error).name;
-      }
-
-      return "no throw";
-    });
-    const { output } = await run(caller.fn, {
-      event: {
-        name: "agent/message",
-        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
-      },
-      onInvoke: () => {
-        return "pending";
-      },
-    });
-
-    expect(output).toBe("AgentTimeoutError");
-  });
-});
-
-describe("start() and budgets", () => {
   test("nothing of the starter's budget is handed to the thread it starts", async () => {
-    const agents = makeAgents();
+    const { agents, sent } = setup();
     const callee = agents.agent({ id: "callee", budget: { tokens: 100000 } });
     const caller = agents.agent(
       { id: "caller", budget: { tokens: 5 } },
@@ -275,109 +320,37 @@ describe("start() and budgets", () => {
         await callee.start("x");
       },
     );
-    const sent: unknown[] = [];
 
     await run(caller.fn, {
       event: {
-        name: "agent/message",
-        data: {
-          agent: `${testClientId}/caller`,
-          thread: "c1",
-          content: "go",
-          from: { depth: 1, limits: { depth: 2 } },
-        },
-      },
-      onInvoke: (op) => {
-        sent.push(op.opts);
-
-        return { data: null };
+        ...event,
+        data: { ...event.data, from: { depth: 1, limits: { depth: 2 } } },
       },
     });
 
-    const from = (
-      sent[0] as { payload: { data: { from: { limits?: object } } } }
-    ).payload.data.from;
+    const from = sent.find((e) => e.name === "agent/message")?.data.from as {
+      limits: object;
+    };
 
     expect(from.limits).not.toHaveProperty("budget");
     expect(from.limits).toEqual({ depth: 1 });
   });
 });
 
-describe("result({ timeout }) after the start was planned", () => {
-  test("throws at the call and names the chained form, even when the run is done", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
-      const started = await callee.start("x");
-
-      try {
-        await started.result({ timeout: "1h" });
-      } catch (error) {
-        return (error as Error).message;
-      }
-
-      return "no throw";
-    });
-    const { output } = await run(caller.fn, {
-      event: {
-        name: "agent/message",
-        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
-      },
-      onInvoke: () => {
-        return { data: "done" };
-      },
-    });
-
-    expect(output).toContain("start(input).result({ timeout })");
-  });
-
-  test("result() without a timeout still works on the awaited handle", async () => {
-    const agents = makeAgents();
-    const callee = agents.agent({ id: "callee" });
-    const caller = agents.agent({ id: "caller" }, async () => {
-      const started = await callee.start("x");
-
-      return await started.result();
-    });
-    const { output } = await run(caller.fn, {
-      event: {
-        name: "agent/message",
-        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
-      },
-      onInvoke: () => {
-        return { data: "done" };
-      },
-    });
-
-    expect(output).toBe("done");
-  });
-});
-
 describe("start() without await", () => {
-  test("a start nobody awaits is still invoked before the agent returns", async () => {
-    const agents = makeAgents();
+  test("a start nobody awaits is still sent before the agent returns", async () => {
+    const { agents, sent } = setup();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
       callee.start("fire and forget");
 
       return "returned";
     });
-    const sent: unknown[] = [];
-    const { output } = await run(caller.fn, {
-      event: {
-        name: "agent/message",
-        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
-      },
-      onInvoke: (op) => {
-        sent.push(op.opts);
-
-        return "pending";
-      },
-    });
+    const { output } = await run(caller.fn, { event: trigger("caller") });
 
     expect(output).toBe("returned");
-    expect(sent).toMatchObject([
-      { payload: { data: { content: "fire and forget" } } },
+    expect(sent.filter((e) => e.name === "agent/message")).toMatchObject([
+      { data: { content: "fire and forget" } },
     ]);
   });
 });
