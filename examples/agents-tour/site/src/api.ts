@@ -2,7 +2,13 @@
  * @module
  * Calls to the tour server.
  */
-import type { Page, TourEvent, TourIndex } from "../../shared/types.ts";
+import type {
+  Page,
+  PageState,
+  ProgressSnapshot,
+  TourEvent,
+  TourIndex,
+} from "../../shared/types.ts";
 
 const get = async <T>(path: string) => {
   const res = await fetch(path);
@@ -81,6 +87,15 @@ export const api = {
   },
   send: (agent: string, thread: string, message: string) => {
     return post("/api/send", { agent, thread, message });
+  },
+  progress: () => {
+    return get<ProgressSnapshot>("/api/progress");
+  },
+  mark: (page: string, state: PageState) => {
+    return post("/api/progress/mark", { page, state });
+  },
+  resetProgress: () => {
+    return post("/api/progress/reset", {});
   },
   stream: (onEvent: (event: TourEvent) => void) => {
     const source = new EventSource("/api/stream");
