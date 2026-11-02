@@ -37,9 +37,7 @@ const make = () => {
     model: model(async (request) => {
       requests.push(
         request.messages.flatMap((m) => {
-          return m.role === "user" && typeof m.content === "string"
-            ? [m.content]
-            : [];
+          return m.role === "user" ? [JSON.stringify(m.content)] : [];
         }),
       );
 
@@ -66,7 +64,7 @@ const make = () => {
       return {
         message: { role: "assistant", content: [] },
         text:
-          startedAlready && !last.includes("finished")
+          startedAlready && !/finished|still running/.test(last)
             ? "started"
             : `saw: ${last}`,
         toolCalls: [],
@@ -100,9 +98,9 @@ afterEach(() => {
 });
 
 describe("a handle-opened model agent that started a child", () => {
-  test("stays open for the child's agent/finished, and the answer after it is the output", async () => {
+  test("stays open after its answer while the child runs: the run waits for the child's agent/finished", async () => {
     const { parent, requests } = make();
-    const { output } = await run(parent.fn, {
+    const { output, waiting, ops } = await run(parent.fn, {
       event: start,
       runId: "run-parent",
       onInvoke: () => {
@@ -110,26 +108,21 @@ describe("a handle-opened model agent that started a child", () => {
         // never awaits the child's result.
         return { data: undefined };
       },
-      incoming: [
-        {
-          name: "agent/finished",
-          data: {
-            agent: `${testClientId}/bot`,
-            thread: "t1",
-            from: {
-              kind: "agent",
-              address: `${testClientId}/child`,
-              key: childKey,
-            },
-            outcome: "completed",
-            output: "child done",
-          },
-        },
-      ],
     } as never);
 
-    expect(requests.at(-1)?.at(-1)).toContain("child done");
-    expect(output).toMatch(/^saw: .*child done/);
+    // The model answered ("started") and the run did not end: it is blocked
+    // on a read that waits up to the bound for the child.
+    expect(requests).toHaveLength(2);
+    expect(waiting).toBe(true);
+    expect(output).toBeUndefined();
+    expect(
+      ops.some((op) => {
+        return (
+          op.op === "wait" &&
+          (op.opts as { timeout?: unknown }).timeout === "1d"
+        );
+      }),
+    ).toBe(true);
   });
 
   test("a child that never finishes is waited for up to the bound, then the model names it", async () => {
