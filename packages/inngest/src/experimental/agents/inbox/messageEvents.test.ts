@@ -64,7 +64,7 @@ test("agent/message carries JSON content and a sender with a depth", async () =>
   });
 
   await expect(message.validate()).resolves.toBeUndefined();
-  expect(message.data.from).toEqual({
+  expect((message.data as { from?: unknown }).from).toEqual({
     kind: "agent",
     address: "app/lead",
     key: "k1",
