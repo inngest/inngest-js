@@ -458,8 +458,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-
-  /**
    * Scores the run: `score("quality", 1)`. Written once wherever it is
    * called. The value is a finite number or a boolean.
    */
@@ -653,9 +651,9 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
  * @example
  * ```ts
  * const body: AgentBody<{ event: ThreadCronEvent; output: null }> = async ({
- *   trigger,
+ *   event,
  * }) => {
- *   console.log(trigger?.data.cron);
+ *   console.log(event?.data.cron);
  *
  *   return null;
  * };

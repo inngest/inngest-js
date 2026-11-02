@@ -108,7 +108,7 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
 
   /**
    * The tools every agent that uses this sandbox gets, such as
-   * `sandbox.tools.code()`.
+   * `sandbox.tools.code()`. Without it the sandbox brings `sandbox.tools.code()`.
    */
   tools?: SandboxToolsFactory<TTool>;
 
@@ -974,7 +974,12 @@ const lazySandbox = (
 
   Object.defineProperty(handle, shellPlaceKey, { value: place });
 
-  for (const [key, entry] of Object.entries(definition.tools?.(handle) ?? {})) {
+  // A sandbox with no `tools` brings the code tools, as `sandbox.tools.code()`.
+  const brought = definition.tools
+    ? definition.tools(handle)
+    : codeTools(handle);
+
+  for (const [key, entry] of Object.entries(brought)) {
     tools[`${name}${toolNamespaceSeparator}${key}`] = entry;
   }
 

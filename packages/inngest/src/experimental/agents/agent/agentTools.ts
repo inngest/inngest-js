@@ -355,8 +355,8 @@ export const replyTool: AgentToolSet["reply"] = tool({
 
 /**
  * The tools a model agent gets by default, from its definition's `discovery`
- * field: `list_agents`, `describe_agent`, `start_agent` and `stop_agent`, and
- * none for `false`.
+ * field: `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
+ * `ask_agent`, `stop_agent` and `reply`. `false` leaves only `reply`.
  */
 export const agentToolsFor = (
   discovery: AgentDiscovery | undefined,
