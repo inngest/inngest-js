@@ -8,6 +8,8 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+import { z } from "zod/v4";
+import { tool } from "../../../components/sandbox/tools.ts";
 
 /**
  * A file of a skill, by path inside the skill's folder.
@@ -187,3 +189,53 @@ export const collectSkills = (sources: SkillSources): Skill[] => {
  * Sources of skills for an agent's `skills` field.
  */
 export const skills = { folder };
+
+/**
+ * Where a skill's files go in a sandbox: `/skills/<skill name>/`.
+ */
+export const skillsRoot = "/skills";
+
+/**
+ * The text that shows the model each skill's name and description, added to
+ * the end of the agent's system prompt. Bodies are not in it.
+ */
+export const skillsPrompt = (list: readonly Skill[]): string => {
+  return [
+    "You have skills: know-how you can read when it is relevant. Open one with the open_skill tool, giving its name.",
+    ...list.map((skill) => {
+      return `- ${skill.name}: ${skill.description}`;
+    }),
+  ].join("\n");
+};
+
+/**
+ * The one fixed tool an agent with skills gets, whichever skills it has:
+ * `open_skill({ name })` returns the skill's body. It adds no other tool.
+ */
+export const createSkillTools = (list: readonly Skill[]) => {
+  const byName = new Map(
+    list.map((skill) => {
+      return [skill.name, skill] as const;
+    }),
+  );
+
+  return {
+    open_skill: tool.group({
+      description:
+        "Open a skill by name and read its instructions. The skills you have are listed in your instructions.",
+      input: z.object({ name: z.string() }),
+      output: z.string(),
+      run: async ({ name }): Promise<string> => {
+        const found = byName.get(name);
+
+        if (!found) {
+          throw new Error(
+            `No skill named ${name}. Skills: ${[...byName.keys()].join(", ")}.`,
+          );
+        }
+
+        return found.body;
+      },
+    }),
+  };
+};

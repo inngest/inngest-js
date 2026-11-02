@@ -97,3 +97,10 @@ export type {
   RepoValue,
 } from "./sandboxes/repo.ts";
 export { PushRefusedError } from "./sandboxes/repo.ts";
+export type {
+  Skill,
+  SkillFile,
+  SkillSource,
+  SkillSources,
+} from "./skills/skills.ts";
+export { skills } from "./skills/skills.ts";

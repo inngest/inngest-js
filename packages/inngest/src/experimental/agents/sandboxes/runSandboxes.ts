@@ -12,6 +12,7 @@ import type { Context } from "../../../types.ts";
 import type { RunFieldContext } from "../agent/runField.ts";
 import type { AgentFunctionConfig } from "../agent/types.ts";
 import type { Kv } from "../kv/kv.ts";
+import type { Skill } from "../skills/skills.ts";
 import type { TriggerEvent } from "../threads/thread.ts";
 import {
   openSandboxes,
@@ -37,6 +38,11 @@ export const openRunSandboxes = async (options: {
   logger: Logger;
   defer: Context.Any["defer"];
   cleanup: ReturnType<typeof createDefer>;
+
+  /**
+   * The run's skills; their files go to the first sandbox the model can use.
+   */
+  skills?: readonly Skill[];
 }) => {
   const { config, client, ref, thread, runId, store, logger, defer, cleanup } =
     options;
