@@ -225,18 +225,25 @@ export type ToolInputType<TEntry> = TEntry extends SandboxTool<
   unknown
 >
   ? TInput
-  : unknown;
+  : TEntry extends (...args: infer TArgs) => unknown
+    ? // A plain function takes the model's input object as its one argument.
+      TArgs extends [infer TFirst, ...unknown[]]
+      ? TFirst
+      : Record<string, never>
+    : unknown;
 
 /**
- * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
- * typed tool.
+ * What the tool `TEntry` gives back: the output of a typed tool, or what a
+ * plain function returns, once awaited.
  */
 export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
   unknown,
   infer TOutput
 >
   ? TOutput
-  : unknown;
+  : TEntry extends (...args: never[]) => infer TResult
+    ? Awaited<TResult>
+    : unknown;
 
 export interface SandboxToolOptions {
   /**
