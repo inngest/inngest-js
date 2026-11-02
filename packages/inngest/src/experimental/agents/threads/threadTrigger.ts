@@ -393,12 +393,8 @@ export function compileTriggers(
         ? // A call from another agent names the callee's thread in `from`; any other
           // invocation is keyed by `thread`, or is the agent's own thread.
           `has(event.data.from) && has(event.data.from.thread) ? event.data.from.thread : (${supplied ?? literal(id)})`
-        : supplied;
-    if (!thread) {
-      throw new Error(
-        `Agent "${id}": the trigger "${name}" supplies no thread key; set \`thread\` on the agent.`,
-      );
-    }
+        : // With no expression anywhere, each event starts a fresh thread.
+          (supplied ?? freshKey);
 
     if (same && same.thread.source !== thread) {
       throw new Error(

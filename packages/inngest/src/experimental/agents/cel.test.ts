@@ -152,9 +152,7 @@ describe("thread key expressions", () => {
     expect(() => {
       return compileKey('""').key(chat);
     }).toThrow(/non-empty string/);
-    expect(() => {
-      return compileKey("event.data.n").key(chat);
-    }).toThrow(/non-empty string/);
+    expect(compileKey("event.data.n").key(chat)).toBe("3");
     expect(() => {
       return compileKey('event.data.n + "x"').key(chat);
     }).toThrow(/two strings or two numbers/);
@@ -210,10 +208,8 @@ describe("where the SDK subset and the backend CEL could differ", () => {
     }).toThrow(/non-empty string/);
   });
 
-  test("a number is not a string key, and + does not mix types", () => {
-    expect(() => {
-      return compileKey("event.data.n").key(chat);
-    }).toThrow(/non-empty string/);
+  test("a number key is its decimal string, and + does not mix types", () => {
+    expect(compileKey("event.data.n").key(chat)).toBe("3");
     expect(() => {
       return compileExpression('event.data.n + "x"').evaluate(chat);
     }).toThrow(/two strings or two numbers/);

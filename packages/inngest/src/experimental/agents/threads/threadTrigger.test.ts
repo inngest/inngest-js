@@ -225,7 +225,7 @@ describe("a trigger with no thread expression", () => {
     });
 
     expect(started.thread).toBe("fresh:evt-1");
-    expect(started.fresh).toBe(true);
+    expect(started).not.toHaveProperty("fresh");
     expect(singletonKey([trigger as never])).toContain('"fresh:" + event.id');
   });
 });

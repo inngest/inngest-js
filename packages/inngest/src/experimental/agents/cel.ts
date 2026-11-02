@@ -669,6 +669,11 @@ export function compileKey(
         throw error;
       }
 
+      // A number key is its decimal string, so `42` and `"42"` are one thread.
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return String(value);
+      }
+
       if (typeof value !== "string" || value === "") {
         throw new Error(
           `"${source}" must give a non-empty string, got ${JSON.stringify(value)}.`,
