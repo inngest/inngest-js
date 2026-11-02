@@ -201,6 +201,13 @@ export interface SandboxBinding<
   start?: TStart;
 
   /**
+   * Whether the model gets this sandbox's tools (`work_run`). `false` keeps the
+   * sandbox for code only: the handler's `sandboxes.work` still works.
+   * Default `true`.
+   */
+  model?: boolean;
+
+  /**
    * What a thread's sandbox becomes when its run is done with it (the run
    * ended, or `recycle()` was called).
    *
@@ -230,7 +237,7 @@ export type SandboxesConfig<
 
 /**
  * For each sandbox of an agent, by name, the names of the tools its definition
- * brings (`sandbox.tools.code()` brings `read | write | edit | search | run`).
+ * brings (`sandbox.tools.code()` brings `run`).
  * An agent's config is generic over it, so `sandboxes` and `sandboxTools` in
  * its body know their names.
  */
@@ -289,17 +296,18 @@ export const sandbox = Object.assign(defineSandbox, {
   image,
   tools: {
     /**
-     * `read`, `write`, `edit`, `search` and `run` in the sandbox.
+     * `run` in the sandbox (a shell that keeps its place), plus `read`,
+     * `search` and `edit` when named in `only`.
      */
     code: ((options?: CodeToolsOptions) => {
       return (handle: SandboxHandle) => {
         return codeTools(handle, options);
       };
     }) as {
-      <const TName extends CodeToolName = Exclude<CodeToolName, "run_code">>(
+      <const TName extends CodeToolName = "run">(
         options?: CodeToolsOptions<TName> & { tools?: undefined },
       ): SandboxToolsFactory<TName>;
-      <const TName extends CodeToolName = CodeToolName>(
+      <const TName extends CodeToolName = "run" | "run_code">(
         options: CodeToolsOptions<TName> & { tools: SandboxTools },
       ): SandboxToolsFactory<TName>;
     },
@@ -342,9 +350,24 @@ export interface LazySandbox {
   readonly idle: SandboxIdle;
 
   /**
+   * Whether the model gets this sandbox's tools.
+   */
+  readonly model: boolean;
+
+  /**
    * Whether creation has begun.
    */
   readonly started: boolean;
+
+  /**
+   * Runs commands in the sandbox, opening it on first use.
+   */
+  readonly commands: SandboxHandle["commands"];
+
+  /**
+   * Reads and writes files in the sandbox, opening it on first use.
+   */
+  readonly files: SandboxHandle["files"];
 
   /**
    * The definition's tools, named `<name>_<tool>` (`work_run`). Calling one
@@ -387,6 +410,51 @@ export interface LazySandbox {
 }
 
 /**
+ * A listed sandbox as the handler sees it, such as `sandboxes.work`: it opens
+ * on first use, and has the core sandbox's `commands` and `files`.
+ */
+export interface AgentSandbox {
+  /**
+   * Runs commands in the sandbox, opening it on first use.
+   */
+  readonly commands: SandboxHandle["commands"];
+
+  /**
+   * Reads and writes files in the sandbox, opening it on first use.
+   */
+  readonly files: SandboxHandle["files"];
+
+  /**
+   * Sets the sandbox aside now (paused, or saved and destroyed) and brings a
+   * fresh one on the next use. See the thread's sandbox `idle`.
+   */
+  recycle(): Promise<void>;
+
+  /**
+   * Destroys or pauses the sandbox if it was opened. Call it when the run is
+   * ending.
+   */
+  close(): Promise<void>;
+}
+
+/**
+ * What the handler gets from an opened sandbox: the handle, and nothing of the
+ * SDK's own bookkeeping.
+ */
+export const agentSandbox = (lazy: LazySandbox): AgentSandbox => {
+  return {
+    commands: lazy.commands,
+    files: lazy.files,
+    recycle: () => {
+      return lazy.recycle();
+    },
+    close: () => {
+      return lazy.close();
+    },
+  };
+};
+
+/**
  * The separator in a sandbox tool's name. Tool names allow no dots.
  */
 export const toolNamespaceSeparator = "_";
@@ -415,6 +483,12 @@ const toBinding = (
   if (options.start !== undefined && !startModes.includes(options.start)) {
     throw new SandboxValidationError(
       `Sandbox "${name}" has start "${String(options.start)}": use "lazy" or "eager"`,
+    );
+  }
+
+  if (options.model !== undefined && typeof options.model !== "boolean") {
+    throw new SandboxValidationError(
+      `Sandbox "${name}" has model ${String(options.model)}: use true or false`,
     );
   }
 
@@ -492,6 +566,7 @@ const lazySandbox = (
     sandbox: definition,
     start = "lazy",
     idle = defaultSandboxIdle,
+    model = true,
   } = toBinding(name, binding);
 
   let raw: Promise<DurableSandbox> | undefined;
@@ -729,9 +804,12 @@ const lazySandbox = (
     definition,
     start,
     idle,
+    model,
     get started() {
       return raw !== undefined;
     },
+    commands: handle.commands,
+    files: handle.files,
     tools,
     get,
     recycle: () => {
@@ -1093,7 +1171,7 @@ export const sandboxTools = (
 ): SandboxTools => {
   return toolsByName(
     Object.values(opened).flatMap((handle) => {
-      return Object.entries(handle.tools);
+      return handle.model ? Object.entries(handle.tools) : [];
     }),
   );
 };

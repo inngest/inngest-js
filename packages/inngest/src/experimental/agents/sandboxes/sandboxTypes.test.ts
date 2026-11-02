@@ -1,13 +1,21 @@
 /**
  * @module
  * Type tests for an agent's sandboxes: the body knows the names of the
- * sandboxes and of their tools, so a typo fails to compile.
+ * sandboxes, each has the core sandbox's commands and files, and the model's
+ * tool names come from the sandbox.
  */
 import { expectTypeOf } from "vitest";
+import type { SandboxHandle } from "../../../components/sandbox/types.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgents } from "../agent/agents.ts";
-import { type SandboxDefinition, sandbox } from "./defs.ts";
+import * as agentsEntry from "../index.ts";
+import {
+  type AgentSandbox,
+  type SandboxDefinition,
+  type SandboxToolsOf,
+  sandbox,
+} from "./defs.ts";
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
@@ -17,56 +25,49 @@ const reader = sandbox({
   id: "reader",
   tools: sandbox.tools.code({ only: ["read", "search"] }),
 });
-const repo = sandbox({
-  id: "repo",
-  tools: sandbox.tools.git({ allow: () => ({ ok: true }) } as never),
+const coder = sandbox({
+  id: "coder",
+  tools: sandbox.tools.code({ only: ["run", "read", "search", "edit"] }),
 });
 const bare = sandbox({ id: "bare" });
 
-describe("sandbox names and tool names", () => {
-  test("sandboxes and sandboxTools are keyed by what the config names", () => {
+describe("sandbox: the handle runs commands and moves files like the core sandbox", () => {
+  test("a listed sandbox has commands, files, recycle and close, and no processes", () => {
     agents.agent(
       {
         id: "typed-1",
         triggers: { cron: "0 * * * *" },
-        sandboxes: {
-          work: workbench,
-          view: { sandbox: reader, start: "eager" },
-          repo,
-          bare,
-        },
+        sandboxes: { work: workbench, bare },
       },
-      async ({ sandboxes, sandboxTools }) => {
-        expectTypeOf(sandboxes).toHaveProperty("work");
-        expectTypeOf(sandboxes).toHaveProperty("view");
-        expectTypeOf(sandboxes).toHaveProperty("bare");
-        expectTypeOf(sandboxTools).toHaveProperty("work_run");
-        expectTypeOf(sandboxTools).toHaveProperty("work_edit");
-        expectTypeOf(sandboxTools).toHaveProperty("view_read");
-        expectTypeOf(sandboxTools).toHaveProperty("view_search");
-        expectTypeOf(sandboxTools).toHaveProperty("repo_git_push");
+      async ({ sandboxes }) => {
+        expectTypeOf(sandboxes.work).toEqualTypeOf<AgentSandbox>();
+        expectTypeOf(sandboxes.work.commands).toEqualTypeOf<
+          SandboxHandle["commands"]
+        >();
+        expectTypeOf(sandboxes.work.files).toEqualTypeOf<
+          SandboxHandle["files"]
+        >();
+        expectTypeOf(sandboxes.bare.recycle).toBeFunction();
+        expectTypeOf(sandboxes.bare.close).toBeFunction();
+
+        // @ts-expect-error core sandboxes have no processes
+        sandboxes.work.processes;
+
+        // @ts-expect-error get() left the public type
+        sandboxes.work.get;
+
+        // @ts-expect-error tools left the public type
+        sandboxes.work.tools;
 
         // @ts-expect-error there is no sandbox named typo
         sandboxes.typo;
-
-        // @ts-expect-error there is no tool named typo_run
-        sandboxTools.typo_run;
-
-        // @ts-expect-error the reader brings read and search only
-        sandboxTools.view_run;
-
-        // @ts-expect-error the code tools have no tool called nope
-        sandboxTools.work_nope;
-
-        // @ts-expect-error a sandbox without tools brings none
-        sandboxTools.bare_run;
 
         return null;
       },
     );
   });
 
-  test("a function-valued config gives the same names", () => {
+  test("a function-valued config and a start function give the same names", () => {
     agents.agent(
       {
         id: "typed-2",
@@ -75,22 +76,12 @@ describe("sandbox names and tool names", () => {
           return event.name ? { work: workbench } : { work: workbench };
         },
       },
-      async ({ sandboxes, sandboxTools }) => {
+      async ({ sandboxes }) => {
         expectTypeOf(sandboxes).toHaveProperty("work");
-        expectTypeOf(sandboxTools).toHaveProperty("work_run");
-
-        // @ts-expect-error there is no sandbox named typo
-        sandboxes.typo;
-
-        // @ts-expect-error there is no tool named typo_run
-        sandboxTools.typo_run;
 
         return null;
       },
     );
-  });
-
-  test("a start that is a function still sees the event and keeps its literal", () => {
     agents.agent(
       {
         id: "typed-3",
@@ -98,6 +89,7 @@ describe("sandbox names and tool names", () => {
         sandboxes: {
           work: {
             sandbox: workbench,
+            model: false,
             start: ({ event }) => {
               return event.name === "inngest/scheduled.timer"
                 ? "eager"
@@ -106,8 +98,8 @@ describe("sandbox names and tool names", () => {
           },
         },
       },
-      async ({ sandboxTools }) => {
-        expectTypeOf(sandboxTools).toHaveProperty("work_run");
+      async ({ sandboxes }) => {
+        expectTypeOf(sandboxes).toHaveProperty("work");
 
         return null;
       },
@@ -117,85 +109,9 @@ describe("sandbox names and tool names", () => {
   test("an agent without sandboxes has none", () => {
     agents.agent(
       { id: "typed-4", triggers: { cron: "0 * * * *" } },
-      async ({ sandboxes, sandboxTools }) => {
+      async ({ sandboxes }) => {
         // @ts-expect-error this agent declares no sandboxes
         sandboxes.work;
-
-        // @ts-expect-error this agent declares no sandboxes
-        sandboxTools.work_run;
-
-        return null;
-      },
-    );
-  });
-
-  test("run_code is typed only when the code tools are given tools to call", () => {
-    const withCode = sandbox({
-      id: "with-code",
-      tools: sandbox.tools.code({ tools: {} }),
-    });
-
-    agents.agent(
-      {
-        id: "typed-5",
-        triggers: { cron: "0 * * * *" },
-        sandboxes: { work: withCode, plain: workbench },
-      },
-      async ({ sandboxTools }) => {
-        expectTypeOf(sandboxTools).toHaveProperty("work_run_code");
-
-        // @ts-expect-error run_code needs tools to call
-        sandboxTools.plain_run_code;
-
-        return null;
-      },
-    );
-  });
-
-  test("spread configs, a record in a variable and an async function infer the same", () => {
-    const base = { work: workbench };
-    const held = { work: workbench, view: reader };
-
-    agents.agent(
-      {
-        id: "typed-6",
-        triggers: { cron: "0 * * * *" },
-        sandboxes: { ...base, view: reader },
-      },
-      async ({ sandboxTools }) => {
-        expectTypeOf(sandboxTools).toHaveProperty("work_run");
-        expectTypeOf(sandboxTools).toHaveProperty("view_read");
-
-        // @ts-expect-error there is no tool named typo_run
-        sandboxTools.typo_run;
-
-        return null;
-      },
-    );
-    agents.agent(
-      { id: "typed-7", triggers: { cron: "0 * * * *" }, sandboxes: held },
-      async ({ sandboxTools }) => {
-        expectTypeOf(sandboxTools).toHaveProperty("view_search");
-
-        // @ts-expect-error the reader brings read and search only
-        sandboxTools.view_run;
-
-        return null;
-      },
-    );
-    agents.agent(
-      {
-        id: "typed-8",
-        triggers: { cron: "0 * * * *" },
-        sandboxes: async () => {
-          return { work: workbench };
-        },
-      },
-      async ({ sandboxTools }) => {
-        expectTypeOf(sandboxTools).toHaveProperty("work_run");
-
-        // @ts-expect-error there is no tool named typo_run
-        sandboxTools.typo_run;
 
         return null;
       },
@@ -214,5 +130,61 @@ describe("sandbox names and tool names", () => {
         return null;
       },
     );
+  });
+});
+
+describe("sandbox: the model's tool names come from the sandbox", () => {
+  test("each tool is <sandbox>_<tool>, from what the definition brings", () => {
+    type Names = keyof SandboxToolsOf<{
+      work: "run";
+      view: "read" | "search";
+    }>;
+
+    expectTypeOf<Names>().toEqualTypeOf<
+      "work_run" | "view_read" | "view_search"
+    >();
+  });
+});
+
+describe("sandbox: the code tools are run, run_code, read, search and edit", () => {
+  test("the default is run, and run_code appears only with tools to call", () => {
+    expectTypeOf(workbench).toEqualTypeOf<SandboxDefinition<"run">>();
+    expectTypeOf(reader).toEqualTypeOf<SandboxDefinition<"read" | "search">>();
+    expectTypeOf(coder).toEqualTypeOf<
+      SandboxDefinition<"run" | "read" | "search" | "edit">
+    >();
+    expectTypeOf(
+      sandbox({ id: "c", tools: sandbox.tools.code({ tools: {} }) }),
+    ).toEqualTypeOf<SandboxDefinition<"run" | "run_code">>();
+    expectTypeOf(bare).toEqualTypeOf<SandboxDefinition<never>>();
+  });
+
+  test("write is not a code tool", () => {
+    // @ts-expect-error write was deleted: a heredoc in run writes a file
+    sandbox.tools.code({ only: ["write"] });
+  });
+});
+
+describe("sandbox: a definition takes id, image, size, tools and setup", () => {
+  test("the options", () => {
+    sandbox({
+      id: "full",
+      image: sandbox.image.custom("py:v1"),
+      vcpu: 2,
+      memoryMb: 1024,
+      tools: sandbox.tools.code(),
+      setup: async () => {},
+    });
+  });
+});
+
+describe("sandbox: the deleted exports are gone", () => {
+  test("the public entry does not export them", () => {
+    expectTypeOf(agentsEntry).not.toHaveProperty("sandboxTools");
+    expectTypeOf(agentsEntry).not.toHaveProperty("resolveSandboxes");
+    expectTypeOf(agentsEntry).not.toHaveProperty("getSandbox");
+    expectTypeOf(agentsEntry).not.toHaveProperty("openSandboxes");
+    expectTypeOf(agentsEntry).not.toHaveProperty("SandboxToolsOf");
+    expectTypeOf(agentsEntry).not.toHaveProperty("LazySandbox");
   });
 });

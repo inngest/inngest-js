@@ -71,7 +71,7 @@ export {
   untrustedTag,
 } from "./loop/modelErrors.ts";
 export type {
-  LazySandbox,
+  AgentSandbox,
   SandboxBinding,
   SandboxDefinition,
   SandboxDefinitionOptions,
@@ -82,15 +82,10 @@ export type {
   SandboxStart,
   SandboxToolNames,
   SandboxToolsFactory,
-  SandboxToolsOf,
 } from "./sandboxes/defs.ts";
 export {
   agentTools,
-  getSandbox,
-  openSandboxes,
-  resolveSandboxes,
   sandbox,
-  sandboxTools,
   toolNamespaceSeparator,
 } from "./sandboxes/defs.ts";
 export type {

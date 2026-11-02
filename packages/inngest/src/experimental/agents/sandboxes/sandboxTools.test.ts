@@ -97,7 +97,7 @@ describe("codeTools edit", () => {
       async (sandbox) => {
         try {
           result = await (
-            codeTools(sandbox, { cwd: "/repo" }).edit.run as Call
+            codeTools(sandbox, { cwd: "/repo", only: ["edit"] }).edit.run as Call
           )(input);
         } catch (caught) {
           error = caught;
@@ -235,6 +235,27 @@ describe("codeTools", () => {
     expect(output).toBe("exit 2\nout\nstderr:\nerr");
   });
 
+  test("only adds read, search and edit, and there is no write", async () => {
+    await inSandbox(async (sandbox) => {
+      const tools = codeTools(sandbox, {
+        only: ["run", "read", "search", "edit"],
+      });
+
+      expect(Object.keys(tools)).toEqual(["run", "read", "search", "edit"]);
+      expect(Object.keys(codeTools(sandbox, { tools: {} }))).not.toContain(
+        "write",
+      );
+    });
+  });
+
+  test("only may leave out run", async () => {
+    await inSandbox(async (sandbox) => {
+      expect(Object.keys(codeTools(sandbox, { only: ["read"] }))).toEqual([
+        "read",
+      ]);
+    });
+  });
+
   test("only returns the tools asked for", async () => {
     await inSandbox(async (sandbox) => {
       expect(
@@ -261,14 +282,7 @@ describe("repo", () => {
     );
 
     expect(checkout).toMatchObject({ path: "/work", sha: "abc123" });
-    expect(Object.keys(checkout?.tools ?? {})).toEqual([
-      "read",
-      "write",
-      "edit",
-      "search",
-      "run",
-      "push",
-    ]);
+    expect(Object.keys(checkout?.tools ?? {})).toEqual(["run", "push"]);
     expect(execs.map((exec) => exec.environment?.GIT_TOKEN)).toEqual([
       token,
       token,
@@ -300,16 +314,11 @@ describe("codeTools run_code", () => {
   const sandbox = {} as DurableSandbox;
 
   test("is offered only when the script's tools are given", () => {
-    expect(Object.keys(codeTools(sandbox))).toEqual([
-      "read",
-      "write",
-      "edit",
-      "search",
+    expect(Object.keys(codeTools(sandbox))).toEqual(["run"]);
+    expect(Object.keys(codeTools(sandbox, { tools: {} }))).toEqual([
       "run",
-    ]);
-    expect(Object.keys(codeTools(sandbox, { tools: {} })).at(-1)).toBe(
       "run_code",
-    );
+    ]);
     expect(Object.keys(codeTools(sandbox, { only: ["run_code"] }))).toEqual([
       "run_code",
     ]);
