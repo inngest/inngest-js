@@ -1,13 +1,12 @@
 /**
  * @module
- * Two small buses on the window. `fakes` and `area` events (see `stream.ts`)
- * make a panel reload or react. `tour:action` events carry
+ * Two small buses on the window. `fakes` events (see `stream.ts`)
+ * make a panel reload. `tour:action` events carry
  * a key action to the panel that owns it, so a key works the same from
  * Monaco, from a text box and from the page.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ActionId } from "../../shared/keys.ts";
-import type { AreaEventDetail } from "./stream.ts";
 
 export type FakeTopic = "slack" | "github";
 
@@ -79,35 +78,6 @@ export const useFake = <T>(path: string, topic: FakeTopic) => {
   }, [path, topic]);
 
   return data;
-};
-
-/**
- * Runs `run` with the data of each event an area sends on `topic`.
- */
-export const useAreaEvent = (
-  area: string,
-  topic: string,
-  run: (data: unknown) => void,
-) => {
-  const latest = useRef(run);
-
-  latest.current = run;
-
-  useEffect(() => {
-    const onEvent = (event: Event) => {
-      const detail = (event as CustomEvent<AreaEventDetail>).detail;
-
-      if (detail.area === area && detail.topic === topic) {
-        latest.current(detail.data);
-      }
-    };
-
-    window.addEventListener("tour:area", onEvent);
-
-    return () => {
-      window.removeEventListener("tour:area", onEvent);
-    };
-  }, [area, topic]);
 };
 
 export const postJson = async (path: string, body: unknown = {}) => {
