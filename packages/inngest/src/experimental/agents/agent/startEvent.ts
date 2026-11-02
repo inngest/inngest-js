@@ -16,16 +16,16 @@ import {
 
 /**
  * The trigger event as the body sees it. An invoke event carries what the SDK
- * tells the invoked agent in `data._agent`; that is not the caller's input.
+ * tells the invoked agent in `data.from`; that is not the caller's input.
  */
 export const triggerOf = (event: TriggerEvent | undefined) => {
   const data = event?.data as Record<string, unknown> | undefined;
 
-  if (!event || !data || !("_agent" in data)) {
+  if (!event || !data || !("from" in data)) {
     return event;
   }
 
-  const { _agent: _told, ...input } = data;
+  const { from: _told, ...input } = data;
 
   return { ...event, data: input };
 };

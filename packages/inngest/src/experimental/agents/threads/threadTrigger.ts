@@ -381,9 +381,9 @@ export function compileTriggers(
     const thread = cron
       ? (own?.thread ?? literal(id))
       : invoked
-        ? // A call from another agent names the callee's thread in `_agent`; any other
+        ? // A call from another agent names the callee's thread in `from`; any other
           // invocation is keyed by `thread`, or is the agent's own thread.
-          `has(event.data._agent) && has(event.data._agent.thread) ? event.data._agent.thread : (${supplied ?? literal(id)})`
+          `has(event.data.from) && has(event.data.from.thread) ? event.data.from.thread : (${supplied ?? literal(id)})`
         : supplied;
     if (!thread) {
       throw new Error(

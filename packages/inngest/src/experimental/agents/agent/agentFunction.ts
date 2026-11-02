@@ -309,7 +309,7 @@ export function createAgentFunction(
             (found?.event === internalEvents.FunctionInvoked
               ? event.data
               : data) as Record<string, unknown>
-          )._agent,
+          ).from,
         );
         // A run that began with the start as separate KV steps replays them
         // as they were: the KV steps are numbered by how many came before, so
@@ -467,7 +467,7 @@ export function createAgentFunction(
         // `{ agent, thread, content }` reads that as the `agent/message` it is.
         const invokedAsMessage =
           !found && (event.name as string) === internalEvents.FunctionInvoked;
-        const { _agent: _told, ...invokedData } = (event.data ?? {}) as Record<
+        const { from: _told, ...invokedData } = (event.data ?? {}) as Record<
           string,
           unknown
         >;
@@ -475,17 +475,13 @@ export function createAgentFunction(
         // The event that started the run is the inbox's first message, made
         // from the run's own state: it costs no step. The inbox can receive it
         // too, when it was sent just before the inbox opened: it is read once.
-        // What the SDK told an invoked agent in `_agent` is not the caller's
-        // input.
-        const told = "_agent" in ((event.data ?? {}) as object);
+        // What the SDK told an invoked agent in `from` is not the caller's
+        // input, except for an `agent/message`, whose `from` is its sender.
+        const told = "from" in ((event.data ?? {}) as object);
         const startMessage = addEventIs({
           id: event.id ?? "",
           name: invokedAsMessage ? agentMessageEvent : event.name,
-          data: invokedAsMessage
-            ? invokedData
-            : told
-              ? invokedData
-              : event.data,
+          data: invokedAsMessage ? event.data : told ? invokedData : event.data,
           ts: event.ts ?? 0,
           user: {},
         }) as unknown as UntypedInboxMessage;

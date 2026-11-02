@@ -25,7 +25,7 @@ import { currentSessions } from "./sessions.ts";
  * invoked agent. The server only keeps `sessions` of the event meta, so the
  * depth travels here, like `_inngest` does for deferred functions.
  */
-const invokeKey = "_agent";
+const invokeKey = "from";
 
 /**
  * Thrown when the agent a call started was cancelled (a stop now, a `cancelOn`

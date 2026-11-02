@@ -230,7 +230,12 @@ describe("agent function", () => {
 
     expect(output).toEqual([
       "agent/message",
-      { agent: `${testClientId}/bot`, thread: "t1", content: "go" },
+      {
+        agent: `${testClientId}/bot`,
+        thread: "t1",
+        content: "go",
+        from: { depth: 1 },
+      },
     ]);
   });
 });
