@@ -1,11 +1,16 @@
 /**
  * @module
- * Overlays: the contents, the page search and the cheat sheet. Each takes
+ * Overlays: the concepts, the deeper pages, the page search and the cheat
+ * sheet. Each takes
  * focus when it opens and gives it back when it closes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { hintOf, monacoOnly } from "../../shared/keys.ts";
-import type { PageSummary, TourIndex } from "../../shared/types.ts";
+import type {
+  PageSummary,
+  ProgressSnapshot,
+  TourIndex,
+} from "../../shared/types.ts";
 import { keys } from "./keytable.ts";
 import { isMac } from "./platform.ts";
 
@@ -64,81 +69,95 @@ const Modal = ({
   );
 };
 
-export const Contents = ({
+export const Concepts = ({
   index,
-  current,
+  progress,
   onPick,
   onClose,
 }: {
   index: TourIndex;
-  current: string;
+  progress: ProgressSnapshot;
   onPick: (page: PageSummary) => void;
   onClose: () => void;
 }) => {
-  const all = index.modules.flatMap((module) => {
+  const pages = index.modules.flatMap((module) => {
     return module.pages;
   });
-  const [cursor, setCursor] = useState(
-    Math.max(
-      0,
-      all.findIndex((page) => {
-        return page.id === current;
-      }),
-    ),
-  );
-  const list = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    list.current
-      ?.querySelector<HTMLElement>("[aria-current=true]")
-      ?.scrollIntoView({ block: "nearest" });
-  }, [cursor]);
+  const names = Object.keys(progress.concepts).sort();
 
   return (
-    <Modal title="Contents" onClose={onClose}>
-      <div
-        className="contents"
-        ref={list}
-        tabIndex={0}
-        role="listbox"
-        aria-label="Pages"
-        onKeyDown={(event) => {
-          if (event.key === "j" || event.key === "ArrowDown") {
-            event.preventDefault();
-            setCursor((value) => {
-              return Math.min(all.length - 1, value + 1);
-            });
-          } else if (event.key === "k" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setCursor((value) => {
-              return Math.max(0, value - 1);
-            });
-          } else if (event.key === "Enter") {
-            event.preventDefault();
-            const page = all[cursor];
+    <Modal title="Concepts" onClose={onClose}>
+      <p className="modal-hint">
+        {names.length} of {progress.totalConcepts} collected. A concept joins
+        the collection the first time a page introduces it.
+      </p>
+      <div className="concept-list">
+        {names.map((name) => {
+          const entry = progress.concepts[name];
+          const taught = pages.find((page) => {
+            return page.id === entry?.page;
+          });
 
-            if (page) {
-              onPick(page);
-            }
-          }
-        }}
-      >
-        {index.modules.map((module) => {
           return (
+            <div className="concept" key={name}>
+              <span className="pill">{name}</span>
+              <p>{entry?.definition}</p>
+              {taught ? (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    onPick(taught);
+                  }}
+                >
+                  Taught on page {taught.label}: {taught.title}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+        {names.length === 0 ? (
+          <p className="empty">Nothing collected yet.</p>
+        ) : null}
+      </div>
+      <p className="modal-hint">
+        <kbd>Esc</kbd> closes this list.
+      </p>
+    </Modal>
+  );
+};
+
+export const Deeper = ({
+  index,
+  waiting,
+  onPick,
+  onClose,
+}: {
+  index: TourIndex;
+  waiting: PageSummary[];
+  onPick: (page: PageSummary) => void;
+  onClose: () => void;
+}) => {
+  return (
+    <Modal title="Deeper pages waiting" onClose={onClose}>
+      <p className="modal-hint">
+        Optional pages from modules you have finished or left. Nothing on a core
+        page depends on them.
+      </p>
+      <div className="contents">
+        {index.modules.map((module) => {
+          const own = waiting.filter((page) => {
+            return page.module === module.id;
+          });
+
+          return own.length > 0 ? (
             <section key={module.id}>
               <h3>{module.title}</h3>
-              <p className="blurb">{module.opening}</p>
-              {module.pages.map((page) => {
-                const selected = all[cursor]?.id === page.id;
-
+              {own.map((page) => {
                 return (
                   <button
                     type="button"
-                    role="option"
-                    aria-selected={selected}
-                    aria-current={selected}
                     className="entry"
-                    tabIndex={-1}
                     key={page.id}
                     onClick={() => {
                       onPick(page);
@@ -150,13 +169,12 @@ export const Contents = ({
                 );
               })}
             </section>
-          );
+          ) : null;
         })}
+        {waiting.length === 0 ? (
+          <p className="empty">No deeper pages waiting.</p>
+        ) : null}
       </div>
-      <p className="modal-hint">
-        <kbd>j</kbd> <kbd>k</kbd> move, <kbd>Enter</kbd> opens, <kbd>Esc</kbd>{" "}
-        closes
-      </p>
     </Modal>
   );
 };

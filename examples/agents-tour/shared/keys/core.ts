@@ -56,7 +56,7 @@ export const coreKeys = defineKeys([
   {
     id: "contents",
     rank: 7,
-    label: "Contents",
+    label: "Focus the left nav",
     group: "Pages",
     inField: ["Alt+Shift+C"],
     outside: ["g c"],

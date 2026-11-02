@@ -59,6 +59,20 @@ describe("the lesson checks", () => {
     assert.deepEqual(problems, ["first/hello: page.md has no title line"]);
   });
 
+  it("fail a concept with no definition", async () => {
+    const problems = await withLessons((dir) => {
+      write(
+        dir,
+        "01-first/01-hello/manifest.json",
+        '{ "readOnly": ["setup.ts"], "concepts": ["wibble"] }',
+      );
+    });
+
+    assert.deepEqual(problems, [
+      "first/hello: concept wibble has no definition in lessons/_shared/concepts.json",
+    ]);
+  });
+
   it("fail a key hint that names no action", async () => {
     const problems = await withLessons((dir) => {
       write(dir, "01-first/01-hello/page.md", "# Hello\n\nPress {Nope}.\n");

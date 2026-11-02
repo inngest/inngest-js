@@ -20,6 +20,7 @@ const page = (agent = "export const a = 1;"): Page => {
     module: "first",
     moduleTitle: "First",
     title: "More",
+    exercise: false,
     markdown: "",
     manifest: {},
     files: [
