@@ -6,6 +6,7 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { model } from "../loop/loopKit.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { freshKv, run } from "./test-helpers.ts";
 
@@ -91,4 +92,61 @@ describe("a run opened through a handle", () => {
       expect(waited(ops).length).toBeGreaterThan(0);
     },
   );
+});
+
+describe("a model agent opened through a handle (L58)", () => {
+  const make = (requests: unknown[][]) => {
+    freshKv();
+
+    return createAgentFunction(new Inngest({ id: testClientId }), {
+      id: "bot",
+      model: model(async (request) => {
+        requests.push(
+          request.messages.flatMap((m) => {
+            return m.role === "user" ? [m.content] : [];
+          }),
+        );
+
+        return {
+          message: { role: "assistant", content: [] },
+          text: `answer ${requests.length}`,
+          toolCalls: [],
+          usage: { input: 1, output: 1 },
+        };
+      }),
+    });
+  };
+
+  test("the default handler does exactly one drain after the answer, and that drain is the last read", async () => {
+    const requests: unknown[][] = [];
+    const agent = make(requests);
+    const { ops, output } = await run(agent.fn, {
+      event: message("first", { from: sender }),
+    });
+    const drains = ops.filter((op) => {
+      return (
+        op.op === "wait" &&
+        (op.opts as { batch?: { drain?: boolean } }).batch?.drain === true
+      );
+    });
+
+    // The run's first read, the loop's read before its one model call, and
+    // the single drain after the answer; nothing waits for more.
+    expect(drains).toHaveLength(3);
+    expect(ops.at(-1)?.op).toBe("close");
+    expect(requests).toHaveLength(1);
+    expect(output).toBe("answer 1");
+  });
+
+  test("with nothing sent during the call, the run ends after the answer", async () => {
+    const requests: unknown[][] = [];
+    const agent = make(requests);
+    const { output, ops } = await run(agent.fn, {
+      event: message("first", { from: sender }),
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(output).toBe("answer 1");
+    expect(waited(ops)).toEqual([]);
+  });
 });
