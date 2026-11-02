@@ -31,11 +31,11 @@ import {
 } from "../discovery/discovery.ts";
 import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
-import { quote } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
-import { startThread } from "./startThread.ts";
+import { AgentStoppedError } from "./runResults.ts";
+import { type StartedThread, startThread } from "./startThread.ts";
 
 /**
  * Options of the agent tools.
@@ -80,6 +80,14 @@ const executionOf = () => {
   return execution;
 };
 
+/**
+ * The threads sandbox code started in one execution, by key, so that
+ * `agent_result` reads the invoke `start()` made: a run that finished first
+ * is never missed. A replay starts them again, in the same order, from the
+ * journal.
+ */
+const startedBySandbox = new WeakMap<object, Map<string, StartedThread>>();
+
 const startInput = z.object({
   address: z.string().describe("The agent's address, `app/agent`."),
   input: z
@@ -94,10 +102,7 @@ const stopInput = z.object({
   thread: z.string().describe("The thread key `start_agent` returned."),
 });
 
-const startAgent = (
-  options: AgentToolSetOptions,
-  via: "start_agent" | "sandbox",
-) => {
+const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
   return async ({ address, input }: { address: string; input?: Json }) => {
     const execution = executionOf();
     const client = clientOf();
@@ -139,6 +144,13 @@ const startAgent = (
       },
       card.input ? prepared : (prepared ?? ""),
     );
+
+    if (via === undefined) {
+      const threads = startedBySandbox.get(execution.instance) ?? new Map();
+
+      threads.set(started.key, started);
+      startedBySandbox.set(execution.instance, threads);
+    }
 
     return { thread: started.key };
   };
@@ -210,7 +222,8 @@ export const agentToolsFor = (
  * The tools sandbox code gets: `start_agent` and `stop_agent` as for a model,
  * plus `agent_result({ thread })`, which waits for the run to end and gives
  * `{ outcome, output | error }`. It waits (the script exits and runs again from
- * its journal), up to 24 hours, then gives `{ outcome: "timed_out" }`.
+ * its journal) on the invoke that started the run, so a run that finished
+ * first is never missed.
  */
 export const sandboxAgentTools = (
   options: AgentToolSetOptions = {},
@@ -219,7 +232,7 @@ export const sandboxAgentTools = (
     start_agent: tool.group({
       description: startDescription,
       input: startInput,
-      run: startAgent(options, "sandbox"),
+      run: startAgent(options),
     }),
     stop_agent: tool.group({
       description: stopDescription,
@@ -234,15 +247,33 @@ export const sandboxAgentTools = (
       }),
       waits: true,
       run: async ({ thread }: { thread: string }) => {
-        const event = await step.waitForEvent(`agent_result:${thread}`, {
-          event: "agent/result",
-          if: `async.data.thread == ${quote(thread)}`,
-          timeout: "24h",
-        });
+        const started = startedBySandbox
+          .get(executionOf().instance)
+          ?.get(thread);
 
-        return event
-          ? (event.data as Record<string, unknown>)
-          : { outcome: "timed_out" };
+        if (!started) {
+          throw new Error(
+            `This script did not start a thread "${thread}" with start_agent.`,
+          );
+        }
+
+        try {
+          const output = await started.result();
+
+          return {
+            outcome: "completed" as const,
+            ...(output !== undefined && { output: output as Json }),
+          };
+        } catch (error) {
+          if (error instanceof AgentStoppedError) {
+            return { outcome: "stopped" as const };
+          }
+
+          return {
+            outcome: "failed" as const,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
       },
     }),
   };

@@ -78,10 +78,9 @@ export interface StartTarget {
 
   /**
    * Set for a run a model starts with `start_agent` (its end reaches the
-   * model as an `agent/finished` message) or sandbox code starts (its end
-   * reaches `agent_result`).
+   * model as an `agent/finished` message).
    */
-  via?: "start_agent" | "sandbox";
+  via?: "start_agent";
 }
 
 /**
