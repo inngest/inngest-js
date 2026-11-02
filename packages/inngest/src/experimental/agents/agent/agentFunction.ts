@@ -35,6 +35,7 @@ import {
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
+import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
@@ -528,6 +529,28 @@ export function createAgentFunction(
         // The event the handler gets is that message: exactly the event sent,
         // or, for a run that recovery resumed, the event of the run that failed.
         const runEvent = resentAs(startMessage);
+
+        // A `start()` of an agent with an `invoke()` trigger sends its input as
+        // a message, so core did not check it against the trigger's schema: the
+        // child does, here, for every caller. A bad input fails the run for
+        // good, so `result()` throws it and recovery never resends it.
+        if (
+          !found &&
+          (runEvent.name as string) === internalEvents.FunctionInvoked
+        ) {
+          const problem = await schemaProblem(
+            triggers.filter((trigger) => {
+              return trigger.event === internalEvents.FunctionInvoked;
+            }),
+            runEvent,
+          );
+
+          if (problem) {
+            throw new NonRetriableError(
+              `The input breaks the schema of ${ref}: ${problem}`,
+            );
+          }
+        }
 
         // The run's time-varying fields are read once, here, at its start.
         const fields = createRunFields({
