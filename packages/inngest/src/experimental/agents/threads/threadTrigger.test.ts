@@ -138,7 +138,11 @@ describe("thread key from a trigger", () => {
   test("a message to the thread still starts it by its own thread", async () => {
     const agent = createAgentFunction(
       makeClient(),
-      { id: "bot", kv, triggers: { event: "chat/message", thread: chatThread } },
+      {
+        id: "bot",
+        kv,
+        triggers: { event: "chat/message", thread: chatThread },
+      },
       async ({ inbox }) => {
         return (await inbox.next())?.data.thread;
       },
@@ -175,13 +179,15 @@ describe("thread key from a trigger", () => {
       };
     };
 
-    expect(define({ triggers: { event: "e" } })).toThrow(/supplies no thread key/);
+    expect(define({ triggers: { event: "e" } })).toThrow(
+      /supplies no thread key/,
+    );
     expect(define({ triggers: { event: "a/*", thread: '"t"' } })).toThrow(
       /(is a wildcard|owns)/,
     );
-    expect(define({ triggers: { event: "agent/message", thread: '"t"' } })).toThrow(
-      /(is a wildcard|owns)/,
-    );
+    expect(
+      define({ triggers: { event: "agent/message", thread: '"t"' } }),
+    ).toThrow(/(is a wildcard|owns)/);
     expect(
       define({
         triggers: [
@@ -190,8 +196,8 @@ describe("thread key from a trigger", () => {
         ],
       }),
     ).toThrow(/two triggers/);
-    expect(define({ triggers: { event: "a", thread: "event.data.x[0]" } })).toThrow(
-      /trigger "a"/,
-    );
+    expect(
+      define({ triggers: { event: "a", thread: "event.data.x[0]" } }),
+    ).toThrow(/trigger "a"/);
   });
 });

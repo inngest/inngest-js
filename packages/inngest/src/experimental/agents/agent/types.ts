@@ -14,6 +14,7 @@ import type {
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
+import type { DurationInput } from "../../../helpers/duration.ts";
 import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareGroupExtensions,
@@ -41,6 +42,7 @@ import type {
 import type { AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { AgentRecovery, LastRun } from "./recovery.ts";
+import type { RunField, RunFieldContext } from "./runField.ts";
 
 /**
  * The types an agent carries, as one object type. Every field is optional:
@@ -203,6 +205,21 @@ export interface AgentFunctionConfig<
    * How long a call takes, for the card.
    */
   speed?: AgentCardConfig["speed"];
+
+  /**
+   * How long a run waits in quiet before it ends: a number of milliseconds, a
+   * string such as `"7d"` or a Temporal duration, or a function of
+   * `{ event, thread }` returning one. Default: 10 minutes. It ends the run of
+   * a handler that loops over its inbox, with `for await (const batch of
+   * inbox.batches())` or `for await (const m of inbox)`: the loop returns after
+   * that much quiet. A later message starts a new run on the same thread. A
+   * long `idle` keeps a run live across deploys, and every step it takes counts
+   * toward the step limit.
+   */
+  idle?: RunField<
+    DurationInput,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>
+  >;
 
   /**
    * KV store for thread state, or a function that returns one, called at each

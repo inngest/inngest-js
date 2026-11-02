@@ -25,6 +25,7 @@ export * from "./agent/agents.ts";
 export { AgentCancelledError } from "./agent/invoke.ts";
 export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
+export type { RunField, RunFieldContext } from "./agent/runField.ts";
 export type {
   InboxToolName,
   InboxToolSource,
@@ -77,7 +78,6 @@ export {
   untrustedTag,
 } from "./loop/modelErrors.ts";
 export type {
-  ConfigValue,
   LazySandbox,
   SandboxBinding,
   SandboxDefinition,

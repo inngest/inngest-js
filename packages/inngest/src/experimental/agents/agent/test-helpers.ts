@@ -283,13 +283,13 @@ export const run = async (
         // The run is blocked until a message arrives; the replay finds it.
         if (incoming.length === 0) {
           return {
-          ops,
-          reads,
-          saved,
-          output: undefined,
-          error: undefined as unknown,
-          waiting: true,
-        };
+            ops,
+            reads,
+            saved,
+            output: undefined,
+            error: undefined as unknown,
+            waiting: true,
+          };
         }
 
         save(incoming.shift());

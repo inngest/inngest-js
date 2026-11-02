@@ -117,6 +117,12 @@ export function threadInbox(
   // The event that started the run: the inbox's first message, and the one
   // message that is not checked against a schema, because core checked it.
   started?: UntypedInboxMessage,
+
+  // How long the loop forms (`for await` over the inbox or its batches) wait
+  // in quiet before they end, in milliseconds. 0 ends them the moment they
+  // would have to wait, as in a run opened through a handle. Left out, they
+  // wait for ever.
+  idle?: number,
 ): {
   inbox: ThreadInbox;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -228,6 +234,7 @@ export function threadInbox(
     main: boolean,
   ): Reader<TOut> {
     const first = main ? lead : [];
+    const quiet = main ? idle : undefined;
 
     const reader: Reader<TOut> = {
       next: (async (options?: ReadOptions) => {
@@ -344,9 +351,25 @@ export function threadInbox(
       }) as Reader<TOut>["nextBatch"],
       async *batches(options?: BatchOptions & Partial<ReadOptions>) {
         for (;;) {
-          const batch = await reader.nextBatch(
-            options as BatchOptions & ReadOptions,
-          );
+          // `idle` ends the loop after that much quiet. A timeout of the
+          // caller's own wins.
+          const batch =
+            quiet === 0 && options?.timeout === undefined
+              ? await reader.drain(options)
+              : await reader.nextBatch(
+                  (quiet !== undefined && options?.timeout === undefined
+                    ? { ...options, timeout: quiet }
+                    : options) as BatchOptions & ReadOptions,
+                );
+
+          if (quiet === 0 && options?.timeout === undefined) {
+            if (batch === undefined || batch.length === 0) {
+              return;
+            }
+
+            yield batch;
+            continue;
+          }
 
           if (batch === undefined || batch === null) {
             return;
@@ -372,11 +395,29 @@ export function threadInbox(
         await source.close();
       },
       [Symbol.asyncIterator]() {
+        // With an `idle` of 0 the loop yields what is unread and ends.
+        const waiting: TOut[] = [];
+
         return {
           async next() {
-            const message = await reader.next();
+            if (quiet === 0) {
+              if (waiting.length === 0) {
+                waiting.push(...(await reader.drain()));
+              }
 
-            return message === undefined
+              const message = waiting.shift();
+
+              return message === undefined
+                ? { done: true, value: undefined }
+                : { done: false, value: message };
+            }
+
+            const message =
+              quiet === undefined
+                ? await reader.next()
+                : await reader.next({ timeout: quiet });
+
+            return message === undefined || message === null
               ? { done: true, value: undefined }
               : { done: false, value: message };
           },

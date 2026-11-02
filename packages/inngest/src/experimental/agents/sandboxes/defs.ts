@@ -38,6 +38,7 @@ import {
   SandboxValidationError,
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
+import { type RunField, resolveRunField } from "../agent/runField.ts";
 import type { AgentConfigContext } from "../agent/types.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
@@ -45,28 +46,6 @@ import {
   type SandboxIdle,
   type ThreadSandboxOwner,
 } from "./threadSandboxes.ts";
-
-/**
- * A config field: a value, or a function of `Ctx` returning it. A `T` that is
- * itself a function can't be used as a value, since a function is always
- * called.
- */
-export type ConfigValue<T, Ctx> = T | ((ctx: Ctx) => T | Promise<T>);
-
-/**
- * Resolves a config field: calls it with `ctx` if it is a function, passes
- * anything else through. Functions run on every replay, so they must be pure.
- */
-export const resolveConfigValue = async <T, Ctx>(
-  value: ConfigValue<T, Ctx>,
-  ctx: Ctx,
-): Promise<T> => {
-  if (typeof value === "function") {
-    return await (value as (ctx: Ctx) => T | Promise<T>)(ctx);
-  }
-
-  return value;
-};
 
 /**
  * Builds the tools a sandbox brings, such as `sandbox.tools.code()`.
@@ -248,7 +227,7 @@ export interface SandboxBinding<
 export type SandboxesConfig<
   Ctx,
   TSandboxes extends SandboxToolNames = SandboxToolNames,
-> = ConfigValue<SandboxRecord<Ctx, TSandboxes>, Ctx>;
+> = RunField<SandboxRecord<Ctx, TSandboxes>, Ctx>;
 
 /**
  * For each sandbox of an agent, by name, the names of the tools its definition
@@ -267,7 +246,7 @@ export type SandboxRecord<
 > = {
   [K in keyof TSandboxes & string]:
     | SandboxDefinition<TSandboxes[K]>
-    | SandboxBinding<ConfigValue<SandboxStart, Ctx>, TSandboxes[K]>;
+    | SandboxBinding<RunField<SandboxStart, Ctx>, TSandboxes[K]>;
 };
 
 /**
@@ -976,7 +955,7 @@ export const resolveSandboxes = async <Ctx>(
    */
   ctx: Ctx,
 ): Promise<Record<string, SandboxDefinition | SandboxBinding>> => {
-  const bindings = (await resolveConfigValue(config ?? {}, ctx)) as unknown;
+  const bindings = (await resolveRunField(config ?? {}, ctx)) as unknown;
 
   if (typeof bindings !== "object" || bindings === null) {
     throw new SandboxValidationError(
@@ -990,8 +969,8 @@ export const resolveSandboxes = async <Ctx>(
         return [name, binding as SandboxDefinition] as const;
       }
 
-      const start = await resolveConfigValue(
-        (binding as SandboxBinding<ConfigValue<SandboxStart, Ctx>>).start,
+      const start = await resolveRunField(
+        (binding as SandboxBinding<RunField<SandboxStart, Ctx>>).start,
         ctx,
       );
 

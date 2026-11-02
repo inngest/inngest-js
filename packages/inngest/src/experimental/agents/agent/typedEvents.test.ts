@@ -95,7 +95,11 @@ describe("typed events", () => {
 
   test("a list of bare event types types the inbox", () => {
     agents.agent(
-      { id: "a-bare", triggers: [order, refund, asked], thread: "event.data.id" },
+      {
+        id: "a-bare",
+        triggers: [order, refund, asked],
+        thread: "event.data.id",
+      },
       async ({ inbox }) => {
         const message = await inbox.next();
         const trigger = message;
@@ -154,7 +158,10 @@ describe("typed events", () => {
     );
 
     agents.agent(
-      { id: "t3", triggers: { event: "chat/message", thread: "event.data.ts" } },
+      {
+        id: "t3",
+        triggers: { event: "chat/message", thread: "event.data.ts" },
+      },
       async ({ trigger }) => {
         expectTypeOf(trigger?.name).toEqualTypeOf<"chat/message" | undefined>();
 
@@ -192,7 +199,10 @@ describe("typed events", () => {
 
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
-      { id: "a3", triggers: { event: "chat/message", thread: "event.data.ts" } },
+      {
+        id: "a3",
+        triggers: { event: "chat/message", thread: "event.data.ts" },
+      },
       async ({ inbox }) => {
         const message = await inbox.next();
 
@@ -208,19 +218,25 @@ describe("typed events", () => {
       },
     );
 
-    agents.agent({ id: "a4", triggers: { cron: "* * * * *" } }, async ({ inbox }) => {
-      const message = await inbox.next();
+    agents.agent(
+      { id: "a4", triggers: { cron: "* * * * *" } },
+      async ({ inbox }) => {
+        const message = await inbox.next();
 
-      expectTypeOf(message?.name).toEqualTypeOf<
-        "inngest/scheduled.timer" | "agent/message" | "agent/steer" | undefined
-      >();
+        expectTypeOf(message?.name).toEqualTypeOf<
+          | "inngest/scheduled.timer"
+          | "agent/message"
+          | "agent/steer"
+          | undefined
+        >();
 
-      if (message?.name === "inngest/scheduled.timer") {
-        expectTypeOf(message.data).toEqualTypeOf<{ cron: string }>();
-      }
+        if (message?.name === "inngest/scheduled.timer") {
+          expectTypeOf(message.data).toEqualTypeOf<{ cron: string }>();
+        }
 
-      return undefined;
-    });
+        return undefined;
+      },
+    );
   });
 
   test("the sandbox config function sees the typed event", () => {

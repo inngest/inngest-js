@@ -98,6 +98,7 @@ import {
 } from "./limits.ts";
 import { functionOptions } from "./options.ts";
 import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
+import { createRunFields, idleMs } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import type {
   AgentBody,
@@ -372,6 +373,13 @@ export function createAgentFunction(
 
         const agentScores = createAgentScores(client);
 
+        // The run's time-varying fields are read once, here, at its start.
+        const fields = createRunFields({
+          event: event as unknown as AgentBodyContext["event"],
+          thread: { key: data.thread },
+        });
+        const idle = await idleMs(fields, config.idle);
+
         const { inbox, view, steering } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
@@ -403,6 +411,7 @@ export function createAgentFunction(
           client[internalLoggerSymbol],
           runId,
           startMessage,
+          idle,
         );
 
         const control = createControl({

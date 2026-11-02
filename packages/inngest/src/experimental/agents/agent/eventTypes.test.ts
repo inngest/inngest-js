@@ -175,7 +175,10 @@ describe("triggers", () => {
   });
 
   test("the singleton is keyed on the cron's thread", () => {
-    const agent = agents.agent({ id: "u2", triggers: { cron: "0 3 * * *" } }, noop);
+    const agent = agents.agent(
+      { id: "u2", triggers: { cron: "0 3 * * *" } },
+      noop,
+    );
     const options = fnOptions(agent.fn);
 
     expect(options.triggers[2]).toEqual({ cron: "0 3 * * *" });

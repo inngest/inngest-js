@@ -322,7 +322,9 @@ export function compileTriggers(
    */
   config: ThreadKeyConfig,
 ): CompiledTrigger[] {
-  const given = (config.triggers ? [config.triggers].flat() : []) as ThreadTrigger[];
+  const given = (
+    config.triggers ? [config.triggers].flat() : []
+  ) as ThreadTrigger[];
   const compiled: CompiledTrigger[] = [];
 
   for (const trigger of given) {
