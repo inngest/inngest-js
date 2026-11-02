@@ -63,6 +63,15 @@ export type {
   ParallelOptions,
 } from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
+export type {
+  BatchOptions,
+  Inbox,
+  InboxMessage,
+  InboxMessageOf,
+  InboxSources,
+  ReadOptions,
+  UntypedInboxMessage,
+} from "./components/inbox/Inbox";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
@@ -76,7 +85,12 @@ export {
   invoke,
   staticSchema,
 } from "./components/triggers/triggers.ts";
-export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
+export type {
+  EventIs,
+  EventShape,
+  EventTypeToShape,
+  HandlerWithTriggers,
+} from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,

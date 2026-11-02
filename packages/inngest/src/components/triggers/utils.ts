@@ -203,12 +203,15 @@ function parseTrigger(trigger: InngestFunction.Trigger<string>): {
 } {
   // Direct event type trigger (e.g. `eventType("my-event")`)
   if (trigger instanceof EventType) {
-    return { eventName: trigger.name, schema: trigger.schema };
+    return { eventName: trigger.name, schema: trigger.schema ?? null };
   }
 
   // Nested event type trigger (e.g. `{ event: eventType("my-event") }`)
   if (trigger.event instanceof EventType) {
-    return { eventName: trigger.event.name, schema: trigger.event.schema };
+    return {
+      eventName: trigger.event.name,
+      schema: trigger.event.schema ?? null,
+    };
   }
 
   // String event name trigger (e.g. `{ event: "my-event" }`)
