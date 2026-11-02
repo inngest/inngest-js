@@ -36,6 +36,7 @@ import type {
   AgentMessageData,
   AgentQuestionData,
 } from "../inbox/events.ts";
+import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
@@ -543,19 +544,29 @@ export type StartInput<TEvent> = [
  * A message from an inbox source is its event too, under the event's own
  * `name`; it is not in the type of `triggers`, so narrow it with `is(type)`.
  */
+type FromSender = {
+  /**
+   * Who sent the message: an agent is a handle you can message back, a plain
+   * function is its ID and key. Anyone can send an event with `data.from`, so
+   * a message from an agent is never an approval.
+   */
+  from?: Sender;
+};
+
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
-  | MessageOf<AgentMessageData, "agent/message">
-  | (MessageOf<AgentQuestionData, "agent/question"> & {
-      /**
-       * Answers the question: with text, or with `{ outcome: "refused" }`. Only
-       * the first answer counts; a second or late one is dropped.
-       */
-      reply(answer: string | { outcome: "refused" }): Promise<void>;
-    })
-  | MessageOf<AgentAnswerData, "agent/answer">
-  | MessageOf<AgentFinishedData, "agent/finished">;
+  | (MessageOf<AgentMessageData, "agent/message"> & FromSender)
+  | (MessageOf<AgentQuestionData, "agent/question"> &
+      FromSender & {
+        /**
+         * Answers the question: with text, or with `{ outcome: "refused" }`. Only
+         * the first answer counts; a second or late one is dropped.
+         */
+        reply(answer: string | { outcome: "refused" }): Promise<void>;
+      })
+  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender)
+  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender);
 
 /**
  * An inbox the model opened with `inbox_listen`.

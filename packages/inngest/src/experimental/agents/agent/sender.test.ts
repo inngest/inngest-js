@@ -67,7 +67,12 @@ describe("msg.from", () => {
       event: event({ kind: "function", id: "cron", key: "r1", depth: 1 }),
     });
 
-    expect(output).toEqual({ kind: "function", key: "r1", id: "cron", canMessage: "undefined" });
+    expect(output).toEqual({
+      kind: "function",
+      key: "r1",
+      id: "cron",
+      canMessage: "undefined",
+    });
   });
 
   test("a message with no sender has no from", async () => {

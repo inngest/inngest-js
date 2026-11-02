@@ -75,6 +75,16 @@ export const inflightOf = (event: {
 };
 
 /**
+ * The messages that can carry a sender in `data.from`.
+ */
+const senderMessages: string[] = [
+  agentMessageEvent,
+  agentQuestionEvent,
+  agentAnswerEvent,
+  agentFinishedEvent,
+];
+
+/**
  * The IDs of the `agent/message` events among messages the run took in after
  * the one that started it, whose senders wait for the run's result.
  */
@@ -181,6 +191,9 @@ export function threadInbox(
     wait: () => number;
   },
 
+  // Makes `msg.from` of a message that has a sender.
+  senderFor?: (from: SenderData) => unknown,
+
   // Answers a question that reached the inbox.
   answer?: (
     question: { data: { id: string; text?: string; from?: SenderData } },
@@ -200,6 +213,11 @@ export function threadInbox(
     }
 
     const unwrapped = resentAs(message);
+    const sender = (unwrapped.data as { from?: SenderData } | undefined)?.from;
+
+    if (sender && senderFor && senderMessages.includes(unwrapped.name)) {
+      Object.assign(unwrapped, { from: senderFor(sender) });
+    }
 
     if (unwrapped.name === agentQuestionEvent && answer) {
       const data = unwrapped.data as AgentQuestionData;

@@ -44,6 +44,7 @@ import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
+import { senderFrom } from "../inbox/sender.ts";
 import {
   eventNameOf,
   inboxFilter,
@@ -605,6 +606,9 @@ export function createAgentFunction(
             wait: () => {
               return childWait.ms;
             },
+          },
+          (from) => {
+            return senderFrom(client, from);
           },
           (question, given) => {
             // Marked first: a question that code answered costs the model no
