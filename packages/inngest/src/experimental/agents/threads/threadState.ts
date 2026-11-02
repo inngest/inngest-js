@@ -171,6 +171,11 @@ export const threadRecorder = (
        * The thread's budget as this run's agent defines it.
        */
       budget?: AgentBudget,
+
+      /**
+       * The IDs of the messages this turn takes in, noted for their senders.
+       */
+      folded?: string[],
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
@@ -179,12 +184,24 @@ export const threadRecorder = (
           status: "running",
           ...(inherited && { inherited }),
           ...(current.budget === undefined && budget && { budget }),
+          ...(folded &&
+            folded.length > 0 && { folded: foldedOf(current, runId, folded) }),
           // `null` clears it: a run that does not begin with a message must
           // not keep the one the run before it left behind.
           ...(inflight === null && { inflight: undefined }),
           ...(inflight && { inflight }),
         };
       }, thread);
+    },
+
+    /**
+     * The run took in messages without starting a turn (a drain): their IDs
+     * are noted for their senders.
+     */
+    folded: (ids: string[]) => {
+      return record((current) => {
+        return { folded: foldedOf(current, runId, ids) };
+      });
     },
 
     /**
@@ -246,6 +263,21 @@ export const threadRecorder = (
       }, thread);
     },
   };
+};
+
+/**
+ * The folded IDs of the record with more added, for the run that adds them.
+ */
+const foldedOf = (
+  current: ThreadRecord,
+  runId: string,
+  ids: string[],
+): NonNullable<ThreadRecord["folded"]> => {
+  const same = current.folded?.run === runId ? current.folded.ids : [];
+
+  // A union: the write can run again for a retried step, and a message is
+  // noted once.
+  return { run: runId, ids: [...new Set([...same, ...ids])] };
 };
 
 /**

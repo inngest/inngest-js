@@ -14,7 +14,7 @@ import { step } from "../../../components/InngestStepTools.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SenderData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { threadHandle } from "../threads/thread.ts";
+import { type ThreadHandle, threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -22,33 +22,17 @@ import {
   limitStateOf,
   readInheritedLimits,
 } from "./limits.ts";
+import {
+  AgentStoppedError,
+  AgentTimeoutError,
+  flush,
+  isRecord,
+  noop,
+  type ResultOptions,
+  stoppedRun,
+  timedOut,
+} from "./runResults.ts";
 import { currentSessions } from "./sessions.ts";
-
-/**
- * Thrown by `result()` when the run it waits for was stopped (a `stop()`, a
- * `cancelOn` event, or the cancellation of the caller's own parent), so the
- * caller never takes a cancelled run's non-answer for a result.
- */
-export class AgentStoppedError extends NonRetriableError {
-  /**
-   * The ID of the stopped run, when the executor says.
-   */
-  public readonly runId: string | undefined;
-
-  constructor(
-    /**
-     * The agent's address.
-     */
-    address: string,
-    runId?: string,
-  ) {
-    super(
-      `${address} was stopped${runId ? ` (run ${runId})` : ""}, so it returned no result.`,
-    );
-    this.name = "AgentStoppedError";
-    this.runId = runId;
-  }
-}
 
 /**
  * How many agents deep a started run is: 1 for one started by a function that
@@ -65,45 +49,6 @@ export const invokeDepthOf = (
   const depth = isRecord(from) ? from.depth : undefined;
 
   return typeof depth === "number" && depth > 0 ? depth : 0;
-};
-
-/**
- * Thrown by `result({ timeout })` when the run did not finish in time. The run
- * keeps going: ask for its `result()` again to keep waiting.
- */
-export class AgentTimeoutError extends NonRetriableError {
-  constructor(
-    /**
-     * The agent's address.
-     */
-    address: string,
-  ) {
-    super(`${address} did not finish in time; its run is still going.`);
-    this.name = "AgentTimeoutError";
-  }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-/**
- * What `step.invoke` gives back for a cancelled run: the whole
- * `inngest/function.finished` event, not an output.
- */
-const stoppedRun = (result: unknown): { runId?: string } | undefined => {
-  if (!isRecord(result) || result.name !== "inngest/function.finished") {
-    return undefined;
-  }
-
-  const data = result.data;
-  const info = isRecord(data) ? data._inngest : undefined;
-
-  if (!isRecord(data) || !isRecord(info) || info.status !== "Cancelled") {
-    return undefined;
-  }
-
-  return { runId: typeof data.run_id === "string" ? data.run_id : undefined };
 };
 
 /**
@@ -139,24 +84,10 @@ export interface StartTarget {
 }
 
 /**
- * Options of `result()`.
- */
-export interface ResultOptions {
-  /**
-   * How long to wait, as a duration string (`"5m"`) or milliseconds.
-   */
-  timeout?: string | number;
-}
-
-/**
  * The thread a `start()` opened.
  */
-export interface StartedThread<TOutput = unknown> {
-  /**
-   * The thread's key.
-   */
-  key: string;
-
+export interface StartedThread<TOutput = unknown>
+  extends ThreadHandle<TOutput> {
   /**
    * Waits for the run `start()` began and gives its output. It throws when the
    * run failed or was stopped. With a `timeout` it throws an
@@ -168,11 +99,6 @@ export interface StartedThread<TOutput = unknown> {
    * then throws an error that names the chained form.
    */
   result(options?: ResultOptions): Promise<TOutput>;
-
-  /**
-   * Stops the thread's live run.
-   */
-  stop(): Promise<void>;
 }
 
 /**
@@ -182,20 +108,32 @@ export interface StartedThread<TOutput = unknown> {
 export type StartedThreadPromise<TOutput = unknown> = Promise<
   StartedThread<TOutput>
 > &
-  Pick<StartedThread<TOutput>, "result" | "stop">;
-
-const noop = () => {};
-
-const timedOut = Symbol("timedOut");
+  Pick<StartedThread<TOutput>, "result" | "stop" | "message" | "ask">;
 
 /**
- * The macrotask a `start()` yields after issuing its invoke, so the engine
- * reports the op before the handler can return without awaiting it.
+ * How a `start()` reaches the child: the one place that knows the mechanism
+ * (a `step.invoke` whose answer is the run's output), so it can be swapped
+ * without touching the callers. Returns the promise of the child's output.
  */
-const flush = (): Promise<void> => {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
+const reachChild = (call: {
+  address: string;
+  id: string;
+  data: Record<string, unknown>;
+  sessions: Record<string, string>;
+}): Promise<unknown> => {
+  const slash = call.address.indexOf("/");
+
+  return step.invoke(
+    { id: call.id, name: `start ${call.address}` },
+    {
+      function: referenceFunction({
+        appId: call.address.slice(0, slash),
+        functionId: call.address.slice(slash + 1),
+      }),
+      data: call.data,
+      meta: { sessions: call.sessions },
+    },
+  );
 };
 
 /**
@@ -257,18 +195,12 @@ export function startThread<TOutput>(
   const data = target.typed
     ? { ...(input as Record<string, unknown>), from }
     : { agent: target.address, thread: key, content: input as Json, from };
-  const slash = target.address.indexOf("/");
-  const invoked = step.invoke(
-    { id: `start:${target.address}:${n}`, name: `start ${target.address}` },
-    {
-      function: referenceFunction({
-        appId: target.address.slice(0, slash),
-        functionId: target.address.slice(slash + 1),
-      }),
-      data,
-      meta: { sessions },
-    },
-  );
+  const invoked = reachChild({
+    address: target.address,
+    id: `start:${target.address}:${n}`,
+    data,
+    sessions,
+  });
 
   // An unread result must not become an unhandled rejection.
   invoked.catch(() => {});
@@ -278,8 +210,9 @@ export function startThread<TOutput>(
   // Set once the start has been planned: from then on the code after it has
   // waited for the run's step, so a timeout has nothing left to race.
   let planned = false;
+  const thread = threadHandle<TOutput>(target.client, target.address, key);
   const handle: StartedThread<TOutput> = {
-    key,
+    ...thread,
     async result(options) {
       if (planned && options?.timeout !== undefined) {
         throw new Error(
@@ -317,9 +250,6 @@ export function startThread<TOutput>(
 
       return output as TOutput;
     },
-    async stop() {
-      await threadHandle(target.client, target.address, key).stop();
-    },
   };
 
   // A replayed invoke is already answered, so the race ends without waiting
@@ -333,5 +263,7 @@ export function startThread<TOutput>(
   return Object.assign(started, {
     result: handle.result,
     stop: handle.stop,
+    message: handle.message,
+    ask: handle.ask,
   });
 }

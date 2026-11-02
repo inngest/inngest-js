@@ -34,11 +34,8 @@ import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import type { Json } from "../json.ts";
 import { threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
-import {
-  AgentStoppedError,
-  type StartedThread,
-  startThread,
-} from "./startThread.ts";
+import { AgentStoppedError } from "./runResults.ts";
+import { type StartedThread, startThread } from "./startThread.ts";
 
 /**
  * Options of the agent tools.

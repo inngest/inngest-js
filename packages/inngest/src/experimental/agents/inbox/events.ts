@@ -152,3 +152,34 @@ export const agentFinished = eventType("agent/finished", {
 export const agentRecover = eventType("agent/recover", {
   schema: staticSchema<AgentRecoverData>(),
 });
+
+/**
+ * The data of `agent/message.result`: how the run that took a message ended,
+ * sent once for each message so its sender can match `async.data.id`.
+ */
+export type AgentMessageResultData = {
+  /**
+   * The ID of the message event this answers.
+   */
+  id: string;
+
+  /**
+   * The run that took the message.
+   */
+  run_id: string;
+} & MessageOutcome;
+
+/**
+ * How the run that took a message ended.
+ */
+export type MessageOutcome =
+  | { status: "completed"; output?: Json }
+  | { status: "failed"; error: string }
+  | { status: "stopped" };
+
+/**
+ * Tells the sender of a message how the run that took it ended.
+ */
+export const agentMessageResult = eventType("agent/message.result", {
+  schema: staticSchema<AgentMessageResultData>(),
+});

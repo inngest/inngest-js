@@ -704,5 +704,5 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
      * Thread key.
      */
     key: string,
-  ): ThreadHandle;
+  ): ThreadHandle<TOutput>;
 }
