@@ -40,11 +40,34 @@ export async function readRequestBody(
 }
 
 function getURL(req: http.IncomingMessage, hostnameOption?: string): URL {
+  // Proxies that append to this header send a list such as "https, http",
+  // where the first entry is the protocol the client actually used.
+  const forwardedProto = req.headers["x-forwarded-proto"] as string | undefined;
   const protocol =
-    (req.headers["x-forwarded-proto"] as string) ||
+    forwardedProto?.split(",")[0]?.trim() ||
     ((req.socket as TLSSocket)?.encrypted ? "https" : "http");
   const origin = hostnameOption || `${protocol}://${req.headers.host}`;
   return new URL(req.url || "", origin);
+}
+
+/**
+ * Like `getURL()`, but when a malformed `Host` or `X-Forwarded-Proto` header
+ * makes the URL impossible to build, it answers the request with a 400 and
+ * returns `undefined` instead of throwing, so a bad header can't crash the
+ * process.
+ */
+function getURLOrReject(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  hostnameOption?: string,
+): URL | undefined {
+  try {
+    return getURL(req, hostnameOption);
+  } catch {
+    res.writeHead(400);
+    res.end();
+    return;
+  }
 }
 
 const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
@@ -161,7 +184,11 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
  */
 export const createServer = (options: ServeHandlerOptions) => {
   const server = http.createServer((req, res) => {
-    const url = getURL(req, options.serveOrigin);
+    const url = getURLOrReject(req, res, options.serveOrigin);
+    if (!url) {
+      return;
+    }
+
     const pathname = options.servePath || "/api/inngest";
     if (url.pathname === pathname) {
       return serve(options)(req, res);
@@ -199,7 +226,10 @@ function createDurableEndpointProxyHandler(
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> => {
-    const url = getURL(req);
+    const url = getURLOrReject(req, res);
+    if (!url) {
+      return;
+    }
 
     const result = await handleDurableEndpointProxyRequest(
       options.client as Inngest.Any,
@@ -251,7 +281,10 @@ export function serveEndpoint(handler: EndpointHandler): http.RequestListener {
       }
     }
 
-    const url = getURL(req);
+    const url = getURLOrReject(req, res);
+    if (!url) {
+      return;
+    }
     const webRequest = new Request(url.href, {
       method: req.method,
       headers,
