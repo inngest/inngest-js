@@ -122,6 +122,7 @@ import {
   type RunFields,
 } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
+import { startThread } from "./startThread.ts";
 import { traceWarning } from "./traceWarning.ts";
 import type {
   AgentBody,
@@ -676,7 +677,7 @@ export function createAgentFunction(
               ...als,
               execution: {
                 ...als.execution,
-                ...(found ? { agent: { thread: thread.key } } : {}),
+                agent: { thread: thread.key, ref },
                 agentBridge: bridge,
               },
             },
@@ -700,6 +701,21 @@ export function createAgentFunction(
     }),
     thread(key) {
       return getThread(client, ref, key);
+    },
+    id: config.id,
+    address: ref,
+    start(input) {
+      return startThread(
+        {
+          client,
+          id: config.id,
+          address: ref,
+          typed: triggers.some((trigger) => {
+            return trigger.event === internalEvents.FunctionInvoked;
+          }),
+        },
+        input,
+      );
     },
   };
 }

@@ -110,7 +110,7 @@ export interface AsyncContext {
      * If present, the thread of an agent run whose trigger event
      * does not carry them. Set by the agent function; read by the agent KV.
      */
-    agent?: { thread: string };
+    agent?: { thread: string; ref?: string };
 
     /**
      * What the executor said it supports on this request. Undefined when

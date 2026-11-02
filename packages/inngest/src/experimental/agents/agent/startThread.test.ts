@@ -6,11 +6,14 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
 const makeAgents = () => {
-  return createAgents(new Inngest({ id: testClientId }));
+  return createAgents(new Inngest({ id: testClientId }), {
+    store: memoryKvAdapter(),
+  });
 };
 
 describe("agent.start()", () => {
