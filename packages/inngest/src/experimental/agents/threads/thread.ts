@@ -15,12 +15,19 @@ import type { InngestApi } from "../../../api/api.ts";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
+import { nextCount } from "../agent/executionCounter.ts";
 import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
+import { senderOf } from "../agent/sender.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
+  type AgentAnswerData,
   type AgentMessageData,
+  agentAnswer,
+  agentFinished,
   agentMessage,
+  agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
@@ -35,6 +42,13 @@ export const agentMessageEvent = agentMessage.name;
  * The name of the event that sends a failed run's message again.
  */
 export const agentRecoverEvent = agentRecover.name;
+
+/**
+ * The names of the question, answer and finished events.
+ */
+export const agentQuestionEvent = agentQuestion.name;
+export const agentAnswerEvent = agentAnswer.name;
+export const agentFinishedEvent = agentFinished.name;
 
 /**
  * An event that started or reached an agent, as the agent sees it: the name
@@ -174,6 +188,17 @@ export const lastRunRecordKey = "__lastRun";
  */
 export const summaryLength = 500;
 
+/**
+ * Options of `ask()`.
+ */
+export interface AskOptions {
+  /**
+   * How long to wait for the answer, as a duration string (`"5m"`) or
+   * milliseconds. Default: one hour.
+   */
+  timeout?: string | number;
+}
+
 export interface ThreadHandle {
   /**
    * The agent, as `"appId/functionId"`.
@@ -187,6 +212,15 @@ export interface ThreadHandle {
    * so a replay sends it once.
    */
   message(content: Json): Promise<void>;
+
+  /**
+   * Asks the thread a question and waits for the answer, which is a string.
+   * It is `null` when the thread refuses, or does not answer in time (default
+   * timeout: one hour). The answer goes only to this call and never to an
+   * inbox. A question to an idle thread starts a run there. Needs a function's
+   * step context.
+   */
+  ask(question: string, options?: AskOptions): Promise<string | null>;
 
   /**
    * Stops the thread by cancelling its live run by its run ID through the
@@ -219,7 +253,7 @@ export function threadKv(client: Inngest.Any, key: string): KvScopeInstance {
  * The current function execution, when the caller can use steps: inside a
  * function but not inside a step's callback (which is already memoized).
  */
-function stepContext() {
+export function stepContext() {
   const execution = getAsyncCtxSync()?.execution;
 
   return execution && !execution.executingStep ? execution : undefined;
@@ -280,6 +314,46 @@ export function threadHandle(
       }
 
       await client.send(event);
+    },
+    async ask(question, options) {
+      const execution = stepContext();
+
+      if (!execution) {
+        throw new Error("ask() must be called inside an Inngest function");
+      }
+
+      const n = nextCount(execution.instance, "ask");
+      const id = `ask:${execution.ctx.runId}.${n}`;
+
+      // Opened before the question is sent, so an answer that comes quickly is
+      // not missed. It ends with this call, whichever way it ends.
+      await using answers = step.subscribe(id, {
+        event: agentAnswerEvent,
+        if: `async.data.re == ${JSON.stringify(id)}`,
+      });
+
+      await inboxOpenedPromise(answers);
+      await step.sendEvent(
+        `${id}:send`,
+        agentQuestion.create(
+          {
+            agent,
+            thread: key,
+            id,
+            text: question,
+            from: senderOf(execution),
+          },
+          { meta },
+        ),
+      );
+
+      const answer = await answers.next({ timeout: options?.timeout ?? "1h" });
+
+      // The first answer is the one: this inbox closes with the call, so a
+      // second or late answer never reaches anyone.
+      const data = answer?.data as AgentAnswerData | undefined;
+
+      return data?.outcome === "answered" ? data.text : null;
     },
     async stop() {
       // The live run is the one the thread record names. A thread with no

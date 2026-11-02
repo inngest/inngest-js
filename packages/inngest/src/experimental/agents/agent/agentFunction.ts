@@ -40,6 +40,7 @@ import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import { cardOf } from "../discovery/discovery.ts";
+import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
 import {
@@ -268,7 +269,7 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...[agentMessageEvent, agentRecoverEvent].map((name) => {
+        ...ownEvents.map((name) => {
           return { event: name, if: `event.data.agent == ${quote(ref)}` };
         }),
         ...triggers.map((trigger) => {
@@ -581,6 +582,9 @@ export function createAgentFunction(
           runId,
           startMessage,
           idle,
+          (question, given) => {
+            return answerQuestion(client, question, given);
+          },
         );
 
         // The loop reads this when it runs, inside the agent, whichever way
