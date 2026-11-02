@@ -14,7 +14,6 @@ const deletedValues = [
   "agentInvokeCancelOn",
   "agentInvokeDepth",
   "agentInvokeInput",
-  "skills",
   "skillsBake",
   "createKv",
   "slack",
