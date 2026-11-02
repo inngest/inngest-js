@@ -26,8 +26,8 @@ export const exerciseKeys = defineKeys([
     rank: 10,
     label: "Show a solution",
     group: "Exercise",
-    inField: ["Alt+Shift+Z"],
-    outside: ["z"],
+    inField: ["Alt+Shift+8"],
+    outside: ["8"],
   },
 ]);
 

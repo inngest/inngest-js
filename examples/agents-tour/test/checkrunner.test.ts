@@ -88,6 +88,8 @@ describe("checking an exercise", { skip: binary === undefined }, () => {
     await tour.start();
     base = tour.url;
     stop = tour.stop;
+    // Progress outlives the data folder, so a run starts from none.
+    await post(base, "/api/progress/reset", {});
   });
 
   after(async () => {
