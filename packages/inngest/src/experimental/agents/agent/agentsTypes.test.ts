@@ -259,6 +259,30 @@ test("agents: budget, price and limits fields take their types", () => {
   });
 });
 
+test("agents: limits.mayCall takes a list of exact addresses", () => {
+  typesOnly(() => {
+    agents.agent({
+      id: "may-call-1",
+      triggers: [created],
+      limits: { depth: 2, mayCall: ["research/coder"] },
+    });
+
+    agents.agent({
+      id: "may-call-2",
+      triggers: [created],
+      // @ts-expect-error mayCall is a list of addresses, not one address
+      limits: { mayCall: "research/coder" },
+    });
+
+    agents.agent({
+      id: "may-call-3",
+      triggers: [created],
+      // @ts-expect-error an address is text
+      limits: { mayCall: [1] },
+    });
+  });
+});
+
 test("agents: limits.spawn, limits.budget and limits.price are errors, and price is never a function of the event", () => {
   typesOnly(() => {
     agents.agent({
