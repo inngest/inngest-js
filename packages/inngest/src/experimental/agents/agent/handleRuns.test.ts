@@ -30,7 +30,8 @@ const sender = { kind: "function", id: "caller", key: "r1", depth: 1 };
 const waited = (ops: { op: string; opts: unknown }[]) => {
   return ops.filter((op) => {
     return (
-      op.op === "wait" && (op.opts as { timeout?: unknown }).timeout !== undefined
+      op.op === "wait" &&
+      (op.opts as { timeout?: unknown }).timeout !== undefined
     );
   });
 };
