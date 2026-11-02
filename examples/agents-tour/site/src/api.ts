@@ -9,6 +9,7 @@ import type {
   TourEvent,
   TourIndex,
 } from "../../shared/types.ts";
+import { ownPost } from "./sound/own.ts";
 
 const get = async <T>(path: string) => {
   const res = await fetch(path);
@@ -21,6 +22,8 @@ const get = async <T>(path: string) => {
 };
 
 const post = async (path: string, body: unknown) => {
+  ownPost();
+
   const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },

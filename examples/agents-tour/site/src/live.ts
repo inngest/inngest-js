@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ActionId } from "../../shared/keys.ts";
+import { ownPost } from "./sound/own.ts";
 
 export type FakeTopic = "slack" | "github";
 
@@ -81,6 +82,8 @@ export const useFake = <T>(path: string, topic: FakeTopic) => {
 };
 
 export const postJson = async (path: string, body: unknown = {}) => {
+  ownPost();
+
   const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },

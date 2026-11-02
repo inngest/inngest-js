@@ -1486,3 +1486,396 @@ main.single .text {
     flex-wrap: wrap;
   }
 }
+
+/* Sound: the speaker and its menu, the page's touches for each style, and Doom. */
+.sound {
+  position: relative;
+  display: inline-flex;
+}
+
+.speaker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.55;
+}
+
+.speaker:hover,
+.speaker[aria-expanded="true"],
+.speaker.on {
+  opacity: 1;
+}
+
+.speaker.on {
+  color: var(--accent);
+}
+
+.speaker svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.speaker kbd {
+  font-size: 9px;
+  padding: 1px 3px;
+}
+
+.sound-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 3px;
+  z-index: 30;
+}
+
+.sound-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sound-opt[aria-checked="true"] {
+  background: var(--accent-soft);
+}
+
+.sound-opt.cur,
+.sound-opt:hover {
+  background: var(--surface-2);
+}
+
+.sound-opt[aria-checked="true"].cur {
+  background: var(--accent-soft);
+}
+
+.sound-opt kbd {
+  font-size: 9px;
+  padding: 1px 3px;
+}
+
+.sound-foot {
+  padding: 3px 6px 2px;
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+#sound-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 50;
+}
+
+.sound-bit {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.sound-glow {
+  position: absolute;
+  inset: 0;
+}
+
+.sound-ripple {
+  position: absolute;
+  right: 40px;
+  top: 22px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+}
+
+.shake {
+  animation: shake 0.35s;
+}
+
+@keyframes shake {
+  20% {
+    transform: translate(-5px, 2px);
+  }
+
+  40% {
+    transform: translate(5px, -3px);
+  }
+
+  60% {
+    transform: translate(-3px, 3px);
+  }
+
+  80% {
+    transform: translate(3px, -1px);
+  }
+}
+
+/* The progress visuals follow the style (ticket 14's pills and banner). */
+[data-sound-style="chip"] .pill.flying {
+  border-radius: 0;
+  border-color: var(--ok);
+  background: #0e1a14;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+[data-sound-style="quest"] .pill.flying {
+  border-color: var(--warn);
+  background: linear-gradient(135deg, #2a2346, #3b2f1a);
+  box-shadow: 0 0 12px rgb(224 176 74 / 45%);
+}
+
+[data-sound-style="kalimba"] .pill.flying {
+  background: transparent;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgb(124 124 255 / 14%);
+}
+
+[data-sound-style="doom"] .pill.flying {
+  border-radius: 2px;
+  border-color: #ffb347;
+  background: #1a1613;
+  color: #ffb347;
+  font-weight: 700;
+}
+
+[data-sound-style="doom"] .module-done {
+  border-color: #ffb347;
+  box-shadow: 0 0 0 2px #55493e;
+}
+
+html.dm-on #root {
+  height: calc(100% - 108px);
+}
+
+#doom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 108px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 0 16px;
+  background: linear-gradient(#4a4036, #2b241d);
+  border-top: 3px solid #6b5b4b;
+  font-family: var(--mono);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition:
+    transform 0.16s ease-out,
+    visibility 0s 0.16s;
+}
+
+#doom-bar.on {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+#doom-bar .cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 78px;
+}
+
+#doom-bar .lab {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #9a8a76;
+}
+
+#doom-bar .num {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffb347;
+  text-shadow:
+    0 0 10px rgb(255 140 40 / 45%),
+    0 2px 0 #5a2c0a;
+  font-variant-numeric: tabular-nums;
+}
+
+#doom-bar .num.low {
+  color: #ff4d4d;
+  text-shadow:
+    0 0 12px rgb(255 40 40 / 60%),
+    0 2px 0 #4a0a0a;
+}
+
+#doom-bar .num.low.blink {
+  animation: doom-blink 0.5s steps(2) infinite;
+}
+
+@keyframes doom-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+#doom-bar .num.sm {
+  font-size: 28px;
+}
+
+#doom-face {
+  width: 72px;
+  image-rendering: pixelated;
+  background: #3a342d;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 3px #55493e,
+    inset 0 0 0 1px #14110f;
+}
+
+#doom-bar .doom-credit {
+  position: absolute;
+  right: 10px;
+  top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: 9px;
+  color: #7d6f5f;
+  letter-spacing: 0.02em;
+}
+
+#doom-bar .doom-credit a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#doom-bar .doom-credit a:hover,
+#doom-bar .doom-credit a:focus-visible {
+  color: #ffb347;
+  text-decoration: underline;
+}
+
+#doom-bar .arms {
+  display: grid;
+  grid-template-columns: repeat(4, 26px);
+  gap: 4px;
+}
+
+#doom-bar .arms i {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 24px;
+  height: 26px;
+  border: 2px solid #55493e;
+  background: #1a1613;
+  color: #6d6154;
+  border-radius: 2px;
+}
+
+#doom-bar .arms i.cur {
+  color: #1a1613;
+  background: #ffb347;
+  border-color: #ffd08a;
+}
+
+#game-over {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 35%) 0 2px, transparent 2px 5px),
+    rgb(110 0 0 / 62%);
+}
+
+#game-over.on {
+  display: flex;
+}
+
+#game-over b {
+  font: 900 clamp(40px, 9vw, 96px) / 1 var(--mono);
+  letter-spacing: 0.14em;
+  color: #ff4d4d;
+  text-shadow:
+    0 0 24px #000,
+    4px 4px 0 #3a0000;
+}
+
+#game-over span {
+  font: 800 clamp(24px, 5vw, 48px) / 1 var(--mono);
+  color: #ffb347;
+  text-shadow: 0 0 16px #000;
+}
+
+#sound-peek {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 72px;
+  pointer-events: none;
+  z-index: 40;
+  visibility: hidden;
+  transform: translate(-300px, -300px);
+}
+
+#sound-peek img {
+  display: block;
+  width: 72px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shake {
+    animation: none;
+  }
+
+  #doom-bar {
+    transition: none;
+  }
+
+  #doom-bar .num.low.blink {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  #doom-bar {
+    gap: 10px;
+  }
+
+  #doom-bar .arms {
+    display: none;
+  }
+}

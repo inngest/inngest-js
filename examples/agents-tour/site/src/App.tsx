@@ -29,6 +29,10 @@ import { Divider } from "./panes.tsx";
 import { store } from "./platform.ts";
 import { flyConcepts, moment } from "./progress-effects.ts";
 import { deeperWaiting, moduleEnd } from "./progress-model.ts";
+import { DoomBar, GameOver, SoundButton } from "./Sound.tsx";
+import { getState, peekNow, setMenu, startSound, swapTrack, toggleMuted } from "./sound/index.ts";
+import { momentsOf } from "./sound/moments.ts";
+import { justPosted } from "./sound/own.ts";
 import { routeStreamEvent } from "./stream.ts";
 import { TracePanel } from "./trace.tsx";
 
@@ -94,6 +98,12 @@ export const App = () => {
   const runButton = useRef<HTMLButtonElement>(null);
   const textPane = useRef<HTMLElement>(null);
   const undoTimer = useRef<number | undefined>(undefined);
+  // The runs the sound last heard about; null until the first snapshot.
+  const heard = useRef<TraceRun[] | null>(null);
+
+  useEffect(() => {
+    startSound();
+  }, []);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
@@ -138,6 +148,11 @@ export const App = () => {
       } else if (event.type === "status") {
         setStatus(event);
       } else if (event.type === "runs") {
+        for (const name of momentsOf(heard.current, event.runs)) {
+          moment(name);
+        }
+
+        heard.current = event.runs;
         setRuns(event.runs);
       } else if (event.type === "progress") {
         refresh();
@@ -148,10 +163,17 @@ export const App = () => {
 
         if (event.mark.moduleDone) {
           setModuleDone(event.mark.moduleDone);
-          moment("moduleDone");
+          // The exercise's check passed, then the module is done.
+          moment("checkPass");
+          window.setTimeout(() => {
+            moment("moduleDone");
+          }, 1300);
         }
-      } else {
-        routeStreamEvent(event, window);
+      } else if (routeStreamEvent(event, window) && event.type === "fakes") {
+        // The agent posted in a fake, unless the reader just did.
+        if (!justPosted()) {
+          moment("reply");
+        }
       }
     });
   }, []);
@@ -227,6 +249,7 @@ export const App = () => {
     const target = flat[position + offset];
 
     if (target) {
+      moment(offset > 0 ? "next" : "prev");
       open(target.id);
     }
   };
@@ -362,6 +385,7 @@ export const App = () => {
       return;
     }
 
+    moment("run");
     await formatAll();
 
     const values = editor.current?.values() ?? {};
@@ -575,9 +599,19 @@ export const App = () => {
     resetProgress: askReset,
   };
 
+  const soundHandlers: Handlers = {
+    soundToggle: toggleMuted,
+    soundMenu: () => {
+      setMenu(true);
+    },
+    soundTrack: swapTrack,
+    soundPeek: peekNow,
+  };
+
   const handlers: Handlers = {
     ...panelHandlers,
     ...progressHandlers,
+    ...soundHandlers,
     ...core,
   };
 
@@ -585,7 +619,7 @@ export const App = () => {
 
   latest.current = handlers;
   useKeyboard(handlers, () => {
-    return overlay !== null;
+    return overlay !== null || getState().menu;
   });
 
   const markers: Marker[] = useMemo(() => {
@@ -656,6 +690,7 @@ export const App = () => {
   }
 
   return (
+    <>
     <div className="app">
       <header className="topbar">
         <span className="logo" aria-hidden="true" />
@@ -716,6 +751,7 @@ export const App = () => {
           >
             Dev Server <Kbd action="devserver" />
           </button>
+          <SoundButton />
         </nav>
       </header>
 
@@ -1093,5 +1129,8 @@ export const App = () => {
         />
       ) : null}
     </div>
+    <DoomBar />
+    <GameOver />
+    </>
   );
 };
