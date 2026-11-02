@@ -36,7 +36,7 @@ const say = (text: string): AgentModelResponse => {
 };
 
 const message = (
-  kind: "user" | "steer",
+  kind: "user",
   content?: string,
   thread = "t1",
   extra: Record<string, unknown> = {},
@@ -49,12 +49,6 @@ const message = (
   };
 
   switch (kind) {
-    case "steer":
-      return {
-        name: "agent/steer",
-        ...carried,
-        data: { ...routing, text: content, ...data },
-      };
     default:
       return {
         name: "agent/message",
@@ -100,7 +94,6 @@ describe("agent function", () => {
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
       "agent/recover",
-      "agent/steer",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -164,7 +157,7 @@ describe("agent function", () => {
 
     const { output } = await run(fn, {
       event: trigger("go"),
-      saved: [message("steer", "left")],
+      saved: [message("user", "left")],
     });
 
     expect(output).toEqual([
@@ -175,10 +168,10 @@ describe("agent function", () => {
         isMessage: true,
       },
       {
-        name: "agent/steer",
+        name: "agent/message",
         text: "left",
         extra: [],
-        isMessage: false,
+        isMessage: true,
       },
     ]);
   });
@@ -309,11 +302,11 @@ describe("inbox arrival", () => {
 
     const { output } = await run(fn, {
       event: trigger("go"),
-      saved: [message("user", "a"), message("steer", "b")],
+      saved: [message("user", "a"), message("user", "b")],
       timeouts: 1,
     });
 
-    expect(output).toEqual([["agent/message", "agent/steer"], null]);
+    expect(output).toEqual([["agent/message", "agent/message"], null]);
   });
 });
 
@@ -463,13 +456,7 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual([
-      "agent/message",
-      "agent/recover",
-      "agent/steer",
-      "ci/status",
-      "ci/status",
-    ]);
+    ).toEqual(["agent/message", "agent/recover", "ci/status", "ci/status"]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
@@ -807,7 +794,7 @@ describe("agent cleanup", () => {
 
     const { output } = await run(fn, {
       event: trigger("go"),
-      saved: [message("user", "a"), message("steer", "b")],
+      saved: [message("user", "a"), message("user", "b")],
     });
 
     expect(output).toEqual([["a", "b"], undefined]);
@@ -829,7 +816,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/message", "agent/recover", "agent/steer"]);
+    ).toEqual(["agent/message", "agent/recover"]);
   });
 });
 

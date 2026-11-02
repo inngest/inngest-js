@@ -14,7 +14,7 @@ import { step } from "../../../components/InngestStepTools.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SenderData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { getThread } from "../threads/thread.ts";
+import { threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -66,6 +66,22 @@ export const invokeDepthOf = (
 
   return typeof depth === "number" && depth > 0 ? depth : 0;
 };
+
+/**
+ * Thrown by `result({ timeout })` when the run did not finish in time. The run
+ * keeps going: ask for its `result()` again to keep waiting.
+ */
+export class AgentTimeoutError extends NonRetriableError {
+  constructor(
+    /**
+     * The agent's address.
+     */
+    address: string,
+  ) {
+    super(`${address} did not finish in time; its run is still going.`);
+    this.name = "AgentTimeoutError";
+  }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,6 +140,16 @@ export interface StartTarget {
 }
 
 /**
+ * Options of `result()`.
+ */
+export interface ResultOptions {
+  /**
+   * How long to wait, as a duration string (`"5m"`) or milliseconds.
+   */
+  timeout?: string | number;
+}
+
+/**
  * The thread a `start()` opened.
  */
 export interface StartedThread<TOutput = unknown> {
@@ -134,9 +160,15 @@ export interface StartedThread<TOutput = unknown> {
 
   /**
    * Waits for the run `start()` began and gives its output. It throws when the
-   * run failed or was stopped.
+   * run failed or was stopped. With a `timeout` it throws an
+   * `AgentTimeoutError` when the run is not done in time, and the run keeps
+   * going; there is no default timeout. The wait is raced against the run
+   * only when `result()` is called in the same tick as `start()`
+   * (`start(x).result({ timeout })`): a step that is still pending holds back
+   * the code after it, so a timeout asked for after `await start(x)` has
+   * nothing left to race.
    */
-  result(): Promise<TOutput>;
+  result(options?: ResultOptions): Promise<TOutput>;
 
   /**
    * Stops the thread's live run.
@@ -154,6 +186,8 @@ export type StartedThreadPromise<TOutput = unknown> = Promise<
   Pick<StartedThread<TOutput>, "result" | "stop">;
 
 const noop = () => {};
+
+const timedOut = Symbol("timedOut");
 
 /**
  * The macrotask a `start()` yields after issuing its invoke, so the engine
@@ -240,10 +274,32 @@ export function startThread<TOutput>(
   // An unread result must not become an unhandled rejection.
   invoked.catch(() => {});
 
+  let waits = 0;
   const handle: StartedThread<TOutput> = {
     key,
-    async result() {
-      const output = await invoked;
+    async result(options) {
+      waits += 1;
+
+      const wait = waits;
+      const output =
+        options?.timeout === undefined
+          ? await invoked
+          : await Promise.race([
+              invoked,
+              step
+                .waitForEvent(`start:${target.address}:${n}:timeout:${wait}`, {
+                  event: "agent/result.timeout",
+                  timeout: options.timeout,
+                })
+                .then(() => {
+                  return timedOut;
+                }),
+            ]);
+
+      if (output === timedOut) {
+        throw new AgentTimeoutError(target.address);
+      }
+
       const stopped = stoppedRun(output);
 
       if (stopped) {
@@ -253,7 +309,7 @@ export function startThread<TOutput>(
       return output as TOutput;
     },
     async stop() {
-      await getThread(target.client, target.address, key).stop();
+      await threadHandle(target.client, target.address, key).stop();
     },
   };
 

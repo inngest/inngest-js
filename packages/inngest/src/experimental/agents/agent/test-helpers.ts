@@ -63,7 +63,9 @@ export const run = async (
      * run ends: with its output, or with an error. Left out, an invoke is
      * answered with `undefined`.
      */
-    onInvoke?: (op: OutgoingOp) => { data?: unknown; error?: unknown };
+    onInvoke?: (
+      op: OutgoingOp,
+    ) => { data?: unknown; error?: unknown } | "pending";
   } = {},
 ) => {
   const root = hashedStepId(options.key ?? "inbox");
@@ -313,11 +315,22 @@ export const run = async (
         options.onStep?.(op);
       }
 
+      // A wait for an event ends unanswered, as it does when its timeout runs
+      // out.
+      if (op.op === StepOpCode.WaitForEvent) {
+        answer(op.id, null);
+        continue;
+      }
+
       if (op.op === StepOpCode.InvokeFunction && options.onInvoke) {
         ops.push({ id: op.userland?.id ?? op.id, op: "invoke", opts });
 
         if (!(op.id in state)) {
           const answered = options.onInvoke(op);
+
+          if (answered === "pending") {
+            continue;
+          }
 
           state = {
             ...state,

@@ -4,7 +4,7 @@
  * address: its key. It spans many runs.
  *
  * Everything sent to a thread is a plain event (`agent/message`,
- * `agent/steer`), so messages show up in the
+ * `agent/recover`), so messages show up in the
  * event stream, can be inspected and shared like any other event, and start a
  * run when none is live: the agent function has a singleton
  * per thread, so a message sent while a run is live is skipped as a trigger and
@@ -20,23 +20,16 @@ import type { LastRun } from "../agent/recovery.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
   type AgentMessageData,
-  type AgentSteerData,
   agentMessage,
   agentRecover,
-  agentSteer,
 } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
 /**
- * The name of the event `thread.send()` sends.
+ * The name of the event `thread.message()` sends.
  */
 export const agentMessageEvent = agentMessage.name;
-
-/**
- * The name of the other event a thread receives from the agent layer.
- */
-export const agentSteerEvent = agentSteer.name;
 
 /**
  * The name of the event that sends a failed run's message again.
@@ -189,25 +182,20 @@ export interface ThreadHandle {
   key: string;
 
   /**
-   * Sends a message that starts the next turn (and a run, if none is live).
-   * Inside a function it is a step, so a replay sends it once.
+   * Sends a message to the thread: into the live run's inbox, or as the
+   * start of a run when the thread is idle. Inside a function it is a step,
+   * so a replay sends it once.
    */
-  send(message: string): Promise<void>;
-
-  /**
-   * Sends a message to fold into the turn that is running.
-   */
-  steer(message: string): Promise<void>;
+  message(content: Json): Promise<void>;
 
   /**
    * Stops the thread by cancelling its live run by its run ID through the
    * Inngest API, so it needs the API reachable from where you call it (the
-   * signing key, or the Dev Server), and works for any thread key.
-   *
-   * It returns `{ stopped: false }` when there was nothing to stop: a thread
-   * with no record or no live run. A KV store that is not configured throws.
+   * signing key, or the Dev Server), and works for any thread key. A thread
+   * with no live run has nothing to stop, and the call does nothing. A KV
+   * store that is not configured throws.
    */
-  stop(): Promise<{ stopped: boolean }>;
+  stop(): Promise<void>;
 }
 
 /**
@@ -262,57 +250,40 @@ export function threadStateOf(
 }
 
 /**
- * EXPERIMENTAL: Gets the handle of a thread.
+ * The handle of a thread.
  * @param client Inngest client.
  * @param agent The agent, as `"appId/functionId"`.
  * @param key Thread key, the thread's address.
  */
-export function getThread(
+export function threadHandle(
   client: Inngest.Any,
   agent: string,
   key: string,
 ): ThreadHandle {
-  // Inside a function the send is a step, so a replay does not send it again.
-  async function sendEvent(
-    id: string,
-    event: ReturnType<typeof agentMessage.create | typeof agentSteer.create>,
-  ) {
-    if (stepContext()) {
-      await step.sendEvent(id, event);
-
-      return;
-    }
-
-    await client.send(event);
-  }
-
   const meta = { sessions: threadSessions(key) };
 
   return {
     agent,
     key,
-    async send(message) {
-      await sendEvent(
-        `thread:${key}:message`,
-        agentMessage.create(
-          { agent, thread: key, content: message } satisfies AgentMessageData,
-          { meta },
-        ),
+    async message(content) {
+      const event = agentMessage.create(
+        { agent, thread: key, content } satisfies AgentMessageData,
+        { meta },
       );
-    },
-    async steer(message) {
-      await sendEvent(
-        `thread:${key}:steer`,
-        agentSteer.create(
-          { agent, thread: key, text: message } satisfies AgentSteerData,
-          { meta },
-        ),
-      );
+
+      // Inside a function the send is a step, so a replay does not send it
+      // again.
+      if (stepContext()) {
+        await step.sendEvent(`thread:${key}:message`, event);
+
+        return;
+      }
+
+      await client.send(event);
     },
     async stop() {
       // The live run is the one the thread record names. A thread with no
-      // record, or whose record says no run is live, has nothing to cancel,
-      // and the answer says so. A KV store that is not configured throws.
+      // record, or whose record says no run is live, has nothing to cancel.
       const record = (await threadKv(client, key).get(threadRecordKey)) as
         | ThreadRecord
         | undefined;
@@ -321,7 +292,7 @@ export function getThread(
         !record?.runId ||
         (record.status !== "running" && record.status !== "waiting")
       ) {
-        return { stopped: false };
+        return;
       }
 
       const res = await (
@@ -333,8 +304,6 @@ export function getThread(
       if (!res.ok && res.error?.status !== 404) {
         throw new Error(res.error?.error ?? "Could not cancel the run.");
       }
-
-      return { stopped: true };
     },
   };
 }

@@ -18,7 +18,6 @@ import { compileKey, toAsync } from "../cel.ts";
 import {
   agentMessageEvent,
   agentRecoverEvent,
-  agentSteerEvent,
   type Inflight,
 } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
@@ -33,15 +32,11 @@ const warned = new Set<string>();
 /**
  * The events the agent layer sends to a thread.
  */
-export const ownEvents: string[] = [
-  agentMessageEvent,
-  agentRecoverEvent,
-  agentSteerEvent,
-];
+export const ownEvents: string[] = [agentMessageEvent, agentRecoverEvent];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
- * message that does not start a turn (a steer).
+ * message that does not start a turn.
  * @param event The event.
  */
 export const inflightOf = (event: {
@@ -49,10 +44,6 @@ export const inflightOf = (event: {
   name: string;
   data: unknown;
 }): Inflight | undefined => {
-  if (event.name === agentSteerEvent) {
-    return undefined;
-  }
-
   if (event.name === agentRecoverEvent) {
     const data = event.data as Partial<AgentRecoverData>;
 

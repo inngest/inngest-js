@@ -73,24 +73,10 @@ export type AgentRecoverData = AgentRouting & {
 };
 
 /**
- * The data of `agent/steer`: text folded into the turn that is running.
- */
-export type AgentSteerData = AgentRouting & {
-  text: string;
-};
-
-/**
  * Text that starts the next turn (and a run, if none is live).
  */
 export const agentMessage = eventType("agent/message", {
   schema: staticSchema<AgentMessageData>(),
-});
-
-/**
- * Text folded into the turn that is running (and a run, if none is live).
- */
-export const agentSteer = eventType("agent/steer", {
-  schema: staticSchema<AgentSteerData>(),
 });
 
 /**

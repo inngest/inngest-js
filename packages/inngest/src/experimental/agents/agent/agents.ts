@@ -33,6 +33,7 @@ import type {
   AgentFunction,
   AgentFunctionConfig,
   InboxSource,
+  StartInput,
 } from "./types.ts";
 
 /**
@@ -75,7 +76,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput>;
+  ): AgentFunction<TOutput, StartInput<ThreadTriggerEventOf<TType>>>;
   agent<
     const TTypes extends readonly EventTypeWithAnySchema<string>[],
     TOutput = unknown,
@@ -103,7 +104,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput>;
+  ): AgentFunction<TOutput, StartInput<ThreadTriggerListEvent<TTypes>>>;
   agent<
     const TOne extends ThreadTriggerEventSource,
     TOutput = unknown,
@@ -131,7 +132,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput>;
+  ): AgentFunction<TOutput, StartInput<ThreadTriggerEventOf<TOne>>>;
   agent<
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
@@ -186,7 +187,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput>;
+  ): AgentFunction<TOutput, StartInput<ThreadTriggerListEvent<TMany>>>;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
@@ -315,7 +316,6 @@ export type {
   AgentQuestionData,
   AgentRecoverData,
   AgentRouting,
-  AgentSteerData,
 } from "../inbox/events.ts";
 export {
   agentAnswer,
@@ -323,7 +323,6 @@ export {
   agentMessage,
   agentQuestion,
   agentRecover,
-  agentSteer,
 } from "../inbox/events.ts";
 export type {
   Kv,
@@ -353,8 +352,6 @@ export type {
 export {
   agentMessageEvent,
   agentRecoverEvent,
-  agentSteerEvent,
-  getThread,
 } from "../threads/thread.ts";
 export type {
   ThreadCronEvent,
@@ -387,4 +384,5 @@ export type {
   AgentTypesOf,
   InboxSource,
   OpenedInbox,
+  StartInput,
 } from "./types.ts";
