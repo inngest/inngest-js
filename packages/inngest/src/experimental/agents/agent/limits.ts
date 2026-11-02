@@ -53,8 +53,8 @@ export interface AgentLimits {
   depth?: number;
 
   /**
-   * The agents this agent may start, as `"appId/functionId"` patterns where
-   * `*` matches any text (`"research/*"`). Default: any. A sub-agent may
+   * The agents this agent may start, as exact `"appId/functionId"`
+   * addresses (`"research/coder"`). Default: any. A sub-agent may
    * start only agents that match its parent's list and its own.
    */
   mayCall?: string[];
@@ -280,29 +280,6 @@ export const readInheritedLimits = (
 };
 
 /**
- * Whether `target` matches a pattern, where `*` matches any text.
- */
-export const matchesTarget = (
-  /**
-   * An allow-list entry such as `"research/*"`.
-   */
-  pattern: string,
-  /**
-   * The agent as `"appId/functionId"`.
-   */
-  target: string,
-): boolean => {
-  const source = pattern
-    .split("*")
-    .map((part) => {
-      return part.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-    })
-    .join(".*");
-
-  return new RegExp(`^${source}$`).test(target);
-};
-
-/**
  * Why the budget is spent, or `undefined` while there is some left.
  */
 export const budgetReason = (
@@ -356,11 +333,7 @@ export const checkInvoke = (
   }
 
   for (const list of mayCall ?? []) {
-    const allowed = list.some((pattern) => {
-      return matchesTarget(pattern, target);
-    });
-
-    if (!allowed) {
+    if (!list.includes(target)) {
       throw new AgentLimitError(
         "mayCall",
         `Refused: ${target} was not started. This agent may only start: ${list.join(", ") || "no agents"} (limits.mayCall).`,

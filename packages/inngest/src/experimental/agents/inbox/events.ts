@@ -44,7 +44,7 @@ export type SenderData =
       address: string;
       key: string;
       depth?: number;
-      via?: "start_agent" | "sandbox";
+      via?: "start_agent";
       target?: string;
       thread?: string;
     }
@@ -146,26 +146,4 @@ export const agentFinished = eventType("agent/finished", {
  */
 export const agentRecover = eventType("agent/recover", {
   schema: staticSchema<AgentRecoverData>(),
-});
-
-/**
- * The data of `agent/result`: how a run that sandbox code started ended. It
- * goes only to the code waiting in `agent_result`, never to an inbox.
- */
-export type AgentResultData = {
-  /**
-   * The key of the thread the run was on.
-   */
-  thread: string;
-} & (
-  | { outcome: "completed"; output?: Json }
-  | { outcome: "failed"; error: string }
-  | { outcome: "stopped" }
-);
-
-/**
- * How a run sandbox code started ended; `agent_result` waits for it.
- */
-export const agentResult = eventType("agent/result", {
-  schema: staticSchema<AgentResultData>(),
 });

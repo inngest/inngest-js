@@ -9,6 +9,7 @@ import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
+import { threadKv, threadRecordKey } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import { agentToolSet, sandboxAgentTools } from "./agentTools.ts";
 import { run } from "./test-helpers.ts";
@@ -37,7 +38,12 @@ const live = async () => {
  * invoke ops the run issued.
  */
 const callTools = async (
-  calls: { tool: string; input: Record<string, unknown> }[],
+  calls: {
+    tool: string;
+    input:
+      | Record<string, unknown>
+      | ((results: unknown[]) => Record<string, unknown>);
+  }[],
   options: Parameters<typeof agentToolSet>[0] & { forSandbox?: boolean } = {
     functions: live,
   },
@@ -48,7 +54,8 @@ const callTools = async (
   const caller = agents.agent({ id: "caller" }, async () => {
     const out: unknown[] = [];
 
-    for (const { tool, input } of calls) {
+    for (const { tool, input: given } of calls) {
+      const input = typeof given === "function" ? given(out) : given;
       const resolved = await resolveToolCall(
         tools,
         { op: "call", id: 1, tool, args: [], kwargs: input },
@@ -173,6 +180,51 @@ describe("start_agent", () => {
   });
 });
 
+describe("stop_agent", () => {
+  const cancelled = () => {
+    return vi
+      .spyOn(
+        (client as unknown as { inngestApi: { cancelRun: () => unknown } })
+          .inngestApi,
+        "cancelRun",
+      )
+      .mockResolvedValue({ ok: true } as never);
+  };
+
+  test("cancels the live run of the thread", async () => {
+    const cancel = cancelled();
+
+    await threadKv(client, "t-live").set(threadRecordKey, {
+      runId: "run-1",
+      status: "running",
+    });
+
+    const { results } = await callTools([
+      { tool: "stop_agent", input: { thread: "t-live" } },
+    ]);
+
+    expect(results).toEqual([{ ok: true }]);
+    expect(cancel).toHaveBeenCalledWith("run-1");
+  });
+
+  test("does nothing for a thread with no live run", async () => {
+    const cancel = cancelled();
+
+    await threadKv(client, "t-idle").set(threadRecordKey, {
+      runId: "run-2",
+      status: "idle",
+    });
+
+    const { results } = await callTools([
+      { tool: "stop_agent", input: { thread: "t-idle" } },
+      { tool: "stop_agent", input: { thread: "t-never" } },
+    ]);
+
+    expect(results).toEqual([{ ok: true }, { ok: true }]);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+});
+
 describe("the tools sandbox code gets", () => {
   test("hold start_agent and stop_agent plus the waiting agent_result", () => {
     const tools = sandboxAgentTools();
@@ -189,13 +241,30 @@ describe("the tools sandbox code gets", () => {
     expect("agent_result" in agentToolSet()).toBe(false);
   });
 
-  test("start_agent marks the run as started by code, so its end goes to agent_result", async () => {
+  test("agent_result gives the output of the run start_agent began, from the same invoke", async () => {
     const { results, invokes } = await callTools(
-      [{ tool: "start_agent", input: { address: plain.card.address } }],
+      [
+        { tool: "start_agent", input: { address: plain.card.address } },
+        {
+          tool: "agent_result",
+          input: (done) => {
+            return { thread: (done[0] as { thread: string }).thread };
+          },
+        },
+      ],
       { functions: live, forSandbox: true },
     );
 
-    expect(results).toEqual([{ thread: expect.any(String) }]);
-    expect(invokes).toMatchObject([{ data: { from: { via: "sandbox" } } }]);
+    expect(invokes).toHaveLength(1);
+    expect(results[1]).toEqual({ outcome: "completed", output: "done" });
+  });
+
+  test("agent_result names a thread this script did not start", async () => {
+    const { results } = await callTools(
+      [{ tool: "agent_result", input: { thread: "nope" } }],
+      { functions: live, forSandbox: true },
+    );
+
+    expect(JSON.stringify(results[0])).toMatch(/nope/);
   });
 });

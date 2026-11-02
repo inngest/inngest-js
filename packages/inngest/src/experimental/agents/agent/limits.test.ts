@@ -10,7 +10,6 @@ import {
   checkInvoke,
   childLimits,
   type LimitState,
-  matchesTarget,
   narrowInherited,
   narrowLimits,
   readInheritedLimits,
@@ -33,16 +32,6 @@ const refusal = (fn: () => void) => {
 
   throw new Error("expected a refusal");
 };
-
-describe("matchesTarget", () => {
-  test("matches whole targets, with * for any text", () => {
-    expect(matchesTarget("app/a", "app/a")).toBe(true);
-    expect(matchesTarget("app/a", "app/ab")).toBe(false);
-    expect(matchesTarget("app/*", "app/anything")).toBe(true);
-    expect(matchesTarget("*/scout", "x/scout")).toBe(true);
-    expect(matchesTarget("a.b/c", "aXb/c")).toBe(false);
-  });
-});
 
 describe("narrowLimits", () => {
   test("depth defaults to 1 and an inherited cap wins when lower", () => {
@@ -98,7 +87,7 @@ describe("checkInvoke", () => {
   });
 
   test("refuses a target outside any mayCall list", () => {
-    const limits = { mayCall: [["app/*"], ["app/a"]] };
+    const limits = { mayCall: [["app/a", "app/c"], ["app/a"]] };
 
     checkInvoke(state(limits), "app/a");
 
@@ -108,6 +97,16 @@ describe("checkInvoke", () => {
 
     expect(error.limit).toBe("mayCall");
     expect(error.message).toContain("app/a");
+  });
+
+  test("mayCall takes exact addresses: a * is not a pattern", () => {
+    const limits = { mayCall: [["app/*"]] };
+
+    expect(
+      refusal(() => {
+        checkInvoke(state(limits), "app/a");
+      }).limit,
+    ).toBe("mayCall");
   });
 
   test("refuses once the budget is spent", () => {
