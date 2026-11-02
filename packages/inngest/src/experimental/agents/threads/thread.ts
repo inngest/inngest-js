@@ -80,7 +80,7 @@ export interface ThreadState {
 
   /**
    * Tokens used by every model call of the thread, across runs, and what they
-   * cost in US dollars when the agent has a `limits.price`.
+   * cost in US dollars when the agent has a the agent's `price`.
    */
   usage: { input: number; output: number; usd?: number };
 

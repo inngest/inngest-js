@@ -314,7 +314,7 @@ type Param = { role: "user" | "assistant"; content: Block[] };
 
 /**
  * USD per million tokens for the current Claude models, in the shape
- * `limits.price` and `agent.loop({ price })` take. The SDK keeps this list
+ * the agent's `price` and `agent.loop({ price })` take. The SDK keeps this list
  * for convenience and Anthropic can change a price; spread it and add or
  * replace an entry to override. Haiku 5.5 is priced at its rate for prompts up
  * to 100,000 tokens.
