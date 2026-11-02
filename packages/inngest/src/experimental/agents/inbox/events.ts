@@ -13,6 +13,7 @@ import {
   eventType,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
+import type { Json } from "../json.ts";
 
 /**
  * What every event sent to a thread carries, to route it.
@@ -64,4 +65,58 @@ export const agentMessage = eventType("agent/message", {
  */
 export const agentSteer = eventType("agent/steer", {
   schema: staticSchema<AgentSteerData>(),
+});
+
+/**
+ * The data of `agent/question`: a question a waiting `ask()` or a model's
+ * `ask_agent` sent. The sender is `data.from` when it is set.
+ */
+export type AgentQuestionData = {
+  /**
+   * The question's ID. The answer's `re` is this value.
+   */
+  id: string;
+  text: string;
+};
+
+/**
+ * The data of `agent/answer`: how a question ended.
+ */
+export type AgentAnswerData = {
+  /**
+   * The ID of the question this answers.
+   */
+  re: string;
+} & (
+  | { outcome: "answered"; text: string }
+  | { outcome: "refused" | "timed_out" }
+);
+
+/**
+ * The data of `agent/finished`: how a run an agent started ended.
+ */
+export type AgentFinishedData =
+  | { outcome: "completed"; output?: Json }
+  | { outcome: "failed"; error: string }
+  | { outcome: "stopped" };
+
+/**
+ * A question for an agent's inbox, answered with `msg.reply(answer)`.
+ */
+export const agentQuestion = eventType("agent/question", {
+  schema: staticSchema<AgentQuestionData>(),
+});
+
+/**
+ * The answer to an `agent/question`, or the word that there will not be one.
+ */
+export const agentAnswer = eventType("agent/answer", {
+  schema: staticSchema<AgentAnswerData>(),
+});
+
+/**
+ * How a run an agent started ended.
+ */
+export const agentFinished = eventType("agent/finished", {
+  schema: staticSchema<AgentFinishedData>(),
 });

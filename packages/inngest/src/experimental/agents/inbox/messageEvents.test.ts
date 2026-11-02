@@ -5,12 +5,12 @@
  */
 import { expectTypeOf, test } from "vitest";
 import {
-  agentAnswer,
-  agentFinished,
-  agentQuestion,
   type AgentAnswerData,
   type AgentFinishedData,
   type AgentQuestionData,
+  agentAnswer,
+  agentFinished,
+  agentQuestion,
 } from "./events.ts";
 
 test("the event names are agent/question, agent/answer and agent/finished", () => {
