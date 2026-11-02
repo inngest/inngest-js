@@ -266,7 +266,7 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...[agentMessageEvent, agentRecoverEvent].map((name) => {
+        ...ownEvents.map((name) => {
           return { event: name, if: `event.data.agent == ${quote(ref)}` };
         }),
         ...triggers.map((trigger) => {

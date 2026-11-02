@@ -73,7 +73,7 @@ export const agentMessage = eventType("agent/message", {
  * The data of `agent/question`: a question a waiting `ask()` or a model's
  * `ask_agent` sent. The sender is `data.from` when it is set.
  */
-export type AgentQuestionData = {
+export type AgentQuestionData = AgentRouting & {
   from?: SenderData;
   /**
    * The question's ID. The answer's `re` is this value.
@@ -85,23 +85,34 @@ export type AgentQuestionData = {
 /**
  * The data of `agent/answer`: how a question ended.
  */
-export type AgentAnswerData = {
+export type AgentAnswerData = Partial<AgentRouting> & {
   /**
    * The ID of the question this answers.
    */
   re: string;
+
+  /**
+   * Who answered.
+   */
+  from?: SenderData;
 } & (
-  | { outcome: "answered"; text: string }
-  | { outcome: "refused" | "timed_out" }
-);
+    | { outcome: "answered"; text: string }
+    | { outcome: "refused" | "timed_out" }
+  );
 
 /**
  * The data of `agent/finished`: how a run an agent started ended.
  */
-export type AgentFinishedData =
-  | { outcome: "completed"; output?: Json }
-  | { outcome: "failed"; error: string }
-  | { outcome: "stopped" };
+export type AgentFinishedData = AgentRouting & {
+  /**
+   * The agent and thread that finished.
+   */
+  from?: SenderData;
+} & (
+    | { outcome: "completed"; output?: Json }
+    | { outcome: "failed"; error: string }
+    | { outcome: "stopped" }
+  );
 
 /**
  * A question for an agent's inbox, answered with `msg.reply(answer)`.

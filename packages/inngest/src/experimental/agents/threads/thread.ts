@@ -20,7 +20,10 @@ import type { LastRun } from "../agent/recovery.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
   type AgentMessageData,
+  agentAnswer,
+  agentFinished,
   agentMessage,
+  agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
@@ -35,6 +38,13 @@ export const agentMessageEvent = agentMessage.name;
  * The name of the event that sends a failed run's message again.
  */
 export const agentRecoverEvent = agentRecover.name;
+
+/**
+ * The names of the question, answer and finished events.
+ */
+export const agentQuestionEvent = agentQuestion.name;
+export const agentAnswerEvent = agentAnswer.name;
+export const agentFinishedEvent = agentFinished.name;
 
 /**
  * An event that started or reached an agent, as the agent sees it: the name

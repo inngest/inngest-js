@@ -94,6 +94,9 @@ describe("agent function", () => {
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
       "agent/recover",
+      "agent/question",
+      "agent/answer",
+      "agent/finished",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -456,7 +459,15 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "agent/recover", "ci/status", "ci/status"]);
+    ).toEqual([
+      "agent/message",
+      "agent/recover",
+      "agent/question",
+      "agent/answer",
+      "agent/finished",
+      "ci/status",
+      "ci/status",
+    ]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
@@ -781,7 +792,13 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/message", "agent/recover"]);
+    ).toEqual([
+      "agent/message",
+      "agent/recover",
+      "agent/question",
+      "agent/answer",
+      "agent/finished",
+    ]);
   });
 });
 

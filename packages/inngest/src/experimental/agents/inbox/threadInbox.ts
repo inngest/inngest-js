@@ -16,7 +16,10 @@ import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 import type { AgentMessage, InboxSource } from "../agent/types.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import {
+  agentAnswerEvent,
+  agentFinishedEvent,
   agentMessageEvent,
+  agentQuestionEvent,
   agentRecoverEvent,
   type Inflight,
 } from "../threads/thread.ts";
@@ -32,7 +35,13 @@ const warned = new Set<string>();
 /**
  * The events the agent layer sends to a thread.
  */
-export const ownEvents: string[] = [agentMessageEvent, agentRecoverEvent];
+export const ownEvents: string[] = [
+  agentMessageEvent,
+  agentRecoverEvent,
+  agentQuestionEvent,
+  agentAnswerEvent,
+  agentFinishedEvent,
+];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
