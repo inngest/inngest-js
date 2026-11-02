@@ -438,9 +438,11 @@ describe("shims on the model's code tools", () => {
       tools: { ping: () => 1 },
     });
 
-    await (tools.run_code.run as (...args: unknown[]) => unknown)(
-      { language: "python", code: "print(1)" },
-      context,
+    await Promise.resolve(
+      (tools.run_code.run as (...args: unknown[]) => unknown)(
+        { language: "python", code: "print(1)" },
+        context,
+      ),
     ).catch(() => {});
 
     expect(run).toHaveBeenCalledWith(

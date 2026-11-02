@@ -1,18 +1,10 @@
 /**
  * @module
- * EXPERIMENTAL: Two thin helpers for loops that call a model. `classifyModelError`
- * says which model errors are worth retrying, and `untrusted` marks text from
- * outside so a prompt can tell the model to treat it as data.
+ * EXPERIMENTAL: `classifyModelError`, a thin helper for loops that call a
+ * model. It says which model errors are worth retrying.
  */
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { RetryAfterError } from "../../../components/RetryAfterError.ts";
-import {
-  type UntrustedOptions,
-  untrustedTag,
-  untrustedText,
-} from "./untrustedText.ts";
-
-export { type UntrustedOptions, untrustedTag };
 
 /**
  * Statuses that a retry can fix although they are 4xx: the request timed out,
@@ -186,34 +178,4 @@ export const sortModelError = (error: unknown): unknown => {
         wait,
         { cause: error },
       );
-};
-
-/**
- * EXPERIMENTAL: Marks text that came from outside, such as an issue, a web
- * page or a tool's output, so your prompt can tell the model to treat it as
- * data. It returns the text between `<untrusted>` tags. Any `</untrusted>` in
- * the text is broken so the text can't close the tag early. Nothing calls it
- * for you and the loop has no opinion about it: wrap what you want marked,
- * and say in your prompt what the tags mean.
- *
- * A value that isn't a string is marked as its JSON.
- *
- * @example
- * ```ts
- * const getIssue = tool({
- *   id: "get_issue",
- *   input: z.object({ number: z.number() }),
- *   run: async ({ number }) => {
- *     const issue = await tracker.issues.get(number);
- *
- *     return agent.untrusted(issue.body, { source: `issue #${number}` });
- *   },
- * });
- * ```
- */
-export const untrusted = (
-  text: unknown,
-  options: UntrustedOptions = {},
-): string => {
-  return untrustedText(text, options);
 };

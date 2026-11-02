@@ -67,8 +67,7 @@ export type {
   ModelMessage,
 } from "./loop/loop.ts";
 export { agent, formatEvent } from "./loop/loop.ts";
-export type { UntrustedOptions } from "./loop/modelErrors.ts";
-export { untrusted, untrustedTag } from "./loop/modelErrors.ts";
+export { untrustedTag } from "./loop/untrustedText.ts";
 export type {
   AgentSandbox,
   AgentSandboxWithRepo,

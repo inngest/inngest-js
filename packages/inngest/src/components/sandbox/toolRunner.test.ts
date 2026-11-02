@@ -1526,7 +1526,7 @@ describe("shims and long commands on commands.run", () => {
 
     await run(host, {
       mine: {
-        run: async (ctx: { sandbox?: unknown }) => {
+        run: async (_input: unknown, ctx: { sandbox?: unknown }) => {
           seen = ctx.sandbox;
 
           return "ok";

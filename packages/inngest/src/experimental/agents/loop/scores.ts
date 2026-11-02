@@ -121,6 +121,33 @@ export interface AgentScores {
   ): Promise<void>;
 }
 
+const toolScoreWriters = new WeakMap<object, AgentScores>();
+
+/**
+ * The `score` of a tool's context: the same function as the handler's. Inside
+ * a tool step it rides on that step's result; outside a step it sets a run
+ * score through the client of the function that is running. Best effort, and
+ * a no-op outside a function.
+ */
+export const toolScore: AgentScores["score"] = async (name, value) => {
+  const app = getAsyncCtxSync()?.app as Inngest.Any | undefined;
+
+  if (!app) {
+    validateStepScoreOptions({ name, value });
+
+    return;
+  }
+
+  let writer = toolScoreWriters.get(app);
+
+  if (!writer) {
+    writer = createAgentScores(app);
+    toolScoreWriters.set(app, writer);
+  }
+
+  await writer.score(name, value);
+};
+
 /**
  * Makes the `scores.score()` of one agent run. `client` writes the scores
  * made outside a step.

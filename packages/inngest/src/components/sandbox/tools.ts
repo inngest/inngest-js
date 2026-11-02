@@ -15,8 +15,9 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import * as z4 from "zod/v4";
-
+import { toolScore } from "../../experimental/agents/loop/scores.ts";
 import { internalEvents } from "../../helpers/consts.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
@@ -67,7 +68,18 @@ export interface SandboxToolContext {
   /**
    * The ID of the run that is calling.
    */
-  runId?: string;
+  runId: string;
+
+  /**
+   * Records a score: a finite number or a boolean, under a name that doesn't
+   * start with `agent.`. It is the same function as the handler's `score`, so
+   * a tool needs no Inngest client. Inside a tool step it rides on the step's
+   * result, so it is written once however often the run replays. A tool made
+   * with `tool.group()` has no step of its own: its score sets a run score,
+   * and a replay writes the same value again. Best effort: a score the server
+   * refuses logs a warning and the run goes on.
+   */
+  score(name: string, value: number | boolean): Promise<void>;
 
   /**
    * The sandbox the command runs in, for reading and writing its files and
@@ -130,6 +142,14 @@ export type ToolCallResult<TOutput extends StandardSchemaV1 | undefined> =
  * `TOutput` are what the model passes and what the tool gives back, which
  * `agent.loop()` uses to type its tool runs.
  */
+export type ToolCallContext = Omit<SandboxToolContext, "runId" | "score"> & {
+  /**
+   * The ID of the run that is calling, when the caller knows it. Otherwise
+   * the running function's.
+   */
+  runId?: string;
+};
+
 export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
   readonly displayName?: string | ((input: never) => string);
@@ -274,6 +294,14 @@ export interface ToolDefinition<
   description?: string;
 
   /**
+   * Marks the tool's results as text from outside: when the model reads one,
+   * the SDK wraps it in `<untrusted>` tags, so the model treats it as data and
+   * not as instructions. Sandbox code calling the tool gets the plain result.
+   * `true`, or a function of the input that gives the source label.
+   */
+  untrusted?: true | ((input: ToolInputOf<TInput>) => string);
+
+  /**
    * What the tool's step is called in a trace, such as `Look up: cus_1`. A
    * function gets the call's arguments. Default: the tool's name.
    */
@@ -300,7 +328,8 @@ export interface ToolDefinition<
         | (ToolResultOf<TOutput> | ToolErrorResult)
         | Promise<ToolResultOf<TOutput> | ToolErrorResult>
     : (
-        ...args: never[]
+        input: Record<string, never>,
+        ctx: SandboxToolContext,
       ) =>
         | (ToolResultOf<TOutput> | ToolErrorResult)
         | Promise<ToolResultOf<TOutput> | ToolErrorResult>;
@@ -674,6 +703,13 @@ export const resolveToolCall = async (
   tools: SandboxTools,
   request: ToolRequest,
   line: string,
+  options: {
+    /**
+     * The model is calling: its input object is the one positional argument
+     * of a plain function. Sandbox code keeps passing positional values.
+     */
+    fromModel?: boolean;
+  } = {},
 ) => {
   const { tool: name, args } = request;
   const entry = Object.hasOwn(tools, name) ? tools[name] : undefined;
@@ -713,11 +749,18 @@ export const resolveToolCall = async (
     } else {
       values = [named];
     }
+  } else if (options.fromModel) {
+    // The model's input object is the one argument, empty when it sent none.
+    values = [kwargs ?? {}];
   } else if (kwargs) {
     return { error: `${name} takes positional arguments only` };
+  } else if (args.length === 0 && typeof entry !== "function") {
+    // A tool with no input schema, called with nothing, gets an empty object.
+    values = [{}];
   }
 
   const { displayName } = definition;
+  const label = definition.untrusted;
 
   return {
     group: definition.group === true,
@@ -727,7 +770,26 @@ export const resolveToolCall = async (
         : displayName,
     memo:
       isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
-    invoke: async (ctx: SandboxToolContext) => {
+
+    /**
+     * Set when the tool's results are text from outside: the model reads them
+     * wrapped, with this source label if there is one.
+     */
+    untrusted:
+      label === undefined
+        ? undefined
+        : {
+            source:
+              typeof label === "function"
+                ? label(values[0] as never)
+                : undefined,
+          },
+    invoke: async (given: ToolCallContext) => {
+      const ctx: SandboxToolContext = {
+        ...given,
+        runId: given.runId ?? getAsyncCtxSync()?.execution?.ctx.runId ?? "",
+        score: toolScore,
+      };
       // A plain function takes positional values and no context.
       const value = await run(
         ...values,

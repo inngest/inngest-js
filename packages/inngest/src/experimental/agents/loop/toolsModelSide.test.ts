@@ -11,10 +11,10 @@ import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { tool } from "../../../components/sandbox/tools.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import type { OutgoingOp } from "../../../types.ts";
-import {
-  type AgentLoopOptions,
-  type AgentModelRequest,
-  type AgentModelResponse,
+import type {
+  AgentLoopOptions,
+  AgentModelRequest,
+  AgentModelResponse,
 } from "./loop.ts";
 import { model, runLoop } from "./loopKit.ts";
 
@@ -217,7 +217,9 @@ describe("the tool context on the model side", () => {
 });
 
 describe("untrusted tool results", () => {
-  const issue = (options: { untrusted?: true | ((input: never) => string) }) => {
+  const issue = (options: {
+    untrusted?: true | ((input: { id: string }) => string);
+  }) => {
     return tool.step({
       input: z.object({ id: z.string() }),
       ...options,
