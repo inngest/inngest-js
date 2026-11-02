@@ -297,7 +297,7 @@ export enum StepOpCode {
 
   /**
    * A read of an inbox that has nothing unread. The executor records it and
-   * wakes it when a message it wants is saved.
+   * wakes it when a message of the inbox is saved.
    */
   SubscribeWait = "SubscribeWait",
 
@@ -308,9 +308,8 @@ export enum StepOpCode {
   SubscribeRead = "SubscribeRead",
 
   /**
-   * Closes an inbox or a view of one: the executor deletes the pauses of its
-   * sources, ends the reads waiting under it and saves the ids of the
-   * messages it had not read.
+   * Closes an inbox: the executor deletes the pauses of its sources, ends the
+   * read waiting on it and saves a cut at the last message the inbox had.
    */
   SubscribeClose = "SubscribeClose",
 }

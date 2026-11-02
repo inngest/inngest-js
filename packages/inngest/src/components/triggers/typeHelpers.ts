@@ -30,7 +30,8 @@ type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
 
 /**
  * The data fields of an event, without the methods the SDK adds to the events
- * it hands to user code.
+ * it hands to user code. Exported mainly so declaration files can name inbox
+ * types.
  *
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
@@ -51,6 +52,7 @@ export type EventShape<TName, TData extends BasicDataUnknown> = {
 
 /**
  * Narrows an event to the event types it was asked about. One type or many.
+ * Exported mainly so declaration files can name inbox types.
  */
 export type EventIs = {
   is<
@@ -83,6 +85,7 @@ export type EventTypesToShape<T> = T extends readonly (infer TItem)[]
 
 /**
  * Converts an EventType instance to the shape of the events it describes.
+ * Exported mainly so declaration files can name inbox types.
  */
 export type EventTypeToShape<TEventType> = TEventType extends EventType<
   infer TName,

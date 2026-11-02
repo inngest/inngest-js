@@ -37,11 +37,7 @@ import {
 } from "../types.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
-import {
-  firstReport,
-  hashedStepId,
-  type Want,
-} from "./execution/inboxState.ts";
+import { firstReport, hashedStepId } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -67,14 +63,16 @@ import {
   validateStepScoreOptions,
 } from "./InngestScore.ts";
 import {
+  type Cut,
   Inbox,
+  type InboxMessageOf,
   type InboxSources,
-  type SourcesMessage,
   sourcesOf,
 } from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
+import { sdkOrigin } from "./sandbox/trace.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
 /**
@@ -305,6 +303,29 @@ export const withoutStepIdPrefix = <T>(callback: () => T): T => {
     },
     callback,
   );
+};
+
+/**
+ * The tag every inbox statement carries in a trace, shown beside its row.
+ */
+export const inboxTag = "\u2709\uFE0F";
+
+/**
+ * The options that make an op one part of the inbox statement `statement`.
+ * Every op of a statement shares the span, which the trace shows as one group
+ * row carrying `inboxTag`, and each has the SDK's origin, so the trace dims it
+ * inside that row.
+ */
+const inboxStatement = (
+  statement: string,
+  name: string,
+  op: string,
+): StepOptions => {
+  return {
+    id: op,
+    "~span": { id: statement, name, kind: inboxTag },
+    "~origin": sdkOrigin,
+  };
 };
 
 /**
@@ -620,7 +641,7 @@ export const createStepTools = <
     subscribe: <const S extends InboxSources>(
       idOrOptions: StepOptionsOrId,
       sources: S, // what the inbox receives
-    ): Inbox<SourcesMessage<S>> => {
+    ): Inbox<InboxMessageOf<S>> => {
       const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
       const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
 
@@ -632,56 +653,53 @@ export const createStepTools = <
 
       const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
 
+      // What the user wrote for each read, learnt when the read is reported.
+      const statements = new Map<string, string>();
+      const statementOf = (op: string) => {
+        return op.endsWith(":read") ? op.slice(0, -":read".length) : op;
+      };
+
       return new Inbox({
         sources: sourcesOf(sources),
         id,
         inbox: hashedStepId(`${prefix}${id}`),
-        open: (op, opened, inbox) => {
-          return tools["~inboxOpen"](inbox === undefined ? idOrOptions : op, {
+        open: (_op, opened) => {
+          return tools["~inboxOpen"](inboxStatement(id, "subscribe", id), {
             sources: opened,
-            ...(inbox === undefined ? {} : { inbox }),
           });
         },
         waitId: (op) => {
           return hashedStepId(`${prefix}${op}`);
         },
-        wait: (op, inbox, seen, want, timeout) => {
-          return tools["~inboxWait"](op, {
+        wait: (op, inbox, seen, timeout) => {
+          return tools["~inboxWait"](inboxStatement(op, "next", op), {
             inbox,
             seen,
-            ...(want === undefined ? {} : { want }),
             ...(timeout === undefined
               ? {}
               : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
           });
         },
-        read: (inbox, taken, wait, want) => {
+        read: (inbox, taken, wait) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.read(
-              inbox,
-              taken,
-              wait,
-              want,
-            ) ?? {
+            getAsyncCtxSync()?.execution?.inbox?.read(inbox, taken, wait) ?? {
               found: "nothing",
             }
           );
         },
-        unread: (inbox, taken, want, upTo) => {
+        unread: (inbox, taken, upTo) => {
           return (
-            getAsyncCtxSync()?.execution?.inbox?.unread(
-              inbox,
-              taken,
-              want,
-              upTo,
-            ) ?? []
+            getAsyncCtxSync()?.execution?.inbox?.unread(inbox, taken, upTo) ??
+            []
           );
         },
         batch: (op, read) => {
-          return tools["~inboxWait"](op, {
+          const name = read.drain ? "drain" : "nextBatch";
+          statements.set(op, name);
+
+          return tools["~inboxWait"](inboxStatement(op, name, op), {
             inbox: read.inbox,
             seen: read.seen,
-            ...(read.want === undefined ? {} : { want: read.want }),
             ...(read.timeout === undefined
               ? {}
               : {
@@ -690,7 +708,7 @@ export const createStepTools = <
             batch: {
               ...(read.drain ? { drain: true } : {}),
               ...(read.unread ? { unread: true } : {}),
-              ...(read.room === undefined ? {} : { room: read.room }),
+              ...(read.max === undefined ? {} : { max: read.max }),
             },
           });
         },
@@ -707,19 +725,26 @@ export const createStepTools = <
           const runId = getAsyncCtxSync()?.execution?.ctx.runId;
 
           if (
-            messages.length === 0 ||
+            // A drawn read with no row and no messages is the read of a
+            // message that is not in the inbox, such as the trigger.
+            (messages.length === 0 && (!draw || row !== undefined)) ||
             runId === undefined ||
             !firstReport(runId, `${prefix}${op}`)
           ) {
             return;
           }
 
-          void tools["~inboxRead"](op, {
-            inbox,
-            messages,
-            draw,
-            ...(row === undefined ? {} : { row }),
-          }).catch(() => undefined);
+          const statement = statementOf(op);
+
+          void tools["~inboxRead"](
+            inboxStatement(statement, statements.get(statement) ?? "next", op),
+            {
+              inbox,
+              messages,
+              draw,
+              ...(row === undefined ? {} : { row }),
+            },
+          ).catch(() => undefined);
         },
         skip: async (op) => {
           await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
@@ -734,7 +759,10 @@ export const createStepTools = <
           );
         },
         close: (op, closing) => {
-          return tools["~inboxClose"](op, closing) as Promise<string[]>;
+          return tools["~inboxClose"](
+            inboxStatement(op, "close", op),
+            closing,
+          ) as Promise<Cut>;
         },
         place: async (id) => {
           await getAsyncCtxSync()?.execution?.inbox?.place(id);
@@ -748,7 +776,7 @@ export const createStepTools = <
     "~inboxOpen": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { sources: { event: string; if?: string }[]; inbox?: string },
+        opts: { sources: { event: string; if?: string }[] },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -757,29 +785,19 @@ export const createStepTools = <
         op: StepOpCode.Subscribe,
         name: id,
         displayName: name ?? id,
-        opts: {
-          sources: opts.sources,
-          ...(opts.inbox === undefined ? {} : { inbox: opts.inbox }),
-        },
+        opts: { sources: opts.sources },
         userland: { id },
       };
     }),
 
     /**
-     * The op that closes an inbox or a view. Used by `subscribe`. It settles
-     * with the ids of the messages the handle had not read, as the executor
-     * saved them.
+     * The op that closes an inbox. Used by `subscribe`. It settles with the cut
+     * the executor saved: the last message the inbox had.
      */
     "~inboxClose": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: {
-          inbox: string;
-          ids: string[];
-          pauses: { id: string; event: string }[];
-          waits: string[];
-          rows: string[];
-        },
+        opts: { inbox: string },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -788,13 +806,7 @@ export const createStepTools = <
         op: StepOpCode.SubscribeClose,
         name: id,
         displayName: name ?? id,
-        opts: {
-          inbox: opts.inbox,
-          ids: opts.ids,
-          pauses: opts.pauses,
-          waits: opts.waits,
-          rows: opts.rows,
-        },
+        opts: { inbox: opts.inbox },
         userland: { id },
       };
     }),
@@ -810,9 +822,8 @@ export const createStepTools = <
         opts: {
           inbox: string;
           seen: string;
-          want?: Want;
           timeout?: string;
-          batch?: { drain?: boolean; unread?: boolean; room?: number };
+          batch?: { drain?: boolean; unread?: boolean; max?: number };
         },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
@@ -825,7 +836,6 @@ export const createStepTools = <
         opts: {
           inbox: opts.inbox,
           seen: opts.seen,
-          ...(opts.want === undefined ? {} : { want: opts.want }),
           ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
           ...(opts.batch === undefined ? {} : { batch: opts.batch }),
         },
