@@ -26,6 +26,12 @@ export interface AgentBridge {
    * `reply` and `ask_agent` tools read and write.
    */
   questions?: QuestionBook;
+
+  /**
+   * Whether the run was opened through a handle, so it ends after its answer
+   * and waits for the children it started.
+   */
+  handleOpened?: boolean;
 }
 
 export interface AsyncContext {

@@ -393,6 +393,23 @@ describe("the tools sandbox code gets", () => {
     expect("agent_result" in agentToolSet()).toBe(false);
   });
 
+  test("a code caller's inbox never holds a result: a run sandbox code starts is not reported as agent/finished", async () => {
+    const { invokes: byCode } = await callTools(
+      [{ tool: "start_agent", input: { address: plain.card.address } }],
+      { functions: live, forSandbox: true },
+    );
+    const { invokes: byModel } = await callTools([
+      { tool: "start_agent", input: { address: plain.card.address } },
+    ]);
+
+    // The relay reports only runs marked `via: "start_agent"`, so code gets
+    // its result from `agent_result` and nothing lands in an inbox.
+    expect(
+      (byCode[0]?.data.from as { via?: string } | undefined)?.via,
+    ).toBeUndefined();
+    expect((byModel[0]?.data.from as { via?: string }).via).toBe("start_agent");
+  });
+
   test("agent_result gives the output of the run start_agent began, from the same invoke", async () => {
     const { results, invokes } = await callTools(
       [
