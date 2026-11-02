@@ -115,16 +115,12 @@ export const area: AreaFactory = (ctx) => {
     const seen = await readRuns(devServer, from).catch(() => {
       return runs;
     });
-    let cancelled = 0;
 
     for (const run of seen) {
       if (!terminal.has(run.status)) {
         await cancelRun(devServer, run.id).catch(() => {});
-        cancelled += 1;
       }
     }
-
-    return cancelled;
   };
 
   // Cancels every run of the page since it was opened, asking the Dev Server
@@ -137,7 +133,9 @@ export const area: AreaFactory = (ctx) => {
       await new Promise((resolve) => {
         setTimeout(resolve, 300);
       });
+
       await cancelOnce();
+
       mayBeLive = false;
     }
   };

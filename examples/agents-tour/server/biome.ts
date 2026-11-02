@@ -54,7 +54,9 @@ export const formatWithBiome = (
     child.stdout.on("data", (chunk: Buffer) => {
       out.push(chunk);
     });
+
     child.on("error", reject);
+
     child.on("close", (code) => {
       resolve(
         code === 0
@@ -62,6 +64,7 @@ export const formatWithBiome = (
           : { content, ok: false },
       );
     });
+
     child.stdin.end(content);
   });
 };
