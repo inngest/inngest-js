@@ -197,6 +197,30 @@ describe("typed events", () => {
     );
   });
 
+  test("a bare event type in inbox narrows like the object form", () => {
+    agents.agent(
+      {
+        id: "a-bare",
+        triggers: { event: order, thread: "event.data.id" },
+        thread: "event.data.id",
+        inbox: [refund],
+      },
+      async ({ inbox }) => {
+        const message = await inbox.next();
+
+        if (message?.is(refund)) {
+          expectTypeOf(message.data.amount).toBeNumber();
+        }
+
+        if (message?.name === "shop/refund.created") {
+          expectTypeOf(message.data.amount).toBeNumber();
+        }
+
+        return undefined;
+      },
+    );
+  });
+
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
       {

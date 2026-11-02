@@ -387,6 +387,49 @@ describe("inbox sources", () => {
     ]);
   });
 
+  test("a bare event type is a source, keyed by the agent's own thread expression", async () => {
+    const filters: unknown[] = [];
+    const status = eventType("ci/bare", {
+      schema: z.object({ t: z.string(), state: z.string() }),
+    });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", thread: "event.data.t", inbox: [status, "ci/named"] },
+      async ({ inbox }) => {
+        await inbox.next();
+        const first = await inbox.next();
+        const second = await inbox.next();
+
+        return [first?.name, second?.name];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        { name: "ci/bare", data: { t: "t1", state: "red" } },
+        { name: "ci/named", data: { t: "t1" } },
+      ],
+      onOp: (op) => {
+        const opts = op.opts as
+          | { sources?: { event: string; if?: string }[] }
+          | undefined;
+
+        for (const source of opts?.sources ?? []) {
+          if (source.event === "ci/bare" || source.event === "ci/named") {
+            filters.push([source.event, source.if]);
+          }
+        }
+      },
+    });
+
+    expect(output).toEqual(["ci/bare", "ci/named"]);
+    expect(filters).toContainEqual([
+      "ci/bare",
+      '(has(async.data) && has(async.data.t)) && (async.data.t) == "t1"',
+    ]);
+  });
+
   test("a source's events are checked against its event type, and ones that break it are dropped", async () => {
     const status = eventType("ci/typed", {
       schema: z.object({ state: z.string() }),
