@@ -2,7 +2,13 @@
  * @module
  * Calls to the tour server.
  */
-import type { Page, TourEvent, TourIndex } from "../../shared/types.ts";
+import type {
+  CheckResult,
+  Page,
+  PageFile,
+  TourEvent,
+  TourIndex,
+} from "../../shared/types.ts";
 
 const get = async <T>(path: string) => {
   const res = await fetch(path);
@@ -49,6 +55,18 @@ export const api = {
   },
   run: (id: string, files: Record<string, string>) => {
     return post("/api/run", { id, files });
+  },
+  check: async (id: string, files: Record<string, string>) => {
+    const res = await fetch("/api/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, files }),
+    });
+
+    return (await res.json()) as CheckResult;
+  },
+  solution: (id: string) => {
+    return get<PageFile[]>(`/api/solution?id=${encodeURIComponent(id)}`);
   },
   kill: () => {
     return post("/api/kill", {});

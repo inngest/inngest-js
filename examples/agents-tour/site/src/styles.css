@@ -1137,3 +1137,26 @@ main.single .text {
   background: none;
   padding: 0;
 }
+
+.exercise {
+  margin: 18px 0;
+}
+
+.exercise .hint {
+  margin: 10px 0 0;
+  color: var(--muted, #9aa4b2);
+}
+
+.exercise .verdict {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+}
+
+.exercise .pass {
+  color: #4cc38a;
+  font-weight: 600;
+}
+
+.exercise .fail {
+  color: #f0883e;
+}

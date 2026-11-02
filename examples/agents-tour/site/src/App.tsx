@@ -16,6 +16,7 @@ import type {
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
+import { Exercise } from "./Exercise.tsx";
 import { clearEdits, saveEdits, withEdits } from "./edits.ts";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { panelKeys } from "./keytable.ts";
@@ -214,6 +215,38 @@ export const App = () => {
     editor.current?.focus();
   };
 
+  const checkExercise = async () => {
+    if (!page) {
+      return { pass: false as const, reason: "No page is open." };
+    }
+
+    await formatAll();
+
+    const values = editor.current?.values() ?? {};
+
+    saveEdits(page, values, store);
+
+    return api.check(page.id, values);
+  };
+
+  const showSolution = async () => {
+    if (!page) {
+      return;
+    }
+
+    const before = editor.current?.values() ?? {};
+
+    for (const file of await api.solution(page.id)) {
+      editor.current?.setValue(file.name, file.content);
+    }
+
+    setUndo(before);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => {
+      setUndo(null);
+    }, 10_000);
+  };
+
   const reset = () => {
     if (!page || !hasCode) {
       return;
@@ -382,7 +415,23 @@ export const App = () => {
     editor: toggleEditor,
     undo: undoReset,
   };
-  const handlers: Handlers = { ...panelHandlers, ...core };
+  // The exercise controls listen for these; see `Exercise.tsx`.
+  const exerciseHandlers: Handlers = {
+    check: () => {
+      sendAction("check");
+    },
+    hint: () => {
+      sendAction("hint");
+    },
+    solution: () => {
+      sendAction("solution");
+    },
+  };
+  const handlers: Handlers = {
+    ...panelHandlers,
+    ...(page?.manifest.exercise ? exerciseHandlers : {}),
+    ...core,
+  };
   const latest = useRef(handlers);
 
   latest.current = handlers;
@@ -534,6 +583,14 @@ export const App = () => {
                 __html: renderMarkdown(page.markdown),
               }}
             />
+            {hasCode && page.manifest.exercise ? (
+              <Exercise
+                key={page.id}
+                hint={page.manifest.exercise.hint}
+                check={checkExercise}
+                showSolution={showSolution}
+              />
+            ) : null}
             {hasCode && page.manifest.start?.length ? (
               <EventBlock starts={page.manifest.start} />
             ) : null}

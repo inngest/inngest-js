@@ -1,0 +1,92 @@
+/**
+ * @module
+ * The controls of an exercise page, under its text: a hint, Check and Show a
+ * solution. Check says pass, or the one sentence the check gave for failing.
+ */
+import { useState } from "react";
+import type { CheckResult } from "../../shared/types.ts";
+import { Kbd, shortcutsOf } from "./keyboard.tsx";
+import { useAction } from "./live.ts";
+
+type State = "idle" | "checking" | CheckResult;
+
+export const Exercise = ({
+  hint,
+  check,
+  showSolution,
+}: {
+  hint?: string;
+  check: () => Promise<CheckResult>;
+  showSolution: () => Promise<void>;
+}) => {
+  const [showHint, setShowHint] = useState(false);
+  const [state, setState] = useState<State>("idle");
+
+  const runCheck = async () => {
+    if (state === "checking") {
+      return;
+    }
+
+    setState("checking");
+    setState(await check());
+  };
+
+  useAction("check", () => {
+    void runCheck();
+  });
+  useAction("hint", () => {
+    setShowHint((value) => {
+      return !value;
+    });
+  });
+  useAction("solution", () => {
+    void showSolution();
+  });
+
+  return (
+    <div className="exercise">
+      <div className="controls">
+        <button
+          type="button"
+          className="primary"
+          disabled={state === "checking"}
+          onClick={runCheck}
+          aria-keyshortcuts={shortcutsOf("check")}
+        >
+          Check <Kbd action="check" />
+        </button>
+        {hint ? (
+          <button
+            type="button"
+            aria-pressed={showHint}
+            onClick={() => {
+              setShowHint(!showHint);
+            }}
+            aria-keyshortcuts={shortcutsOf("hint")}
+          >
+            Hint <Kbd action="hint" />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            void showSolution();
+          }}
+          aria-keyshortcuts={shortcutsOf("solution")}
+        >
+          Show a solution <Kbd action="solution" />
+        </button>
+      </div>
+      {showHint && hint ? <p className="hint">{hint}</p> : null}
+      <p className="verdict" role="status" aria-live="polite">
+        {state === "checking" ? "Checking..." : null}
+        {typeof state === "object" && state.pass ? (
+          <span className="pass">Passed.</span>
+        ) : null}
+        {typeof state === "object" && !state.pass ? (
+          <span className="fail">{state.reason}</span>
+        ) : null}
+      </p>
+    </div>
+  );
+};
