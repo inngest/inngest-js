@@ -27,11 +27,10 @@ test("the SDK's client and the result fit", () => {
     expectTypeOf(model).toExtend<AgentModel>();
     expectTypeOf(model).toEqualTypeOf<AnthropicModel>();
     expectTypeOf(model.with({ effort: "low" })).toEqualTypeOf<AnthropicModel>();
-    expectTypeOf(agent.anthropic).toEqualTypeOf(anthropic);
     expectTypeOf(anthropicPrices).toEqualTypeOf<AgentPriceTable>();
 
-    // A loop with a model and a prompt needs nothing else.
-    void agent.loop({ model, prompt: "hi", price: anthropicPrices });
+    // A loop with a model needs nothing else.
+    void agent.loop({ model, price: anthropicPrices })("hi");
 
     // A direct call with a schema types its output.
     void (async () => {

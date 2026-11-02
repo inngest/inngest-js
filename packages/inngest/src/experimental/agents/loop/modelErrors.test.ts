@@ -6,11 +6,16 @@
 import { describe, expect, test } from "vitest";
 import { Inngest } from "../../../components/Inngest.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { RetryAfterError } from "../../../components/RetryAfterError.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { StepOpCode } from "../../../types.ts";
 import { agent } from "./loop.ts";
-import { model, runLoop } from "./loopKit.ts";
-import { classifyModelError, untrusted } from "./modelErrors.ts";
+import { failsOnceWithRetryAfter, model, runLoop } from "./loopKit.ts";
+import {
+  classifyModelError,
+  sortModelError,
+  untrusted,
+} from "./modelErrors.ts";
 
 const failure = (fields: Record<string, unknown>, message = "boom") => {
   return Object.assign(new Error(message), fields);
@@ -156,5 +161,50 @@ describe("agent.loop and model errors", () => {
   test("retries a rate limit and a server error", async () => {
     expect(await stepOpOf(failure({ status: 429 }))).toBe(StepOpCode.StepError);
     expect(await stepOpOf(failure({ status: 503 }))).toBe(StepOpCode.StepError);
+  });
+});
+
+describe("retry-after for any model function", () => {
+  const request = { messages: [], tools: [], turn: 1, maxTurns: 1 };
+  const answer = model(async () => {
+    return {
+      message: { role: "assistant" as const, content: [] },
+      toolCalls: [],
+    };
+  });
+
+  test("a rate limit that names a wait becomes a retry after that wait, and the next call is made", async () => {
+    const flaky = failsOnceWithRetryAfter(answer, 2);
+    const error = await flaky(request).catch((caught) =>
+      sortModelError(caught),
+    );
+
+    expect(error).toBeInstanceOf(RetryAfterError);
+    expect(await flaky(request)).toMatchObject({ toolCalls: [] });
+  });
+
+  test("a final 4xx is not retried", () => {
+    expect(sortModelError(failure({ status: 400 }))).toBeInstanceOf(
+      NonRetriableError,
+    );
+  });
+
+  test("a plain model function's rate limit makes the loop's model step retry", async () => {
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        await agent.loop({
+          model: failsOnceWithRetryAfter(answer),
+        })("go");
+      },
+    );
+    const found = await runFnWithStack(fn, {});
+    const first = found.type === "steps-found" ? found.steps[0] : undefined;
+    const ran = (await runFnWithStack(fn, {}, { runStep: first?.id })) as {
+      step: { op: StepOpCode };
+    };
+
+    expect(ran.step.op).toBe(StepOpCode.StepError);
   });
 });

@@ -54,7 +54,13 @@ import {
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import { kv } from "../kv/kv.ts";
-import { type AgentLoop, addTools, buildHandlerLoop } from "../loop/loop.ts";
+import {
+  type AgentHandlerLoop,
+  type AgentLoop,
+  type AgentModel,
+  addTools,
+  buildHandlerLoop,
+} from "../loop/loop.ts";
 import { createAgentScores } from "../loop/scores.ts";
 import {
   openSandboxes,
@@ -124,7 +130,10 @@ import type {
  * goes to the model through the loop, and the final answer is the run's
  * output.
  */
-const defaultModelBody: AgentBody = async ({ inbox, loop }) => {
+const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
+  inbox,
+  loop,
+}) => {
   let answer: unknown;
 
   for await (const batch of inbox.batches()) {
@@ -145,7 +154,7 @@ const createHandlerLoop = async (options: {
   config: AgentFunctionConfig;
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
-}): Promise<AgentBodyContext["loop"]> => {
+}): Promise<AgentHandlerLoop> => {
   const { config, fields, listenTools } = options;
 
   if (typeof config.loop === "function") {
@@ -157,7 +166,7 @@ const createHandlerLoop = async (options: {
           "`loop.with()` is not available when the agent's `loop` is a whole loop of its own",
         );
       },
-    }) as unknown as AgentBodyContext["loop"];
+    }) as unknown as AgentHandlerLoop;
   }
 
   const system = await fields.get(
@@ -174,7 +183,7 @@ const createHandlerLoop = async (options: {
       throw new Error(
         `Agent "${config.id}" has no \`model\`, so it has no loop: set \`model\` in its definition`,
       );
-    }) as unknown as AgentBodyContext["loop"];
+    }) as unknown as AgentHandlerLoop;
   }
 
   return buildHandlerLoop({
@@ -182,7 +191,7 @@ const createHandlerLoop = async (options: {
     model: config.model,
     ...(system !== undefined && { system }),
     tools: addTools(listenTools as SandboxTools, tools),
-  }) as unknown as AgentBodyContext["loop"];
+  }) as unknown as AgentHandlerLoop;
 };
 
 // The SDK's own marker for the option: no deprecation warning for agents.
@@ -207,9 +216,9 @@ export function createAgentFunction(
    * `model` runs each batch through the loop and its final answer is the run's
    * output; an agent without a `model` ends with output `undefined`.
    */
-  bodyOrDefault?: AgentBody,
+  bodyOrDefault?: AgentBody<{ model: AgentModel }>,
 ): AgentFunction {
-  const body: AgentBody =
+  const body: AgentBody<{ model: AgentModel }> =
     bodyOrDefault ?? (config.model ? defaultModelBody : async () => undefined);
   const ref = `${client.id}/${config.id}`;
   const triggers = compileTriggers(config.id, config);

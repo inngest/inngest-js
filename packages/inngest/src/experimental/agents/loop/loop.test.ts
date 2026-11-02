@@ -16,6 +16,7 @@ import {
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import type { OutgoingOp } from "../../../types.ts";
 import { anthropic } from "./anthropic.ts";
+import { compactionFor } from "./context.ts";
 import {
   type AgentEvent,
   type AgentLoopInput,
@@ -26,6 +27,8 @@ import {
   type AgentModelResponse,
   type AgentToolRun,
   agent,
+  defaultMaxTurns,
+  formatEvent,
   type ModelMessage,
 } from "./loop.ts";
 import { model, runLoop } from "./loopKit.ts";
@@ -1349,7 +1352,6 @@ describe("tool types", () => {
         model: model(async () => {
           return say("done");
         }),
-        prompt: "go",
         tools: { lookup },
       };
 
@@ -1659,5 +1661,282 @@ describe("prompt cache prefix with anthropic()", () => {
         ),
       ).toEqual(before);
     }
+  });
+});
+
+describe("per-call options", () => {
+  const ping = tool.step({
+    description: "Pings",
+    input: z.object({}),
+    run: () => {
+      return "pong";
+    },
+  });
+
+  test("loop(batch, { tools }) adds tools to the model's request", async () => {
+    const requests: AgentModelRequest[] = [];
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        const loop = agent.loop({
+          model: model(async (request) => {
+            requests.push(structuredClone(request));
+
+            return say("ok");
+          }),
+          tools: { add },
+        });
+
+        await loop("go", { tools: { ping } });
+      },
+    );
+
+    await drive(fn, false);
+
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      "add",
+      "ping",
+    ]);
+  });
+
+  test("the same tool name twice is an error", async () => {
+    const loop = agent.loop({
+      model: model(async () => {
+        return say("ok");
+      }),
+      tools: { add },
+    });
+
+    await expect(loop("go", { tools: { add } })).rejects.toThrow(/"add"/);
+  });
+
+  test("maxTurns per call ends the loop after that many turns, and the default is 40", async () => {
+    expect(defaultMaxTurns).toBe(40);
+
+    const client = new Inngest({ id: testClientId });
+    let limited: AgentLoopResult | undefined;
+    const fn = client.createFunction(
+      { id: "agent", triggers: [{ event: "agent/run" }] },
+      async () => {
+        limited = await agent.loop({
+          model: model(async () => {
+            return call("add", { a: 1, b: 2 });
+          }),
+          tools: { add },
+        })("go", { maxTurns: 2 });
+      },
+    );
+
+    await drive(fn, false);
+
+    expect(limited).toMatchObject({ end: "maxTurns", turns: 2 });
+  });
+
+  test("end: stop is reached only through the stop option, checked before each model call", async () => {
+    const asked: number[] = [];
+    const { result, requests } = await run(
+      [call("add", { a: 1, b: 2 }), say("never")],
+      {
+        stop: ({ turn }) => {
+          asked.push(turn);
+
+          return turn === 2;
+        },
+      },
+    );
+
+    expect(result?.end).toBe("stop");
+    expect(requests).toHaveLength(1);
+    expect(asked).toContain(2);
+
+    const { result: plain } = await run([say("done")]);
+
+    expect(plain?.end).toBe("done");
+  });
+});
+
+describe("onTurn", () => {
+  test("a gated onTurn does not block the loop, and the last one finishes before the loop returns", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const events: string[] = [];
+    const { result, requests } = await run(
+      [call("add", { a: 1, b: 2 }), say("ok")],
+      {
+        onTurn: async ({ turn }) => {
+          if (turn === 1) {
+            await gate;
+          }
+
+          events.push(`turn ${turn}`);
+        },
+        model: model(async (request) => {
+          // The second request arrives while the first onTurn is still held.
+          if (request.turn === 2) {
+            events.push("second request");
+            release();
+          }
+
+          return request.turn === 1 ? call("add", { a: 1, b: 2 }) : say("ok");
+        }),
+      },
+    );
+
+    expect(requests).toHaveLength(0);
+    expect(result?.end).toBe("done");
+    expect(events).toEqual(
+      expect.arrayContaining(["second request", "turn 1", "turn 2"]),
+    );
+    expect(events.indexOf("second request")).toBeLessThan(
+      events.indexOf("turn 1"),
+    );
+  });
+
+  test("a throwing onTurn does not fail the run, even the last one", async () => {
+    const { result, type } = await run(
+      [call("add", { a: 1, b: 2 }), say("ok")],
+      {
+        onTurn: () => {
+          throw new Error("slow post failed");
+        },
+      },
+    );
+
+    expect(type).toBe("function-resolved");
+    expect(result?.end).toBe("done");
+  });
+});
+
+describe("cost", () => {
+  test("a model that reports its own cost needs no price", async () => {
+    const { result } = await run([{ ...say("done"), usd: 0.5 }]);
+
+    expect(result?.usage.usd).toBe(0.5);
+  });
+
+  test("a price overrides the model's own cost", async () => {
+    const { result } = await run([{ ...say("done"), usd: 0.5 }], {
+      price: () => 2,
+    });
+
+    expect(result?.usage.usd).toBe(2);
+  });
+});
+
+describe("formatEvent", () => {
+  const from = { kind: "agent", address: "app/coder", key: "t7" };
+
+  test("words a message from an agent, and one from a function", () => {
+    expect(
+      formatEvent({ name: "agent/message", data: { content: "hi", from } }),
+    ).toBe("Message from app/coder (thread t7): hi");
+    expect(
+      formatEvent({
+        name: "agent/message",
+        data: {
+          content: "hi",
+          from: { kind: "function", id: "cron", key: "k" },
+        },
+      }),
+    ).toBe("Message from function cron (thread k): hi");
+  });
+
+  test("words a question with its id, who asked and a pointer to the reply tool", () => {
+    const text = formatEvent({
+      name: "agent/question",
+      data: { id: "q1", text: "Which branch?", from },
+    });
+
+    expect(text).toContain("q1");
+    expect(text).toContain("app/coder");
+    expect(text).toContain("Which branch?");
+    expect(text).toContain("reply tool");
+  });
+
+  test("words a finished message with the outcome and the output or the error", () => {
+    expect(
+      formatEvent({
+        name: "agent/finished",
+        data: { outcome: "completed", output: "42", from },
+      }),
+    ).toBe("app/coder (thread t7) finished: completed. Output: 42");
+    expect(
+      formatEvent({
+        name: "agent/finished",
+        data: { outcome: "failed", error: "boom", from },
+      }),
+    ).toContain("failed. Error: boom");
+    expect(
+      formatEvent({
+        name: "agent/finished",
+        data: { outcome: "stopped", from },
+      }),
+    ).toContain("stopped");
+  });
+
+  test("shows an answer next to its question, and refusals and time-outs as plain lines", () => {
+    const questions = new Map([["q1", "Which branch?"]]);
+
+    expect(
+      formatEvent(
+        {
+          name: "agent/answer",
+          data: { re: "q1", outcome: "answered", text: "main", from },
+        },
+        questions,
+      ),
+    ).toBe('Answer to "Which branch?" from app/coder: main');
+    expect(
+      formatEvent(
+        { name: "agent/answer", data: { re: "q1", outcome: "refused", from } },
+        questions,
+      ),
+    ).toBe('No answer to "Which branch?": app/coder refused.');
+    expect(
+      formatEvent({
+        name: "agent/answer",
+        data: { re: "q2", outcome: "timed_out", from },
+      }),
+    ).toContain("did not answer in time");
+  });
+
+  test("falls back to JSON for any other event", () => {
+    expect(formatEvent({ name: "ci/status", data: { state: "red" } })).toBe(
+      JSON.stringify({ event: "ci/status", data: { state: "red" } }),
+    );
+  });
+});
+
+describe("compaction threshold", () => {
+  test("starts at 70% of the model's context window unless a compaction is given", () => {
+    expect(compactionFor(undefined, 200_000)).toEqual({ maxTokens: 140_000 });
+    expect(compactionFor({ maxTokens: 5 }, 200_000)).toEqual({ maxTokens: 5 });
+    expect(compactionFor(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("questions that already have a reply", () => {
+  test("are not shown to the model", async () => {
+    const asked: AgentEvent[] = [
+      { id: "e1", name: "agent/question", data: { id: "q1", text: "old" } },
+      { id: "e2", name: "agent/question", data: { id: "q2", text: "new" } },
+    ];
+    const { requests } = await run([say("ok")], {
+      wiring: {
+        drain: async () => {
+          return asked;
+        },
+        answered: (id) => {
+          return id === "q1";
+        },
+      },
+    });
+    const sent = JSON.stringify(requests[0]?.messages);
+
+    expect(sent).toContain("new");
+    expect(sent).not.toContain("old");
   });
 });

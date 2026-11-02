@@ -62,3 +62,27 @@ export const runLoop = <TTools extends SandboxTools>(
       })
     : loop(prompt);
 };
+
+/**
+ * A model that fails its first call with a rate limit that names a wait
+ * (`retry-after`, in seconds) and answers every later call from `answer`.
+ */
+export const failsOnceWithRetryAfter = (
+  answer: AgentModel,
+  seconds = 2,
+): AgentModel => {
+  let failed = false;
+
+  return model(async (request) => {
+    if (!failed) {
+      failed = true;
+
+      throw Object.assign(new Error("rate limited"), {
+        status: 429,
+        headers: { "retry-after": String(seconds) },
+      });
+    }
+
+    return answer(request);
+  });
+};

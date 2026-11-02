@@ -761,10 +761,19 @@ const importClient = async (
 };
 
 /**
- * EXPERIMENTAL: A model for `agent.loop()` that calls the Anthropic Messages
- * API. The loop runs it inside one step per call, and a loop of your own can
- * call the returned function inside a plain `step.run`. It never uses
- * `step.ai`.
+ * EXPERIMENTAL: A model for the Anthropic Messages API, with three uses:
+ *
+ * 1. The loop's model: `model: anthropic({ model })` on an agent or in
+ *    `agent.loop()`. The loop runs it inside one step per call.
+ * 2. A one-shot call: `claude({ prompt, output })` inside a plain `step.run`
+ *    makes a single reply, with `output` (a schema) for a typed one. It is not
+ *    a step by itself. It never uses `step.ai`.
+ * 3. A variant: `claude.with({ effort, maxTokens, ... })` is the same model
+ *    with other options for one loop or one call. `client`, `apiKey` and
+ *    `baseURL` cannot change.
+ *
+ * It reports each call's cost from a built-in price table, so a dollar budget
+ * works with no price.
  *
  * - Prompt caching is on: breakpoints on the system prompt (with the tools)
  *   and on the end of the conversation. `usage` reports `cacheRead` and
@@ -798,9 +807,9 @@ const importClient = async (
  * @example
  * ```ts
  * import Anthropic from "@anthropic-ai/sdk";
- * import { agent, anthropicPrices } from "inngest/experimental/agents";
+ * import { agent, anthropic } from "inngest/experimental/agents";
  *
- * const claude = agent.anthropic({
+ * const claude = anthropic({
  *   model: "claude-sonnet-5-5",
  *   client: new Anthropic(),
  *   cache: { ttl: "1h" },
@@ -808,10 +817,8 @@ const importClient = async (
  *
  * const { text, usage } = await agent.loop({
  *   model: claude,
- *   prompt: "Fix the failing test",
  *   tools: sandbox.tools.code(),
- *   price: anthropicPrices,
- * });
+ * })("Fix the failing test");
  *
  * // One structured reply, outside any loop.
  * const { output } = await step.run("triage", async () => {

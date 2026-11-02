@@ -1438,7 +1438,7 @@ const withCall = <TTools extends SandboxTools>(
 export const buildLoop = <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools>,
 ): AgentLoop<TTools> => {
-  return ((batch: AgentLoopInput, call?: AgentLoopCallOptions) => {
+  return (async (batch: AgentLoopInput, call?: AgentLoopCallOptions) => {
     return runLoop(withCall(options, call), batch);
   }) as AgentLoop<TTools>;
 };

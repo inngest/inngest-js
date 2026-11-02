@@ -96,6 +96,12 @@ export interface AgentTypes {
    * The `inbox` sources of the agent's config.
    */
   sources?: readonly InboxSource[] | undefined;
+
+  /**
+   * The agent's `model`, if it has one: only an agent with a model gets a
+   * `loop` in its handler.
+   */
+  model?: AgentModel | undefined;
 }
 
 /**
@@ -131,6 +137,11 @@ export interface AgentTypeDefaults {
    * No typed sources.
    */
   sources: undefined;
+
+  /**
+   * No model, so a handler written without naming the bag has no `loop`.
+   */
+  model: undefined;
 }
 
 /**
@@ -156,6 +167,9 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
   }
     ? V
     : AgentTypeDefaults["sources"];
+  model: TTypes extends { model: infer V extends AgentModel | undefined }
+    ? V
+    : AgentTypeDefaults["model"];
 };
 
 /**
@@ -390,15 +404,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
-   * The agent's own loop, made from its definition: `model`, `system` and
-   * `tools`, plus the model's `inbox_listen` and `inbox_close` when the agent
-   * has `listen`. `loop(batch)` folds the messages that arrive meanwhile into
-   * the very next model call and posts nothing. `loop.with(options)` derives
-   * another from it. Only an agent with a `model` has one.
-   */
-  loop: AgentHandlerLoop;
-
-  /**
    * Your own scores, next to the ones the framework writes. See
    * `AgentScores`.
    */
@@ -543,7 +548,21 @@ export type AgentFunctionInput<TTypes extends AgentTypes = AgentTypes> = Omit<
  * batch.
  */
 export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
-  AgentFunctionInput<TTypes> & AgentBodyFields<TTypes>;
+  AgentFunctionInput<TTypes> &
+    AgentBodyFields<TTypes> &
+    (AgentTypesOf<TTypes>["model"] extends AgentModel
+      ? {
+          /**
+           * The agent's own loop, made from its definition: `model`, `system`
+           * and `tools`, plus the model's `inbox_listen` and `inbox_close`
+           * when the agent has `listen`. `loop(batch)` folds the messages that
+           * arrive meanwhile into the very next model call and posts nothing.
+           * `loop.with(options)` derives another from it. Only an agent with a
+           * `model` has one.
+           */
+          loop: AgentHandlerLoop;
+        }
+      : Record<never, never>);
 
 /**
  * The body of an agent. `TTypes` is the `AgentTypes` bag: the events of its
