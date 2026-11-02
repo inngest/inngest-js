@@ -19,8 +19,10 @@ import {
   announcement,
   currentCards,
   discoveryToolSet,
+  discoveryToolsFor,
   matchCards,
   mayUse,
+  prepareInput,
   readCards,
 } from "./discovery.ts";
 
@@ -544,5 +546,59 @@ describe("the tools", () => {
       options,
     );
     expect(reads).toBe(2);
+  });
+});
+
+describe("discovery on the definition", () => {
+  test("false removes both tools; anything else keeps them", () => {
+    expect(Object.keys(discoveryToolsFor(false))).toEqual([]);
+    expect(Object.keys(discoveryToolsFor(undefined)).sort()).toEqual([
+      "describe_agent",
+      "list_agents",
+    ]);
+    expect(Object.keys(discoveryToolsFor({})).sort()).toEqual([
+      "describe_agent",
+      "list_agents",
+    ]);
+  });
+
+  test("prepare fills the input and gets the card, input, event and thread", async () => {
+    const target = card({ address: "other/docs" });
+    const prepare = vi.fn(({ input }: { input: Record<string, string> }) => {
+      return { ...input, origin: "web" };
+    });
+    let prepared: unknown;
+    const fn = client.createFunction(
+      { id: "prepares", triggers: [{ event: "foo" }] },
+      async () => {
+        prepared = await prepareInput(
+          { prepare: prepare as never },
+          { card: target, input: { q: "hi" } },
+        );
+      },
+    );
+    const run = createFnRunner(fn, {
+      event: { name: "foo", data: { n: 1 } } as never,
+    });
+
+    await run();
+
+    expect(prepared).toEqual({ q: "hi", origin: "web" });
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        card: target,
+        input: { q: "hi" },
+        event: expect.objectContaining({ name: "foo" }),
+        thread: { key: "" },
+      }),
+    );
+  });
+
+  test("without prepare the model's input is used as it is", async () => {
+    const input = { q: "hi" };
+
+    expect(
+      await prepareInput({}, { card: card({ address: "a/b" }), input }),
+    ).toBe(input);
   });
 });
