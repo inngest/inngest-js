@@ -444,3 +444,36 @@ test("request span uses function name", async () => {
     expect(hasMatchingTransaction).toBe(true);
   });
 });
+
+test("tracesSampleRate: 0 exports no transactions", async () => {
+  const captured = initSentryCapture({ tracesSampleRate: 0 });
+
+  const state = createState({});
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [SentryMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      const a = await step.run("step-a", () => 1);
+      const b = await step.run("step-b", () => 2);
+      return a + b;
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+  await client.send({ name: eventName });
+  const fnOutput = await state.waitForRunComplete();
+  expect(fnOutput).toBe(3);
+
+  // Wait a bit to ensure nothing arrives
+  await new Promise((r) => setTimeout(r, 2000));
+
+  expect(capturedTransactions(captured)).toHaveLength(0);
+});
