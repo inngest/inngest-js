@@ -17,6 +17,27 @@ import { HttpError } from "../http-error.ts";
 
 const states = new Set<string>(["opened", "ran", "passed"]);
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+// A saved file is only trusted when it has the shape this server writes.
+const shapeOf = (value: unknown) => {
+  if (
+    isRecord(value) &&
+    isRecord(value.pages) &&
+    isRecord(value.concepts) &&
+    Object.values(value.pages).every(isRecord) &&
+    Object.values(value.concepts).every(isRecord)
+  ) {
+    return value as unknown as Saved;
+  }
+
+  return undefined;
+};
+
+type Saved = Omit<ProgressSnapshot, "totalConcepts">;
+
 export const area: AreaFactory = (ctx) => {
   const file = join(ctx.cacheDir, "progress.json");
   const pageOf = new Map(
@@ -24,19 +45,18 @@ export const area: AreaFactory = (ctx) => {
       return [page.id, page];
     }),
   );
+
   const allConcepts = new Set(
     ctx.pages.flatMap((page) => {
       return page.manifest.concepts ?? [];
     }),
   );
-  let saved: Omit<ProgressSnapshot, "totalConcepts"> = {
-    pages: {},
-    concepts: {},
-  };
+
+  let saved: Saved = { pages: {}, concepts: {} };
 
   if (existsSync(file)) {
     try {
-      saved = JSON.parse(readFileSync(file, "utf8"));
+      saved = shapeOf(JSON.parse(readFileSync(file, "utf8"))) ?? saved;
     } catch {
       // A damaged file starts the reader over rather than blocking the tour.
     }
@@ -46,6 +66,7 @@ export const area: AreaFactory = (ctx) => {
     mkdirSync(ctx.cacheDir, { recursive: true });
     writeFileSync(file, JSON.stringify(saved));
   };
+
   const snapshot = (): ProgressSnapshot => {
     return { ...saved, totalConcepts: allConcepts.size };
   };
@@ -111,6 +132,7 @@ export const area: AreaFactory = (ctx) => {
         handle: () => {
           saved = { pages: {}, concepts: {} };
           persist();
+
           ctx.hub.broadcast({
             type: "progress",
             mark: { collected: [], moduleDone: null },

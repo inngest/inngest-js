@@ -5,7 +5,7 @@
  * Dev Server.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -16,11 +16,14 @@ import type { ProgressMark, ProgressSnapshot } from "../shared/types.ts";
 const root = join(import.meta.dirname, "fixtures");
 const ports = { api: 1, gateway: 2, gatewayGrpc: 3, executorGrpc: 4 };
 
-const boot = async (cacheDir: string) => {
+const boot = async (
+  cacheDir: string,
+  dataDir = mkdtempSync(join(tmpdir(), "tour-data-")),
+) => {
   const tour = await createTour({
     root,
     lessonsDir: join(root, "lessons"),
-    dataDir: mkdtempSync(join(tmpdir(), "tour-data-")),
+    dataDir,
     cacheDir,
     binary: "unused",
     port: await freePort(),
@@ -38,13 +41,50 @@ const boot = async (cacheDir: string) => {
 
     return (await res.json()) as T;
   };
+
   const progress = async () => {
     return (await (
       await fetch(`${tour.url}/api/progress`)
     ).json()) as ProgressSnapshot;
   };
 
-  return { tour, post, progress };
+  // The next event of the given type on the event stream, the way the site
+  // listens for it.
+  const nextEvent = async (type: string, act: () => Promise<unknown>) => {
+    const controller = new AbortController();
+    const res = await fetch(`${tour.url}/api/stream`, {
+      signal: controller.signal,
+    });
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+
+    await act();
+
+    try {
+      while (reader) {
+        const { value, done } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        text += decoder.decode(value);
+
+        for (const line of text.split("\n\n")) {
+          if (line.startsWith("data: ") && line.includes(`"type":"${type}"`)) {
+            return JSON.parse(line.slice(6)) as Record<string, unknown>;
+          }
+        }
+      }
+    } finally {
+      controller.abort();
+    }
+
+    throw new Error(`No ${type} event arrived`);
+  };
+
+  return { tour, post, progress, nextEvent, dataDir };
 };
 
 describe("progress", () => {
@@ -126,22 +166,115 @@ describe("progress", () => {
     assert.equal(done.moduleDone, "first");
   });
 
-  it("survives a restart of the tour", async () => {
+  it("tells the site about a finished module on the event stream", async () => {
+    const event = await current.nextEvent("progress", () => {
+      return current.post("/api/progress/mark", {
+        page: "first/exercise",
+        state: "passed",
+      });
+    });
+
+    assert.deepEqual(event.mark, { collected: [], moduleDone: "first" });
+    assert.equal(event.page, "first/exercise");
+  });
+
+  it("does not collect a page's concepts when it only ran", async () => {
+    await current.post("/api/progress/reset", {});
+    await current.post("/api/progress/mark", {
+      page: "first/hello",
+      state: "ran",
+    });
+
+    assert.deepEqual((await current.progress()).concepts, {});
+  });
+
+  it("does not finish a module when a page that is not its exercise passes", async () => {
+    await current.post("/api/progress/reset", {});
+
+    const mark = await current.post<ProgressMark>("/api/progress/mark", {
+      page: "first/hello",
+      state: "passed",
+    });
+
+    assert.equal(mark.moduleDone, null);
+  });
+
+  it("refuses a state it does not know", async () => {
+    const res = await fetch(`${current.tour.url}/api/progress/mark`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ page: "first/hello", state: "mastered" }),
+    });
+
+    assert.equal(res.status, 400);
+  });
+
+  it("survives a restart that wipes the data folder", async () => {
+    await current.post("/api/progress/mark", {
+      page: "first/hello",
+      state: "opened",
+    });
+
     const before = await current.progress();
 
     await current.tour.stop();
-    current = await boot(cacheDir);
+    current = await boot(cacheDir, current.dataDir);
 
     assert.deepEqual(await current.progress(), before);
   });
 
-  it("clears everything on Reset progress", async () => {
+  it("clears everything on Reset progress, and stays cleared after a restart", async () => {
     await current.post("/api/progress/reset", {});
 
     const snapshot = await current.progress();
 
     assert.deepEqual(snapshot.pages, {});
     assert.deepEqual(snapshot.concepts, {});
+
+    await current.tour.stop();
+    current = await boot(cacheDir, current.dataDir);
+
+    assert.deepEqual((await current.progress()).pages, {});
+  });
+
+  it("makes the cache folder when it does not exist yet", async () => {
+    const fresh = join(mkdtempSync(join(tmpdir(), "tour-fresh-")), "a", "b");
+    const other = await boot(fresh);
+
+    try {
+      const mark = await other.post<ProgressMark>("/api/progress/mark", {
+        page: "first/hello",
+        state: "opened",
+      });
+
+      assert.deepEqual(mark.collected, ["agent"]);
+    } finally {
+      await other.tour.stop();
+    }
+  });
+
+  it("starts empty from a progress file of the wrong shape", async () => {
+    for (const content of ["[]", "null", '{"pages":5,"concepts":[]}', "{"]) {
+      const dir = mkdtempSync(join(tmpdir(), "tour-bad-"));
+
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "progress.json"), content);
+
+      const other = await boot(dir);
+
+      try {
+        assert.deepEqual((await other.progress()).pages, {});
+
+        const mark = await other.post<ProgressMark>("/api/progress/mark", {
+          page: "first/hello",
+          state: "opened",
+        });
+
+        assert.deepEqual(mark.collected, ["agent"]);
+      } finally {
+        await other.tour.stop();
+      }
+    }
   });
 
   it("refuses a page it does not know", async () => {
