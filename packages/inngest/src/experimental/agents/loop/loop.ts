@@ -759,7 +759,7 @@ export interface AgentLoopWiring {
   budget?: () => string | undefined;
 
   /**
-   * The agent's `limits.price`.
+   * The agent's the agent's `price`.
    */
   price?: AgentPrice;
 

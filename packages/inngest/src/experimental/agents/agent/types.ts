@@ -31,13 +31,13 @@ import type {
   AgentDiscovery,
 } from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
+import type { AgentPrice } from "../loop/cost.ts";
 import type {
   AgentHandlerLoop,
   AgentLoop,
   AgentLoopOptions,
   AgentModel,
 } from "../loop/loop.ts";
-import type { AgentScores } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -50,9 +50,9 @@ import type {
   ThreadKeyConfig,
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
-import type { AgentLimits } from "./limits.ts";
+import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
-import type { AgentRecovery, LastRun } from "./recovery.ts";
+import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 
 /**
@@ -316,24 +316,46 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * What this agent may start and spend: `depth` (default 1, so it may start
-   * sub-agents and they may not), `mayCall` and `budget`. Sub-agents
-   * inherit the limits narrowed. The loop enforces `budget` on its own.
+   * What this agent may start: `depth` (default 1, so it may start
+   * sub-agents and they may not) and `mayCall`. Sub-agents inherit them
+   * narrowed.
    */
   limits?: AgentLimits;
 
   /**
-   * What the agent does about a run that fails unexpectedly. Off by default.
-   * `true` or an object resends the turn that was in flight, so a fresh run
-   * takes it up; a turn that fails twice with the same error is not resent.
-   * Only the message `inbox.next()` delivered last is
+   * What a thread of this agent may spend: `usd`, `tokens`, `input` or
+   * `output`. A value, or a function of `{ event, thread }` run once, when
+   * the thread's first run starts. The loop always enforces it, ending with
+   * `end: "budget"` before its next model call once it is spent. The budget
+   * is kept on the thread and belongs to this agent's own definition: it is
+   * never handed down by the agent that started the thread.
+   */
+  budget?: RunField<
+    AgentBudget,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>
+  >;
+
+  /**
+   * What a model call costs, for `budget.usd`, in place of the model's own
+   * prices: rates per million tokens by model name, or a function of the
+   * call's tokens and model that returns US dollars. A value only.
+   */
+  price?: AgentPrice;
+
+  /**
+   * What the agent does about a run that fails for good. Off by default.
+   * `true` resends the message the run was handling as an `agent/recover`
+   * event, so a fresh run takes it up. The same error is never resent twice,
+   * a `NonRetriableError` is never resent, and at most 3 kinds of error are
+   * allowed per message. Only the message `inbox.next()` delivered last is
    * resent: messages that arrived during the failed turn and were not read
-   * stay with the failed run. A cancelled run (`thread.stop()`, a `cancelOn` event
+   * stay with the failed run. Nothing is posted about the failure: it shows
+   * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
    * is kept either way: see `previousRun` and `thread.state().lastRun`.
    */
-  recovery?: boolean | AgentRecovery;
+  recovery?: boolean;
 }
 
 /**
@@ -413,12 +435,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-
-  /**
-   * Your own scores, next to the ones the framework writes. See
-   * `AgentScores`.
-   */
-  scores: AgentScores;
 
   /**
    * Scores the run: `score("quality", 1)`. Written once wherever it is

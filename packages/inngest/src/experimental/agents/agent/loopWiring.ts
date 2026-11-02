@@ -64,7 +64,7 @@ export const createLoopWiring = (options: {
     budget() {
       return budgetReason(limits);
     },
-    ...(config.limits?.price && { price: config.limits.price }),
+    ...(config.price && { price: config.price }),
     async recordTurn(turn: AgentTurn) {
       const next = await recorder.turn(turn, threadKey);
 

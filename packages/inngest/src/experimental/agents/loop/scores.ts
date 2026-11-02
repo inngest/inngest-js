@@ -3,9 +3,10 @@
  * EXPERIMENTAL: the scores an agent writes about itself. A score is a number
  * on a step or a run, named `agent.<metric>` for the ones the framework writes
  * (`agent.model_ms`, `agent.tool_error`, ...) and anything you like for your
- * own. The framework adds no steps for them: each rides on a step that already
+ * own. The framework's own scores add no steps: each rides on a step that already
  * runs, in the metadata that step sends with its result, so it is written once
- * when the step really runs and never again on replay. Rolling them up (the
+ * when the step really runs and never again on replay. Your own `score()` does
+ * the same inside a step, and is one memoized step outside. Rolling them up (the
  * average, the 90th percentile, a rate) is left to Insights.
  */
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
@@ -15,6 +16,7 @@ import {
 } from "../../../components/Inngest.ts";
 import { scoreMetadataKind } from "../../../components/InngestMetadata.ts";
 import { validateStepScoreOptions } from "../../../components/InngestScore.ts";
+import { step } from "../../../components/InngestStepTools.ts";
 
 /**
  * The names of the scores the framework writes. Your own scores may not start
@@ -90,21 +92,21 @@ export const scoreThisStep = (
 };
 
 /**
- * What the body gets as `scores`: `score()` for your own scores.
+ * The `score` of one agent run, and the `flush` that waits for the scores
+ * still being written.
  */
-export interface AgentScores {
+export interface AgentScore {
   /**
-   * EXPERIMENTAL: Records a score of any name. Inside a step (a tool, or the
-   * model function) it is written on that step with the step's result, once.
-   * Outside a step it sets a score on the run, which is written live: a replay
-   * writes the same value again, so call it with values that do not change
-   * between replays. A score is best effort: if the server refuses it, for
-   * example because it does not support scores, a warning is logged once and
-   * the run goes on.
+   * EXPERIMENTAL: Scores the run: `score("quality", 1)`. Written once wherever
+   * it is called. Inside a step (a tool, or the model function) it rides on
+   * that step's result, with no extra step. Outside a step it is a memoized
+   * step whose id comes from the name, so a replay does not write it again.
+   * It is best effort: a score the server refuses logs a warning and the run
+   * goes on. An un-awaited call is still written before the run ends.
    *
    * @example
    * ```ts
-   * scores.score("support.escalated", ticket.escalated);
+   * await score("support.escalated", ticket.escalated);
    * ```
    */
   score(
@@ -119,6 +121,12 @@ export interface AgentScores {
      */
     value: number | boolean,
   ): Promise<void>;
+
+  /**
+   * Waits for every score called so far, awaited or not. The run calls it
+   * before it ends.
+   */
+  flush(): Promise<void>;
 }
 
 const toolScoreWriters = new WeakMap<object, AgentScores>();
@@ -149,11 +157,26 @@ export const toolScore: AgentScores["score"] = async (name, value) => {
 };
 
 /**
- * Makes the `scores.score()` of one agent run. `client` writes the scores
- * made outside a step.
+ * Makes the `score` of one agent run. `client` writes the scores made outside
+ * a step.
  */
-export const createAgentScores = (client: Inngest.Any): AgentScores => {
-  let warned = false;
+export const createAgentScore = (client: Inngest.Any): AgentScore => {
+  const pending = new Set<Promise<void>>();
+
+  const write = async (name: string, value: number | boolean) => {
+    // The step answers whether or not the server took the score, so a refused
+    // score is never retried and never fails the run.
+    await step.run(`score:${name}`, async () => {
+      try {
+        await client.score({ name, value });
+      } catch (error) {
+        client[internalLoggerSymbol].warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          "Could not record an agent score; the server may not support scores. Scores are skipped when they fail.",
+        );
+      }
+    });
+  };
 
   return {
     async score(name, value) {
@@ -169,19 +192,18 @@ export const createAgentScores = (client: Inngest.Any): AgentScores => {
         return;
       }
 
+      const written = write(name, value);
+
+      pending.add(written);
+
       try {
-        await client.score({ name, value });
-      } catch (error) {
-        // A score is never worth failing or retrying a run, so a server that
-        // refuses it is told about once and then ignored.
-        if (!warned) {
-          warned = true;
-          client[internalLoggerSymbol].warn(
-            { error: error instanceof Error ? error.message : String(error) },
-            "Could not record an agent score; the server may not support scores. Scores are skipped when they fail.",
-          );
-        }
+        await written;
+      } finally {
+        pending.delete(written);
       }
+    },
+    async flush() {
+      await Promise.allSettled([...pending]);
     },
   };
 };

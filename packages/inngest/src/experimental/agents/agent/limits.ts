@@ -1,15 +1,15 @@
 /**
  * @module
- * EXPERIMENTAL: limits on what an agent may start and spend. An agent
- * declares `limits` in its config; calls to other agents enforce `depth` and
- * `mayCall` and the loop enforces `budget`. An agent it starts inherits
- * the limits narrowed, so a sub-agent is never allowed more than its parent.
+ * EXPERIMENTAL: what an agent may start and spend. An agent declares `limits`
+ * (`depth` and `mayCall`) and a `budget` in its config. Calls to other agents
+ * enforce `depth` and `mayCall`, and an agent it starts inherits those
+ * narrowed, so a sub-agent is never allowed more than its parent. The budget
+ * is the agent's own: each thread has the budget of its own agent's
+ * definition, which the loop always enforces, and it is never handed down.
  *
  * Limits gate calls made through the SDK only. A raw `step.invoke` or
- * `sendEvent` to another agent is not checked, and `budget` only stops a loop that is given
- * the body's `control` (see {@link AgentLimits.budget}).
+ * `sendEvent` to another agent is not checked.
  */
-import type { AgentPrice } from "../loop/cost.ts";
 import type { AgentUsage } from "../loop/loop.ts";
 
 /**
@@ -35,7 +35,7 @@ export interface AgentBudget {
   /**
    * Cost in US dollars, summed from what each model call cost. The model
    * reports its own cost when it knows its prices (`anthropic()` does);
-   * `limits.price` overrides it, and a model that reports no cost counts
+   * the agent's `price` overrides it, and a model that reports no cost counts
    * nothing toward the budget until it has one.
    */
   usd?: number;
@@ -58,27 +58,12 @@ export interface AgentLimits {
    * start only agents that match its parent's list and its own.
    */
   mayCall?: string[];
-
-  /**
-   * What the thread may spend. The loop stops with `stopped: "budget"` before
-   * its next model call once it is spent. This only applies to a loop that is
-   * passed `...control` (or `budget` and `onTurn` from it): a body that
-   * calls `agent.loop()` without them runs with no budget at all. A
-   * sub-agent gets what is left at most; the sub-agents' total is not capped.
-   */
-  budget?: AgentBudget;
-
-  /**
-   * What a model call costs, for `budget.usd`: a function of the call's tokens
-   * and model that returns US dollars, or rates per million tokens by model
-   * name. Spread `...control` into `agent.loop()` to use it. See `AgentPrice`.
-   */
-  price?: AgentPrice;
 }
 
 /**
  * What an agent runs with after its own `limits` are narrowed by the limits
  * of the agent that started it. This is what travels in the invoke payload.
+ * The budget is not part of it.
  */
 export interface EffectiveLimits {
   /**
@@ -91,7 +76,6 @@ export interface EffectiveLimits {
    * every list.
    */
   mayCall?: string[][];
-  budget?: AgentBudget;
 }
 
 /**
@@ -123,6 +107,11 @@ export class AgentLimitError extends Error {
  */
 export interface LimitState {
   limits: EffectiveLimits;
+
+  /**
+   * The thread's budget, from its own agent's definition.
+   */
+  budget?: AgentBudget;
   used: AgentUsage;
 }
 
@@ -180,33 +169,6 @@ const lower = (
 };
 
 /**
- * The tighter of two budgets, field by field.
- */
-const narrowBudget = (
-  /**
-   * One budget.
-   */
-  a: AgentBudget | undefined,
-
-  /**
-   * Another.
-   */
-  b: AgentBudget | undefined,
-): AgentBudget | undefined => {
-  const narrowed: AgentBudget = {};
-
-  for (const field of budgetFields) {
-    const value = lower(a?.[field], b?.[field]);
-
-    if (value !== undefined) {
-      narrowed[field] = value;
-    }
-  }
-
-  return Object.keys(narrowed).length > 0 ? narrowed : undefined;
-};
-
-/**
  * The limits an agent runs with: its config, never wider than what it
  * inherited.
  */
@@ -229,7 +191,6 @@ export const narrowLimits = (
   return {
     depth: lower(own?.depth, inherited?.depth) ?? 1,
     ...(mayCall.length > 0 && { mayCall }),
-    budget: narrowBudget(own?.budget, inherited?.budget),
   };
 };
 
@@ -266,31 +227,10 @@ export const narrowInherited = (
       return true;
     },
   );
-  const budget = narrowBudget(a.budget, b.budget);
-
   return {
     depth: lower(a.depth, b.depth),
     ...(mayCall.length > 0 && { mayCall }),
-    ...(budget && { budget }),
   };
-};
-
-/**
- * The limits without a dollar budget. A dollar budget handed down by a parent
- * belongs to the run it was handed to, so it is not kept on the thread: a
- * later run, started by a plain message, has no price to count it with.
- */
-export const withoutUsdBudget = (
-  limits: EffectiveLimits | undefined,
-): EffectiveLimits | undefined => {
-  if (!limits?.budget || limits.budget.usd === undefined) {
-    return limits;
-  }
-
-  const { usd: _usd, ...budget } = limits.budget;
-  const { budget: _budget, ...rest } = limits;
-
-  return Object.keys(budget).length > 0 ? { ...rest, budget } : rest;
 };
 
 /**
@@ -322,20 +262,6 @@ export const readInheritedLimits = (
 
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
   };
-  const budget: AgentBudget = {};
-
-  if (raw.budget !== undefined && !isRecord(raw.budget)) {
-    budget.tokens = 0;
-  } else if (isRecord(raw.budget)) {
-    for (const field of budgetFields) {
-      const value = number(raw.budget[field]);
-
-      if (value !== undefined) {
-        budget[field] = value;
-      }
-    }
-  }
-
   const mayCall =
     raw.mayCall !== undefined && !Array.isArray(raw.mayCall)
       ? [[]]
@@ -350,7 +276,6 @@ export const readInheritedLimits = (
   return {
     depth: number(raw.depth),
     ...(mayCall.length > 0 && { mayCall }),
-    ...(Object.keys(budget).length > 0 && { budget }),
   };
 };
 
@@ -378,38 +303,6 @@ export const matchesTarget = (
 };
 
 /**
- * What is left of a budget after `used`, field by field, never below 0.
- */
-const remaining = (
-  /**
-   * The budget.
-   */
-  budget: AgentBudget | undefined,
-
-  /**
-   * What the thread has spent.
-   */
-  used: AgentUsage,
-): AgentBudget | undefined => {
-  if (!budget) {
-    return undefined;
-  }
-
-  const spent = spentOf(used);
-  const left: AgentBudget = {};
-
-  for (const field of budgetFields) {
-    const limit = budget[field];
-
-    if (limit !== undefined) {
-      left[field] = Math.max(0, limit - spent[field]);
-    }
-  }
-
-  return left;
-};
-
-/**
  * Why the budget is spent, or `undefined` while there is some left.
  */
 export const budgetReason = (
@@ -418,7 +311,7 @@ export const budgetReason = (
    */
   state: LimitState,
 ): string | undefined => {
-  const budget = state.limits.budget;
+  const budget = state.budget;
 
   if (!budget) {
     return undefined;
@@ -486,8 +379,8 @@ export const checkInvoke = (
 };
 
 /**
- * The limits to pass to an agent this execution starts: one level less depth
- * and what is left of the budget.
+ * The limits to pass to an agent this execution starts: one level less depth.
+ * The budget stays with this agent's thread.
  */
 export const childLimits = (
   /**
@@ -495,12 +388,11 @@ export const childLimits = (
    */
   state: LimitState,
 ): EffectiveLimits => {
-  const { depth, mayCall, budget } = state.limits;
+  const { depth, mayCall } = state.limits;
 
   return {
     ...(depth !== undefined && { depth: depth - 1 }),
     ...(mayCall && { mayCall }),
-    ...(budget && { budget: remaining(budget, state.used) }),
   };
 };
 
@@ -528,8 +420,13 @@ export const registerLimits = (
    * What the thread has spent so far.
    */
   used: AgentUsage,
+
+  /**
+   * The thread's budget.
+   */
+  budget?: AgentBudget,
 ): LimitState => {
-  const state = { limits, used };
+  const state = { limits, used, ...(budget && { budget }) };
 
   states.set(instance, state);
 

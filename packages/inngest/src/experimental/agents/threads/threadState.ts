@@ -12,9 +12,9 @@
  */
 
 import {
+  type AgentBudget,
   type EffectiveLimits,
   narrowInherited,
-  withoutUsdBudget,
 } from "../agent/limits.ts";
 import {
   decide,
@@ -147,8 +147,8 @@ export const threadRecorder = (
     /**
      * A turn is running. A sub-agent's inherited limits are kept on the
      * record, narrowed over every start, so a later run that a plain message
-     * starts has the same limits. Not its dollar budget: that is for the run
-     * it was passed to.
+     * starts has the same limits. The thread's budget, from its own agent's
+     * definition, is kept the first time and never replaced.
      */
     running: (
       /**
@@ -166,16 +166,19 @@ export const threadRecorder = (
        * The thread's key, when called inside a step's callback.
        */
       thread?: string,
+
+      /**
+       * The thread's budget as this run's agent defines it.
+       */
+      budget?: AgentBudget,
     ) => {
       return record((current) => {
-        // A dollar budget is for the run it was passed to, so it is not kept.
-        const inherited = withoutUsdBudget(
-          narrowInherited(current.inherited, startedWith),
-        );
+        const inherited = narrowInherited(current.inherited, startedWith);
 
         return {
           status: "running",
           ...(inherited && { inherited }),
+          ...(current.budget === undefined && budget && { budget }),
           // `null` clears it: a run that does not begin with a message must
           // not keep the one the run before it left behind.
           ...(inflight === null && { inflight: undefined }),

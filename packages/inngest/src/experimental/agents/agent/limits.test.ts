@@ -14,14 +14,14 @@ import {
   narrowInherited,
   narrowLimits,
   readInheritedLimits,
-  withoutUsdBudget,
 } from "./limits.ts";
 
 const state = (
   limits: LimitState["limits"],
   used: AgentUsage = { input: 0, output: 0 },
+  budget?: LimitState["budget"],
 ): LimitState => {
-  return { limits, used };
+  return { limits, used, ...(budget && { budget }) };
 };
 
 const refusal = (fn: () => void) => {
@@ -52,13 +52,13 @@ describe("narrowLimits", () => {
     expect(narrowLimits(undefined, { depth: 0 }).depth).toBe(0);
   });
 
-  test("budget takes the lower value, field by field", () => {
-    const narrowed = narrowLimits(
-      { budget: { tokens: 100, output: 10 } },
-      { budget: { tokens: 500, input: 50 } },
-    );
-
-    expect(narrowed.budget).toEqual({ tokens: 100, input: 50, output: 10 });
+  test("a budget in an inherited payload is ignored", () => {
+    expect(
+      narrowLimits(undefined, { depth: 2, budget: { tokens: 1 } } as never),
+    ).toEqual({ depth: 2 });
+    expect(
+      readInheritedLimits({ limits: { depth: 2, budget: { usd: 1 } } }),
+    ).toEqual({ depth: 2 });
   });
 
   test("mayCall keeps every list of the chain", () => {
@@ -77,13 +77,11 @@ describe("readInheritedLimits", () => {
         limits: {
           depth: "2",
           mayCall: [["a/*", 3], "b"],
-          budget: { tokens: 5, input: "x" },
         },
       }),
     ).toEqual({
       depth: 0,
       mayCall: [["a/*"], []],
-      budget: { tokens: 5, input: 0 },
     });
   });
 });
@@ -114,10 +112,7 @@ describe("checkInvoke", () => {
 
   test("refuses once the budget is spent", () => {
     const error = refusal(() => {
-      checkInvoke(
-        state({ budget: { tokens: 10 } }, { input: 6, output: 4 }),
-        "app/a",
-      );
+      checkInvoke(state({}, { input: 6, output: 4 }, { tokens: 10 }), "app/a");
     });
 
     expect(error.limit).toBe("budget");
@@ -126,84 +121,58 @@ describe("checkInvoke", () => {
 
 describe("usd budget", () => {
   test("is spent when the dollars reach it, and says so in dollars", () => {
-    const limits = { budget: { usd: 0.02 } };
+    const budget = { usd: 0.02 };
 
     expect(
-      budgetReason(state(limits, { input: 9, output: 9, usd: 0.0199 })),
+      budgetReason(state({}, { input: 9, output: 9, usd: 0.0199 }, budget)),
     ).toBe(undefined);
     expect(
-      budgetReason(state(limits, { input: 0, output: 0, usd: 0.02 })),
+      budgetReason(state({}, { input: 0, output: 0, usd: 0.02 }, budget)),
     ).toBe("Budget spent: $0.02 of $0.02 used.");
     expect(
       budgetReason(
-        state(
-          { budget: { usd: 0.00002 } },
-          { input: 1, output: 1, usd: 0.00003 },
-        ),
+        state({}, { input: 1, output: 1, usd: 0.00003 }, { usd: 0.00002 }),
       ),
     ).toBe("Budget spent: $0.000030 of $0.000020 used.");
   });
 
   test("a budget with dollars but no priced usage is never spent", () => {
     expect(
-      budgetReason(state({ budget: { usd: 1 } }, { input: 1e9, output: 1e9 })),
+      budgetReason(state({}, { input: 1e9, output: 1e9 }, { usd: 1 })),
     ).toBeUndefined();
-  });
-
-  test("narrows with the other fields, passes down what is left, and a bad payload closes it", () => {
-    expect(
-      narrowLimits({ budget: { usd: 5 } }, { budget: { usd: 3, tokens: 9 } })
-        .budget,
-    ).toEqual({ usd: 3, tokens: 9 });
-    expect(
-      childLimits(
-        state({ budget: { usd: 1 } }, { input: 1, output: 1, usd: 0.25 }),
-      ).budget,
-    ).toEqual({ usd: 0.75 });
-    expect(
-      childLimits(
-        state({ budget: { usd: 1 } }, { input: 1, output: 1, usd: 4 }),
-      ).budget,
-    ).toEqual({ usd: 0 });
-    expect(
-      readInheritedLimits({ limits: { budget: { usd: "lots" } } })?.budget,
-    ).toEqual({ usd: 0 });
   });
 });
 
 describe("budget", () => {
   test("reports the field that is spent", () => {
-    const limits = { budget: { output: 5 } };
+    const budget = { output: 5 };
 
-    expect(budgetReason(state(limits, { input: 100, output: 4 }))).toBe(
+    expect(budgetReason(state({}, { input: 100, output: 4 }, budget))).toBe(
       undefined,
     );
-    expect(budgetReason(state(limits, { input: 0, output: 5 }))).toContain(
+    expect(budgetReason(state({}, { input: 0, output: 5 }, budget))).toContain(
       "5 of 5 output tokens",
     );
   });
 
-  test("a child gets one less depth and what is left", () => {
+  test("a child gets one less depth and no budget", () => {
     const child = childLimits(
       state(
-        { depth: 2, mayCall: [["a/*"]], budget: { tokens: 100 } },
+        { depth: 2, mayCall: [["a/*"]] },
         { input: 30, output: 20 },
+        { tokens: 100 },
       ),
     );
 
-    expect(child).toEqual({
-      depth: 1,
-      mayCall: [["a/*"]],
-      budget: { tokens: 50 },
-    });
+    expect(child).toEqual({ depth: 1, mayCall: [["a/*"]] });
   });
 });
 
 describe("hardening", () => {
   test("a present but malformed container closes the limit", () => {
-    expect(
-      readInheritedLimits({ limits: { mayCall: "x", budget: "y" } }),
-    ).toEqual({ mayCall: [[]], budget: { tokens: 0 } });
+    expect(readInheritedLimits({ limits: { mayCall: "x" } })).toEqual({
+      mayCall: [[]],
+    });
   });
 
   test("starting a thread again with the same limits adds no duplicate list", () => {
@@ -217,17 +186,4 @@ test("Infinity in a config limit means no cap", () => {
   expect(
     narrowLimits({ depth: Number.POSITIVE_INFINITY }, undefined).depth,
   ).toBe(1);
-});
-
-describe("withoutUsdBudget", () => {
-  test("drops only the dollars of a budget, and an empty budget", () => {
-    expect(
-      withoutUsdBudget({ depth: 2, budget: { usd: 5, tokens: 9 } }),
-    ).toEqual({ depth: 2, budget: { tokens: 9 } });
-    expect(withoutUsdBudget({ depth: 2, budget: { usd: 5 } })).toEqual({
-      depth: 2,
-    });
-    expect(withoutUsdBudget({ depth: 2 })).toEqual({ depth: 2 });
-    expect(withoutUsdBudget(undefined)).toBeUndefined();
-  });
 });

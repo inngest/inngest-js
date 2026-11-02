@@ -98,6 +98,7 @@ describe("agent function", () => {
     });
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
+      "agent/recover",
       "agent/steer",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
@@ -196,9 +197,14 @@ describe("agent function", () => {
     const { output } = await run(fn, {
       event: trigger("go"),
       saved: [
-        message("user", undefined, "t1", {
-          event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
-        }),
+        {
+          name: "agent/recover",
+          data: {
+            agent: `${testClientId}/bot`,
+            thread: "t1",
+            event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
+          },
+        },
       ],
     });
 
@@ -451,7 +457,13 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "agent/steer", "ci/status", "ci/status"]);
+    ).toEqual([
+      "agent/message",
+      "agent/recover",
+      "agent/steer",
+      "ci/status",
+      "ci/status",
+    ]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
@@ -776,7 +788,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/message", "agent/steer"]);
+    ).toEqual(["agent/message", "agent/recover", "agent/steer"]);
   });
 });
 
@@ -1169,7 +1181,7 @@ describe("agent limits", () => {
       makeClient(),
       {
         id: "bot",
-        limits: { budget: { tokens: 20 } },
+        budget: { tokens: 20 },
         model: model(async () => {
           calls += 1;
 
@@ -1194,39 +1206,8 @@ describe("agent limits", () => {
     ]);
   });
 
-  test("a dollar budget handed down is not kept: a later plain message runs the agent again", async () => {
-    let ran = 0;
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot" },
-      async () => {
-        ran += 1;
-      },
-    );
-    const invoked = trigger("go");
-
-    await run(fn, {
-      event: {
-        ...invoked,
-        data: {
-          ...invoked.data,
-          _agent: { depth: 1, limits: { budget: { usd: 1, tokens: 500 } } },
-        },
-      },
-    });
-
-    expect(ran).toBeGreaterThan(0);
-
-    const before = ran;
-
-    await run(fn, { event: trigger("again") });
-
-    expect(ran).toBeGreaterThan(before);
-  });
-
-  test("a malformed dollar budget handed down stops the loop as a spent budget, not as a missing price", async () => {
+  test("a budget handed down by the starter is not inherited: the agent's own definition decides", async () => {
     let models = 0;
-    const seen: unknown[] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
@@ -1234,30 +1215,129 @@ describe("agent limits", () => {
         model: model(async () => {
           models += 1;
 
-          return spend(1, 1);
+          return {
+            message: { role: "assistant", content: [] },
+            text: "ok",
+            toolCalls: [],
+            usage: { input: 50, output: 50 },
+          };
         }),
       },
       async ({ inbox, loop }) => {
         const first = await inbox.next();
         const result = await loop(first ? [first] : "");
 
-        seen.push(result.end);
+        return result.end;
       },
     );
     const invoked = trigger("go");
-
-    await run(fn, {
+    const { output } = await run(fn, {
       event: {
         ...invoked,
         data: {
           ...invoked.data,
-          _agent: { depth: 1, limits: { budget: { usd: "lots" } } },
+          _agent: { depth: 1, limits: { budget: { tokens: 1, usd: 0.001 } } },
         },
       },
     });
 
-    expect(models).toBe(0);
-    expect([...new Set(seen)]).toEqual(["budget"]);
+    expect(models).toBe(1);
+    expect(output).not.toBe("budget");
+  });
+
+  test("a budget function gets the event and the thread, and the first result is kept for the thread's later runs", async () => {
+    freshKv();
+    let later = false;
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        budget: ({ event, thread }) => {
+          seen.push([event.name, thread.key]);
+
+          // The thread's first run gets 20 tokens; once `later` is set the
+          // function would give far more.
+          return { tokens: later ? 10_000 : 20 };
+        },
+        model: model(async () => {
+          return spend(8, 4);
+        }),
+      },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+        const result = await loop(first ? [first] : "");
+
+        return result.end;
+      },
+    );
+
+    const first = await run(fn, { event: trigger("go") });
+
+    expect(first.output).toBe("budget");
+    expect(seen[0]).toEqual(["agent/message", "t1"]);
+
+    later = true;
+
+    // The same thread's next run enforces the budget kept on the thread, not
+    // the larger one the function would give now.
+    const again = await run(fn, { event: trigger("more") });
+
+    expect(again.output).toBe("budget");
+  });
+
+  test("price is the agent's own: a table overrides the model's cost and the usd budget spends it", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        budget: { usd: 0.5 },
+        price: { "*": { input: 1_000_000, output: 1_000_000 } },
+        model: model(async () => {
+          return { ...spend(0.2, 0.1), usd: 0 };
+        }),
+      },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+        const result = await loop(first ? [first] : "");
+
+        return [result.end, result.turns];
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toEqual(["budget", 2]);
+  });
+
+  test("a price function is called with the call's tokens and model, and its result is what the budget spends", async () => {
+    const calls: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        budget: { usd: 1 },
+        price: (usage, name) => {
+          calls.push([usage.input, usage.output, name]);
+
+          return 0.6;
+        },
+        model: model(async () => {
+          return { ...spend(3, 4), model: "m-1" };
+        }),
+      },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+        const result = await loop(first ? [first] : "");
+
+        return [result.end, result.turns];
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toEqual(["budget", 2]);
+    expect(calls[0]).toEqual([3, 4, "m-1"]);
   });
 
   test("an agent refuses to start a sub-agent past its inherited depth", async () => {
