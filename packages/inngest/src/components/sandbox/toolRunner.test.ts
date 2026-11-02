@@ -1946,6 +1946,43 @@ describe("commands.run with tools that wait", () => {
     ]);
   });
 
+  test("a tool that waits runs in the same pass as the group tool before it, which is not run again after the resume", async () => {
+    const { sandbox } = createReplaySandbox(["start", "pause", "after"]);
+    const { host } = createHost(sandbox);
+    const kept: string[] = [];
+    const seen: string[][] = [];
+    const tools: SandboxTools = {
+      start: tool.group({
+        run: async () => {
+          kept.push("thread-1");
+
+          return 1;
+        },
+      }),
+      pause: tool.group({
+        waits: true,
+        run: async () => {
+          seen.push([...kept]);
+
+          return 2;
+        },
+      }),
+      after: () => {
+        return 3;
+      },
+    };
+
+    await inFunction(() => {
+      return run(host, tools);
+    });
+
+    // The body of `start` ran once, before `pause`; the journal answered it
+    // in the resumed segment without calling the host, so only the
+    // execution's own state (not a per-segment one) can carry what it kept.
+    expect(kept).toEqual(["thread-1"]);
+    expect(seen).toEqual([["thread-1"]]);
+  });
+
   test("a process that exits with another code than 75 is not resumed", async () => {
     const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
       exitCode: 0,
