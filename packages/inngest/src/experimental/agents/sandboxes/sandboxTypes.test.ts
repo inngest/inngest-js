@@ -5,8 +5,8 @@
  * tool names come from the sandbox.
  */
 import { expectTypeOf } from "vitest";
-import type { SandboxHandle } from "../../../components/sandbox/types.ts";
 import { Inngest } from "../../../components/Inngest.ts";
+import type { SandboxHandle } from "../../../components/sandbox/types.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgents } from "../agent/agents.ts";
 import * as agentsEntry from "../index.ts";

@@ -13,7 +13,7 @@ import { getStepOptions } from "../InngestStepTools.ts";
 import { commandText } from "./commandError.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import { createDollar, shellEscape } from "./dollar.ts";
-import type { DurableSandbox } from "./types.ts";
+import { type DurableSandbox, SandboxValidationError } from "./types.ts";
 
 /**
  * The starting point of a shell.
@@ -269,6 +269,38 @@ const orderOf = (state: ShellState) => {
   return order;
 };
 
+// The platform accepts at most 256 environment entries and 64 KiB of them. The
+// shell stops a little short, so its own failure comes first and names the
+// limit, instead of every later command failing at validation.
+const envEntryLimit = 256;
+const envByteLimit = 64 * 1_024;
+const envMargin = { entries: 8, bytes: 2 * 1_024 };
+
+const checkEnvironment = (env: Record<string, string>): void => {
+  const entries = Object.entries(env);
+  const encoder = new TextEncoder();
+  const bytes = entries.reduce((sum, [name, value]) => {
+    return (
+      sum +
+      encoder.encode(name).byteLength +
+      1 +
+      encoder.encode(value).byteLength
+    );
+  }, 0);
+
+  if (entries.length > envEntryLimit - envMargin.entries) {
+    throw new SandboxValidationError(
+      `The shell's environment has ${entries.length} entries, close to the limit of ${envEntryLimit}. Run unset on variables you no longer need.`,
+    );
+  }
+
+  if (bytes > envByteLimit - envMargin.bytes) {
+    throw new SandboxValidationError(
+      `The shell's environment is ${bytes} bytes, close to the limit of 64 KiB. Run unset on variables you no longer need.`,
+    );
+  }
+};
+
 /**
  * Plans `text` (a shell script) as the next command of a session, starting
  * from the session's state as it is now. `id` is the command's step ID, which
@@ -287,13 +319,17 @@ export const beginShellCommand = (
     return !(own.env && Object.hasOwn(own.env, name));
   });
 
+  const env = { ...state.env, ...own.env };
+
+  checkEnvironment(env);
+
   return {
     seq,
     script: scriptOf(text, removed, marker),
     marker,
     cwd: own.cwd ?? state.cwd,
     ownCwd: own.cwd,
-    env: { ...state.env, ...own.env },
+    env,
   };
 };
 

@@ -97,7 +97,8 @@ describe("codeTools edit", () => {
       async (sandbox) => {
         try {
           result = await (
-            codeTools(sandbox, { cwd: "/repo", only: ["edit"] }).edit.run as Call
+            codeTools(sandbox, { cwd: "/repo", only: ["edit"] }).edit
+              .run as Call
           )(input);
         } catch (caught) {
           error = caught;
