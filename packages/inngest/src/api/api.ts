@@ -615,7 +615,7 @@ export class InngestApi {
    */
   async checkpointStream(args: {
     runId: string;
-    body: ReadableStream;
+    body: ReadableStream | Uint8Array<ArrayBuffer>;
   }): Promise<void> {
     const url = await this.getTargetUrl(
       `/v1/realtime/publish/tee?channel=${encodeURIComponent(args.runId)}`,
