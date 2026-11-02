@@ -1317,29 +1317,54 @@ const showProgress = async (scope: CiJobScope): Promise<void> => {
   );
 };
 
-const decoder = new TextDecoder();
-
-const decodeChunks = (output: {
+/**
+ * Decode a process's output chunks into text.
+ *
+ * Each stream gets its own decoder used with `{ stream: true }`, so a
+ * multi-byte UTF-8 character split across two chunks of the same stream
+ * survives instead of becoming U+FFFD replacement characters. Sharing one
+ * decoder across streams — or decoding each chunk on its own — corrupts
+ * any character a chunk boundary falls inside. A final flush turns a
+ * character the output genuinely ends inside into a replacement
+ * character, as before.
+ */
+export const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
 }): { stdout: string; stderr: string; merged: string } => {
+  const decoders = {
+    stdout: new TextDecoder(),
+    stderr: new TextDecoder(),
+  };
+
   let stdout = "";
   let stderr = "";
   let merged = "";
 
   for (const chunk of output?.chunks ?? []) {
+    const isStderr = chunk.stream === "STDERR";
+
+    const decoder = isStderr ? decoders.stderr : decoders.stdout;
+
     const text =
       typeof chunk.data === "string"
         ? chunk.data
-        : decoder.decode(chunk.data as Uint8Array);
+        : decoder.decode(chunk.data as Uint8Array, { stream: true });
 
     merged += text;
 
-    if (chunk.stream === "STDERR") {
+    if (isStderr) {
       stderr += text;
     } else {
       stdout += text;
     }
   }
+
+  const stdoutTail = decoders.stdout.decode();
+  const stderrTail = decoders.stderr.decode();
+
+  stdout += stdoutTail;
+  stderr += stderrTail;
+  merged += stdoutTail + stderrTail;
 
   return { stdout, stderr, merged };
 };
