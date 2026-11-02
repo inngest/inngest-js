@@ -11,7 +11,11 @@ import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import { threadKv, threadRecordKey } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
-import { agentToolSet, sandboxAgentTools } from "./agentTools.ts";
+import {
+  agentToolSet,
+  agentToolsFor,
+  sandboxAgentTools,
+} from "./agentTools.ts";
 import { run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });
@@ -44,15 +48,28 @@ const callTools = async (
       | Record<string, unknown>
       | ((results: unknown[]) => Record<string, unknown>);
   }[],
-  options: Parameters<typeof agentToolSet>[0] & { forSandbox?: boolean } = {
+  options: Parameters<typeof agentToolSet>[0] & {
+    forSandbox?: boolean;
+
+    /**
+     * Events already in the inbox, and how many messages the body reads
+     * before it calls the tools.
+     */
+    saved?: unknown[];
+    reads?: number;
+  } = {
     functions: live,
   },
 ) => {
   const tools = options.forSandbox
     ? sandboxAgentTools(options)
     : agentToolSet(options);
-  const caller = agents.agent({ id: "caller" }, async () => {
+  const caller = agents.agent({ id: "caller" }, async ({ inbox }) => {
     const out: unknown[] = [];
+
+    for (let read = 0; read < (options.reads ?? 0); read++) {
+      await inbox.next();
+    }
 
     for (const { tool, input: given } of calls) {
       const input = typeof given === "function" ? given(out) : given;
@@ -83,6 +100,7 @@ const callTools = async (
   });
   const invokes: { data: Record<string, unknown> }[] = [];
   const { output } = await run(caller.fn, {
+    saved: options.saved,
     event: {
       name: "agent/message",
       data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
@@ -97,7 +115,20 @@ const callTools = async (
   return { results: output as unknown[], invokes };
 };
 
+let sent: { name: string; data: Record<string, unknown> }[] = [];
+
 beforeEach(() => {
+  sent = [];
+  Object.defineProperty(client, "_send", {
+    configurable: true,
+    value: async (input: { payload: unknown }) => {
+      for (const event of [input.payload].flat()) {
+        sent.push(event as (typeof sent)[number]);
+      }
+
+      return { ids: [], status: 200 };
+    },
+  });
   vi.spyOn(client, "queryInsights").mockRejectedValue(
     new Error("Insights query failed: 501 Not Implemented - no"),
   );
@@ -177,6 +208,121 @@ describe("start_agent", () => {
 
     expect(invokes).toEqual([]);
     expect(JSON.stringify(results[0])).toMatch(/list_agents/);
+  });
+});
+
+const question = {
+  name: "agent/question",
+  data: {
+    agent: `${testClientId}/caller`,
+    thread: "c1",
+    id: "q1",
+    text: "ready?",
+    from: { kind: "agent", address: "other/asker", key: "a1" },
+  },
+};
+
+describe("reply", () => {
+  test("answers a question the agent received, by its id, at the asker's thread", async () => {
+    const { results } = await callTools(
+      [{ tool: "reply", input: { to: "q1", text: "yes" } }],
+      { functions: live, saved: [question], reads: 2 },
+    );
+
+    expect(results).toEqual([{ ok: true }]);
+    expect(sent).toMatchObject([
+      {
+        name: "agent/answer",
+        data: {
+          agent: "other/asker",
+          thread: "a1",
+          re: "q1",
+          outcome: "answered",
+          text: "yes",
+        },
+      },
+    ]);
+  });
+
+  test("says which question it cannot find", async () => {
+    const { results } = await callTools(
+      [{ tool: "reply", input: { to: "q9", text: "yes" } }],
+      { functions: live, saved: [question], reads: 2 },
+    );
+
+    expect(JSON.stringify(results[0])).toMatch(/q9/);
+    expect(sent).toEqual([]);
+  });
+
+  test("is there with discovery false, alone", () => {
+    expect(Object.keys(agentToolsFor(false))).toEqual(["reply"]);
+    expect(Object.keys(agentToolsFor(undefined))).toContain("reply");
+  });
+});
+
+describe("message_agent", () => {
+  const thread = `${plain.card.address}:run-1.0`;
+
+  test("sends an agent/message to the thread and returns at once", async () => {
+    const { results } = await callTools([
+      { tool: "message_agent", input: { thread, content: "also do x" } },
+    ]);
+
+    expect(results).toEqual([{ ok: true }]);
+    expect(sent).toMatchObject([
+      {
+        name: "agent/message",
+        data: {
+          agent: plain.card.address,
+          thread,
+          content: "also do x",
+          from: { kind: "agent", address: `${testClientId}/caller`, key: "c1" },
+        },
+      },
+    ]);
+  });
+
+  test("refuses a thread key that names no agent", async () => {
+    const { results } = await callTools([
+      { tool: "message_agent", input: { thread: "p1", content: "hi" } },
+    ]);
+
+    expect(JSON.stringify(results[0])).toMatch(/start_agent/);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("ask_agent", () => {
+  const thread = `${plain.card.address}:run-1.0`;
+
+  test("returns the question's id at once and sends the question and its timeout", async () => {
+    const { results } = await callTools([
+      { tool: "ask_agent", input: { thread, question: "tests pass?" } },
+    ]);
+    const id = (results[0] as { id: string }).id;
+
+    expect(id).toEqual(expect.any(String));
+    expect(sent).toMatchObject([
+      {
+        name: "agent/question",
+        data: {
+          agent: plain.card.address,
+          thread,
+          id,
+          text: "tests pass?",
+          from: { kind: "agent", address: `${testClientId}/caller`, key: "c1" },
+        },
+      },
+      {
+        name: "agent/ask.timeout",
+        data: {
+          id,
+          agent: `${testClientId}/caller`,
+          thread: "c1",
+          timeout: "1h",
+        },
+      },
+    ]);
   });
 });
 
