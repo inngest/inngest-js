@@ -62,6 +62,7 @@ export type {
   GroupToolsDeps,
   ParallelOptions,
 } from "./components/InngestGroupTools";
+export type { StepTools } from "./components/InngestStepTools.ts";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
@@ -76,7 +77,10 @@ export {
   invoke,
   staticSchema,
 } from "./components/triggers/triggers.ts";
-export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
+export type {
+  BaseContextWithTriggers,
+  HandlerWithTriggers,
+} from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,
