@@ -20,12 +20,17 @@ describe("Dev Server retries", { skip: binary === undefined }, () => {
   let devServer: DevServer;
 
   before(async () => {
+    if (!binary) {
+      return;
+    }
+
     const api = await freePort();
     const client = new Inngest({
       id: "retry-test",
       isDev: true,
       baseUrl: `http://127.0.0.1:${api}`,
     });
+
     const flaky = client.createFunction(
       { id: "flaky", retries: 2, triggers: [{ event: "retry/start" }] },
       async () => {
@@ -44,12 +49,13 @@ describe("Dev Server retries", { skip: binary === undefined }, () => {
     server = createServer((req, res) => {
       void handler(req, res);
     });
+
     await new Promise<void>((resolve) => {
       server.listen(appPort, "127.0.0.1", resolve);
     });
 
     devServer = new DevServer({
-      binary: binary as string,
+      binary,
       ports: {
         api,
         gateway: await freePort(),
@@ -64,6 +70,7 @@ describe("Dev Server retries", { skip: binary === undefined }, () => {
 
   after(async () => {
     await devServer.stop();
+
     await new Promise<void>((resolve) => {
       server.close(() => {
         resolve();
