@@ -1474,6 +1474,21 @@ describe("shims and long commands on commands.run", () => {
     expect(request?.toolOptions).toEqual({ toolTimeout: "2m" });
   });
 
+  test("$ passes tools to the command, like commands.run", async () => {
+    const { rawTool, sandbox } = facade();
+    const lookup = tool.step({
+      input: z.object({ id: z.string() }),
+      run: ({ id }) => {
+        return id;
+      },
+    });
+
+    await sandbox.$({ tools: { lookup } }).sh`node script.mjs`;
+
+    const [, , , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(Object.keys(request?.tools ?? {})).toEqual(["lookup"]);
+  });
+
   test("an empty shims object is no shims", async () => {
     const { rawTool, sandbox } = facade();
 
