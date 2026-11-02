@@ -21,7 +21,7 @@ const trigger = (id: string) => {
   };
 };
 
-const setup = () => {
+const setup = (recovery = false) => {
   const sent: { name: string; data: Record<string, unknown>; id?: string }[] =
     [];
   const client = new Inngest({
@@ -36,7 +36,11 @@ const setup = () => {
 
   freshKv();
 
-  const agent = createAgentFunction(client, { id: "bot" }, async () => {});
+  const agent = createAgentFunction(
+    client,
+    { id: "bot", ...(recovery && { recovery: true }) },
+    async () => {},
+  );
 
   return { agent, sent };
 };
@@ -120,5 +124,51 @@ describe("the finished function tells the sender of the message that started the
     });
 
     expect(sent).toEqual([]);
+  });
+});
+
+describe("with recovery", () => {
+  test("a failure that recovery resumes is not reported: the resumed run reports it", async () => {
+    const { agent, sent } = setup(true);
+
+    await run(agent.finished, {
+      event: finished(trigger("m4"), {
+        _inngest: { status: "Failed" },
+        error: { name: "Error", message: "boom" },
+      }),
+    });
+
+    expect(
+      sent.map((event) => {
+        return event.name;
+      }),
+    ).toEqual(["agent/recover"]);
+  });
+
+  test("a run that recovery started reports under the id of the message it resent", async () => {
+    const { agent, sent } = setup(true);
+    const resent = {
+      id: "evt-recover",
+      name: "agent/recover",
+      data: {
+        agent: `${testClientId}/bot`,
+        thread: "t1",
+        event: trigger("m5"),
+      },
+    };
+
+    await run(agent.finished, {
+      event: finished(resent as never, {
+        _inngest: { status: "Completed" },
+        result: "ok",
+      }),
+    });
+
+    expect(sent).toMatchObject([
+      {
+        name: "agent/message.result",
+        data: { id: "m5", status: "completed", output: "ok" },
+      },
+    ]);
   });
 });

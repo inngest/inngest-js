@@ -8,14 +8,23 @@
 import { createDefer } from "../../../components/DeferredFunction.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { agentRecover } from "../inbox/events.ts";
+import {
+  agentMessageResult,
+  agentRecover,
+  type MessageOutcome,
+} from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
+import type { Json } from "../json.ts";
 import type { Kv } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
 } from "../sandboxes/threadSandboxes.ts";
-import { agentMessageEvent, threadSessions } from "../threads/thread.ts";
+import {
+  agentMessageEvent,
+  agentRecoverEvent,
+  threadSessions,
+} from "../threads/thread.ts";
 import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
@@ -70,6 +79,24 @@ export const createCleanupFunction = (
       }
     },
   );
+};
+
+/**
+ * The IDs of the messages a run took whose senders wait for its result: the
+ * message that started it, or the one a recovery resent.
+ */
+const senderIdsOf = (start: RawEvent): string[] => {
+  if (start.name === agentMessageEvent) {
+    return start.id ? [start.id] : [];
+  }
+
+  if (start.name === agentRecoverEvent) {
+    const resent = (start.data as { event?: RawEvent }).event;
+
+    return resent?.name === agentMessageEvent && resent.id ? [resent.id] : [];
+  }
+
+  return [];
 };
 
 /**
@@ -128,15 +155,37 @@ export const createFinishedFunction = (
             ? !ended.error?.nonRetriable
             : undefined,
       });
-      if (!recovery || ended.status !== "failed") {
-        return last;
-      }
 
       // Only a run that `recordEnd` marked as resumed is resumed: a late report
       // for an older run, after a newer one has ended, is not.
       const mine = last?.runId === runId ? last : undefined;
+      const resumed =
+        recovery && ended.status === "failed" && mine?.recovery === "resumed";
 
-      if (mine?.recovery !== "resumed") {
+      // The sender of each message the run took hears how the run ended. A
+      // run that recovery resumes reports when the resumed run ends.
+      const messageIds = resumed ? [] : senderIdsOf(start);
+
+      if (messageIds.length > 0) {
+        const outcome: MessageOutcome =
+          ended.status === "completed"
+            ? { status: "completed", output: data.result as Json }
+            : ended.status === "failed"
+              ? {
+                  status: "failed",
+                  error: ended.error?.message ?? "unknown error",
+                }
+              : { status: "stopped" };
+
+        await step.sendEvent(
+          "message-results",
+          messageIds.map((id) => {
+            return agentMessageResult.create({ id, run_id: runId, ...outcome });
+          }),
+        );
+      }
+
+      if (!resumed) {
         return last;
       }
 
