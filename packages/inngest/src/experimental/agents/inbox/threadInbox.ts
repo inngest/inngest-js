@@ -174,6 +174,13 @@ export function threadInbox(
   // wait for ever.
   idle?: number,
 
+  // The children the run started with `start_agent` that are still open.
+  children?: {
+    open: () => string[];
+    settle: (key: string) => void;
+    wait: () => number;
+  },
+
   // Answers a question that reached the inbox.
   answer?: (
     question: { data: { id: string; text?: string; from?: SenderData } },
@@ -269,6 +276,20 @@ export function threadInbox(
     return kept;
   }
 
+  // A child's `agent/finished` that reaches the run closes that child.
+  function settleChildren(messages: unknown[]) {
+    for (const message of messages as {
+      name?: string;
+      data?: { from?: { key?: unknown } };
+    }[]) {
+      const key = message.data?.from?.key;
+
+      if (message.name === agentFinishedEvent && typeof key === "string") {
+        children?.settle(key);
+      }
+    }
+  }
+
   // A drain takes messages in without starting a turn, so their IDs are noted
   // on their own.
   async function noteFolded(taken: unknown[], main: boolean) {
@@ -289,7 +310,19 @@ export function threadInbox(
     main: boolean,
   ): Reader<TOut> {
     const first = main ? lead : [];
-    const quiet = main ? idle : undefined;
+
+    // How long the loop forms wait in quiet now. A run that waits for no time
+    // still waits, up to the bound, while a child it started with
+    // `start_agent` is open: that child's `agent/finished` folds in.
+    const quietNow = () => {
+      if (!main) {
+        return undefined;
+      }
+
+      return idle === 0 && children && children.open().length > 0
+        ? children.wait()
+        : idle;
+    };
 
     const reader: Reader<TOut> = {
       next: (async (options?: ReadOptions) => {
@@ -333,6 +366,7 @@ export function threadInbox(
           const message = present(raw);
 
           delivered += 1;
+          settleChildren([message]);
 
           if (delivered > 1) {
             await recorder.running(
@@ -388,6 +422,7 @@ export function threadInbox(
             }
 
             delivered += batch.length;
+            settleChildren(batch);
 
             // The thread resends one message when a failed run recovers: the
             // last one of the batch that starts a turn.
@@ -414,6 +449,8 @@ export function threadInbox(
       }) as Reader<TOut>["nextBatch"],
       async *batches(options?: BatchOptions & Partial<ReadOptions>) {
         for (;;) {
+          const quiet = quietNow();
+
           // `idle` ends the loop after that much quiet. A timeout of the
           // caller's own wins.
           const batch =
@@ -447,6 +484,10 @@ export function threadInbox(
 
         await noteFolded(taken, main);
 
+        if (main) {
+          settleChildren(taken);
+        }
+
         return taken;
       },
       async close() {
@@ -469,7 +510,9 @@ export function threadInbox(
 
         return {
           async next() {
-            if (quiet === 0) {
+            const quiet = quietNow();
+
+            if (quiet === 0 || (waiting.length > 0 && main)) {
               if (waiting.length === 0) {
                 waiting.push(...(await reader.drain()));
               }
