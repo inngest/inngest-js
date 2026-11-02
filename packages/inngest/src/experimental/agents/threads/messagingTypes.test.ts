@@ -76,16 +76,22 @@ describe("messaging types", () => {
     });
   });
 
-  test("messaging: result() of an agent with no handler is unknown, pinned until the output of a handler-less agent is typed (spec gap G3)", () => {
+  test("messaging: result() of an agent with no handler is the model's text with a model, and undefined with neither", () => {
     const chat = agents.agent({ id: "msg-chat", model: modelFn });
     const quiet = agents.agent({ id: "msg-quiet" });
+    const handled = agents.agent(
+      { id: "msg-handled", model: modelFn },
+      async (): Promise<{ n: number }> => {
+        return { n: 1 };
+      },
+    );
 
     typesOnly(async () => {
-      // Deliberate unknown: the output type defaults to unknown when there is
-      // no handler. The note wants `string` for a model and `undefined` for
-      // neither; that is a type change the lead has not settled.
-      expectTypeOf(await chat.start("hi").result()).toBeUnknown();
-      expectTypeOf(await quiet.start("hi").result()).toBeUnknown();
+      expectTypeOf(await chat.start("hi").result()).toBeString();
+      expectTypeOf(await quiet.start("hi").result()).toEqualTypeOf<undefined>();
+      expectTypeOf(await handled.start("hi").result()).toEqualTypeOf<{
+        n: number;
+      }>();
     });
   });
 

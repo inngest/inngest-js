@@ -43,6 +43,28 @@ import type {
  */
 type NoSandboxes = Record<never, never>;
 
+/**
+ * The default output type of an agent defined without a body: it stands for
+ * "no handler", so the output can follow the model.
+ */
+declare const noHandler: unique symbol;
+
+interface NoHandler {
+  readonly [noHandler]: true;
+}
+
+/**
+ * What `result()` gives: the body's return type; without a body, the model's
+ * final text for an agent with a `model` and `undefined` for one with neither.
+ */
+type OutputOf<TOutput, TModel extends AgentModel | undefined> = [
+  TOutput,
+] extends [NoHandler]
+  ? [TModel] extends [undefined]
+    ? undefined
+    : string
+  : TOutput;
+
 export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   /**
    * Defines an agent: a function whose body owns its loop and reads a
@@ -52,7 +74,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
    */
   agent<
     TType extends EventTypeWithAnySchema<string>,
-    TOutput = unknown,
+    TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
@@ -77,10 +99,13 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput, StartInput<ThreadTriggerEventOf<TType>>>;
+  ): AgentFunction<
+    OutputOf<TOutput, TModel>,
+    StartInput<ThreadTriggerEventOf<TType>>
+  >;
   agent<
     const TTypes extends readonly EventTypeWithAnySchema<string>[],
-    TOutput = unknown,
+    TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
@@ -105,10 +130,13 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput, StartInput<ThreadTriggerListEvent<TTypes>>>;
+  ): AgentFunction<
+    OutputOf<TOutput, TModel>,
+    StartInput<ThreadTriggerListEvent<TTypes>>
+  >;
   agent<
     const TOne extends ThreadTriggerEventSource,
-    TOutput = unknown,
+    TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
@@ -133,9 +161,12 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput, StartInput<ThreadTriggerEventOf<TOne>>>;
+  ): AgentFunction<
+    OutputOf<TOutput, TModel>,
+    StartInput<ThreadTriggerEventOf<TOne>>
+  >;
   agent<
-    TOutput = unknown,
+    TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
@@ -160,10 +191,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput>;
+  ): AgentFunction<OutputOf<TOutput, TModel>>;
   agent<
     const TMany extends readonly unknown[],
-    TOutput = unknown,
+    TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
@@ -188,7 +219,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         model: TModel;
       }>,
     ) => Promise<TOutput>,
-  ): AgentFunction<TOutput, StartInput<ThreadTriggerListEvent<TMany>>>;
+  ): AgentFunction<
+    OutputOf<TOutput, TModel>,
+    StartInput<ThreadTriggerListEvent<TMany>>
+  >;
 
   /**
    * Every function to pass to `serve()`: each agent's function and its
