@@ -298,7 +298,7 @@ describe("agent.loop", () => {
     const check = (item: Run) => {
       if (!item.isError) {
         expectTypeOf(item.name).toEqualTypeOf<"renamed">();
-        expectTypeOf(item.output).toEqualTypeOf<unknown>();
+        expectTypeOf(item.output).toEqualTypeOf<number>();
       }
     };
 
@@ -1293,9 +1293,11 @@ describe("tool types", () => {
       AgentTool<{ id: string }, { name: string }>
     >();
     expectTypeOf(sum).toEqualTypeOf<
-      SandboxTool<{ values: number[] }, unknown>
+      SandboxTool<{ values: number[] }, number>
     >();
-    expectTypeOf(ping).toEqualTypeOf<SandboxTool<unknown, unknown>>();
+    expectTypeOf(ping).toEqualTypeOf<
+      SandboxTool<Record<string, never>, string>
+    >();
   });
 
   test("a run that didn't fail narrows its input and output by the tool's name", () => {

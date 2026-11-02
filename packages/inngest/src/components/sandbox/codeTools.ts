@@ -11,6 +11,7 @@ import { step } from "../InngestStepTools.ts";
 import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
 import { createShell } from "./shell.ts";
+import type { SandboxShim } from "./shims.ts";
 import { type SandboxTool, type SandboxTools, tool } from "./tools.ts";
 import {
   type DurableSandbox,
@@ -64,6 +65,14 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
    * processes) happens again on each run. `now` and `sleep` are taken.
    */
   tools?: SandboxTools;
+
+  /**
+   * Programs on `PATH` that call a handler in your app, made with
+   * `tool.shim()`. Every command the tools run (`run` and `run_code`) has
+   * them, so the program works for the model as it does in a script. A shim is
+   * a program, never an entry in the model's tool list.
+   */
+  shims?: readonly SandboxShim[];
 }
 
 const scriptTools: SandboxTools = {
@@ -122,6 +131,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m", session: persist = true } = options;
+  const shimOption = options.shims?.length ? { shims: options.shims } : {};
   let starting: Promise<ReturnType<typeof createShell>> | undefined;
 
   // The thread's sandbox keeps where the shell was left: the first command of
@@ -194,6 +204,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
       cwd: current?.cwd ?? cwd,
       environment,
       timeout,
+      ...shimOption,
     });
     const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
 
@@ -288,6 +299,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
           command,
           {
             timeout,
+            ...shimOption,
           },
         );
         const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
@@ -333,6 +345,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
             cwd,
             timeout,
             tools: { ...scriptTools, ...options.tools },
+            ...shimOption,
           },
         );
         const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";

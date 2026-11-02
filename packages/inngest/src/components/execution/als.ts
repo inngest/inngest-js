@@ -13,6 +13,12 @@ import type { InboxRead } from "./inboxState.ts";
  */
 export interface AgentBridge {
   wiring?: AgentLoopWiring;
+
+  /**
+   * The run's `score`, which a tool's context shares so that the run waits
+   * for a score a tool did not await.
+   */
+  score?: (name: string, value: number | boolean) => Promise<void>;
 }
 
 export interface AsyncContext {

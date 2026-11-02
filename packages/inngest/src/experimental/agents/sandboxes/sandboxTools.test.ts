@@ -4,12 +4,14 @@
  * commands it is sent.
  */
 
+import { vi } from "vitest";
 import { codeTools } from "../../../components/sandbox/codeTools.ts";
 import {
   createClient,
   runToEnd,
   sandboxResource,
 } from "../../../components/sandbox/test-helpers.ts";
+import { tool } from "../../../components/sandbox/tools.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 
 type Exec = {
@@ -375,5 +377,78 @@ describe("codeTools run keeps the thread's place", () => {
       env: { MODE: "test" },
       unset: ["OLD"],
     });
+  });
+});
+
+describe("shims on the model's code tools", () => {
+  const fake = () => {
+    const run = vi.fn(async () => {
+      return { stdout: "", stderr: "", exitCode: 0, output: {} };
+    });
+    const files = {
+      read: vi.fn(async () => {
+        return new Uint8Array();
+      }),
+      write: vi.fn(async () => {}),
+    };
+
+    return { run, sandbox: { commands: { run }, files } as never };
+  };
+  const deploy = tool.shim("deploy", ({ reply }) => {
+    return reply(0);
+  });
+  const context = { signal: new AbortController().signal, idempotencyKey: "k" };
+
+  test("run passes shims to its command", async () => {
+    const { run, sandbox } = fake();
+    const tools = codeTools(sandbox, { shims: [deploy], session: false });
+
+    await (tools.run.run as (...args: unknown[]) => unknown)(
+      { command: "deploy now" },
+      context,
+    );
+
+    expect(run).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ shims: [deploy] }),
+    );
+  });
+
+  test("run in a session passes shims to its command", async () => {
+    const { run, sandbox } = fake();
+    const tools = codeTools(sandbox, { shims: [deploy] });
+
+    await (tools.run.run as (...args: unknown[]) => unknown)(
+      { command: "deploy now" },
+      context,
+    );
+
+    expect(run).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ shims: [deploy] }),
+    );
+  });
+
+  test("run_code passes shims beside its tools", async () => {
+    const { run, sandbox } = fake();
+    const tools = codeTools(sandbox, {
+      shims: [deploy],
+      tools: { ping: () => 1 },
+    });
+
+    await Promise.resolve(
+      (tools.run_code.run as (...args: unknown[]) => unknown)(
+        { language: "python", code: "print(1)" },
+        context,
+      ),
+    ).catch(() => {});
+
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "run_code" }),
+      expect.anything(),
+      expect.objectContaining({ shims: [deploy] }),
+    );
   });
 });

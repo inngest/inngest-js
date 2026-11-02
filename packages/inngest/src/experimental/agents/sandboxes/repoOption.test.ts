@@ -196,6 +196,21 @@ describe("mintRepoToken", () => {
     expect(await mintRepoToken(only, "write")).toBe("one");
   });
 
+  test("{ read, write } takes a secret for each, and a secret prints as its name", async () => {
+    process.env.REPO_READ_TOKEN = "r";
+    process.env.REPO_WRITE_TOKEN = "w";
+
+    const auth = {
+      read: secret("REPO_READ_TOKEN"),
+      write: secret("REPO_WRITE_TOKEN"),
+    };
+
+    expect(await mintRepoToken(auth, "read")).toBe("r");
+    expect(await mintRepoToken(auth, "write")).toBe("w");
+    expect(String(auth.write)).toBe("[secret REPO_WRITE_TOKEN]");
+    expect(JSON.stringify(auth)).not.toContain('w"');
+  });
+
   test("a function is told the access, and { read, write } picks one", async () => {
     const asked: string[] = [];
     const fn = ({ access }: { access: string }) => {
@@ -265,7 +280,9 @@ describe("repo.push", () => {
 
     const options = pushed.mock.calls.at(-1)?.[1];
 
-    expect(await options?.token()).toBe("write-token");
+    expect(await (options?.token as () => Promise<string>)()).toBe(
+      "write-token",
+    );
   });
 
   test("a refusal throws PushRefusedError, which is not retried", async () => {

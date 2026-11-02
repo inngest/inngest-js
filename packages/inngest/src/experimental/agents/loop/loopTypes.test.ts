@@ -183,9 +183,10 @@ test("loop: the assistant's reply content is deliberately unknown", () => {
   >().toEqualTypeOf<unknown>();
 });
 
-test("loop: the agent object has only loop and untrusted-until-12a toolError", () => {
+test("loop: the agent object has only loop and toolError", () => {
   expectTypeOf(agent).toHaveProperty("loop");
   expectTypeOf(agent).toHaveProperty("toolError");
+  expectTypeOf(agent).not.toHaveProperty("untrusted");
   expectTypeOf(agent).not.toHaveProperty("model");
   expectTypeOf(agent).not.toHaveProperty("anthropic");
   expectTypeOf(agent).not.toHaveProperty("classifyModelError");
