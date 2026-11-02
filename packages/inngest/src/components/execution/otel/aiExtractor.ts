@@ -338,6 +338,12 @@ function parseStringListAttribute(value: unknown): string[] | undefined {
 export const extractAIMetadataFromSpan = (span: ReadableSpan): AIMetadata => {
   const metadata: AIMetadata = {};
 
+  // A provider that isn't the OTel SDK, such as dd-trace's, can hand span
+  // processors spans with no `attributes`; there is nothing to extract.
+  if (!span.attributes) {
+    return metadata;
+  }
+
   const applySpec = (spec: FieldSpec): void => {
     if (spec.valueType === "text") {
       const text = spec.compute(span);
