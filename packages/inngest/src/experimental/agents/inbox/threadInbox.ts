@@ -75,6 +75,23 @@ export const inflightOf = (event: {
 };
 
 /**
+ * The IDs of the `agent/message` events among messages the run took in after
+ * the one that started it, whose senders wait for the run's result.
+ */
+const senderIds = (
+  messages: { id?: string; name: string }[],
+  started?: { id?: string },
+): string[] => {
+  return messages.flatMap((message) => {
+    return message.name === agentMessageEvent &&
+      message.id &&
+      message.id !== started?.id
+      ? [message.id]
+      : [];
+  });
+};
+
+/**
  * A message as the agent sees it. The event stays as it came; an event that
  * recovery sent again is the event it was made from, with its own name, id and
  * data. It has `is()`.
@@ -142,7 +159,7 @@ export function threadInbox(
    */
   recorder: Pick<
     ReturnType<typeof threadRecorder>,
-    "waiting" | "running" | "resumed"
+    "waiting" | "running" | "resumed" | "folded"
   >,
   log: { warn: (message: string) => void },
   runId: string,
@@ -246,6 +263,18 @@ export function threadInbox(
     return kept;
   }
 
+  // A drain takes messages in without starting a turn, so their IDs are noted
+  // on their own.
+  async function noteFolded(taken: unknown[], main: boolean) {
+    const ids = main
+      ? senderIds(taken as { id?: string; name: string }[], started)
+      : [];
+
+    if (ids.length > 0) {
+      await recorder.folded(ids);
+    }
+  }
+
   // A reader with the agent's rules over an `Inbox`. Only the main one starts
   // with the event that started the run and records the thread's status.
   function view<TOut>(
@@ -303,6 +332,9 @@ export function threadInbox(
             await recorder.running(
               undefined,
               inflightOf(message as unknown as AgentMessage),
+              undefined,
+              undefined,
+              senderIds([message as unknown as { name: string }], started),
             );
           }
 
@@ -361,7 +393,13 @@ export function threadInbox(
             }
 
             if (delivered > 1) {
-              await recorder.running(undefined, inflight);
+              await recorder.running(
+                undefined,
+                inflight,
+                undefined,
+                undefined,
+                senderIds(batch as unknown as { name: string }[], started),
+              );
             }
 
             return batch;
@@ -399,13 +437,19 @@ export function threadInbox(
       },
       async drain(options?: BatchOptions) {
         const raws = [...first.splice(0), ...(await source.drain(options))];
+        const taken = (await keep(raws)).map(present);
 
-        return (await keep(raws)).map(present);
+        await noteFolded(taken, main);
+
+        return taken;
       },
       async close() {
         const raws = [...first.splice(0), ...(await source.close())];
+        const taken = (await keep(raws)).map(present);
 
-        return (await keep(raws)).map(present);
+        await noteFolded(taken, main);
+
+        return taken;
       },
       get closed() {
         return source.closed;
