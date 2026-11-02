@@ -13,7 +13,7 @@ import { durationToMs } from "../../helpers/duration.ts";
 import type { SandboxTool } from "../sandbox/tools.ts";
 import { tool } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
-import { untrusted } from "./modelErrors.ts";
+import { untrustedText } from "./untrustedText.ts";
 
 /**
  * One event the model may listen for.
@@ -267,7 +267,7 @@ const render = (message: InboxToolMessage) => {
 
   return {
     source: message.name,
-    content: untrusted(clipped, { source: message.name }),
+    content: untrustedText(clipped, { source: message.name }),
   };
 };
 
@@ -289,8 +289,7 @@ const render = (message: InboxToolMessage) => {
  *   without waiting (`view.drain()`).
  * - `inbox_stop({ as })` stops a listener.
  *
- * A message returns marked with `agent.untrusted()`, since it came from
- * outside. `inbox_wait` and `inbox_read` read the messages of the event a
+ * A message returns marked as untrusted text, since it came from outside. `inbox_wait` and `inbox_read` read the messages of the event a
  * listener listens to through a view of their own, so they never take a stop,
  * a user message or a request from the loop, and a message the loop's steering
  * already handed to the model can still be read. `as` picks the listener's

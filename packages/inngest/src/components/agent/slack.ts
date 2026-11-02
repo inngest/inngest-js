@@ -12,9 +12,6 @@
  */
 import { NonRetriableError } from "../NonRetriableError.ts";
 import {
-  apiError,
-  assertAllowed,
-  assertSignal,
   type Channel,
   type ChannelAsk,
   type ChannelCard,
@@ -22,13 +19,15 @@ import {
   ChannelStreamEnded,
   type ChannelTrigger,
   defineChannel,
+} from "./channels.ts";
+import { apiError, postJson, resolveToken, retryableStatus } from "./http.ts";
+import { truncate } from "./text.ts";
+import {
+  assertAllowed,
+  assertSignal,
   objectSchema,
   parseWith,
-  postJson,
-  resolveToken,
-  retryableStatus,
-  truncate,
-} from "./channels.ts";
+} from "./validate.ts";
 
 /**
  * The `data` of a `slack/message` event.

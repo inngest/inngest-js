@@ -49,7 +49,6 @@ import { toAsync } from "./cel.ts";
 import {
   type Channel,
   createReporter,
-  parseWithAsync,
   type ReportConfigValue,
   type Reporter,
 } from "./channels.ts";
@@ -151,6 +150,7 @@ import {
   type ThreadTriggerEvent,
   type ThreadTriggers,
 } from "./threadTrigger.ts";
+import { parseWithAsync } from "./validate.ts";
 
 /**
  * The options of a plain Inngest function that an agent takes as they are.
