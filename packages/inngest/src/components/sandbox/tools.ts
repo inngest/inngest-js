@@ -17,6 +17,7 @@ import { z } from "zod/v3";
 import * as z4 from "zod/v4";
 import { toolScore } from "../../experimental/agents/loop/scores.ts";
 import { internalEvents } from "../../helpers/consts.ts";
+import type { Jsonify } from "../../helpers/jsonify.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
@@ -122,20 +123,39 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * What a model passes to a tool: its input schema's output, or `unknown`
- * when it has none.
+ * What `run` returns, by whether the tool has an `output` schema: the schema's
+ * input type, or whatever `run` gives (`TReturn`, inferred from the body).
+ */
+type ToolRunReturn<
+  TOutput extends StandardSchemaV1 | undefined,
+  TReturn,
+> = TOutput extends StandardSchemaV1
+  ?
+      | (ToolResultOf<TOutput> | ToolErrorResult)
+      | Promise<ToolResultOf<TOutput> | ToolErrorResult>
+  : TReturn | Promise<TReturn>;
+
+/**
+ * What a model passes to a tool: its input schema's output, or an empty
+ * object when it has none.
  */
 export type ToolCallInput<TInput extends ToolInput | undefined> =
-  TInput extends ToolInput ? ToolInputOf<TInput> : unknown;
+  TInput extends ToolInput ? ToolInputOf<TInput> : Record<string, never>;
 
 /**
  * What a tool hands back after its output schema checked it, or `unknown`
  * when it has none.
  */
-export type ToolCallResult<TOutput extends StandardSchemaV1 | undefined> =
-  TOutput extends StandardSchemaV1
-    ? StandardSchemaV1.InferOutput<TOutput>
-    : unknown;
+export type ToolCallResult<
+  TOutput extends StandardSchemaV1 | undefined,
+  TReturn = unknown,
+> = TOutput extends StandardSchemaV1
+  ? StandardSchemaV1.InferOutput<TOutput>
+  : // Without a schema the output is the JSON `run`'s return comes back as: a
+    // tool error is not a value of the output.
+    unknown extends TReturn
+    ? unknown
+    : Jsonify<Exclude<Awaited<TReturn>, ToolErrorResult>>;
 
 /**
  * A tool declared with `tool.step()` or `tool.group()`. `TInput` and
@@ -287,6 +307,7 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
 export interface ToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
+  TReturn = unknown,
 > {
   /**
    * What the tool does, for the people reading the code.
@@ -324,15 +345,11 @@ export interface ToolDefinition<
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
-      ) =>
-        | (ToolResultOf<TOutput> | ToolErrorResult)
-        | Promise<ToolResultOf<TOutput> | ToolErrorResult>
+      ) => ToolRunReturn<TOutput, TReturn>
     : (
         input: Record<string, never>,
         ctx: SandboxToolContext,
-      ) =>
-        | (ToolResultOf<TOutput> | ToolErrorResult)
-        | Promise<ToolResultOf<TOutput> | ToolErrorResult>;
+      ) => ToolRunReturn<TOutput, TReturn>;
 }
 
 /**
@@ -341,7 +358,8 @@ export interface ToolDefinition<
 export interface WaitingToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
-> extends ToolDefinition<TInput, TOutput> {
+  TReturn = unknown,
+> extends ToolDefinition<TInput, TOutput, TReturn> {
   /**
    * The tool may wait for longer than a command may run (sleep, wait for an
    * event, wait for a person). A call to it suspends the code that made it:
@@ -380,9 +398,10 @@ const toolMethods = {
   step: <
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
+    TReturn = unknown,
   >(
-    definition: ToolDefinition<TInput, TOutput>,
-  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    definition: ToolDefinition<TInput, TOutput, TReturn>,
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return definition;
   },
 
@@ -458,9 +477,10 @@ const toolMethods = {
   group: <
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
+    TReturn = unknown,
   >(
-    definition: WaitingToolDefinition<TInput, TOutput>,
-  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    definition: WaitingToolDefinition<TInput, TOutput, TReturn>,
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return { ...definition, group: true };
   },
 };
@@ -482,7 +502,8 @@ export interface AgentTool<TInput = unknown, TOutput = unknown>
 export interface AgentToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
-> extends WaitingToolDefinition<TInput, TOutput> {
+  TReturn = unknown,
+> extends WaitingToolDefinition<TInput, TOutput, TReturn> {
   /**
    * The tool's name in the model's list. Letters, digits and underscores,
    * starting with a letter, up to 64 characters.
@@ -499,9 +520,10 @@ export interface AgentToolDefinition<
 const defineTool = <
   TInput extends ToolInput | undefined = undefined,
   TOutput extends StandardSchemaV1 | undefined = undefined,
+  TReturn = unknown,
 >(
-  definition: AgentToolDefinition<TInput, TOutput>,
-): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+  definition: AgentToolDefinition<TInput, TOutput, TReturn>,
+): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
   validateTools({ [definition.id]: definition });
 
   if (definition.waits && !definition.group) {
