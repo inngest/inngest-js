@@ -295,3 +295,34 @@ test("agents: limits.spawn, limits.budget and limits.price are errors, and price
     });
   });
 });
+
+test("agents: recovery is a boolean, and previousRun is the last run's outcome", () => {
+  typesOnly(() => {
+    agents.agent({ id: "recover-1", triggers: [created], recovery: true });
+
+    agents.agent({
+      id: "recover-2",
+      triggers: [created],
+      // @ts-expect-error recovery takes true or false, no options
+      recovery: { resume: true },
+    });
+
+    agents.agent(
+      { id: "recover-3", triggers: [created] },
+      async ({ previousRun }) => {
+        expectTypeOf(previousRun).toEqualTypeOf<entry.LastRun | undefined>();
+        expectTypeOf(previousRun?.status).toEqualTypeOf<
+          "completed" | "failed" | "cancelled" | undefined
+        >();
+      },
+    );
+  });
+});
+
+test("agents: agent/recover is an event type with the failed message", () => {
+  typesOnly(() => {
+    expectTypeOf(entry.agentRecover.name).toEqualTypeOf<"agent/recover">();
+    expectTypeOf<entry.AgentRecoverData>().toHaveProperty("event");
+    expectTypeOf<entry.AgentRecoverData["agent"]>().toBeString();
+  });
+});

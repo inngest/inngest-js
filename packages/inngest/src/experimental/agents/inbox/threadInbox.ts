@@ -17,11 +17,12 @@ import type { AgentMessage, InboxSource } from "../agent/types.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import {
   agentMessageEvent,
+  agentRecoverEvent,
   agentSteerEvent,
   type Inflight,
 } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
-import type { AgentMessageData, AgentResendData } from "./events.ts";
+import type { AgentMessageData, AgentRecoverData } from "./events.ts";
 
 /**
  * The messages whose drop was already logged, so a replay does not log it
@@ -32,7 +33,11 @@ const warned = new Set<string>();
 /**
  * The events the agent layer sends to a thread.
  */
-export const ownEvents: string[] = [agentMessageEvent, agentSteerEvent];
+export const ownEvents: string[] = [
+  agentMessageEvent,
+  agentRecoverEvent,
+  agentSteerEvent,
+];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
@@ -48,12 +53,14 @@ export const inflightOf = (event: {
     return undefined;
   }
 
-  if (event.name === agentMessageEvent) {
-    const data = event.data as Partial<AgentMessageData & AgentResendData>;
+  if (event.name === agentRecoverEvent) {
+    const data = event.data as Partial<AgentRecoverData>;
 
-    if (data.event) {
-      return { event: data.event };
-    }
+    return data.event ? { event: data.event } : undefined;
+  }
+
+  if (event.name === agentMessageEvent) {
+    const data = event.data as Partial<AgentMessageData>;
 
     return typeof data.text === "string" ? { text: data.text } : undefined;
   }
@@ -69,8 +76,8 @@ export const inflightOf = (event: {
  */
 export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
   const resent =
-    message.name === agentMessageEvent
-      ? (message.data as Partial<AgentResendData>).event
+    message.name === agentRecoverEvent
+      ? (message.data as Partial<AgentRecoverData>).event
       : undefined;
 
   return addEventIs({

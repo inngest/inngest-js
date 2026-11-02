@@ -301,12 +301,13 @@ export type {
 export { addressOf } from "../discovery/discovery.ts";
 export type {
   AgentMessageData,
-  AgentResendData,
+  AgentRecoverData,
   AgentRouting,
   AgentSteerData,
 } from "../inbox/events.ts";
 export {
   agentMessage,
+  agentRecover,
   agentSteer,
 } from "../inbox/events.ts";
 export type {
@@ -336,6 +337,7 @@ export type {
 } from "../threads/thread.ts";
 export {
   agentMessageEvent,
+  agentRecoverEvent,
   agentSteerEvent,
   getThread,
 } from "../threads/thread.ts";
@@ -354,7 +356,6 @@ export type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 export type {
-  AgentRecovery,
   LastRun,
   RunOutcome,
 } from "./recovery.ts";

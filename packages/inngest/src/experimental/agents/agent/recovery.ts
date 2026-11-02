@@ -74,18 +74,6 @@ export interface LastRun {
 }
 
 /**
- * What an agent does about a run that failed unexpectedly.
- */
-export interface AgentRecovery {
-  /**
-   * Resends the turn that was in flight, so a fresh run takes it up. A turn
-   * that has failed with the same error before is not resent, and neither is
-   * one whose run failed with a `NonRetriableError`. Default `true`.
-   */
-  resume?: boolean;
-}
-
-/**
  * The most different errors one turn may fail with before it stops being
  * resent, so an error with a changing token cannot loop.
  */

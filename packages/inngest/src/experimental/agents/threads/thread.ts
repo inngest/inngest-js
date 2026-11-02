@@ -22,6 +22,7 @@ import {
   type AgentMessageData,
   type AgentSteerData,
   agentMessage,
+  agentRecover,
   agentSteer,
 } from "../inbox/events.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
@@ -35,6 +36,11 @@ export const agentMessageEvent = agentMessage.name;
  * The name of the other event a thread receives from the agent layer.
  */
 export const agentSteerEvent = agentSteer.name;
+
+/**
+ * The name of the event that sends a failed run's message again.
+ */
+export const agentRecoverEvent = agentRecover.name;
 
 /**
  * An event that started or reached an agent, as the agent sees it: the name

@@ -77,6 +77,7 @@ import {
 } from "../sandboxes/threadSandboxes.ts";
 import {
   agentMessageEvent,
+  agentRecoverEvent,
   agentSteerEvent,
   getThread,
   type ThreadRecord,
@@ -107,7 +108,7 @@ import {
 } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
-import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedOf, turnInFlight } from "./recovery.ts";
 import {
   createRunFields,
   idleMs,
@@ -242,9 +243,11 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...[agentMessageEvent, agentSteerEvent].map((name) => {
-          return { event: name, if: `event.data.agent == ${quote(ref)}` };
-        }),
+        ...[agentMessageEvent, agentRecoverEvent, agentSteerEvent].map(
+          (name) => {
+            return { event: name, if: `event.data.agent == ${quote(ref)}` };
+          },
+        ),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
         }),

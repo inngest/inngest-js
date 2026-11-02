@@ -98,6 +98,7 @@ describe("agent function", () => {
     });
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
+      "agent/recover",
       "agent/steer",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
@@ -196,9 +197,14 @@ describe("agent function", () => {
     const { output } = await run(fn, {
       event: trigger("go"),
       saved: [
-        message("user", undefined, "t1", {
-          event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
-        }),
+        {
+          name: "agent/recover",
+          data: {
+            agent: `${testClientId}/bot`,
+            thread: "t1",
+            event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
+          },
+        },
       ],
     });
 
@@ -451,7 +457,13 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "agent/steer", "ci/status", "ci/status"]);
+    ).toEqual([
+      "agent/message",
+      "agent/recover",
+      "agent/steer",
+      "ci/status",
+      "ci/status",
+    ]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
@@ -776,7 +788,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/message", "agent/steer"]);
+    ).toEqual(["agent/message", "agent/recover", "agent/steer"]);
   });
 });
 

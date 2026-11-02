@@ -8,17 +8,17 @@
 import { createDefer } from "../../../components/DeferredFunction.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { agentMessage } from "../inbox/events.ts";
+import { agentRecover } from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
 import type { Kv } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
 } from "../sandboxes/threadSandboxes.ts";
-import { threadSessions } from "../threads/thread.ts";
+import { agentMessageEvent, threadSessions } from "../threads/thread.ts";
 import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
-import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedOf, turnInFlight } from "./recovery.ts";
 import { startData, startInflight } from "./startEvent.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -84,8 +84,7 @@ export const createFinishedFunction = (
   store: Kv,
   triggers: CompiledTrigger[],
 ): InngestFunction.Any => {
-  const recovery: AgentRecovery | undefined =
-    config.recovery === true ? {} : config.recovery || undefined;
+  const recovery = config.recovery === true;
 
   // The executor reports every ending of a run (completed, failed, cancelled)
   // in one `inngest/function.finished` event with the status and the error.
@@ -126,7 +125,7 @@ export const createFinishedFunction = (
         turn: started !== undefined,
         resume:
           ended.status === "failed" && recovery
-            ? recovery.resume !== false && !ended.error?.nonRetriable
+            ? !ended.error?.nonRetriable
             : undefined,
       });
       if (!recovery || ended.status !== "failed") {
@@ -156,13 +155,14 @@ export const createFinishedFunction = (
 
       await step.sendEvent(
         "recover-resend",
-        agentMessage.create(
+        agentRecover.create(
           {
             agent: ref,
             thread: message.thread,
-            ...(inflight.event
-              ? { event: inflight.event }
-              : { text: inflight.text }),
+            event: inflight.event ?? {
+              name: agentMessageEvent,
+              data: { agent: ref, thread: message.thread, text: inflight.text },
+            },
           },
           {
             id: `recover-${runId}`,

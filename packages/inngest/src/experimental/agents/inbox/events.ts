@@ -6,8 +6,8 @@
  * that triggers on one gets its `event.data` typed.
  *
  * Everything a thread receives is a plain event. `agent/message` carries text
- * for the model; `agent/steer` is the agent's own
- * control event, and shows up in the thread's inbox like any other.
+ * for the model; `agent/steer` and `agent/recover` are the agent's own
+ * control events, and shows up in the thread's inbox like any other.
  */
 import {
   eventType,
@@ -37,11 +37,15 @@ export type AgentMessageData = AgentRouting & {
 };
 
 /**
- * An event the SDK sends again as `agent/message` when recovery resumes a
- * failed turn. The inbox shows it as the event it was, not as an
- * `agent/message`.
+ * The data of `agent/recover`: the message a failed run was handling, sent
+ * again when `recovery` is on so a fresh run takes it up. The inbox shows it
+ * as the event it was made from, not as an `agent/recover`.
  */
-export type AgentResendData = AgentRouting & {
+export type AgentRecoverData = AgentRouting & {
+  /**
+   * The message the failed run was handling: its id, name and data as they
+   * were sent.
+   */
   event: { id?: string; name: string; data: unknown };
 };
 
@@ -56,7 +60,7 @@ export type AgentSteerData = AgentRouting & {
  * Text that starts the next turn (and a run, if none is live).
  */
 export const agentMessage = eventType("agent/message", {
-  schema: staticSchema<AgentMessageData | AgentResendData>(),
+  schema: staticSchema<AgentMessageData>(),
 });
 
 /**
@@ -64,4 +68,12 @@ export const agentMessage = eventType("agent/message", {
  */
 export const agentSteer = eventType("agent/steer", {
   schema: staticSchema<AgentSteerData>(),
+});
+
+/**
+ * The message a failed run was handling, sent again by `recovery` (and by
+ * nothing else), so a fresh run takes it up.
+ */
+export const agentRecover = eventType("agent/recover", {
+  schema: staticSchema<AgentRecoverData>(),
 });
