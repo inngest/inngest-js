@@ -9,6 +9,7 @@ import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
+import { threadKv, threadRecordKey } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import { agentToolSet, sandboxAgentTools } from "./agentTools.ts";
 import { run } from "./test-helpers.ts";
@@ -176,6 +177,51 @@ describe("start_agent", () => {
 
     expect(invokes).toEqual([]);
     expect(JSON.stringify(results[0])).toMatch(/list_agents/);
+  });
+});
+
+describe("stop_agent", () => {
+  const cancelled = () => {
+    return vi
+      .spyOn(
+        (client as unknown as { inngestApi: { cancelRun: () => unknown } })
+          .inngestApi,
+        "cancelRun",
+      )
+      .mockResolvedValue({ ok: true } as never);
+  };
+
+  test("cancels the live run of the thread", async () => {
+    const cancel = cancelled();
+
+    await threadKv(client, "t-live").set(threadRecordKey, {
+      runId: "run-1",
+      status: "running",
+    });
+
+    const { results } = await callTools([
+      { tool: "stop_agent", input: { thread: "t-live" } },
+    ]);
+
+    expect(results).toEqual([{ ok: true }]);
+    expect(cancel).toHaveBeenCalledWith("run-1");
+  });
+
+  test("does nothing for a thread with no live run", async () => {
+    const cancel = cancelled();
+
+    await threadKv(client, "t-idle").set(threadRecordKey, {
+      runId: "run-2",
+      status: "idle",
+    });
+
+    const { results } = await callTools([
+      { tool: "stop_agent", input: { thread: "t-idle" } },
+      { tool: "stop_agent", input: { thread: "t-never" } },
+    ]);
+
+    expect(results).toEqual([{ ok: true }, { ok: true }]);
+    expect(cancel).not.toHaveBeenCalled();
   });
 });
 
