@@ -7,6 +7,10 @@ import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
+import {
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "../../../components/execution/als.ts";
 import { createFnRunner, testClientId } from "../../../test/helpers.ts";
 import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
@@ -398,6 +402,7 @@ describe("the tools", () => {
   const runTools = async (
     calls: { name: string; input: Record<string, unknown> }[],
     options: Parameters<typeof discoveryToolSet>[0] = {},
+    caller?: string,
   ) => {
     const tools = discoveryToolSet(options);
     const fn = client.createFunction(
@@ -418,11 +423,27 @@ describe("the tools", () => {
           }
 
           try {
-            out.push(
-              await resolved.invoke({
+            const invoke = () => {
+              return resolved.invoke({
                 signal: new AbortController().signal,
                 idempotencyKey: "k",
-              }),
+              });
+            };
+            const als = getAsyncCtxSync();
+
+            out.push(
+              await (caller && als?.execution
+                ? runWithAsyncCtx(
+                    {
+                      ...als,
+                      execution: {
+                        ...als.execution,
+                        agent: { thread: "c_1", ref: caller },
+                      },
+                    },
+                    invoke,
+                  )
+                : invoke()),
             );
           } catch (error) {
             out.push({ error: String(error) });
@@ -519,6 +540,43 @@ describe("the tools", () => {
     expect(JSON.stringify(whole)).toMatch(/"input"/);
     expect(JSON.stringify(hidden)).toMatch(/is shared with you/);
     expect(JSON.stringify(unknown)).toMatch(/is shared with you/);
+  });
+
+  test("list_agents leaves the calling agent out of its own list", async () => {
+    const result = await runTools(
+      [{ name: "list_agents", input: {} }],
+      {
+        functions: async () => {
+          return new Map([
+            ["docs", { paused: false, archived: false }],
+            ["secret", { paused: false, archived: false }],
+          ]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+
+    expect(listed(result)).not.toContain(`${testClientId}/docs`);
+    expect(listed(result)).toContain(`${testClientId}/secret`);
+  });
+
+  test("describe_agent on the caller's own address says self: true; another agent has no self", async () => {
+    const result = await runTools(
+      [
+        { name: "describe_agent", input: { address: `${testClientId}/docs` } },
+        { name: "describe_agent", input: { address: "other-app/docs" } },
+      ],
+      {
+        functions: async () => {
+          return new Map([["docs", { paused: false, archived: false }]]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+    const [own, other] = (result as { data: Record<string, unknown>[] }).data;
+
+    expect(own).toMatchObject({ address: `${testClientId}/docs`, self: true });
+    expect(other).not.toHaveProperty("self");
   });
 
   test("a second call in a run reads nothing; refresh reads again", async () => {

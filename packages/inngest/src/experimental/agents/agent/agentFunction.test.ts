@@ -1633,7 +1633,26 @@ describe("the loop in an agent", () => {
 
     expect(output).toBe("all done");
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.system).toBe("Be brief.");
+    expect(requests[0]?.system).toMatch(
+      /^You are the agent `[^`]+\/bot` \(id `bot`\), on thread `[^`]+`\.\n\nBe brief\.$/,
+    );
+  });
+
+  test("the identity line is the same on every turn and stands alone without a system prompt", async () => {
+    const { requests, scripted } = recording([callMissing, say("done")]);
+    const { fn } = createAgentFunction(makeClient(), {
+      id: "bot",
+      model: scripted,
+      idle: 0,
+    });
+
+    await run(fn, { event: trigger("go") });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.system).toMatch(
+      /^You are the agent `[^`]+\/bot` \(id `bot`\), on thread `[^`]+`\.$/,
+    );
+    expect(requests[1]?.system).toBe(requests[0]?.system);
   });
 
   test("the definition's loop options apply to the loop the agent builds", async () => {
@@ -1679,7 +1698,7 @@ describe("the loop in an agent", () => {
 
     expect(output).toBe("other");
     expect(own.requests).toHaveLength(0);
-    expect(other.requests[0]?.system).toBe("Agent system.");
+    expect(other.requests[0]?.system).toMatch(/\n\nAgent system\.$/);
   });
 
   test("a second run of the same thread starts with the first run's history; another thread does not; remember: false stops it", async () => {
