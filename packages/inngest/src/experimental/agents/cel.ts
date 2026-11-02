@@ -163,6 +163,12 @@ function tokenize(source: string): Token[] {
 type Value = string | number | boolean;
 type Node = (event: unknown) => Value;
 
+/**
+ * A path of the event that is not set. The key of a thread treats it as "no
+ * key"; anywhere else in an expression it is an error, as in CEL.
+ */
+export class MissingPathError extends Error {}
+
 function lookup(event: unknown, path: string[], source: string) {
   let current: unknown = event;
 
@@ -172,7 +178,7 @@ function lookup(event: unknown, path: string[], source: string) {
       current === null ||
       !Object.hasOwn(current as Record<string, unknown>, part)
     ) {
-      throw new Error(
+      throw new MissingPathError(
         `"${source}": ${["event", ...path].join(".")} is not set on the event.`,
       );
     }
@@ -230,9 +236,13 @@ function absorb(
   return right;
 }
 
-function parse(source: string): Node {
+function parse(source: string, required: string[][]): Node {
   const tokens = tokenize(source);
   let position = 0;
+
+  // How many branches (of ?:, or the right side of && and ||) the parser is
+  // inside. A path read outside any is read on every evaluation.
+  let branch = 0;
 
   function peek() {
     return tokens[position];
@@ -411,6 +421,10 @@ function parse(source: string): Node {
 
       const target = path();
 
+      if (branch === 0) {
+        required.push(target);
+      }
+
       return (event) => {
         return lookup(event, target, source) as Value;
       };
@@ -480,7 +494,9 @@ function parse(source: string): Node {
     while (isOp("&&")) {
       position += 1;
       const lhs = left;
+      branch += 1;
       const rhs = equality();
+      branch -= 1;
       left = (event) => {
         return absorb(lhs, rhs, event, false);
       };
@@ -495,7 +511,9 @@ function parse(source: string): Node {
     while (isOp("||")) {
       position += 1;
       const lhs = left;
+      branch += 1;
       const rhs = and();
+      branch -= 1;
       left = (event) => {
         return absorb(lhs, rhs, event, true);
       };
@@ -512,9 +530,11 @@ function parse(source: string): Node {
     }
 
     position += 1;
+    branch += 1;
     const yes = ternary();
     expect(":");
     const no = ternary();
+    branch -= 1;
 
     return (event) => {
       return condition(event) ? yes(event) : no(event);
@@ -553,6 +573,13 @@ export interface Expression {
   asAsync: string;
 
   /**
+   * A CEL condition that is true when every path the expression always reads
+   * is set on the event (`true` when there is none). The backend errors on a
+   * missing path, so a key is guarded with it.
+   */
+  present: string;
+
+  /**
    * Evaluates the expression for an event.
    */
   evaluate(event: unknown): Value;
@@ -587,10 +614,19 @@ export function compileExpression(
    */
   source: string,
 ): Expression {
-  const root = parse(source);
+  const required: string[][] = [];
+  const root = parse(source, required);
+  const checks = new Set<string>();
+
+  for (const target of required) {
+    for (let length = 1; length <= target.length; length += 1) {
+      checks.add(`has(${["event", ...target.slice(0, length)].join(".")})`);
+    }
+  }
 
   return {
     source,
+    present: checks.size === 0 ? "true" : [...checks].join(" && "),
     path: /^event(\.[A-Za-z_]\w*)+$/.test(source.trim())
       ? source.trim()
       : undefined,
@@ -606,6 +642,7 @@ export function compileExpression(
 
 /**
  * Parses a thread key expression, which must evaluate to a non-empty string.
+ * A path the event does not have gives no key (`undefined`) and never throws.
  */
 export function compileKey(
   /**
@@ -613,14 +650,24 @@ export function compileKey(
    */
   source: string,
 ): Expression & {
-  key(event: unknown): string;
+  key(event: unknown): string | undefined;
 } {
   const expression = compileExpression(source);
 
   return {
     ...expression,
     key(event) {
-      const value = expression.evaluate(event);
+      let value: Value;
+
+      try {
+        value = expression.evaluate(event);
+      } catch (error) {
+        if (error instanceof MissingPathError) {
+          return undefined;
+        }
+
+        throw error;
+      }
 
       if (typeof value !== "string" || value === "") {
         throw new Error(

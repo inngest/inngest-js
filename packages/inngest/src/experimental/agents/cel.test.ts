@@ -129,10 +129,12 @@ describe("thread key expressions", () => {
     }).toThrow(/not finite/);
   });
 
-  test("a missing path is an error, and the key must be a non-empty string", () => {
-    expect(() => {
-      return compileKey("event.data.nope").key(chat);
-    }).toThrow(/not set/);
+  test("a missing path gives no key and never throws, and the key must be a non-empty string", () => {
+    expect(compileKey("event.data.nope").key(chat)).toBeUndefined();
+    expect(compileKey("event.data.nope.deeper").key(chat)).toBeUndefined();
+    expect(
+      compileKey("event.data.room + event.data.nope").key(chat),
+    ).toBeUndefined();
     expect(() => {
       return compileKey('""').key(chat);
     }).toThrow(/non-empty string/);
@@ -169,7 +171,7 @@ describe("thread key expressions", () => {
 });
 
 describe("where the SDK subset and the backend CEL could differ", () => {
-  test("inherited names are not fields: has() is false and a path throws", () => {
+  test("inherited names are not fields: has() is false and a path gives no key", () => {
     for (const name of [
       "constructor",
       "toString",
@@ -179,9 +181,7 @@ describe("where the SDK subset and the backend CEL could differ", () => {
       expect(compileExpression(`has(event.data.${name})`).evaluate(chat)).toBe(
         false,
       );
-      expect(() => {
-        return compileKey(`event.data.${name}`).key(chat);
-      }).toThrow(/not set/);
+      expect(compileKey(`event.data.${name}`).key(chat)).toBeUndefined();
     }
   });
 
@@ -220,5 +220,20 @@ describe("constant expressions", () => {
     expect(compileExpression("'nightly'").constant).toBe("'nightly'");
     expect(compileExpression('"a" + "b"').constant).toBeUndefined();
     expect(compileExpression("event.data.x").constant).toBeUndefined();
+  });
+});
+
+describe("the paths a key needs", () => {
+  test("present is a CEL check that every path the key reads is set", () => {
+    expect(compileKey('event.data.room + "/" + event.data.ts').present).toBe(
+      "has(event.data) && has(event.data.room) && has(event.data.ts)",
+    );
+    expect(compileKey('"fixed"').present).toBe("true");
+    // A path in a branch or after && or || is read only sometimes.
+    expect(
+      compileKey(
+        "has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts",
+      ).present,
+    ).toBe("true");
   });
 });

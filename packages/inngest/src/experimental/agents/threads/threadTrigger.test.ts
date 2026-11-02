@@ -8,7 +8,7 @@ import { testClientId } from "../../../test/helpers.ts";
 import { createAgentFunction } from "../agent/agentFunction.ts";
 import { run } from "../agent/test-helpers.ts";
 import { createKv, memoryKvAdapter } from "../kv/kv.ts";
-import { compileTriggers, singletonKey } from "./threadTrigger.ts";
+import { compileTriggers, singletonKey, startOf } from "./threadTrigger.ts";
 
 const kv = createKv({ adapter: memoryKvAdapter() });
 
@@ -79,7 +79,7 @@ describe("thread key from a trigger", () => {
     ]);
     expect(opts.singleton.mode).toBe("skip");
     expect(opts.singleton.key).toBe(
-      `event.name == "chat/message" ? (${chatThread}) : event.name == "gh/comment" ? (event.data.repo + "#" + event.data.pr) : event.data.thread`,
+      `event.name == "chat/message" ? ((has(event.data) && has(event.data.room)) ? (${chatThread}) : "fresh:" + event.id) : event.name == "gh/comment" ? ((has(event.data) && has(event.data.repo) && has(event.data.pr)) ? (event.data.repo + "#" + event.data.pr) : "fresh:" + event.id) : event.data.thread`,
     );
   });
 
@@ -199,5 +199,33 @@ describe("thread key from a trigger", () => {
     expect(
       define({ triggers: { event: "a", thread: "event.data.x[0]" } }),
     ).toThrow(/trigger "a"/);
+  });
+});
+
+describe("a trigger with nothing at its thread path", () => {
+  const [trigger] = compileTriggers("bot", {
+    triggers: { event: "chat/message", thread: "event.data.room" },
+  });
+
+  test("starts a thread of its own, and marks the start", () => {
+    const started = startOf("app/bot", trigger as never, {
+      id: "evt-9",
+      name: "chat/message",
+      data: {},
+    });
+
+    expect(started.thread).toBe("fresh:evt-9");
+    expect(started.fresh).toBe(true);
+  });
+
+  test("a path that is there keeps the key and marks nothing", () => {
+    const started = startOf("app/bot", trigger as never, {
+      id: "evt-9",
+      name: "chat/message",
+      data: { room: "C1" },
+    });
+
+    expect(started.thread).toBe("C1");
+    expect(started).not.toHaveProperty("fresh");
   });
 });

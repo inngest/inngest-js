@@ -511,6 +511,20 @@ export async function schemaProblem(
 }
 
 /**
+ * The key expression of a thread started by an event with nothing at its
+ * thread path: one per event.
+ */
+const freshKey = '"fresh:" + event.id';
+
+/**
+ * The thread key of an event with nothing at its thread path.
+ * @param event The event.
+ */
+export const freshThread = (event: { id?: string }): string => {
+  return `fresh:${event.id ?? ""}`;
+};
+
+/**
  * The singleton key of an agent function: a message uses its `thread`, and
  * each trigger event its own expression.
  */
@@ -521,7 +535,14 @@ export function singletonKey(
   triggers: CompiledTrigger[],
 ): string {
   return triggers.reduceRight((rest, trigger) => {
-    return `event.name == ${literal(trigger.event)} ? (${trigger.thread.source}) : ${rest}`;
+    // An event with nothing at the key's path starts a thread of its own, so
+    // the backend never has to evaluate a path that is missing.
+    const key =
+      trigger.thread.present === "true"
+        ? `(${trigger.thread.source})`
+        : `((${trigger.thread.present}) ? (${trigger.thread.source}) : ${freshKey})`;
+
+    return `event.name == ${literal(trigger.event)} ? ${key} : ${rest}`;
   }, "event.data.thread");
 }
 
@@ -544,10 +565,14 @@ export function startOf(
    * The trigger event.
    */
   event: ThreadTriggerEvent,
-): { agent: string; thread: string; event: TriggerEvent } {
+): { agent: string; thread: string; event: TriggerEvent; fresh?: true } {
+  const key = trigger.thread.key(event);
+
   return {
     agent: ref,
-    thread: trigger.thread.key(event),
+    thread: key ?? freshThread(event),
     event: { id: event.id, name: event.name, data: event.data },
+    // The event has nothing at the trigger's thread path.
+    ...(key === undefined && { fresh: true as const }),
   };
 }
