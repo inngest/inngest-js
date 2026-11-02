@@ -347,3 +347,79 @@ describe("codeTools run_code options", () => {
     }).toThrow(/only leaves it out/);
   });
 });
+
+describe("codeTools run keeps the thread's place", () => {
+  const fake = (saved: unknown) => {
+    const seen: { cwd?: string; environment?: Record<string, string> }[] = [];
+    let read: (() => unknown) | undefined;
+    const sandbox = {
+      commands: {
+        run: async (
+          _id: unknown,
+          _command: unknown,
+          options: { cwd?: string; environment?: Record<string, string> },
+        ) => {
+          seen.push(options);
+
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+      },
+      files: {},
+      "~shellPlace": {
+        load: async () => {
+          return saved;
+        },
+        track: (fn: () => unknown) => {
+          read = fn;
+        },
+      },
+    } as unknown as DurableSandbox;
+
+    return { sandbox, seen, place: () => read?.() };
+  };
+
+  const call = (tools: ReturnType<typeof codeTools>, command: string) => {
+    return (tools.run.run as (input: unknown, ctx: unknown) => unknown)(
+      { command },
+      { signal: new AbortController().signal, idempotencyKey: "k" },
+    );
+  };
+
+  test("a first command starts in the saved directory with the saved environment", async () => {
+    const { sandbox, seen } = fake({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: [],
+    });
+
+    await call(codeTools(sandbox), "ls");
+
+    expect(seen[0]?.cwd).toBe("/work/app");
+    expect(seen[0]?.environment).toEqual({ MODE: "test" });
+  });
+
+  test("with nothing saved the shell starts at cwd with an empty environment", async () => {
+    const { sandbox, seen } = fake(undefined);
+
+    await call(codeTools(sandbox, { cwd: "/src" }), "ls");
+
+    expect(seen[0]?.cwd).toBe("/src");
+    expect(seen[0]?.environment).toEqual({});
+  });
+
+  test("the shell hands its place over to be kept", async () => {
+    const { sandbox, place } = fake({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: ["OLD"],
+    });
+
+    await call(codeTools(sandbox), "ls");
+
+    expect(place()).toEqual({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: ["OLD"],
+    });
+  });
+});

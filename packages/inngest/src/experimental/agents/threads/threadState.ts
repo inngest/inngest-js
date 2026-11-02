@@ -638,3 +638,32 @@ export const sandboxPausedKey = (
 ): string => {
   return `__sandbox-paused:${ref}:${name}`;
 };
+
+/**
+ * Where a thread's shell was left: the directory and the exported environment
+ * (and unset names) a command ended with. A thread's next run starts its shell
+ * here, when the same sandbox (or its snapshot) comes back.
+ */
+export interface ShellPlace {
+  cwd?: string;
+  env: Record<string, string>;
+  unset: string[];
+}
+
+/**
+ * The thread KV key of the shell's place in a sandbox. The `__` prefix hides
+ * it from `state().keys`.
+ */
+export const sandboxShellKey = (
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
+  ref: string,
+
+  /**
+   * The sandbox's name in the agent's `sandboxes`.
+   */
+  name: string,
+): string => {
+  return `__sandbox-shell:${ref}:${name}`;
+};

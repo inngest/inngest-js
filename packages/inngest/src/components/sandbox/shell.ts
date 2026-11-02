@@ -28,6 +28,11 @@ export interface SandboxShellOptions {
    * Environment every command starts with, before what the commands export.
    */
   env?: Record<string, string>;
+  /**
+   * Names removed from the environment before the first command, such as the
+   * ones a thread's earlier run unset.
+   */
+  unset?: string[];
 }
 
 /**
@@ -73,6 +78,11 @@ export interface SandboxShell {
    * and what commands exported since.
    */
   readonly env: Readonly<Record<string, string>>;
+  /**
+   * The names the session's commands unset, which later commands start
+   * without.
+   */
+  readonly unset: readonly string[];
 }
 
 /**
@@ -402,7 +412,7 @@ export const createShell = (
   const state: ShellState = {
     cwd: options.cwd,
     env: { ...options.env },
-    unset: new Set(),
+    unset: new Set(options.unset),
   };
 
   const shellRun: DurableSandbox["commands"]["run"] = (
@@ -452,6 +462,9 @@ export const createShell = (
     },
     get env() {
       return { ...state.env };
+    },
+    get unset() {
+      return [...state.unset];
     },
     run: shellRun,
   };

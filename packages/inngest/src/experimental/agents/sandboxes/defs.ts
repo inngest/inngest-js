@@ -39,6 +39,7 @@ import {
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
 import { type RunField, resolveRunField } from "../agent/runField.ts";
+import type { ShellPlace } from "../threads/threadState.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   defaultSandboxIdle,
@@ -324,6 +325,28 @@ export const sandbox = Object.assign(defineSandbox, {
 });
 
 /**
+ * The shell's place in a thread's sandbox: read when the shell starts, and
+ * kept when the sandbox is closed or recycled.
+ */
+export interface SandboxShellPlace {
+  /**
+   * Opens the sandbox and returns where the thread's last run left the shell.
+   * Undefined for a sandbox that is new (not resumed or restored).
+   */
+  load(): Promise<ShellPlace | undefined>;
+
+  /**
+   * Gives the place to keep when the sandbox is closed or recycled.
+   */
+  track(read: () => ShellPlace | undefined): void;
+}
+
+/**
+ * The hook the code tools find on a sandbox handle, to keep the shell's place.
+ */
+export const shellPlaceKey = "~shellPlace";
+
+/**
  * A sandbox an agent may use, created on first need.
  */
 export interface LazySandbox {
@@ -358,6 +381,11 @@ export interface LazySandbox {
    * Whether creation has begun.
    */
   readonly started: boolean;
+
+  /**
+   * Where the thread's shell was left, for the code tools' shell.
+   */
+  readonly place: SandboxShellPlace;
 
   /**
    * Runs commands in the sandbox, opening it on first use.
@@ -776,6 +804,30 @@ const lazySandbox = (
       ? `${name}:${idOrOptions}`
       : { ...idOrOptions, id: `${name}:${idOrOptions.id}` };
   };
+  let readPlace: (() => ShellPlace | undefined) | undefined;
+
+  // Keeps the shell's place for the thread's next run. Variables named in the
+  // definition's `secrets` are injected into every command anyway, so they
+  // never land in the thread's KV.
+  const keepPlace = async () => {
+    const place = readPlace?.();
+
+    if (!place || !owner) {
+      return;
+    }
+
+    const secretNames = new Set(definition.secrets ?? []);
+
+    await owner.saveShell(name, {
+      ...place,
+      env: Object.fromEntries(
+        Object.entries(place.env).filter(([key]) => {
+          return !secretNames.has(key);
+        }),
+      ),
+    });
+  };
+
   const handle: SandboxHandle = {
     commands: {
       run: async (...args) => {
@@ -792,6 +844,18 @@ const lazySandbox = (
     },
   };
   const tools: SandboxTools = {};
+  const place: SandboxShellPlace = {
+    load: async () => {
+      await get();
+
+      return restored && owner ? owner.loadShell(name) : undefined;
+    },
+    track: (read) => {
+      readPlace = read;
+    },
+  };
+
+  Object.defineProperty(handle, shellPlaceKey, { value: place });
 
   for (const [key, entry] of Object.entries(definition.tools?.(handle) ?? {})) {
     tools[`${name}${toolNamespaceSeparator}${key}`] = entry;
@@ -810,6 +874,7 @@ const lazySandbox = (
     },
     commands: handle.commands,
     files: handle.files,
+    place,
     tools,
     get,
     recycle: () => {
@@ -855,6 +920,10 @@ const lazySandbox = (
         };
 
         let paused = false;
+
+        if (used || fromPause) {
+          await keepPlace();
+        }
 
         if ((used || fromPause) && idle === "pause") {
           paused = await owner.pause(name, sandbox, epoch);
@@ -962,6 +1031,10 @@ const lazySandbox = (
           // A pause keeps the sandbox for the thread's next run; one that
           // could not be paused is saved and destroyed like any other.
           let paused = false;
+
+          if (worthKeeping) {
+            await keepPlace();
+          }
 
           if (worthKeeping && owner && idle === "pause") {
             paused = await owner.pause(name, sandbox, epoch);

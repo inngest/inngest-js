@@ -23,12 +23,7 @@ import {
  * `edit` and `search`, a shell `run`, and `run_code` for a script that calls
  * tools.
  */
-export type CodeToolName =
-  | "read"
-  | "edit"
-  | "search"
-  | "run"
-  | "run_code";
+export type CodeToolName = "read" | "edit" | "search" | "run" | "run_code";
 
 /**
  * Options of `sandbox.tools.code()`.
@@ -128,14 +123,47 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m", session: persist = true } = options;
   let shell: ReturnType<typeof createShell> | undefined;
-  const session = () => {
+  let starting: Promise<ReturnType<typeof createShell>> | undefined;
+
+  // The thread's sandbox keeps where the shell was left: the first command of
+  // a new run starts there.
+  const place = (
+    sandbox as {
+      "~shellPlace"?: {
+        load(): Promise<
+          | { cwd?: string; env: Record<string, string>; unset: string[] }
+          | undefined
+        >;
+        track(
+          read: () =>
+            | { cwd?: string; env: Record<string, string>; unset: string[] }
+            | undefined,
+        ): void;
+      };
+    }
+  )["~shellPlace"];
+  const session = async () => {
     if (!persist) {
       return undefined;
     }
 
-    shell ??= createShell(sandbox.commands.run, { cwd });
+    starting ??= (async () => {
+      const saved = await place?.load();
+      const made = createShell(sandbox.commands.run, {
+        cwd: saved?.cwd ?? cwd,
+        env: saved?.env,
+        unset: saved?.unset,
+      });
 
-    return shell;
+      shell = made;
+      place?.track(() => {
+        return { cwd: made.cwd, env: made.env, unset: [...made.unset] };
+      });
+
+      return made;
+    })();
+
+    return starting;
   };
 
   for (const name of Object.keys(scriptTools)) {
@@ -248,7 +276,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
       input: z.object({ command: z.string() }),
       run: async ({ command }) => {
-        const current = session();
+        const current = await session();
 
         if (!current) {
           return exec("run", command, ["/bin/sh", "-c", command]);
