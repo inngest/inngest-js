@@ -6,7 +6,7 @@
 import { describe, expect, test } from "vitest";
 import { memoryKvAdapter } from "../agent/kv.ts";
 import { kvOAuthStore } from "../agent/mcpOAuthStore.ts";
-import { fakeMcpFetch } from "../agent/testing/mcp.ts";
+import { fakeMcpFetch } from "./mcpFakes.ts";
 import {
   completeMcpAuthorization,
   isMcpNeedsAuthorization,

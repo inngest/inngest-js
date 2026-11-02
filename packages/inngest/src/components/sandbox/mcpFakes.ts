@@ -8,7 +8,7 @@
  * the bearer arrived and that it appears nowhere else.
  */
 import { createServer } from "node:http";
-import { asyncDispose } from "../../../helpers/asyncDispose.ts";
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 
 /**
  * A tool of the fake server.

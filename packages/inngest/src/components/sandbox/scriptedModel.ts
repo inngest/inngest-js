@@ -3,7 +3,10 @@
  * EXPERIMENTAL: the scripted model. It needs no API key and answers from a
  * list of steps, so a test asserts on the primitives and never on a model.
  */
-import type { AgentModel, AgentModelRequest as Request } from "../loop.ts";
+import type {
+  AgentModel,
+  AgentModelRequest as Request,
+} from "../agent/loop.ts";
 
 /**
  * One step of a scripted model: say something, or call a tool.

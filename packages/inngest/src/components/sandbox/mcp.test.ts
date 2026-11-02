@@ -7,12 +7,12 @@ import { describe, expect, test } from "vitest";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { type AgentModelRequest, agent } from "../agent/loop.ts";
-import { fakeMcpFetch } from "../agent/testing/mcp.ts";
-import { script } from "../agent/testing/model.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { mapMcpResult } from "./mcp.ts";
 import { McpAuthError, McpUnavailableError } from "./mcpClient.ts";
+import { fakeMcpFetch } from "./mcpFakes.ts";
+import { script } from "./scriptedModel.ts";
 import { secret } from "./secret.ts";
 import { resolveToolCall, type SandboxTool, tool } from "./tools.ts";
 
