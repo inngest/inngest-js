@@ -76,8 +76,8 @@ export interface SandboxToolContext {
    * start with `agent.`. It is the same function as the handler's `score`, so
    * a tool needs no Inngest client. Inside a tool step it rides on the step's
    * result, so it is written once however often the run replays. A tool made
-   * with `tool.group()` has no step of its own: its score sets a run score,
-   * and a replay writes the same value again. Best effort: a score the server
+   * with `tool.group()` has no step of its own: in an agent run its score is
+   * a memoized step, also written once. Best effort: a score the server
    * refuses logs a warning and the run goes on.
    */
   score(name: string, value: number | boolean): Promise<void>;

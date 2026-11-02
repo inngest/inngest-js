@@ -129,31 +129,28 @@ export interface AgentScore {
   flush(): Promise<void>;
 }
 
-const toolScoreWriters = new WeakMap<object, AgentScores>();
-
 /**
- * The `score` of a tool's context: the same function as the handler's. Inside
- * a tool step it rides on that step's result; outside a step it sets a run
- * score through the client of the function that is running. Best effort, and
- * a no-op outside a function.
+ * The `score` of a tool's context: the same function as the handler's. In an
+ * agent run it is the run's own, so the run waits for a score the tool did not
+ * await. Elsewhere it rides on the running step, or does nothing. It checks
+ * the name and value either way.
  */
-export const toolScore: AgentScores["score"] = async (name, value) => {
-  const app = getAsyncCtxSync()?.app as Inngest.Any | undefined;
+export const toolScore: AgentScore["score"] = async (name, value) => {
+  const bridged = getAsyncCtxSync()?.execution?.agentBridge?.score;
 
-  if (!app) {
-    validateStepScoreOptions({ name, value });
-
-    return;
+  if (bridged) {
+    return bridged(name, value);
   }
 
-  let writer = toolScoreWriters.get(app);
+  validateStepScoreOptions({ name, value });
 
-  if (!writer) {
-    writer = createAgentScores(app);
-    toolScoreWriters.set(app, writer);
+  if (name.startsWith(frameworkPrefix)) {
+    throw new Error(
+      `score name "${name}" starts with "${frameworkPrefix}", which is kept for the scores the framework writes`,
+    );
   }
 
-  await writer.score(name, value);
+  addStepScore(name, value);
 };
 
 /**

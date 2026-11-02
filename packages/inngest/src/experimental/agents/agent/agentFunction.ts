@@ -542,6 +542,8 @@ export function createAgentFunction(
 
         const agentScore = createAgentScore(client);
 
+        bridge.score = agentScore.score;
+
         const idle = await idleMs(fields, config.idle);
 
         const { inbox, view } = threadInbox(
