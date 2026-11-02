@@ -102,6 +102,7 @@ import {
   schemaProblem,
   singletonKey,
 } from "../threads/threadTrigger.ts";
+import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import {
   type AgentBudget,
@@ -207,6 +208,7 @@ const createHandlerLoop = async (options: {
     ...(system !== undefined && { system }),
     tools: addTools(
       {
+        ...agentToolsFor(config.discovery),
         ...listenTools,
         ...(skills.length > 0 && createSkillTools(skills)),
       } as SandboxTools,

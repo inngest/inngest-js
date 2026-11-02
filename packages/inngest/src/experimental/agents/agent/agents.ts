@@ -26,6 +26,7 @@ import type {
   ThreadTriggerListEvent,
 } from "../threads/threadTrigger.ts";
 import { createAgentFunction } from "./agentFunction.ts";
+import { agentFinishedFunction } from "./finishedRelay.ts";
 import type {
   AgentBody,
   AgentBodyContext,
@@ -209,6 +210,12 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
 const announceFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * The function that reports the end of runs `start_agent` began, one per
+ * client.
+ */
+const finishedFunctions = new WeakMap<object, InngestFunction.Any>();
+
+/**
  * Options of `createAgents`.
  */
 export interface CreateAgentsOptions {
@@ -266,6 +273,7 @@ export const createAgents = <TClient extends Inngest.Any>(
 
       if (!announceFunctions.has(client)) {
         announceFunctions.set(client, announceFunction(client));
+        finishedFunctions.set(client, agentFinishedFunction(client));
       }
 
       return created;
@@ -275,9 +283,10 @@ export const createAgents = <TClient extends Inngest.Any>(
         return [created.fn, created.cleanup, created.finished];
       });
       const announcer = announceFunctions.get(client);
+      const relay = finishedFunctions.get(client);
 
-      return announcer && made.length > 0
-        ? [...functions, announcer]
+      return announcer && relay && made.length > 0
+        ? [...functions, announcer, relay]
         : functions;
     },
   };
