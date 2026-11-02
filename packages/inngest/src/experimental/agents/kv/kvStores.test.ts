@@ -175,4 +175,34 @@ describe("the store an app gives createAgents", () => {
     expect(await own.all("inngest:kv:env:default")).toEqual({ k: "1" });
     expect(await mine.all("inngest:kv:env:default")).toEqual({});
   });
+
+  test("the store given to createAgents wins over INNGEST_EXPERIMENTAL_KV_URL", async () => {
+    const mine = memoryKvAdapter();
+    const client = new Inngest({ id: "stores-app-env" });
+    createAgents(client, { store: mine });
+
+    vi.stubEnv("INNGEST_EXPERIMENTAL_KV_URL", "redis://127.0.0.1:1");
+
+    try {
+      await kv.with(client).app.set("k", 1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(await mine.all("inngest:kv:app:default:stores-app-env")).toEqual({
+      k: "1",
+    });
+  });
+
+  test("with no store and no URL, a call throws an error that names both ways", async () => {
+    vi.stubEnv("INNGEST_EXPERIMENTAL_KV_URL", "");
+
+    try {
+      await expect(
+        kv.with({ id: "stores-app-none", env: null }).app.get("k"),
+      ).rejects.toThrow(/createAgents.*INNGEST_EXPERIMENTAL_KV_URL/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
