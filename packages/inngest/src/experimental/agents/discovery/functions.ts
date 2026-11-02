@@ -23,65 +23,91 @@ export interface FunctionStatus {
  */
 export type AppFunctions = Map<string, FunctionStatus>;
 
+const pageSize = 100;
+const maxPages = 50;
+
 /**
- * Reads the functions of `app`. An app the platform does not know has none.
+ * Reads the functions of `app`, page by page. An app the platform does not know has none.
  * Any other failure throws an error that says what failed.
  */
 export const readAppFunctions = async (
   client: Inngest.Any,
   app: string,
 ): Promise<AppFunctions> => {
-  const url = new URL(
-    `/v2/apps/${encodeURIComponent(app)}/functions`,
-    client.apiBaseUrl,
-  );
-  const res = await fetchWithAuthFallback({
-    authToken: hashSigningKey(client.signingKey),
-    authTokenFallback: client.signingKeyFallback
-      ? hashSigningKey(client.signingKeyFallback)
-      : undefined,
-    fetch: client.fetch,
-    url,
-    options: { headers: { ...client.headers } },
-  });
-
-  if (res.status === 404) {
-    return new Map();
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      `Reading the functions of "${app}" failed: ${res.status} ${res.statusText}`,
-    );
-  }
-
-  const body = (await res.json()) as unknown;
-  const list = Array.isArray(body)
-    ? body
-    : ((body as { data?: unknown[] } | undefined)?.data ?? []);
   const found: AppFunctions = new Map();
+  let cursor: string | undefined;
 
-  for (const entry of list) {
-    const fn = entry as {
-      slug?: string;
-      id?: string;
-      name?: string;
-      is_paused?: boolean;
-      is_archived?: boolean;
-    };
-    const id = fn.slug ?? fn.id ?? fn.name;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = new URL(
+      `/v2/apps/${encodeURIComponent(app)}/functions`,
+      client.apiBaseUrl,
+    );
 
-    if (!id) {
-      continue;
+    url.searchParams.set("limit", String(pageSize));
+
+    if (cursor !== undefined) {
+      url.searchParams.set("cursor", cursor);
     }
 
-    found.set(id.startsWith(`${app}-`) ? id.slice(app.length + 1) : id, {
-      paused: fn.is_paused === true,
-      archived: fn.is_archived === true,
+    const res = await fetchWithAuthFallback({
+      authToken: hashSigningKey(client.signingKey),
+      authTokenFallback: client.signingKeyFallback
+        ? hashSigningKey(client.signingKeyFallback)
+        : undefined,
+      fetch: client.fetch,
+      url,
+      options: { headers: { ...client.headers } },
     });
+
+    if (res.status === 404) {
+      return found;
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        `Reading the functions of "${app}" failed: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    const body = (await res.json()) as unknown;
+    const list = Array.isArray(body)
+      ? body
+      : ((body as { data?: unknown[] } | undefined)?.data ?? []);
+
+    for (const entry of list) {
+      const fn = entry as {
+        slug?: string;
+        id?: string;
+        name?: string;
+        is_paused?: boolean;
+        is_archived?: boolean;
+      };
+      const id = fn.slug ?? fn.id ?? fn.name;
+
+      if (!id) {
+        continue;
+      }
+
+      found.set(id.startsWith(`${app}-`) ? id.slice(app.length + 1) : id, {
+        paused: fn.is_paused === true,
+        archived: fn.is_archived === true,
+      });
+    }
+
+    const next = (
+      body as { page?: { cursor?: string | null; hasMore?: boolean } } | null
+    )?.page;
+
+    if (!next?.hasMore || !next.cursor) {
+      return found;
+    }
+
+    cursor = next.cursor;
   }
 
-  return found;
+  throw new Error(
+    `The app "${app}" has more than ${maxPages} pages of functions, so its agents cannot all be checked.`,
+  );
 };
 
 /**
