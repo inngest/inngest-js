@@ -83,3 +83,50 @@ export const readAppFunctions = async (
 
   return found;
 };
+
+/**
+ * Whether an agent can be started right now.
+ */
+export type Startability = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Looks at the function behind `address` (`"<app>/<agent>"`) again, and says
+ * whether it can be started: a paused, archived or missing function is
+ * refused with a reason a model can read. `start_agent` asks just before it
+ * starts; discovery's cards may be hours old.
+ */
+export const startability = async (
+  client: Inngest.Any,
+  address: string,
+  read: (app: string) => Promise<AppFunctions> = (app) => {
+    return readAppFunctions(client, app);
+  },
+): Promise<Startability> => {
+  const slash = address.indexOf("/");
+  const app = address.slice(0, slash);
+  const agent = address.slice(slash + 1);
+  const status = (await read(app)).get(agent);
+
+  if (!status) {
+    return {
+      ok: false,
+      reason: `Agent "${address}" no longer exists, so it was not started. Use list_agents to find another.`,
+    };
+  }
+
+  if (status.archived) {
+    return {
+      ok: false,
+      reason: `Agent "${address}" is archived, so it was not started. Use list_agents to find another.`,
+    };
+  }
+
+  if (status.paused) {
+    return {
+      ok: false,
+      reason: `Agent "${address}" is paused, so it was not started. Use list_agents to find another, or tell the person it is paused.`,
+    };
+  }
+
+  return { ok: true };
+};
