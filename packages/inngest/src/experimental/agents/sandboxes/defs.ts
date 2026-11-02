@@ -43,6 +43,7 @@ import {
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
 import { type RunField, resolveRunField } from "../agent/runField.ts";
 import { agent } from "../loop/loop.ts";
+import { type Skill, skillsRoot } from "../skills/skills.ts";
 import type { ShellPlace } from "../threads/threadState.ts";
 import {
   checkoutRepo,
@@ -639,6 +640,12 @@ const lazySandbox = (
   sandboxes: DurableSandboxTools,
   runtime?: SandboxRuntime,
   owner?: ThreadSandboxOwner,
+
+  /**
+   * The skills whose files this sandbox gets, after the checkout and before
+   * `setup`.
+   */
+  skills?: readonly Skill[],
 ): { lazy: LazySandbox; begin: () => void } => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
@@ -845,6 +852,18 @@ const lazySandbox = (
           },
           `${name}:repo:checkout`,
         );
+      }
+
+      for (const skill of skills ?? []) {
+        for (const file of skill.files) {
+          await sandbox.files.write(
+            `${name}:skills:${skill.name}:${file.path}`,
+            {
+              path: `${skillsRoot}/${skill.name}/${file.path}`,
+              data: file.data,
+            },
+          );
+        }
       }
 
       if (setup) {
@@ -1342,20 +1361,30 @@ export const openSandboxes = (
    * The thread the sandboxes belong to. With it, each sandbox is restored from the thread's newest snapshot on first use, and snapshotted when the run closes it.
    */
   owner?: ThreadSandboxOwner,
+
+  /**
+   * The agent's skills. Their files go to the first sandbox the model can use.
+   */
+  skills?: readonly Skill[],
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
   const begins: (() => void)[] = [];
+  let placed = false;
 
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
+    const forModel = toBinding(name, binding).model !== false;
     const { lazy, begin } = lazySandbox(
       name,
       binding,
       sandboxes,
       runtime,
       owner,
+      forModel && !placed ? skills : undefined,
     );
+
+    placed = placed || forModel;
 
     opened[name] = lazy;
     begins.push(begin);

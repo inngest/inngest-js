@@ -44,6 +44,7 @@ import type {
   SandboxesConfig,
   SandboxToolNames,
 } from "../sandboxes/defs.ts";
+import type { SkillSources } from "../skills/skills.ts";
 import type { ThreadHandle, TriggerEvent } from "../threads/thread.ts";
 import type {
   ThreadKeyConfig,
@@ -286,6 +287,18 @@ export interface AgentFunctionConfig<
    * `data` has given values at given paths. Event types only, no plain names.
    */
   listen?: readonly EventTypeWithAnySchema<string>[];
+
+  /**
+   * The agent's skills: know-how the model reads, in the `SKILL.md` format.
+   * A value such as `[skills.folder("./skills")]`, or a function of
+   * `{ event, thread }` read once at the start of each run. The model sees
+   * each skill's name and description, and opens a body with `open_skill`.
+   * The files go to the first sandbox the model can use. Skills add no tools.
+   */
+  skills?: RunField<
+    SkillSources,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>
+  >;
 
   /**
    * The sandboxes this agent may use, by name: definitions made with

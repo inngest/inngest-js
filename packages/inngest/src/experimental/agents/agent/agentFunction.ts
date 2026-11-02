@@ -76,6 +76,13 @@ import {
   threadSandboxOwner,
 } from "../sandboxes/threadSandboxes.ts";
 import {
+  collectSkills,
+  createSkillTools,
+  type Skill,
+  type SkillSources,
+  skillsPrompt,
+} from "../skills/skills.ts";
+import {
   agentMessageEvent,
   agentRecoverEvent,
   agentSteerEvent,
@@ -158,8 +165,9 @@ const createHandlerLoop = async (options: {
   config: AgentFunctionConfig;
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
+  skills: readonly Skill[];
 }): Promise<AgentHandlerLoop> => {
-  const { config, fields, listenTools } = options;
+  const { config, fields, listenTools, skills } = options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -173,10 +181,14 @@ const createHandlerLoop = async (options: {
     }) as unknown as AgentHandlerLoop;
   }
 
-  const system = await fields.get(
+  const written = await fields.get(
     "system",
     config.system as RunField<string | undefined>,
   );
+  const system =
+    skills.length > 0
+      ? [written, skillsPrompt(skills)].filter(Boolean).join("\n\n")
+      : written;
   const tools = await fields.get(
     "tools",
     config.tools as RunField<SandboxTools | undefined>,
@@ -194,7 +206,13 @@ const createHandlerLoop = async (options: {
     ...config.loop,
     model: config.model,
     ...(system !== undefined && { system }),
-    tools: addTools(listenTools as SandboxTools, tools),
+    tools: addTools(
+      {
+        ...listenTools,
+        ...(skills.length > 0 && createSkillTools(skills)),
+      } as SandboxTools,
+      tools,
+    ),
   }) as unknown as AgentHandlerLoop;
 };
 
@@ -222,6 +240,12 @@ export function createAgentFunction(
    */
   bodyOrDefault?: AgentBody<{ model: AgentModel }>,
 ): AgentFunction {
+  // Skills given as a value are known now: a clash is an error here, and
+  // the card lists them.
+  const definedSkills =
+    typeof config.skills === "function" || config.skills === undefined
+      ? []
+      : collectSkills(config.skills);
   const body: AgentBody<{ model: AgentModel }> =
     bodyOrDefault ?? (config.model ? defaultModelBody : async () => undefined);
   const ref = `${client.id}/${config.id}`;
@@ -492,7 +516,17 @@ export function createAgentFunction(
           thread: { key: data.thread },
         });
 
+        // The run's skills: shown to the model, and their files placed in the
+        // first sandbox it can use.
+        const runSkills = collectSkills(
+          (await fields.get(
+            "skills",
+            (config.skills ?? []) as RunField<SkillSources>,
+          )) ?? [],
+        );
+
         const { opened, closeAll } = await openRunSandboxes({
+          skills: runSkills,
           config,
           client,
           ref,
@@ -581,6 +615,7 @@ export function createAgentFunction(
         const handlerLoop = await createHandlerLoop({
           config,
           fields,
+          skills: runSkills,
           listenTools: { ...sandboxTools(opened), ...listenTools },
         });
 
@@ -679,6 +714,9 @@ export function createAgentFunction(
     card: cardOf(client.id, config.id, fn, {
       card: config.card,
       description: config.description,
+      skills: definedSkills.map((skill) => {
+        return { name: skill.name, description: skill.description };
+      }),
     }),
     thread(key) {
       return getThread(client, ref, key);
