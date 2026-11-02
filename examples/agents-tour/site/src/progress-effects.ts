@@ -3,7 +3,7 @@
  * What progress does on screen and to the rest of the site: concept pills
  * flying into the Concepts chip, and the moments other parts of the site
  * (sound, the style's visuals) listen for as `tour:moment` window events.
- * Reduced motion gets neither the flight nor the shake.
+ * Reduced motion gets no flying pills.
  */
 
 const calm = () => {
@@ -59,6 +59,7 @@ export const flyConcepts = (names: string[]) => {
 
     animation.onfinish = () => {
       pill.remove();
+
       chip.animate(
         [
           { transform: "scale(1)" },

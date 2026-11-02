@@ -681,9 +681,30 @@ textarea {
 }
 
 @media (max-width: 700px) {
-  main.split {
-    grid-template-columns: 1fr;
-    overflow: auto;
+  main.grid {
+    display: block;
+    overflow-y: auto;
+  }
+
+  main.grid > .col,
+  main.grid > .col.right {
+    display: block;
+  }
+
+  main.grid [role="separator"] {
+    display: none;
+  }
+
+  main.grid .play {
+    min-height: 220px;
+  }
+
+  main.grid .work {
+    height: 400px;
+  }
+
+  main.grid .tracepane {
+    height: 320px;
   }
 
   .text {
@@ -693,10 +714,9 @@ textarea {
   .work {
     border-left: none;
     border-top: 1px solid var(--border);
-    min-height: 520px;
   }
 
-  .topbar nav button:not(:first-child) {
+  .topbar nav button.ghost {
     display: none;
   }
 
@@ -1401,18 +1421,68 @@ main.single .text {
   padding-left: 0;
 }
 
+.module-opening {
+  margin: 0 8px 4px 26px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.nav.rail .nav-toggle {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.module-done {
+  flex-wrap: wrap;
+}
+
+.pager {
+  flex-wrap: wrap;
+}
+
+.nav-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgb(10 12 20 / 50%);
+  display: flex;
+}
+
+.nav-overlay .nav {
+  width: min(320px, calc(100vw - 48px));
+  height: 100%;
+  box-shadow: var(--shadow);
+}
+
 @media (max-width: 900px) {
   .body,
   .body[data-rail="true"] {
     grid-template-columns: 48px minmax(0, 1fr);
   }
+}
 
-  .nav:not(.rail) {
-    position: fixed;
-    top: 48px;
-    bottom: 0;
-    left: 0;
-    width: 264px;
-    z-index: 15;
+@media (max-width: 900px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 8px 12px;
+  }
+
+  .topbar nav {
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+
+  .body > main {
+    min-width: 0;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
   }
 }

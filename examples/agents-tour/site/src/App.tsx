@@ -80,11 +80,33 @@ export const App = () => {
   const [rail, setRail] = useState(store.get("tour:rail") === "1");
   const [moduleDone, setModuleDone] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Under 900px the nav is a rail, and the whole nav opens over the page.
+  const [narrow, setNarrow] = useState(() => {
+    return window.matchMedia("(max-width: 900px)").matches;
+  });
+  const [navOpen, setNavOpen] = useState(false);
+  // The runs on screen when Run was pressed, so only a newer finished run
+  // counts as the run having finished.
+  const pressed = useRef<{ page: string; before: Set<string> } | null>(null);
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
   const textPane = useRef<HTMLElement>(null);
   const undoTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 900px)");
+    const onChange = () => {
+      setNarrow(query.matches);
+      setNavOpen(false);
+    };
+
+    query.addEventListener("change", onChange);
+
+    return () => {
+      query.removeEventListener("change", onChange);
+    };
+  }, []);
 
   useEffect(() => {
     void api.index().then(setIndex);
@@ -211,10 +233,17 @@ export const App = () => {
   const waiting = useMemo(() => {
     return index ? deeperWaiting(index, progress.pages) : [];
   }, [index, progress]);
+
   const end = index && page ? moduleEnd(index, page.id) : null;
+
   const doneModule = index?.modules.find((module) => {
     return module.id === moduleDone;
   });
+
+  const deeperLeft = waiting.filter((entry) => {
+    return entry.module === moduleDone;
+  }).length;
+
   // The banner offers the same two buttons as the end of the module, whichever
   // page the reader is on.
   const doneEnd =
@@ -229,7 +258,17 @@ export const App = () => {
         )
       : null;
 
+  const showRail = narrow || rail;
+
   const toggleRail = () => {
+    if (narrow) {
+      setNavOpen((value) => {
+        return !value;
+      });
+
+      return;
+    }
+
     setRail((value) => {
       store.set("tour:rail", value ? "0" : "1");
 
@@ -237,19 +276,34 @@ export const App = () => {
     });
   };
 
+  const openNav = () => {
+    if (narrow) {
+      setNavOpen(true);
+    } else {
+      setRail(false);
+      store.set("tour:rail", "0");
+    }
+  };
+
+  // Focuses the current page in the nav, or the first item when the current
+  // page is not shown.
   const focusNav = () => {
-    setRail(false);
-    store.set("tour:rail", "0");
+    openNav();
     window.setTimeout(() => {
-      document
-        .querySelector<HTMLElement>(
-          '.nav [aria-current="page"], .nav [data-nav-item]',
-        )
-        ?.focus();
+      const nav = document.querySelector<HTMLElement>(".nav:not(.rail)");
+
+      (
+        nav?.querySelector<HTMLElement>('[aria-current="page"]') ??
+        nav?.querySelector<HTMLElement>("[data-nav-item]")
+      )?.focus();
     }, 40);
   };
 
   const askReset = () => {
+    if (showRail) {
+      openNav();
+    }
+
     if (!confirming) {
       setConfirming(true);
       window.setTimeout(() => {
@@ -272,6 +326,19 @@ export const App = () => {
       run.status,
     );
   });
+
+  // A page has "ran" once the run Run started has finished.
+  useEffect(() => {
+    const waiting = pressed.current;
+    const fresh = runs.filter((entry) => {
+      return !waiting?.before.has(entry.id);
+    });
+
+    if (waiting && waiting.page === page?.id && fresh.length > 0 && !live) {
+      pressed.current = null;
+      void api.mark(waiting.page, "ran");
+    }
+  }, [runs, live, page?.id]);
 
   // Formats every editable file with the repo's Biome.
   const formatAll = async () => {
@@ -298,7 +365,14 @@ export const App = () => {
 
     saveEdits(page, values, store);
     void api.run(page.id, values);
-    void api.mark(page.id, "ran");
+    pressed.current = {
+      page: page.id,
+      before: new Set(
+        runs.map((entry) => {
+          return entry.id;
+        }),
+      ),
+    };
     editor.current?.focus();
   };
 
@@ -486,6 +560,13 @@ export const App = () => {
     concepts: () => {
       setOverlay("concepts");
     },
+    dismiss: () => {
+      if (navOpen) {
+        setNavOpen(false);
+      } else {
+        setModuleDone(null);
+      }
+    },
     resetProgress: askReset,
   };
   const handlers: Handlers = {
@@ -524,6 +605,7 @@ export const App = () => {
 
   const pick = (summary: PageSummary) => {
     setOverlay(null);
+    setNavOpen(false);
     open(summary.id);
   };
 
@@ -630,17 +712,38 @@ export const App = () => {
         </nav>
       </header>
 
-      <div className="body" data-rail={rail}>
+      <div className="body" data-rail={showRail}>
         <Nav
           index={index}
           progress={progress}
           current={here}
-          rail={rail}
+          rail={showRail}
           confirming={confirming}
           onPick={pick}
           onToggle={toggleRail}
           onReset={askReset}
         />
+        {narrow && navOpen ? (
+          <div
+            className="nav-overlay"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setNavOpen(false);
+              }
+            }}
+          >
+            <Nav
+              index={index}
+              progress={progress}
+              current={here}
+              rail={false}
+              confirming={confirming}
+              onPick={pick}
+              onToggle={toggleRail}
+              onReset={askReset}
+            />
+          </div>
+        ) : null}
         <main
           className={hasCode ? "grid" : "single"}
           style={
@@ -856,7 +959,12 @@ export const App = () => {
       {doneModule ? (
         <div className="module-done" role="status">
           <strong>{doneModule.title} is done.</strong>
-          <span>The exercise passed.</span>
+          <span>
+            The exercise passed.
+            {deeperLeft > 0
+              ? ` ${deeperLeft} deeper ${deeperLeft === 1 ? "page" : "pages"} waiting.`
+              : ""}
+          </span>
           {doneEnd?.deeper ? (
             <button
               type="button"
@@ -891,7 +999,7 @@ export const App = () => {
               setModuleDone(null);
             }}
           >
-            Dismiss
+            Dismiss <Kbd action="dismiss" />
           </button>
         </div>
       ) : null}

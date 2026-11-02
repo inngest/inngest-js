@@ -12,7 +12,7 @@ export const progressKeys = defineKeys([
     label: "Collapse or open the left nav",
     group: "Pages",
     inField: ["Alt+Shift+2"],
-    outside: ["B"],
+    outside: ["b"],
   },
   {
     id: "nextModule",
@@ -44,7 +44,15 @@ export const progressKeys = defineKeys([
     label: "Concepts collected",
     group: "Pages",
     inField: ["Alt+Shift+O"],
-    outside: ["c"],
+    outside: ["g o"],
+  },
+  {
+    id: "dismiss",
+    rank: 46,
+    label: "Close the nav overlay or the module-done banner",
+    group: "Pages",
+    inField: [],
+    outside: ["Escape"],
   },
   {
     id: "resetProgress",

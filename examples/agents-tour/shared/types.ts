@@ -77,7 +77,7 @@ export interface Page extends PageSummary {
 export interface Module {
   id: string;
   title: string;
-  // The opening line shown in Contents.
+  // The opening line shown under the module's title in the left nav.
   opening: string;
   pages: PageSummary[];
 }

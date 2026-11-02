@@ -72,12 +72,21 @@ describe("progress model", () => {
       "a/p1": { opened: true },
       "a/p2": { opened: true, passed: true },
     };
+
     const row = moduleRow(
       index.modules[0] as TourIndex["modules"][number],
       pages,
     );
 
     assert.deepEqual(row, { core: 2, reached: 2, done: true });
+  });
+
+  it("does not call a module done when only a page that is not its exercise passed", () => {
+    const row = moduleRow(index.modules[0] as TourIndex["modules"][number], {
+      "a/p1": { opened: true, passed: true },
+    });
+
+    assert.equal(row.done, false);
   });
 
   it("lists the deeper pages left behind, once the reader is past the module", () => {

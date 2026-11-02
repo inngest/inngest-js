@@ -79,6 +79,7 @@ export const moduleEnd = (index: TourIndex, id: string) => {
       return page.id === id;
     });
   });
+
   const module = index.modules[at];
   const last = module ? core(module).at(-1) : undefined;
 
@@ -87,6 +88,7 @@ export const moduleEnd = (index: TourIndex, id: string) => {
   }
 
   const next: PageSummary | undefined = index.modules[at + 1]?.pages[0];
+
   const deeper = module.pages.find((page) => {
     return page.kind === "deeper";
   });

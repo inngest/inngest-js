@@ -38,35 +38,39 @@ export const Nav = ({
   confirming: boolean;
   onReset: () => void;
 }) => {
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  // Only the module the reader is in starts open.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   const box = useRef<HTMLElement>(null);
   const currentModule = current?.module;
 
   // Moving to a module opens it.
   useEffect(() => {
     if (currentModule) {
-      setClosed((before) => {
-        if (!before.has(currentModule)) {
-          return before;
-        }
-
-        const next = new Set(before);
-
-        next.delete(currentModule);
-
-        return next;
+      setOpened((before) => {
+        return new Set(before).add(currentModule);
       });
     }
   }, [currentModule]);
 
+  // The current page is always in view.
+  const currentId = current?.id;
+
+  useEffect(() => {
+    if (!rail && currentId) {
+      box.current
+        ?.querySelector<HTMLElement>('[aria-current="page"]')
+        ?.scrollIntoView({ block: "nearest" });
+    }
+  }, [rail, currentId, opened]);
+
   const flip = (id: string, open: boolean) => {
-    setClosed((before) => {
+    setOpened((before) => {
       const next = new Set(before);
 
       if (open) {
-        next.delete(id);
-      } else {
         next.add(id);
+      } else {
+        next.delete(id);
       }
 
       return next;
@@ -124,6 +128,7 @@ export const Nav = ({
           aria-keyshortcuts={shortcutsOf("navToggle")}
         >
           &raquo;
+          <Kbd action="navToggle" short />
         </button>
         {index.modules.map((module, at) => {
           const row = moduleRow(module, progress.pages);
@@ -171,7 +176,7 @@ export const Nav = ({
       <div className="nav-scroll">
         {index.modules.map((module, at) => {
           const row = moduleRow(module, progress.pages);
-          const open = !closed.has(module.id);
+          const open = opened.has(module.id);
 
           return (
             <section
@@ -208,45 +213,50 @@ export const Nav = ({
                 />
               </button>
               {open ? (
-                <ul>
-                  {module.pages.map((page) => {
-                    const state = stateOf(progress.pages, page.id);
+                <>
+                  <p className="module-opening">{module.opening}</p>
+                  <ul>
+                    {module.pages.map((page) => {
+                      const state = stateOf(progress.pages, page.id);
 
-                    return (
-                      <li key={page.id}>
-                        <button
-                          type="button"
-                          className="nav-page"
-                          data-nav-item=""
-                          data-kind="page"
-                          data-module={module.id}
-                          data-state={state}
-                          data-deeper={page.kind === "deeper"}
-                          aria-current={
-                            page.id === current?.id ? "page" : undefined
-                          }
-                          onClick={() => {
-                            onPick(page);
-                          }}
-                        >
-                          <span
-                            className="sym"
-                            data-star={page.exercise}
-                            role="img"
-                            aria-label={state === "none" ? "not opened" : state}
+                      return (
+                        <li key={page.id}>
+                          <button
+                            type="button"
+                            className="nav-page"
+                            data-nav-item=""
+                            data-kind="page"
+                            data-module={module.id}
+                            data-state={state}
+                            data-deeper={page.kind === "deeper"}
+                            aria-current={
+                              page.id === current?.id ? "page" : undefined
+                            }
+                            onClick={() => {
+                              onPick(page);
+                            }}
                           >
-                            {symbolOf(page)}
-                          </span>
-                          <span className="num">{page.label}</span>
-                          <span className="title">{page.title}</span>
-                          {page.kind === "deeper" ? (
-                            <span className="deeper-tag">deeper</span>
-                          ) : null}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                            <span
+                              className="sym"
+                              data-star={page.exercise}
+                              role="img"
+                              aria-label={
+                                state === "none" ? "not opened" : state
+                              }
+                            >
+                              {symbolOf(page)}
+                            </span>
+                            <span className="num">{page.label}</span>
+                            <span className="title">{page.title}</span>
+                            {page.kind === "deeper" ? (
+                              <span className="deeper-tag">deeper</span>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               ) : null}
             </section>
           );
