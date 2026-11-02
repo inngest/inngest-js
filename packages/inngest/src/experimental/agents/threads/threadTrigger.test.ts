@@ -158,14 +158,18 @@ describe("thread key from a trigger", () => {
     expect(output).toBe("T9");
   });
 
-  test("the agent's thread option wins over the trigger's", () => {
-    const [trigger] = compileTriggers("bot", {
-      triggers: { event: "e", thread: '"ignored"' },
+  test("a trigger's own thread wins over the agent-wide expression, which fills in for a trigger with none", () => {
+    const [own, fallback] = compileTriggers("bot", {
+      triggers: [
+        { event: "e", thread: '"own:" + event.data.room' },
+        { event: "f" },
+      ],
       thread: '"box:" + event.data.room',
     });
 
-    expect(trigger?.thread.key({ data: { room: "C" } })).toBe("box:C");
-    expect(singletonKey([trigger as never])).toContain('"box:"');
+    expect(own?.thread.key({ data: { room: "C" } })).toBe("own:C");
+    expect(fallback?.thread.key({ data: { room: "C" } })).toBe("box:C");
+    expect(singletonKey([own as never])).toContain('"own:"');
   });
 
   test("bad triggers are rejected when the agent is defined", () => {

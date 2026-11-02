@@ -419,9 +419,18 @@ describe("inbox sources", () => {
     // The filter is over `async` and ties the source to the run's thread.
     expect(filters).toContainEqual([
       "ci/status",
-      '(async.data.state != "ok") && (async.data.t) == "t1"',
+      '(has(async.data) && has(async.data.t)) && (async.data.state != "ok") && (async.data.t) == "t1"',
     ]);
-    expect(filters).toContainEqual(["deploy/done", '(async.data.t) == "t1"']);
+    expect(filters).toContainEqual([
+      "deploy/done",
+      '(has(async.data) && has(async.data.t)) && (async.data.t) == "t1"',
+    ]);
+    // An event with nothing at the thread path is caught by a source of its
+    // own, so the run can drop it with a warning.
+    expect(filters).toContainEqual([
+      "ci/status",
+      '!(has(async.data) && has(async.data.t)) && (async.data.state != "ok")',
+    ]);
   });
 
   test("a source's events are checked against its event type, and ones that break it are dropped", async () => {
@@ -498,7 +507,7 @@ describe("inbox sources", () => {
       (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
         return s.event;
       }),
-    ).toEqual(["agent/message", "agent/steer", "ci/status"]);
+    ).toEqual(["agent/message", "agent/steer", "ci/status", "ci/status"]);
   });
 
   test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
@@ -566,7 +575,7 @@ describe("inbox sources", () => {
         "ci",
         {
           event: "ci/status",
-          if: '(async.data.state == "red") && (async.data.t) == "t1"',
+          if: '(has(async.data) && has(async.data.t)) && (async.data.state == "red") && (async.data.t) == "t1"',
         },
       ],
     ]);
@@ -1509,5 +1518,80 @@ describe("eager sandboxes", () => {
 
     expect(output).toBe("no capacity");
     expect(warnings).toEqual([]);
+  });
+});
+
+describe("an inbox source with nothing at its thread path", () => {
+  const sourced = (extra: Record<string, unknown> = {}) => {
+    const warn = vi.fn();
+    const client = new Inngest({
+      id: testClientId,
+      logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
+    });
+    const { fn } = createAgentFunction(
+      client,
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [{ event: "ci/status", thread: "event.data.t" }],
+        ...extra,
+      } as never,
+      async ({ inbox }) => {
+        await inbox.next();
+        const kept = await inbox.next();
+
+        return kept ? { name: kept.name, data: kept.data } : null;
+      },
+    );
+
+    return { fn, warn };
+  };
+
+  test("reaches no thread: the run drops it and the log warns", async () => {
+    const { fn, warn } = sourced();
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      incoming: [
+        { id: "lost", name: "ci/status", data: { state: "red" }, stream: 4 },
+        {
+          id: "found",
+          name: "ci/status",
+          data: { t: "t1", state: "red" },
+          stream: 4,
+        },
+      ],
+    });
+
+    expect(output).toEqual({
+      name: "ci/status",
+      data: { t: "t1", state: "red" },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("nothing at its thread path"),
+    );
+  });
+
+  test("the agent-wide thread expression fills in for a source with none", async () => {
+    const filters: string[] = [];
+    const { fn } = sourced({
+      inbox: [{ event: "ci/status", if: 'async.data.state == "red"' }],
+      thread: "event.data.t",
+    });
+
+    await run(fn, {
+      event: trigger("go"),
+      onOp: (op) => {
+        const opts = op.opts as { sources?: { event: string; if?: string }[] };
+
+        for (const source of opts.sources ?? []) {
+          filters.push(`${source.event}: ${source.if}`);
+        }
+      },
+    });
+
+    expect(filters).toContain(
+      'ci/status: (has(async.data) && has(async.data.t)) && (async.data.state == "red") && (async.data.t) == "t1"',
+    );
   });
 });

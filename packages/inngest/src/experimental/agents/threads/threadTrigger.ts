@@ -377,7 +377,7 @@ export function compileTriggers(
     // agent unless it says otherwise.
     const invoked = name === internalEvents.FunctionInvoked;
 
-    const supplied = config.thread ?? own?.thread;
+    const supplied = own?.thread ?? config.thread;
     const thread = cron
       ? (own?.thread ?? literal(id))
       : invoked

@@ -246,3 +246,66 @@ describe("the handler's event, me and inbox", () => {
     expect(Object.keys(seen.me as object)).toEqual(["key"]);
   });
 });
+
+describe("a trigger with nothing at its thread path", () => {
+  test("starts a thread of its own and the trace warns on the step that started the run", async () => {
+    const warn = vi.fn();
+    const client = new Inngest({
+      id: testClientId,
+      logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
+    });
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+    let key = "";
+    const { fn } = agents.agent(
+      {
+        id: "fresh",
+        triggers: [{ event: "shop/order", thread: "event.data.pr" }],
+      },
+      async ({ me }) => {
+        key = me.key;
+      },
+    );
+    const steps: { name?: string; metadata?: unknown }[] = [];
+
+    await run(fn, {
+      event: { name: "shop/order", data: { id: "e1" } },
+      onStep: (op) => {
+        steps.push({ name: op.name, metadata: op.metadata });
+      },
+    });
+
+    expect(key).toMatch(/^fresh:/);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("event.data.pr"));
+    expect(
+      steps.find((step) => step.name === "thread:start")?.metadata,
+    ).toEqual([
+      expect.objectContaining({
+        kind: "inngest.warning.sdk.agent.thread.fresh",
+      }),
+    ]);
+  });
+
+  test("a trigger whose path is there joins the thread it names, with no warning", async () => {
+    const warn = vi.fn();
+    const client = new Inngest({
+      id: testClientId,
+      logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
+    });
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+    let key = "";
+    const { fn } = agents.agent(
+      {
+        id: "joined",
+        triggers: [{ event: "shop/order", thread: "event.data.pr" }],
+      },
+      async ({ me }) => {
+        key = me.key;
+      },
+    );
+
+    await run(fn, { event: { name: "shop/order", data: { pr: "p7" } } });
+
+    expect(key).toBe("p7");
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

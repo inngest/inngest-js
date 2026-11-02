@@ -38,7 +38,7 @@ import {
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
-import { toAsync } from "../cel.ts";
+import { compileKey, toAsync } from "../cel.ts";
 import { cardOf } from "../discovery/discovery.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
@@ -46,6 +46,7 @@ import {
   eventNameOf,
   inboxFilter,
   inflightOf,
+  missingThreadFilter,
   ownEvents,
   quote,
   type RawEvent,
@@ -107,6 +108,7 @@ import { functionOptions } from "./options.ts";
 import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
 import { createRunFields, idleMs } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
+import { traceWarning } from "./traceWarning.ts";
 import type {
   AgentBody,
   AgentBodyContext,
@@ -274,6 +276,16 @@ export function createAgentFunction(
           : await step.run(
               { id: "thread:start", name: "Thread state" },
               async () => {
+                // The warning rides on this step's metadata, so it is written
+                // once and costs no step.
+                if (data.fresh) {
+                  traceWarning(
+                    logger,
+                    "thread.fresh",
+                    `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+                  );
+                }
+
                 return startWith(thread.key);
               },
             );
@@ -318,7 +330,22 @@ export function createAgentFunction(
         // the source's event.
         const sourceSchemas = new Map<string, StandardSchemaV1>();
 
+        // The thread key of each source's events, by the name of the event.
+        const sourceKeys = new Map<
+          string,
+          { source: string; key: (event: unknown) => string | undefined }
+        >();
+
         const noteSource = (source: InboxSource) => {
+          const expression = source.thread ?? config.thread;
+
+          if (expression) {
+            sourceKeys.set(eventNameOf(source.event), {
+              source: expression,
+              key: compileKey(expression).key,
+            });
+          }
+
           const schema =
             typeof source.event === "object" ? source.event.schema : undefined;
 
@@ -357,11 +384,18 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
-          ...(config.inbox ?? []).map((source) => {
-            return {
-              event: eventNameOf(source.event),
-              if: inboxFilter(source, data.thread),
-            };
+          ...(config.inbox ?? []).flatMap((source) => {
+            const missing = missingThreadFilter(source, config.thread);
+
+            return [
+              {
+                event: eventNameOf(source.event),
+                if: inboxFilter(source, data.thread, config.thread),
+              },
+              ...(missing === undefined
+                ? []
+                : [{ event: eventNameOf(source.event), if: missing }]),
+            ];
           }),
         ]);
 
@@ -442,6 +476,14 @@ export function createAgentFunction(
           async function problemOf(raw, started) {
             if (ownEvents.includes(raw.name)) {
               return undefined;
+            }
+
+            // An event of an inbox source with nothing at its thread path
+            // reaches no thread.
+            const keyed = sourceKeys.get(raw.name);
+
+            if (keyed && keyed.key(raw) === undefined) {
+              return `it has nothing at its thread path (${keyed.source}), so it reaches no thread`;
             }
 
             // An event of an inbox source is checked against its event type.

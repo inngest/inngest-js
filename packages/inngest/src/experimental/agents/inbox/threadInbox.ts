@@ -14,7 +14,7 @@ import type {
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 import type { AgentMessage, InboxSource } from "../agent/types.ts";
-import { toAsync } from "../cel.ts";
+import { compileKey, toAsync } from "../cel.ts";
 import {
   agentMessageEvent,
   agentSteerEvent,
@@ -481,26 +481,58 @@ export function quote(value: string) {
 /**
  * The subscription source of an inbox source: its `if` and `thread`
  * expressions (over `event`) turned into one filter over `async` that also
- * ties it to the thread.
+ * ties it to the thread. The source's own `thread` wins over `agentThread`,
+ * the agent-wide expression. An event with nothing at the thread path matches
+ * nothing, so it reaches no thread.
  * @param source The inbox source.
  * @param thread The thread key of the run.
+ * @param agentThread The agent-wide thread expression.
  */
 export function inboxFilter(
   source: { if?: string; thread?: string },
   thread: string,
+  agentThread?: string,
 ) {
+  const expression = source.thread ?? agentThread;
+  const present = expression ? toAsync(compileKey(expression).present) : "true";
   const conditions = [
+    present !== "true" && `(${present})`,
     source.if && `(${source.if})`,
-    source.thread && `(${toAsync(source.thread)}) == ${quote(thread)}`,
+    expression && `(${toAsync(expression)}) == ${quote(thread)}`,
   ].filter((condition): condition is string => {
     return Boolean(condition);
   });
 
-  if (conditions.length === 0) {
+  if (!expression && !source.if) {
     throw new Error("An inbox source needs a `thread` or an `if`.");
   }
 
   return conditions.join(" && ");
+}
+
+/**
+ * The subscription source that catches the events of an inbox source with
+ * nothing at its thread path, so the run can drop them with a warning. It is
+ * `undefined` for a source whose thread path is always there.
+ * @param source The inbox source.
+ * @param agentThread The agent-wide thread expression.
+ */
+export function missingThreadFilter(
+  source: { if?: string; thread?: string },
+  agentThread?: string,
+): string | undefined {
+  const expression = source.thread ?? agentThread;
+  const present = expression ? toAsync(compileKey(expression).present) : "true";
+
+  if (present === "true") {
+    return undefined;
+  }
+
+  return [`!(${present})`, source.if && `(${source.if})`]
+    .filter((condition): condition is string => {
+      return Boolean(condition);
+    })
+    .join(" && ");
 }
 
 /**

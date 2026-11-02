@@ -44,6 +44,7 @@ export const startData = (
         agent: string;
         thread: string;
         event?: TriggerEvent;
+        fresh?: true;
       });
 };
 
