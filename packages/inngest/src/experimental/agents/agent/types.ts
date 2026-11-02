@@ -27,7 +27,6 @@ import type {
 } from "../../../types.ts";
 import type { AgentCard, AgentCardConfig } from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
-import type { KvSource } from "../kv/kv.ts";
 import type {
   AgentHandlerLoop,
   AgentLoop,
@@ -254,14 +253,6 @@ export interface AgentFunctionConfig<
    * `{ event, thread }` read once at the start of each run.
    */
   remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
-
-  /**
-   * KV store for thread state, or a function that returns one, called at each
-   * use (so a Worker can build it from the bindings of the current request).
-   * Default: the `store` option of
-   * `createAgents(client, { store })`, else Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
-   */
-  kv?: KvSource;
 
   /**
    * Event sources that reach a live run of the thread they map to and never

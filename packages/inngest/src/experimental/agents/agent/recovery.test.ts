@@ -8,7 +8,6 @@
 
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
 import { markThreadIdle } from "../threads/threadState.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import {
@@ -19,7 +18,7 @@ import {
   summarize,
   turnOf,
 } from "./recovery.ts";
-import { run } from "./test-helpers.ts";
+import { freshKv, run } from "./test-helpers.ts";
 
 const refusal = (id: string) => {
   return `400 {"type":"error","error":{"type":"invalid_request_error","message":"tool_choice is not supported for this model."},"request_id":"${id}"}`;
@@ -188,12 +187,11 @@ describe("the finished function", () => {
         return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
       }) as unknown as typeof fetch,
     });
-    const store = createKv({ adapter: memoryKvAdapter() });
+    const store = freshKv();
     const agent = createAgentFunction(
       client,
       {
         id: "bot",
-        kv: store,
         ...config,
       },
       async () => {},
@@ -500,7 +498,7 @@ describe("what the body is told", () => {
     lastRun?: LastRun,
   ) => {
     const client = new Inngest({ id: testClientId });
-    const store = createKv({ adapter: memoryKvAdapter() });
+    const store = freshKv();
 
     if (lastRun) {
       await store.with(client).scope("thread", "t1").set("__lastRun", lastRun);
@@ -516,7 +514,7 @@ describe("what the body is told", () => {
         ...record,
       });
 
-    const agent = createAgentFunction(client, { id: "bot", kv: store }, body);
+    const agent = createAgentFunction(client, { id: "bot" }, body);
     const read = async () => {
       return (await store.with(client).scope("thread", "t1").get("__state")) as
         | Record<string, unknown>

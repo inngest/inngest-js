@@ -11,7 +11,7 @@ import type { Logger } from "../../../middleware/logger.ts";
 import type { Context } from "../../../types.ts";
 import type { RunFieldContext } from "../agent/runField.ts";
 import type { AgentFunctionConfig } from "../agent/types.ts";
-import type { kvFrom } from "../kv/kv.ts";
+import type { Kv } from "../kv/kv.ts";
 import type { TriggerEvent } from "../threads/thread.ts";
 import {
   openSandboxes,
@@ -32,7 +32,7 @@ export const openRunSandboxes = async (options: {
   context: RunFieldContext<TriggerEvent>;
   thread: string;
   runId: string;
-  store: ReturnType<typeof kvFrom>;
+  store: Kv;
   step: typeof step;
   logger: Logger;
   defer: Context.Any["defer"];

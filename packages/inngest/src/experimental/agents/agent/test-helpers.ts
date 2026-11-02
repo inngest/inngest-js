@@ -13,8 +13,9 @@ import {
   isInboxMessage,
 } from "../../../components/execution/inboxState.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { runFnWithStack } from "../../../test/helpers.ts";
+import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../../types.ts";
+import { type Kv, kv, memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 
 interface Pause {
   id: string;
@@ -330,4 +331,15 @@ export const textOf = (
   const text = (message?.data as { text?: unknown } | undefined)?.text;
 
   return typeof text === "string" ? text : undefined;
+};
+
+/**
+ * Gives an app (default: the test client's) a fresh in-memory store and returns the global
+ * `kv`, which reads it. Call it at the start of a test that checks what the
+ * agent kept.
+ */
+export const freshKv = (app: string = testClientId): Kv => {
+  setAppKvStore(app, memoryKvAdapter());
+
+  return kv;
 };

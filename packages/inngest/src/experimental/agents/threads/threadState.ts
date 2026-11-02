@@ -25,7 +25,7 @@ import {
   turnInFlight,
   turnOf,
 } from "../agent/recovery.ts";
-import { type Kv, type KvScopeInstance, kvKey } from "../kv/kv.ts";
+import { type Kv, type KvScopeInstance, typedKey } from "../kv/kv.ts";
 import type { AgentTurn } from "../loop/loop.ts";
 import {
   type Inflight,
@@ -35,8 +35,8 @@ import {
   threadRecordKey,
 } from "./thread.ts";
 
-const recordKey = kvKey<ThreadRecord>(threadRecordKey);
-const lastRunKey = kvKey<LastRun>(lastRunRecordKey);
+const recordKey = typedKey<ThreadRecord>(threadRecordKey);
+const lastRunKey = typedKey<LastRun>(lastRunRecordKey);
 
 /**
  * Names this process, so a run that continues in another one is noticed.

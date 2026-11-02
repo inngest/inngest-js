@@ -6,11 +6,10 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgentFunction } from "../agent/agentFunction.ts";
-import { run } from "../agent/test-helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import { freshKv, run } from "../agent/test-helpers.ts";
 import { compileTriggers, singletonKey, startOf } from "./threadTrigger.ts";
 
-const kv = createKv({ adapter: memoryKvAdapter() });
+freshKv();
 
 const chatThread =
   'event.data.room + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)';
@@ -36,7 +35,7 @@ describe("thread key from a trigger", () => {
   test("with no triggers, the function is as before", () => {
     const agent = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async () => {},
     );
     const opts = agent.fn["opts"] as unknown as ReturnType<typeof options>;
@@ -54,7 +53,6 @@ describe("thread key from a trigger", () => {
       makeClient(),
       {
         id: "bot",
-        kv,
         triggers: [
           {
             event: "chat/message",
@@ -90,7 +88,6 @@ describe("thread key from a trigger", () => {
       makeClient(),
       {
         id: "bot",
-        kv,
         triggers: {
           event: "chat/message",
           if: "event.data.bot != true",
@@ -140,7 +137,6 @@ describe("thread key from a trigger", () => {
       makeClient(),
       {
         id: "bot",
-        kv,
         triggers: { event: "chat/message", thread: chatThread },
       },
       async ({ inbox }) => {
@@ -177,7 +173,7 @@ describe("thread key from a trigger", () => {
       return () => {
         return createAgentFunction(
           makeClient(),
-          { id: "bot", kv, ...config },
+          { id: "bot", ...config },
           async () => {},
         );
       };

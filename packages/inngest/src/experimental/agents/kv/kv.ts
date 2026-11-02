@@ -1,19 +1,19 @@
 /**
  * @module
- * EXPERIMENTAL: a scoped key-value store over a Redis URL
- * (`INNGEST_EXPERIMENTAL_KV_URL`). Scopes say how long a value lives and who sees it:
- * `env`, `app`, `function`, `run` (the default), `session` and `thread`.
+ * EXPERIMENTAL: a scoped key-value store. Scopes say how long a value lives and
+ * who sees it: `kv.env`, `kv.app`, `kv.run` and `kv.thread`, always written out.
+ * The store is the one given to `createAgents(client, { store })`, else Redis at
+ * `INNGEST_EXPERIMENTAL_KV_URL`.
  *
  * Inside a function every read and write is its own memoized step, so a
  * replay sees the values the first execution saw. Outside a function (a thread
  * handle, a script) calls go straight to the store.
  *
  * The scope is chosen up front: `kv.thread.get("plan")` is the current
- * thread's, `kv.scope("thread", key).get("plan")` is another's, and plain
- * `kv.get()` is the run's own. A global `kv` finds the current run, session
- * and thread from the function it is called in.
+ * thread's and `kv.scope("thread", key).get("plan")` is another's. The global
+ * `kv` finds the current run and thread from the function it is called in.
  *
- * Keys are plain names (values are `unknown`) or typed `kvKey`s, which carry
+ * Keys are plain names (values are `unknown`) or typed `kv.key`s, which carry
  * their value type and can validate it with a schema.
  */
 
@@ -31,9 +31,9 @@ import { redisConnection } from "./redis.ts";
 
 /**
  * How long a value lives and who sees it: `env` (the whole environment),
- * `app`, `function`, `run` (the default), `session` and `thread`.
+ * `app`, `run` and `thread`.
  */
-export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
+export type KvScope = "env" | "app" | "run" | "thread";
 
 /**
  * Where values are stored. Each scope instance is one hash, so removing a
@@ -57,7 +57,7 @@ export type KvScope = "env" | "app" | "function" | "run" | "session" | "thread";
  *   that matches on the old value, memory on one thread.
  * - Nothing else spans two calls. A `get` followed by a `set` is not atomic.
  */
-export interface KvAdapter {
+export interface KvStore {
   get(hash: string, field: string): Promise<string | null>;
 
   /**
@@ -112,11 +112,6 @@ export interface KvAdapter {
 }
 
 /**
- * The store interface the KV, thread state and indexes sit on.
- */
-export type KvStore = KvAdapter;
-
-/**
  * One member of a sorted index and its score.
  */
 export interface KvIndexEntry {
@@ -169,7 +164,7 @@ interface MemoryHash {
 /**
  * An in-process adapter, for tests and local scripts.
  */
-export function memoryKvAdapter(): KvAdapter {
+export function memoryKvAdapter(): KvStore {
   const hashes = new Map<string, MemoryHash>();
 
   function hashOf(hash: string) {
@@ -299,7 +294,7 @@ return 1`;
  * a cluster slot and one scope instance can be read or removed in one go.
  * @param url `redis://` or `rediss://` URL.
  */
-export function redisKvAdapter(url: string): KvAdapter {
+export function redisKvAdapter(url: string): KvStore {
   const client = redisConnection(url);
   const removeBatch = 500;
 
@@ -582,7 +577,7 @@ export interface KvIndex {
 
 /**
  * A key of a scope instance that carries the type of its value. Make one with
- * `kvKey`: with a schema the value is validated on every read; without one
+ * `kv.key`: with a schema the value is validated on every read; without one
  * you vouch for the type.
  */
 export interface KvKey<T> {
@@ -601,12 +596,6 @@ export interface KvKey<T> {
    */
   readonly "~type"?: T;
 }
-
-/**
- * Anything JSON can carry. It is the default value type of `KvWrite`; plain-name
- * writes are checked with `KvJsonSafe`, so interfaces pass.
- */
-export type KvJson = Json;
 
 /**
  * Types JSON cannot carry: they come back changed, or fail to store.
@@ -656,7 +645,7 @@ export type KvKeyOf<T> = [T] extends [KvJsonSafe<T>]
   : KvValueMustBeJson;
 
 /**
- * Marks a value type refused by `kvKey`.
+ * Marks a value type refused by `kv.key`.
  */
 export interface KvValueMustBeJson {
   "kv values are stored as JSON: no Date, Map, Set, bigint, symbol or function": never;
@@ -687,7 +676,7 @@ export type KvResult<K extends KvKeyInput, V> = [K] extends [KvKey<infer T>]
  * What a write to a key takes: `T` for a `KvKey<T>`, for a plain name any value
  * whose type is JSON-safe (checked deeply, so interfaces pass).
  */
-export type KvWrite<K extends KvKeyInput, V = KvJson> = [K] extends [
+export type KvWrite<K extends KvKeyInput, V = Json> = [K] extends [
   KvKey<infer T>,
 ]
   ? T
@@ -702,7 +691,7 @@ export type KvJsonCheck<V> = [V] extends [KvJsonSafe<V>]
   : KvValueMustBeJson;
 
 /**
- * What a `kvKey` schema must satisfy: its input and output types match, so
+ * What a `kv.key` schema must satisfy: its input and output types match, so
  * the value read back is the value that was stored. A schema that does not
  * (a transform, default or coercion) fails with this type in the message.
  */
@@ -719,18 +708,18 @@ export type KvRoundTrips<S extends StandardSchemaV1> = [
   : KvSchemaMustRoundTrip;
 
 /**
- * Marks a schema refused by `kvKey`.
+ * Marks a schema refused by `kv.key`.
  */
 export interface KvSchemaMustRoundTrip {
   "kvKey schema: input and output types must match and be JSON (no transforms, defaults, coercion, Date or Map)": never;
 }
 
 /**
- * Names a key and types its value.
+ * Names a key and types its value; `kv.key` is this function.
  *
  * @example
  * ```ts
- * const plan = kvKey("plan", z.object({ steps: z.number() }));
+ * const plan = kv.key("plan", z.object({ steps: z.number() }));
  * await kv.thread.set(plan, { steps: 3 });
  * const found = await kv.thread.get(plan); // { steps: number } | undefined
  * ```
@@ -744,12 +733,15 @@ export interface KvSchemaMustRoundTrip {
  * as stored. Writes are not validated. Without a schema the type is yours to
  * vouch for.
  */
-export function kvKey<T>(name: string): KvKeyOf<T>;
-export function kvKey<S extends StandardSchemaV1>(
+export function typedKey<T>(name: string): KvKeyOf<T>;
+export function typedKey<S extends StandardSchemaV1>(
   name: string,
   schema: S & KvRoundTrips<S>,
 ): KvKey<StandardSchemaV1.InferOutput<S>>;
-export function kvKey(name: string, schema?: StandardSchemaV1): KvKey<unknown> {
+export function typedKey(
+  name: string,
+  schema?: StandardSchemaV1,
+): KvKey<unknown> {
   return { name, schema };
 }
 
@@ -949,19 +941,9 @@ export interface KvScopeIds {
   app: string;
 
   /**
-   * Function ID, for the `function` scope.
-   */
-  function?: string;
-
-  /**
    * Run ID, for the `run` scope.
    */
   run?: string;
-
-  /**
-   * Session ID, for the `session` scope.
-   */
-  session?: string;
 
   /**
    * Thread key, for the `thread` scope.
@@ -1066,14 +1048,16 @@ export interface KvScopeInstance {
 }
 
 /**
- * The store: the current run's scope instance, plus every other scope.
+ * The store. A scope is always written out: `kv.thread`, `kv.run`, `kv.app`
+ * and `kv.env`. `thread` needs an agent run; the others work in any function.
  */
-export interface Kv extends KvScopeInstance {
+export interface Kv {
   /**
-   * A scope instance. Without `id` it is the current function's (the run, or
-   * the thread or session the run belongs to); with one it is that instance.
+   * A scope instance by id: for example `kv.scope("thread", key)` reaches
+   * another thread's state from a bridge or a script.
    * @param scope The scope.
-   * @param id The instance, for example a thread key.
+   * @param id The instance, for example a thread key. Without it, the current
+   * function's own.
    */
   scope(scope: KvScope, id?: string): KvScopeInstance;
 
@@ -1088,19 +1072,9 @@ export interface Kv extends KvScopeInstance {
   readonly app: KvScopeInstance;
 
   /**
-   * Shared by every run of the current function.
-   */
-  readonly function: KvScopeInstance;
-
-  /**
    * The current run's own keys, removed when it ends.
    */
   readonly run: KvScopeInstance;
-
-  /**
-   * The current session's keys.
-   */
-  readonly session: KvScopeInstance;
 
   /**
    * The current thread's keys, kept across the runs of an agent thread.
@@ -1108,8 +1082,14 @@ export interface Kv extends KvScopeInstance {
   readonly thread: KvScopeInstance;
 
   /**
-   * The store for a client, to use outside a function (a thread handle, a
-   * script) where there is no current run to take the environment and app from.
+   * Names a key and types its value: `kv.key<T>(name)`, or
+   * `kv.key(name, schema)` to check the value on every read.
+   */
+  readonly key: typeof typedKey;
+
+  /**
+   * The store for a client, to use outside a function (a route, a script)
+   * where there is no current run to take the environment and app from.
    * @param client Inngest client.
    */
   with(client: { id: string; env: string | null }): Kv;
@@ -1135,13 +1115,13 @@ export function kvHash(scope: KvScope, ids: KvScopeIds): string {
   const id = scope === "env" ? ids.env : ids[scope];
   if (!id) {
     throw new Error(
-      `kv scope "${scope}" is not available here: no ${scope} id (sessions and threads come from the event's meta.sessions or data.thread).`,
+      `kv scope "${scope}" is not available here: no ${scope} id (the thread scope needs an agent run; use kv.scope("thread", key) to name one).`,
     );
   }
 
   const parts =
-    scope === "app" || scope === "function"
-      ? [ids.env, ids.app, scope === "function" ? id : ""]
+    scope === "app"
+      ? [ids.env, ids.app]
       : scope === "env"
         ? [ids.env]
         : [ids.env, ids.app, id];
@@ -1162,7 +1142,7 @@ function currentIds(): KvScopeIds | undefined {
   const app = getAsyncCtxSync()?.app as { id?: string; env?: string | null };
 
   // A run started by another agent or by an event of `triggers` is told its
-  // thread and session by the agent function; `data.thread` is what a message
+  // thread by the agent function; `data.thread` is what a message
   // starts an agent function with.
   const sessions = currentSessions(ctx);
   const agent = execution.agent;
@@ -1176,9 +1156,7 @@ function currentIds(): KvScopeIds | undefined {
   return {
     env: app?.env ?? "default",
     app: app?.id ?? "app",
-    function: execution.functionId,
     run: ctx.runId,
-    session: sessions.agent_session,
     thread,
   };
 }
@@ -1196,7 +1174,7 @@ export function currentThreadKey(): string | undefined {
  * @param scope The scope.
  * @param ids Ids of the scope instances.
  */
-function handleFor(adapter: KvAdapter, scope: KvScope, ids: KvScopeIds): RawKv {
+function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
   const hash = kvHash(scope, ids);
 
   return {
@@ -1342,8 +1320,8 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
   return ttl;
 }
 
-const appStores = new Map<string, KvAdapter>();
-const envStores = new Map<string, KvAdapter>();
+const appStores = new Map<string, KvStore>();
+const envStores = new Map<string, KvStore>();
 
 /**
  * Sets the store the KV of an app uses, unless a KV was built with its own.
@@ -1351,7 +1329,7 @@ const envStores = new Map<string, KvAdapter>();
  * @param app The app ID of the client.
  * @param store The store.
  */
-export function setAppKvStore(app: string, store: KvAdapter): void {
+export function setAppKvStore(app: string, store: KvStore): void {
   appStores.set(app, store);
 }
 
@@ -1361,7 +1339,7 @@ export function setAppKvStore(app: string, store: KvAdapter): void {
  * the SDK that run inside a step (such as MCP OAuth tokens) can share it.
  * @param app The app ID of the client, if known.
  */
-export function kvAdapterFor(app?: string): KvAdapter {
+export function kvAdapterFor(app?: string): KvStore {
   const given = app ? appStores.get(app) : undefined;
   if (given) {
     return given;
@@ -1395,11 +1373,11 @@ export function kvAdapterFor(app?: string): KvAdapter {
  * @param options.bound Environment and app to use outside a function.
  */
 export function createKv(
-  options: { adapter?: KvAdapter; bound?: { env: string; app: string } } = {},
+  options: { adapter?: KvStore; bound?: { env: string; app: string } } = {},
 ): Kv {
   // The store of an app: the one this KV was built with, else the one the app
   // gave `createAgents`, else Redis at the environment's URL.
-  function store(app?: string): KvAdapter {
+  function store(app?: string): KvStore {
     return options.adapter ?? kvAdapterFor(app);
   }
 
@@ -1579,25 +1557,17 @@ export function createKv(
     };
   }
 
-  const root = instance("run");
-
   return {
-    ...root,
     scope: instance,
+    key: typedKey,
     get env() {
       return instance("env");
     },
     get app() {
       return instance("app");
     },
-    get function() {
-      return instance("function");
-    },
     get run() {
       return instance("run");
-    },
-    get session() {
-      return instance("session");
     },
     get thread() {
       return instance("thread");
@@ -1609,117 +1579,6 @@ export function createKv(
       });
     },
   };
-}
-
-/**
- * A KV, or a function that returns one. The function is called at each use, so
- * a KV that depends on a per-request binding (a Worker's D1 database) can be
- * built from it when the request arrives. It must stand for the same data every
- * time; a different store on the next call splits thread and run state.
- */
-export type KvSource = Kv | (() => Kv);
-
-/**
- * The KV a `KvSource` stands for. A function is called at every use, not once.
- * @param source The KV or the function that returns it.
- */
-export function kvFrom(source: KvSource | undefined): Kv {
-  if (source === undefined) {
-    return kv;
-  }
-
-  if (typeof source !== "function") {
-    return source;
-  }
-
-  return new LazyKv(source);
-}
-
-/**
- * A `Kv` that asks `source` for the KV at every use, so a per-request binding
- * is read when the request is there.
- */
-class LazyKv implements Kv {
-  constructor(private readonly source: () => Kv) {}
-
-  get<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined> {
-    return this.source().get(key);
-  }
-
-  set<K extends KvKeyInput, V = KvValue<K>>(
-    key: K,
-    value: KvWrite<K, V>,
-    options?: KvSetOptions,
-  ): Promise<void> {
-    return this.source().set(key, value, options);
-  }
-
-  setIfAbsent<K extends KvKeyInput, V = KvValue<K>>(
-    key: K,
-    value: KvWrite<K, V>,
-    options?: KvSetOptions,
-  ): Promise<boolean> {
-    return this.source().setIfAbsent(key, value, options);
-  }
-
-  index(name: string): KvIndex {
-    return this.source().index(name);
-  }
-
-  update<K extends KvKeyInput, V = KvValue<K>>(
-    key: K,
-    fn: (current: KvValue<K> | undefined) => KvWrite<K, V>,
-  ): Promise<KvResult<K, V>> {
-    return this.source().update(key, fn);
-  }
-
-  take<K extends KvKeyInput>(key: K): Promise<KvValue<K> | undefined> {
-    return this.source().take(key);
-  }
-
-  delete(key: KvKeyInput): Promise<void> {
-    return this.source().delete(key);
-  }
-
-  all(): Promise<Record<string, unknown>> {
-    return this.source().all();
-  }
-
-  clear(): Promise<void> {
-    return this.source().clear();
-  }
-
-  scope(scope: KvScope, id?: string): KvScopeInstance {
-    return this.source().scope(scope, id);
-  }
-
-  get env(): KvScopeInstance {
-    return this.source().env;
-  }
-
-  get app(): KvScopeInstance {
-    return this.source().app;
-  }
-
-  get function(): KvScopeInstance {
-    return this.source().function;
-  }
-
-  get run(): KvScopeInstance {
-    return this.source().run;
-  }
-
-  get session(): KvScopeInstance {
-    return this.source().session;
-  }
-
-  get thread(): KvScopeInstance {
-    return this.source().thread;
-  }
-
-  with(client: { id: string; env: string | null }): Kv {
-    return this.source().with(client);
-  }
 }
 
 /**

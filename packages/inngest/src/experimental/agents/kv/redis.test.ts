@@ -2,7 +2,9 @@
  * @module
  * Tests for the minimal Redis client against a fake RESP server.
  */
+import { spawn } from "node:child_process";
 import * as net from "node:net";
+import { fileURLToPath } from "node:url";
 import {
   connectRedis,
   encodeCommand,
@@ -212,4 +214,49 @@ describe("RESP", () => {
     client.close();
     server.close();
   });
+
+  test("a script that never closes the connection still exits on its own", async () => {
+    const server = net.createServer((socket) => {
+      socket.on("data", () => {
+        socket.write("+PONG\r\n");
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+    const module = fileURLToPath(new URL("./redis.ts", import.meta.url));
+
+    const child = spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "-e",
+        `import { redisConnection } from ${JSON.stringify(module)};
+         const client = await redisConnection("redis://127.0.0.1:${port}")();
+         console.log(await client.command("PING"));`,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += String(chunk);
+    });
+
+    const code = await new Promise<number | "timeout">((resolve) => {
+      const timer = setTimeout(() => {
+        child.kill();
+        resolve("timeout");
+      }, 8000);
+      child.on("exit", (exit) => {
+        clearTimeout(timer);
+        resolve(exit ?? -1);
+      });
+    });
+    server.close();
+
+    expect(out.trim()).toBe("PONG");
+    expect(code).toBe(0);
+  }, 15000);
 });

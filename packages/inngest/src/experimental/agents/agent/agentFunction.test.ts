@@ -14,15 +14,19 @@ import {
 } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { agentMessage } from "../inbox/events.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import type { Kv } from "../kv/kv.ts";
 import type { AgentModelResponse, ModelMessage } from "../loop/loop.ts";
 import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { invokeAgent } from "./invoke.ts";
-import { run, textOf } from "./test-helpers.ts";
+import { freshKv, run, textOf } from "./test-helpers.ts";
 import type { AgentFunctionConfig } from "./types.ts";
+
+beforeEach(() => {
+  freshKv();
+});
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -79,7 +83,7 @@ describe("agent function", () => {
   test("is addressed as appId/functionId and starts on its own non-stop messages", () => {
     const { fn, ref } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async () => {},
     );
 
@@ -106,7 +110,6 @@ describe("agent function", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         model: model(async (request) => {
           prompts.push(userTexts(request.messages));
           turn += 1;
@@ -137,7 +140,7 @@ describe("agent function", () => {
   test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const first = await inbox.next();
         const second = await inbox.next();
@@ -181,7 +184,7 @@ describe("agent function", () => {
   test("a thread message made from a trigger event (sent again by recovery) is that event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         const again = await inbox.next();
@@ -205,7 +208,7 @@ describe("agent function", () => {
   test("an invoke of a plain agent with { agent, thread, text } is message 1, an agent/message", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const first = await inbox.next();
 
@@ -253,7 +256,6 @@ describe("inbox arrival", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         model: loopOnce(seen),
       },
       async ({ inbox, loop }) => {
@@ -278,7 +280,7 @@ describe("inbox arrival", () => {
   test("inbox.drain() takes the pending messages, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         const drained = await inbox.drain();
@@ -314,7 +316,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: [
           {
             event: "ci/status",
@@ -386,7 +387,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: [{ event: status, thread: "event.data.t" }],
       },
       async ({ inbox }) => {
@@ -426,7 +426,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: [{ event: "ci/status", thread: "event.data.t" }],
       },
       async ({ inbox }) => {
@@ -464,7 +463,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         thread: "event.data.t",
         listen: [status],
         model: model(async (request) => {
@@ -536,7 +534,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         model: model(async (request) => {
           asked.push((request.tools ?? []).map((tool) => tool.name));
 
@@ -559,7 +556,7 @@ describe("inbox sources", () => {
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const first = await inbox.next();
         const second = await inbox.next();
@@ -590,7 +587,6 @@ describe("inbox sources", () => {
       makeClient(),
       {
         id: "improver",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: names.map((name) => {
           return {
             event: `chat/${name}`,
@@ -646,7 +642,7 @@ describe("inbox sources", () => {
   test("next({ timeout }) returns null when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const first = await inbox.next();
         const expired = await inbox.next({ timeout: "1s" });
@@ -668,7 +664,7 @@ describe("inbox sources", () => {
   test("a message that arrives before the timeout is returned", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         const second = await inbox.next({ timeout: "30s" });
@@ -688,10 +684,10 @@ describe("inbox sources", () => {
 
 describe("agent cleanup", () => {
   test("a deferred function clears the run's run-scoped KV", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const { cleanup } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async () => {},
     );
     const bound = kv.with({ id: testClientId, env: null });
@@ -719,7 +715,7 @@ describe("agent cleanup", () => {
   test("the trigger is the inbox's first message and is read without a step or a wait", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const first = await inbox.next();
 
@@ -740,7 +736,7 @@ describe("agent cleanup", () => {
   test("nextBatch() returns what is unread, skipping a message that breaks nothing, and a closed inbox returns undefined", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         const batch = await inbox.nextBatch();
@@ -767,7 +763,7 @@ describe("agent cleanup", () => {
   test("the agent opens one inbox for its own events, with a source per event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async () => {},
     );
 
@@ -787,13 +783,13 @@ describe("agent cleanup", () => {
 describe("createAgents", () => {
   test("functions() lists each agent's function and cleanup, in order", () => {
     const client = makeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    freshKv();
     const agents = createAgents(client);
 
     expect(agents.functions()).toEqual([]);
 
-    agents.agent({ id: "a", kv }, async () => {});
-    agents.agent({ id: "b", kv }, async () => {});
+    agents.agent({ id: "a" }, async () => {});
+    agents.agent({ id: "b" }, async () => {});
 
     expect(
       agents.functions().map((fn) => {
@@ -812,16 +808,16 @@ describe("createAgents", () => {
 
   test("agents of another factory are not listed", () => {
     const client = makeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    freshKv();
 
-    createAgents(client).agent({ id: "a", kv }, async () => {});
+    createAgents(client).agent({ id: "a" }, async () => {});
 
     expect(createAgents(client).functions()).toEqual([]);
   });
 });
 
 describe("thread state", () => {
-  const record = async (kv: ReturnType<typeof createKv>) => {
+  const record = async (kv: Kv) => {
     const found = await kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1")
@@ -836,14 +832,13 @@ describe("thread state", () => {
   };
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     // The body replays on every request, so a turn's record is kept by turn.
     const seen = new Map<number, unknown>();
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
-        kv,
         model: model(async (request) => {
           return {
             ...say(
@@ -878,10 +873,10 @@ describe("thread state", () => {
   });
 
   test("a message waited for after the first marks the thread waiting", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         await inbox.next();
@@ -895,10 +890,10 @@ describe("thread state", () => {
   });
 
   test("a batch waited for after the first marks the thread waiting", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ inbox }) => {
         for await (const _batch of inbox.batches()) {
           // Each batch is answered, then the next one is waited for.
@@ -913,11 +908,11 @@ describe("thread state", () => {
   });
 
   test("a delivered batch after the first marks the thread running with its message in flight", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const seen: unknown[] = [];
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         await inbox.nextBatch();
@@ -937,11 +932,11 @@ describe("thread state", () => {
   });
 
   test("a batch wait that expires marks the thread running again when a message was delivered", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const seen: unknown[] = [];
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.nextBatch();
         await inbox.nextBatch({ timeout: "1s" }).catch(() => undefined);
@@ -957,11 +952,11 @@ describe("thread state", () => {
   });
 
   test("a wait that expires marks the thread running again when a message was delivered", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const seen: unknown[] = [];
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ inbox }) => {
         await inbox.next();
         await inbox.next({ timeout: "1s" }).catch(() => undefined);
@@ -978,10 +973,10 @@ describe("thread state", () => {
   });
 
   test("a finished run marks its own record idle and leaves a newer run's alone", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const { cleanup } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
+      { id: "bot" },
       async () => {},
     );
     const thread = kv
@@ -1040,7 +1035,6 @@ describe("event", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         triggers,
       } as never,
       async ({ event }) => {
@@ -1096,7 +1090,6 @@ describe("event", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         triggers: invoke(z.object({ question: z.string() })),
       } as never,
       async ({ depth, event }) => {
@@ -1126,7 +1119,6 @@ describe("event", () => {
         makeClient(),
         {
           id: "bot",
-          kv: createKv({ adapter: memoryKvAdapter() }),
           triggers,
         } as never,
         async ({ depth }) => {
@@ -1177,7 +1169,6 @@ describe("agent limits", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         limits: { budget: { tokens: 20 } },
         model: model(async () => {
           calls += 1;
@@ -1207,7 +1198,7 @@ describe("agent limits", () => {
     let ran = 0;
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async () => {
         ran += 1;
       },
@@ -1240,7 +1231,6 @@ describe("agent limits", () => {
       makeClient(),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         model: model(async () => {
           models += 1;
 
@@ -1273,7 +1263,7 @@ describe("agent limits", () => {
   test("an agent refuses to start a sub-agent past its inherited depth", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      { id: "bot" },
       async () => {
         try {
           await invokeAgent("team/leaf", {}, {});
@@ -1298,10 +1288,10 @@ describe("agent limits", () => {
 
 describe("inherited limits persist on the thread", () => {
   test("a later run started by a plain message keeps the limits the sub-agent inherited", async () => {
-    const store = createKv({ adapter: memoryKvAdapter() });
+    freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: store },
+      { id: "bot" },
       async () => {
         try {
           await invokeAgent("team/leaf", {}, {});
@@ -1362,7 +1352,6 @@ describe("eager sandboxes", () => {
       new Inngest({ id: testClientId, middleware: [brokenSandboxes] }),
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         sandboxes: { work: { sandbox: work, start: "eager" } },
       },
       async ({ inbox, sandboxes }) => {
@@ -1413,7 +1402,6 @@ describe("an inbox source with nothing at its thread path", () => {
       client,
       {
         id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         inbox: [{ event: "ci/status", thread: "event.data.t" }],
         ...extra,
       } as never,

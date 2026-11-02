@@ -53,7 +53,7 @@ import {
   resentAs,
   threadInbox,
 } from "../inbox/threadInbox.ts";
-import { kvFrom } from "../kv/kv.ts";
+import { kv } from "../kv/kv.ts";
 import { type AgentLoop, addTools, buildHandlerLoop } from "../loop/loop.ts";
 import { createAgentScores } from "../loop/scores.ts";
 import {
@@ -215,7 +215,7 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  const store = kvFrom(config.kv);
+  const store = kv;
 
   const cleanup = createCleanupFunction(client, config, ref, store);
   const finished = createFinishedFunction(client, config, ref, store, triggers);
@@ -258,7 +258,7 @@ export function createAgentFunction(
         data: { runId, thread: data.thread },
       });
 
-      const thread = getThread(client, ref, data.thread, { kv: store });
+      const thread = getThread(client, ref, data.thread);
 
       // The KV scopes of the thread and session come from the trigger, which
       // for an event of `triggers` does not carry them: the whole run reads them
@@ -644,7 +644,7 @@ export function createAgentFunction(
     ref,
     card: cardOf(client.id, config.id, fn, config),
     thread(key) {
-      return getThread(client, ref, key, { kv: store });
+      return getThread(client, ref, key);
     },
   };
 }
