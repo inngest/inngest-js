@@ -31,6 +31,7 @@ import type {
   AgentDiscovery,
 } from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
+import type { AgentPrice } from "../loop/cost.ts";
 import type {
   AgentHandlerLoop,
   AgentLoop,
@@ -48,7 +49,7 @@ import type {
   ThreadKeyConfig,
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
-import type { AgentLimits } from "./limits.ts";
+import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { AgentRecovery, LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
@@ -302,11 +303,31 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * What this agent may start and spend: `depth` (default 1, so it may start
-   * sub-agents and they may not), `mayCall` and `budget`. Sub-agents
-   * inherit the limits narrowed. The loop enforces `budget` on its own.
+   * What this agent may start: `depth` (default 1, so it may start
+   * sub-agents and they may not) and `mayCall`. Sub-agents inherit them
+   * narrowed.
    */
   limits?: AgentLimits;
+
+  /**
+   * What a thread of this agent may spend: `usd`, `tokens`, `input` or
+   * `output`. A value, or a function of `{ event, thread }` run once, when
+   * the thread's first run starts. The loop always enforces it, ending with
+   * `end: "budget"` before its next model call once it is spent. The budget
+   * is kept on the thread and belongs to this agent's own definition: it is
+   * never handed down by the agent that started the thread.
+   */
+  budget?: RunField<
+    AgentBudget,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>
+  >;
+
+  /**
+   * What a model call costs, for `budget.usd`, in place of the model's own
+   * prices: rates per million tokens by model name, or a function of the
+   * call's tokens and model that returns US dollars. A value only.
+   */
+  price?: AgentPrice;
 
   /**
    * What the agent does about a run that fails unexpectedly. Off by default.

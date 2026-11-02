@@ -98,6 +98,7 @@ import {
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { invokeDepthOf } from "./invoke.ts";
 import {
+  type AgentBudget,
   budgetReason,
   narrowInherited,
   narrowLimits,
@@ -113,6 +114,7 @@ import {
   type RunField,
   type RunFieldContext,
   type RunFields,
+  resolveRunField,
 } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import { traceWarning } from "./traceWarning.ts";
@@ -293,12 +295,22 @@ export function createAgentFunction(
         const startedBefore =
           getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
             .found === true;
+        // The thread's budget as this agent defines it, read before the start
+        // so the first run can keep it on the thread.
+        const ownBudget =
+          config.budget === undefined
+            ? undefined
+            : await resolveRunField(config.budget as RunField<AgentBudget>, {
+                event: event as unknown as AgentBodyContext["event"],
+                thread: { key: data.thread },
+              });
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
               passed,
               startInflight(found, event) ?? null,
               inStep,
+              ownBudget,
             ),
             previousRun: (await readLastRun(store, inStep)) ?? null,
           };
@@ -343,12 +355,13 @@ export function createAgentFunction(
 
         const limits = registerLimits(
           instance,
-          // The thread's kept limits, and the dollar budget of this start.
+          // The thread's kept limits.
           narrowLimits(
             config.limits,
             narrowInherited(started.inherited, passed),
           ),
           { ...started.usage },
+          started.budget,
         );
 
         // What each inbox source's events are checked against, by the name of

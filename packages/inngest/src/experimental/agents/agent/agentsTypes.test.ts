@@ -230,3 +230,68 @@ test("agents: loop is in the handler argument only for an agent with a model", (
     });
   });
 });
+
+test("agents: budget, price and limits fields take their types", () => {
+  typesOnly(() => {
+    agents.agent({
+      id: "fields-1",
+      triggers: [created],
+      budget: { usd: 1, tokens: 100 },
+      price: { "*": { input: 1, output: 2 } },
+      limits: { depth: 2, mayCall: ["a/*"] },
+    });
+
+    agents.agent({
+      id: "fields-2",
+      triggers: [created],
+      budget: ({ event, thread }) => {
+        expectTypeOf(event).toHaveProperty("name");
+        expectTypeOf(thread.key).toBeString();
+
+        return { usd: 1 };
+      },
+      price: (usage, model) => {
+        expectTypeOf(usage.input).toBeNumber();
+        expectTypeOf(model).toEqualTypeOf<string | undefined>();
+
+        return 0.01;
+      },
+    });
+  });
+});
+
+test("agents: limits.spawn, limits.budget and limits.price are errors, and price is never a function of the event", () => {
+  typesOnly(() => {
+    agents.agent({
+      id: "limits-gone-1",
+      triggers: [created],
+      // @ts-expect-error spawn is gone
+      limits: { spawn: 1 },
+    });
+
+    agents.agent({
+      id: "limits-gone-2",
+      triggers: [created],
+      // @ts-expect-error budget is a field of the agent
+      limits: { budget: { usd: 1 } },
+    });
+
+    agents.agent({
+      id: "limits-gone-3",
+      triggers: [created],
+      // @ts-expect-error price is a field of the agent
+      limits: { price: { "*": { input: 1, output: 1 } } },
+    });
+
+    agents.agent({
+      id: "price-1",
+      triggers: [created],
+      // @ts-expect-error price is a value, never a function of the event
+      price: ({ event }: { event: unknown }) => {
+        void event;
+
+        return 1;
+      },
+    });
+  });
+});
