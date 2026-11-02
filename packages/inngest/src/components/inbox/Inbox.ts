@@ -410,19 +410,19 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   }
 
   /**
-   * Returns every unread message, waiting for at least one to arrive. The batch
-   * is one small step naming the last message it took. A closed inbox, or one
-   * that closes while this waits, returns `undefined`.
-   */
-  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
-
-  /**
    * Returns every unread message, waiting for at least one to arrive, or `null`
    * if none arrives in time. Returns `undefined` once the inbox is closed.
    */
   nextBatch(
     options: BatchOptions & ReadOptions,
   ): Promise<TMessage[] | null | undefined>;
+
+  /**
+   * Returns every unread message, waiting for at least one to arrive. The batch
+   * is one small step naming the last message it took. A closed inbox, or one
+   * that closes while this waits, returns `undefined`.
+   */
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
   nextBatch(
     options?: BatchOptions & Partial<ReadOptions>,
   ): Promise<TMessage[] | null | undefined> {
