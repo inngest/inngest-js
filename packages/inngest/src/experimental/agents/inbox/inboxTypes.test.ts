@@ -161,3 +161,28 @@ describe("inbox: the four message types", () => {
     });
   });
 });
+
+test("inbox: the deleted reads and fields are gone", () => {
+  typesOnly(() => {
+    agents.agent({ id: "inbox-10", triggers: [created] }, async ({ inbox }) => {
+      // @ts-expect-error putBack is deleted
+      inbox.putBack;
+
+      // @ts-expect-error current() is deleted
+      inbox.current;
+
+      // @ts-expect-error unread() is deleted
+      inbox.unread;
+
+      // @ts-expect-error listen() is deleted
+      inbox.listen;
+
+      const message = await inbox.next();
+
+      // @ts-expect-error a message has no seq
+      message?.seq;
+
+      return null;
+    });
+  });
+});

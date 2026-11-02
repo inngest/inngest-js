@@ -6,6 +6,11 @@
 
 import { agents, created, typesOnly } from "../agent/typeFixtures.ts";
 import type { AgentCard, AgentSummary, Json, JsonSchema } from "../index.ts";
+import type { AgentModelResponse } from "../loop/loop.ts";
+
+const model = async (): Promise<AgentModelResponse> => {
+  return { message: { role: "assistant", content: [] }, toolCalls: [] };
+};
 
 describe("discovery types", () => {
   test("discovery: a card has the documented fields and no others", () => {
@@ -74,6 +79,53 @@ describe("discovery types", () => {
   test("discovery: a card's input is a JSON Schema", () => {
     expectTypeOf<AgentCard["input"]>().toEqualTypeOf<JsonSchema | undefined>();
     expectTypeOf<JsonSchema>().toExtend<{ [key: string]: Json }>();
+  });
+
+  test("discovery: list_agents takes a query and refresh and gives summaries", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "list-1", triggers: [created], model },
+        async ({ inbox, loop }) => {
+          const result = await loop(await inbox.drain());
+
+          for (const call of result.toolCalls) {
+            if (!call.isError && call.name === "list_agents") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                query?: string;
+                refresh?: boolean;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<{
+                agents: AgentSummary[];
+              }>();
+            }
+          }
+
+          return null;
+        },
+      );
+    });
+  });
+
+  test("discovery: describe_agent takes an address and gives the whole card", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "describe-1", triggers: [created], model },
+        async ({ inbox, loop }) => {
+          const result = await loop(await inbox.drain());
+
+          for (const call of result.toolCalls) {
+            if (!call.isError && call.name === "describe_agent") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                address: string;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<AgentCard>();
+            }
+          }
+
+          return null;
+        },
+      );
+    });
   });
 
   test("discovery: a summary is a part of a card", () => {

@@ -7,10 +7,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
+import { typesOnly } from "../agent/typeFixtures.ts";
 import type { AgentModel, AgentPriceTable } from "../index.ts";
 import { agent } from "../index.ts";
 import {
+  type AnthropicClient,
   type AnthropicModel,
+  type AnthropicReply,
   anthropic,
   anthropicPrices,
 } from "./anthropic.ts";
@@ -58,4 +61,48 @@ test("the SDK's client and the result fit", () => {
   };
 
   expectTypeOf(check).toBeFunction();
+});
+
+test("loop: the Anthropic client type takes no any and fits a typed client", () => {
+  typesOnly(() => {
+    expectTypeOf<
+      Parameters<AnthropicClient["messages"]["create"]>[0]
+    >().not.toBeAny();
+    expectTypeOf<
+      Parameters<AnthropicClient["messages"]["create"]>[1]
+    >().not.toBeAny();
+
+    const fake: AnthropicClient = {
+      messages: {
+        create: async (params: { model: string }): Promise<AnthropicReply> => {
+          return { model: params.model } as unknown as AnthropicReply;
+        },
+      },
+    };
+
+    anthropic({ model: "claude-sonnet-4-5", client: fake });
+    anthropic({ model: "claude-sonnet-4-5", client: new Anthropic() });
+  });
+});
+
+test("loop: anthropic() types a structured reply and with() keeps the model type", () => {
+  typesOnly(async () => {
+    const model = anthropic({ model: "claude-sonnet-4-5" });
+    const reply = await model({
+      prompt: "How many?",
+      output: z.object({ answer: z.string(), count: z.number() }),
+    });
+
+    expectTypeOf(reply.output).toEqualTypeOf<{
+      answer: string;
+      count: number;
+    }>();
+    expectTypeOf(model.with({ effort: "low", maxTokens: 50 })).toEqualTypeOf<
+      typeof model
+    >();
+
+    const plain = await model({ prompt: "Hi" });
+
+    expectTypeOf(plain.text).toEqualTypeOf<string | undefined>();
+  });
 });

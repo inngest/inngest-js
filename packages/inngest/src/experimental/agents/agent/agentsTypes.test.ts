@@ -349,3 +349,15 @@ test("agents: agent/recover is an event type with the failed message", () => {
     expectTypeOf<entry.AgentRecoverData["agent"]>().toBeString();
   });
 });
+
+test("agents: agents.agent returns an Agent with an id, an address and a card", () => {
+  typesOnly(() => {
+    const found = agents.agent({ id: "ret-1", triggers: [created] });
+
+    expectTypeOf(found.id).toBeString();
+    expectTypeOf(found.address).toBeString();
+    expectTypeOf(found.card).toEqualTypeOf<entry.AgentCard>();
+    expectTypeOf(found).toHaveProperty("start");
+    expectTypeOf(found).toHaveProperty("thread");
+  });
+});
