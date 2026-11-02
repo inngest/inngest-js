@@ -82,7 +82,6 @@ describe("composition", () => {
           | "shop/order.created"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();

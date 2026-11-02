@@ -192,7 +192,7 @@ export const threadSandboxes = scenario({
         return count >= 2;
       },
     );
-    const gammaStop = await gamma.stop({ when: "now" });
+    const gammaStop = await gamma.stop();
     ctx.check(
       "stop now found the live run",
       gammaStop.stopped === true,

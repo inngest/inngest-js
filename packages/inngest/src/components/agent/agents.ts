@@ -18,6 +18,7 @@ import {
   type AgentFunction,
   type AgentFunctionConfig,
   createAgentFunction,
+  type InboxSource,
 } from "./agentFunction.ts";
 import { definitionOf, type SandboxToolNames } from "./defs.ts";
 import {
@@ -65,6 +66,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
+    const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
@@ -75,6 +77,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }
     >,
     body: (
@@ -86,6 +89,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<
@@ -102,6 +106,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
+    const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
@@ -112,6 +117,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }
     >,
     body: (
@@ -123,6 +129,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<
@@ -139,6 +146,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
+    const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
@@ -149,6 +157,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }
     >,
     body: (
@@ -160,6 +169,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<
@@ -175,6 +185,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
+    const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
@@ -185,6 +196,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }
     >,
     body: (
@@ -196,6 +208,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<Record<string, unknown>, TOutput, TRequest, TReply>;
@@ -207,6 +220,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TInboxTools extends InboxToolsConfig | undefined = undefined,
+    const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
@@ -217,6 +231,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }
     >,
     body: (
@@ -228,6 +243,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         inboxTools: TInboxTools;
+        sources: TSources;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<
@@ -437,6 +453,12 @@ export const createAgents = <TClient extends Inngest.Any>(
 };
 
 export type {
+  BatchOptions,
+  Inbox,
+  InboxMessage,
+  ReadOptions,
+} from "../inbox/Inbox.ts";
+export type {
   AgentArrivalContext,
   AgentBody,
   AgentBodyContext,
@@ -448,11 +470,10 @@ export type {
   AgentTypeDefaults,
   AgentTypes,
   AgentTypesOf,
-  InboxListenOptions,
   InboxSource,
+  OpenedInbox,
   ThreadInbox,
   ThreadInboxMessage,
-  ThreadListener,
 } from "./agentFunction.ts";
 export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
 export type {
@@ -496,13 +517,11 @@ export type {
   AgentResendData,
   AgentRouting,
   AgentSteerData,
-  AgentStopData,
 } from "./events.ts";
 export {
   agentMessage,
   agentRequest,
   agentSteer,
-  agentStop,
 } from "./events.ts";
 export type {
   GithubChannelOptions,
@@ -511,13 +530,6 @@ export type {
   GithubThreadOptions,
 } from "./github.ts";
 export { github, githubCommentEvent } from "./github.ts";
-export type {
-  EventMessage,
-  InboxEvent,
-  InboxMessage,
-  NextOptions,
-  View,
-} from "./inboxMessage.ts";
 export type {
   Kv,
   KvAdapter,
@@ -580,7 +592,6 @@ export {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   getThread,
 } from "./thread.ts";
 export type {

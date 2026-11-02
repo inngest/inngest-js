@@ -175,7 +175,7 @@ export const agentRecovery = scenario({
 
     // A cancelled run is recorded and nothing is resumed.
     const before = lines(postsFile).length;
-    await flaky.stop({ when: "now" });
+    await flaky.stop();
     const cancelled = await ctx.eventually(
       "the cancelled run is recorded",
       () => last(flaky),

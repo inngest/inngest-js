@@ -129,12 +129,11 @@ describe("thread key from a trigger", () => {
     ).toEqual([
       "agent/message",
       "agent/steer",
-      "agent/stop",
       "agent/request",
       "slack/message",
     ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[4]?.if).toBe(
+    expect(opened[3]?.if).toBe(
       `(event.data.bot != true) && (${slackThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",

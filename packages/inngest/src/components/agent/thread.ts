@@ -4,9 +4,9 @@
  * address: its key. It spans many runs.
  *
  * Everything sent to a thread is a plain event (`agent/message`,
- * `agent/steer`, `agent/stop`, `agent/request`), so messages show up in the
+ * `agent/steer`, `agent/request`), so messages show up in the
  * event stream, can be inspected and shared like any other event, and start a
- * run when none is live (all but a stop): the agent function has a singleton
+ * run when none is live: the agent function has a singleton
  * per thread, so a message sent while a run is live is skipped as a trigger and
  * reaches the run through its subscription instead.
  */
@@ -20,11 +20,9 @@ import {
   type AgentMessageData,
   type AgentRequestData,
   type AgentSteerData,
-  type AgentStopData,
   agentMessage,
   agentRequest,
   agentSteer,
-  agentStop,
 } from "./events.ts";
 import { nextCount } from "./executionCounter.ts";
 import { type KvScopeInstance, type KvSource, kvFrom } from "./kv.ts";
@@ -41,7 +39,6 @@ export const agentMessageEvent = agentMessage.name;
  * The names of the other events a thread receives from the agent layer.
  */
 export const agentSteerEvent = agentSteer.name;
-export const agentStopEvent = agentStop.name;
 export const agentRequestEvent = agentRequest.name;
 
 /**
@@ -92,10 +89,9 @@ export interface ThreadOptions<TRequest = unknown, TReply = unknown> {
  *
  * - `running`: a run is live and a turn is in flight.
  * - `waiting`: a run is live and waiting for its next message.
- * - `stopped`: the thread honored a stop request and has not run since.
  * - `idle`: no run is live (never started, or the last run ended).
  */
-export type ThreadStatus = "running" | "waiting" | "stopped" | "idle";
+export type ThreadStatus = "running" | "waiting" | "idle";
 
 /**
  * What `handle.state()` returns.
@@ -236,16 +232,14 @@ export interface ThreadHandle<TRequest = unknown, TReply = unknown> {
   steer(message: string): Promise<void>;
 
   /**
-   * Stops the thread. `"nextTurn"` lets the running model call finish and
-   * stops before the next; `"now"` cancels the live run by its run ID through the
+   * Stops the thread by cancelling its live run by its run ID through the
    * Inngest API, so it needs the API reachable from where you call it (the
    * signing key, or the Dev Server), and works for any thread key.
    *
-   * It returns `{ stopped: false }` when there was nothing to stop: with `"now"`,
-   * a thread with no record or no live run. A message for `"nextTurn"` is always
-   * sent. A KV store that is not configured throws.
+   * It returns `{ stopped: false }` when there was nothing to stop: a thread
+   * with no record or no live run. A KV store that is not configured throws.
    */
-  stop(options: { when: "now" | "nextTurn" }): Promise<{ stopped: boolean }>;
+  stop(): Promise<{ stopped: boolean }>;
 
   /**
    * What the thread is doing and has used. It reads the thread's KV scope, so
@@ -354,7 +348,6 @@ export function getThread<TRequest = unknown, TReply = unknown>(
     event: ReturnType<
       | typeof agentMessage.create
       | typeof agentSteer.create
-      | typeof agentStop.create
       | typeof agentRequest.create
     >,
   ) {
@@ -391,41 +384,30 @@ export function getThread<TRequest = unknown, TReply = unknown>(
         ),
       );
     },
-    async stop({ when }) {
-      if (when === "now") {
-        // The live run is the one the thread record names. A thread with no
-        // record, or whose record says no run is live, has nothing to cancel,
-        // and the answer says so. A KV store that is not configured throws.
-        const record = (await threadKv(client, key, options.kv).get(
-          threadRecordKey,
-        )) as ThreadRecord | undefined;
+    async stop() {
+      // The live run is the one the thread record names. A thread with no
+      // record, or whose record says no run is live, has nothing to cancel,
+      // and the answer says so. A KV store that is not configured throws.
+      const record = (await threadKv(client, key, options.kv).get(
+        threadRecordKey,
+      )) as ThreadRecord | undefined;
 
-        if (
-          !record?.runId ||
-          (record.status !== "running" && record.status !== "waiting")
-        ) {
-          return { stopped: false };
-        }
-
-        const res = await (
-          client as unknown as { inngestApi: InngestApi }
-        ).inngestApi.cancelRun(record.runId);
-
-        // The record said the run was live: a run that has just ended is a 404,
-        // and it is stopped.
-        if (!res.ok && res.error?.status !== 404) {
-          throw new Error(res.error?.error ?? "Could not cancel the run.");
-        }
-
-        return { stopped: true };
+      if (
+        !record?.runId ||
+        (record.status !== "running" && record.status !== "waiting")
+      ) {
+        return { stopped: false };
       }
 
-      await sendEvent(
-        `thread:${key}:stop`,
-        agentStop.create({ agent, thread: key, when } satisfies AgentStopData, {
-          meta,
-        }),
-      );
+      const res = await (
+        client as unknown as { inngestApi: InngestApi }
+      ).inngestApi.cancelRun(record.runId);
+
+      // The record said the run was live: a run that has just ended is a 404,
+      // and it is stopped.
+      if (!res.ok && res.error?.status !== 404) {
+        throw new Error(res.error?.error ?? "Could not cancel the run.");
+      }
 
       return { stopped: true };
     },

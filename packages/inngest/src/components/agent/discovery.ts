@@ -283,7 +283,6 @@ export const cardOf = (
   const own = new Set<string>([
     "agent/message",
     "agent/steer",
-    "agent/stop",
     "agent/request",
   ]);
   const all: { event?: string; cron?: string }[] = (

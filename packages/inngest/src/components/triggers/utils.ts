@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../../helpers/consts";
 import type { InngestFunction } from "../InngestFunction";
 import { NonRetriableError } from "../NonRetriableError";
+import { matchesEventName } from "./eventName";
 import { EventType } from "./triggers";
 import type { AnySchema } from "./typeHelpers";
 
@@ -83,14 +84,7 @@ function findWildcardValidators(
   const matchingValidators: EventValidator[] = [];
 
   for (const [triggerName, validator] of Object.entries(validators)) {
-    const isWildcard = triggerName.endsWith("*");
-    if (!isWildcard) {
-      continue;
-    }
-
-    const wildcardPrefix = triggerName.slice(0, -1);
-    const matchesWildcard = eventName.startsWith(wildcardPrefix);
-    if (matchesWildcard) {
+    if (triggerName.endsWith("*") && matchesEventName(eventName, triggerName)) {
       matchingValidators.push(validator);
     }
   }
@@ -203,12 +197,15 @@ function parseTrigger(trigger: InngestFunction.Trigger<string>): {
 } {
   // Direct event type trigger (e.g. `eventType("my-event")`)
   if (trigger instanceof EventType) {
-    return { eventName: trigger.name, schema: trigger.schema };
+    return { eventName: trigger.name, schema: trigger.schema ?? null };
   }
 
   // Nested event type trigger (e.g. `{ event: eventType("my-event") }`)
   if (trigger.event instanceof EventType) {
-    return { eventName: trigger.event.name, schema: trigger.event.schema };
+    return {
+      eventName: trigger.event.name,
+      schema: trigger.event.schema ?? null,
+    };
   }
 
   // String event name trigger (e.g. `{ event: "my-event" }`)

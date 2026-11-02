@@ -791,11 +791,11 @@ const steerOf = (options: {
 };
 
 /**
- * The loop's `stop`: the option, or inside an agent body the inbox's.
+ * The loop's `stop`: the option.
  * @param options The loop options.
  */
 const stopOf = (options: { stop?: (turn: number) => Promise<boolean> }) => {
-  return options.stop ?? bridgedControl()?.stop;
+  return options.stop;
 };
 
 /**

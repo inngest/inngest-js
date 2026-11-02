@@ -72,13 +72,13 @@ export const fewerSteps = scenario({
     };
 
     ctx.check(
-      "the agent's own events open in one step and the inbox config's sources in one more",
+      "the agent's own events and the inbox config's sources open in one step",
       named((name) => {
         return name === "inbox";
       }) === 1 &&
         named((name) => {
           return name === "inbox:listen";
-        }) === 1,
+        }) === 0,
       run.steps,
     );
     ctx.check(
@@ -92,6 +92,13 @@ export const fewerSteps = scenario({
         named((name) => {
           return name.startsWith("kv.get:thread:__lastRun");
         }) === 0,
+      run.steps,
+    );
+    ctx.check(
+      "the first read, answered from the run's start, has a row",
+      named((name) => {
+        return name === "inbox:start";
+      }) >= 1,
       run.steps,
     );
     ctx.check(`steps in this run: ${run.steps.length}`, true, run.steps);

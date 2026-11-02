@@ -198,7 +198,10 @@ const readLog = (key: string) => {
 };
 
 // The spans the Dev Server adds around the function's own steps.
-const internalRow = /^(executor\.nonstep|Finalization|Execution|Attempt \d+)$/;
+// The ✉️ group rows that tag each inbox statement, and the dimmed row of each
+// message in them, are not ops of the flow.
+const internalRow =
+  /^(executor\.nonstep|Finalization|Execution|Attempt \d+|subscribe|next|nextBatch|drain|close|[0-9a-f]{40})$/;
 
 const distinct = (values: string[]) => {
   return [...new Set(values)].sort();
@@ -517,13 +520,15 @@ const runCell = async (
 
     if (flow.expect.ticks) {
       const counts = Object.fromEntries(
-        Object.entries(run.ticks).map(([row, ticks]) => {
-          return [
-            row,
-            new Set(ticks.map((tick) => `${tick.id}/${tick.readAt !== null}`))
-              .size,
-          ];
-        }),
+        Object.entries(run.ticks)
+          .filter(([row]) => !internalRow.test(row))
+          .map(([row, ticks]) => {
+            return [
+              row,
+              new Set(ticks.map((tick) => `${tick.id}/${tick.readAt !== null}`))
+                .size,
+            ];
+          }),
       );
 
       if (

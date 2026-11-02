@@ -1,8 +1,8 @@
 /**
  * @module
  * Where the messages of an inbox are in a run's state. The executor saves each
- * message as its own step whose value is the event plus the inbox it belongs to
- * and the sources that matched: `{ data, "inngest/inbox", src }`. The step id
+ * message as its own step whose value is the event plus the inbox it belongs to:
+ * `{ data, "inngest/inbox" }`. The step id
  * is opaque, so a message is told apart by that reserved key, which no user
  * value carries. The messages of an inbox, in the
  * order the executor saved them, are the run's stack filtered by it.
@@ -27,7 +27,6 @@ export const inboxKey = "inngest/inbox";
 interface MessageValue {
   data: unknown;
   "inngest/inbox": string;
-  src: string[];
 }
 
 /**
@@ -40,45 +39,7 @@ export const isInboxMessage = (value: unknown): value is MessageValue => {
 
   const v = value as Partial<MessageValue>;
 
-  return typeof v[inboxKey] === "string" && Array.isArray(v.src) && "data" in v;
-};
-
-/**
- * What a reader wants of its inbox's messages, sent to the executor with a wait
- * and applied here when a read walks the stack. A message has to pass every part
- * that is there; no part wants every message.
- */
-export interface Want {
-  /**
-   * The pauses of the sources the message came through: it wants a message whose
-   * `src` includes one of them.
-   */
-  src?: readonly string[];
-
-  /**
-   * The event names it wants.
-   */
-  events?: readonly string[];
-}
-
-/**
- * Whether a filter wants a message.
- */
-export const wants = (
-  want: Want | undefined,
-  message: MessageValue,
-): boolean => {
-  if (want?.src && !message.src.some((pause) => want.src?.includes(pause))) {
-    return false;
-  }
-
-  if (want?.events) {
-    const name = (message.data as { name?: unknown } | null)?.name;
-
-    return typeof name === "string" && want.events.includes(name);
-  }
-
-  return true;
+  return typeof v[inboxKey] === "string" && "data" in v;
 };
 
 /**
@@ -102,7 +63,6 @@ export type InboxRead =
  * @param inbox The hashed ID of the step that opened the inbox.
  * @param taken How many messages earlier reads took.
  * @param wait The hashed ID of the read's wait op.
- * @param want The filter of the reader; it reads only the messages it wants.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  */
@@ -110,7 +70,6 @@ export const inboxRead = (
   inbox: string,
   taken: number,
   wait: string,
-  want: Want | undefined,
   stack: readonly string[],
   stepState: Record<string, { data?: unknown } | undefined>,
 ): InboxRead => {
@@ -121,10 +80,6 @@ export const inboxRead = (
     const value = stepState[id]?.data;
 
     if (isInboxMessage(value) && value[inboxKey] === inbox) {
-      if (!wants(want, value)) {
-        continue;
-      }
-
       if (found.found === "nothing" && seen === taken) {
         found = {
           found: "message",
@@ -154,7 +109,6 @@ export const inboxRead = (
  * ones earlier reads took, in the order the executor saved them.
  * @param inbox The hashed ID of the step that opened the inbox.
  * @param taken How many messages earlier reads took.
- * @param want The filter of the reader; it reads only the messages it wants.
  * @param stack The run's stack: step IDs in the order they were saved.
  * @param stepState The run's step state by step ID.
  * @param upTo Reads the stack only as far as this step, itself included: what a
@@ -164,7 +118,6 @@ export const inboxRead = (
 export const inboxUnread = (
   inbox: string,
   taken: number,
-  want: Want | undefined,
   stack: readonly string[],
   stepState: Record<string, { data?: unknown } | undefined>,
   upTo?: string,
@@ -174,9 +127,7 @@ export const inboxUnread = (
   const ids = stack.slice(0, end).filter((id) => {
     const value = stepState[id]?.data;
 
-    return (
-      isInboxMessage(value) && value[inboxKey] === inbox && wants(want, value)
-    );
+    return isInboxMessage(value) && value[inboxKey] === inbox;
   });
 
   return ids.slice(taken);
