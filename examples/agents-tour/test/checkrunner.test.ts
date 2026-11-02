@@ -3,7 +3,7 @@
  * Check, through the tour server's HTTP API with a real Dev Server and app:
  * a stub fails with one sentence and a solution passes; every part of the
  * check API does its job; a check that cannot judge is reported as broken;
- * and a passed check marks the page passed. Skipped when the Dev Server
+ * and a passed check marks the page passed through the progress area. Skipped when the Dev Server
  * binary is not built.
  */
 import assert from "node:assert/strict";
@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { freePort, resolveBinary, root } from "../scripts/lib.ts";
 import { createTour } from "../server/app.ts";
-import type { Area } from "../server/area.ts";
 
 const binary = resolveBinary();
 const lessonsDir = join(import.meta.dirname, "fixtures", "checks");
@@ -54,20 +53,12 @@ const fileOf = (page: string, folder: string) => {
 describe("checking an exercise", { skip: binary === undefined }, () => {
   let base = "";
   let stop = async () => {};
-  const marked: unknown[] = [];
-  const progress: Area = {
-    name: "progress",
-    routes: [
-      {
-        method: "POST",
-        path: "/api/progress/mark",
-        handle: ({ body }) => {
-          marked.push(body);
+  const progress = async () => {
+    const res = await fetch(`${base}/api/progress`);
 
-          return { ok: true };
-        },
-      },
-    ],
+    return (await res.json()) as {
+      pages: Record<string, { passed?: boolean }>;
+    };
   };
 
   const solve = (page: string) => {
@@ -84,7 +75,7 @@ describe("checking an exercise", { skip: binary === undefined }, () => {
       dataDir: join(root, ".tour", "test-check"),
       binary: binary as string,
       checkTiming: { firstRunTimeoutMs: 2000 },
-      areas: [() => progress],
+      cacheDir: join(root, ".tour", "test-check-cache"),
       port: await freePort(),
       ports: {
         api: await freePort(),
@@ -103,7 +94,7 @@ describe("checking an exercise", { skip: binary === undefined }, () => {
     await stop();
   });
 
-  it("fails the stub with one sentence saying why", async () => {
+  it("fails the stub with one sentence saying why, and does not mark the page", async () => {
     const answer = await post(base, "/api/check", {
       id: "checks/greeter",
       files: { "agent.ts": fileOf("greeter", "stub") },
@@ -114,27 +105,31 @@ describe("checking an exercise", { skip: binary === undefined }, () => {
       pass: false,
       reason: 'The greeter returned null, not "Hello, Ada!".',
     });
+    assert.equal((await progress()).pages["checks/greeter"]?.passed, undefined);
   });
 
-  it("passes the solution, and marks the page passed", async () => {
-    const before = marked.length;
+  it("passes the solution, which marks the page passed and finishes the module", async () => {
+    const res = await fetch(`${base}/api/stream`);
+    const reader = res.body?.getReader();
     const answer = await solve("greeter");
+    let text = "";
 
     assert.deepEqual(answer.body, { pass: true });
-    assert.deepEqual(marked.slice(before), [
-      { page: "checks/greeter", state: "passed" },
-    ]);
-  });
+    assert.equal((await progress()).pages["checks/greeter"]?.passed, true);
 
-  it("does not mark a page that failed", async () => {
-    const before = marked.length;
+    const end = Date.now() + 5000;
 
-    await post(base, "/api/check", {
-      id: "checks/greeter",
-      files: { "agent.ts": fileOf("greeter", "stub") },
-    });
+    while (!text.includes('"type":"progress"') && Date.now() < end) {
+      const chunk = await reader?.read();
 
-    assert.equal(marked.length, before);
+      text += new TextDecoder().decode(chunk?.value);
+    }
+
+    await reader?.cancel();
+    assert.match(
+      text,
+      /"type":"progress"[^\n]*"moduleDone":"checks"[^\n]*"page":"checks\/greeter"/,
+    );
   });
 
   it("sends events, presses a panel's route, and filters runs by function, leaving out the page's own start", async () => {
