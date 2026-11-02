@@ -1,3 +1,8 @@
+/**
+ * @module
+ * Check for the sample greeter exercise: sends `Ada` and judges what the
+ * run returned. Temporary; module 1's real exercise replaces it.
+ */
 import type { Check } from "../../../shared/check.ts";
 
 export const check: Check = async (t) => {

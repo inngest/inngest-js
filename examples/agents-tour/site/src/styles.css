@@ -1144,7 +1144,7 @@ main.single .text {
 
 .exercise .hint {
   margin: 10px 0 0;
-  color: var(--muted, #9aa4b2);
+  color: var(--muted);
 }
 
 .exercise .verdict {
@@ -1153,12 +1153,12 @@ main.single .text {
 }
 
 .exercise .pass {
-  color: #4cc38a;
+  color: var(--ok);
   font-weight: 600;
 }
 
 .exercise .fail {
-  color: #f0883e;
+  color: var(--bad);
 }
 
 .exercise .controls {
