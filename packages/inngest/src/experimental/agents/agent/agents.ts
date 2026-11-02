@@ -316,6 +316,7 @@ export type {
   AgentShare,
   AgentSummary,
   AgentsRegisteredData,
+  DiscoveryToolSet,
 } from "../discovery/discovery.ts";
 export { addressOf } from "../discovery/discovery.ts";
 export type {
@@ -379,6 +380,7 @@ export type {
   ThreadTriggerListEvent,
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
+export type { AgentToolSet } from "./agentTools.ts";
 export type {
   LastRun,
   RunOutcome,

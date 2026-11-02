@@ -193,10 +193,12 @@ test("agents: the old handler fields are gone", () => {
   });
 });
 
-test("agents: me has a key and no post", () => {
+test("agents: me has message and key, and no post", () => {
   typesOnly(() => {
     agents.agent({ id: "me-1", triggers: [created] }, async ({ me }) => {
       expectTypeOf(me.key).toBeString();
+      expectTypeOf(me.message).parameter(0).toExtend<Json>();
+      expectTypeOf(me.message("x")).toEqualTypeOf<Promise<void>>();
       expectTypeOf(me).not.toHaveProperty("post");
     });
   });
@@ -360,17 +362,5 @@ test("agents: agents.agent returns an Agent with an id, an address and a card", 
     expectTypeOf(found.card).toEqualTypeOf<entry.AgentCard>();
     expectTypeOf(found).toHaveProperty("start");
     expectTypeOf(found).toHaveProperty("thread");
-  });
-});
-
-describe("me.message", () => {
-  test("agents: me has post, message and key: message takes JSON and resolves with nothing", () => {
-    typesOnly(() => {
-      agents.agent({ id: "me-types" }, async ({ me }) => {
-        expectTypeOf(me.key).toBeString();
-        expectTypeOf(me.message).parameter(0).toExtend<Json>();
-        expectTypeOf(me.message("x")).toEqualTypeOf<Promise<void>>();
-      });
-    });
   });
 });

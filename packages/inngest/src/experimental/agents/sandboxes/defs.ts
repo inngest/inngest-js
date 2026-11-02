@@ -151,6 +151,7 @@ export interface SandboxSetupContext {
   /**
    * The event that started the run, when the agent function passed it.
    */
+  // Deliberate unknown: event data comes from outside; the reader checks it.
   event?: { name: string; data?: unknown };
 
   /**
@@ -179,6 +180,7 @@ export interface SandboxRuntime {
   /**
    * The event that started the run.
    */
+  // Deliberate unknown: event data comes from outside; the reader checks it.
   event?: { name: string; data?: unknown };
 
   /**

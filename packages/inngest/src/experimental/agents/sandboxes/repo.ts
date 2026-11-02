@@ -109,6 +109,7 @@ export interface RepoConfig {
 export type RepoValue =
   | RepoConfig
   | ((context: {
+      // Deliberate unknown: event data comes from outside; the reader checks it.
       event: { name: string; data?: unknown };
       thread: { key: string };
     }) => RepoConfig | Promise<RepoConfig>);

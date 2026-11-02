@@ -14,8 +14,10 @@ import { eventType } from "../../../components/triggers/triggers.ts";
 import type {
   AgentBodyContext,
   AgentMessage,
+  AgentToolSet,
   AgentTypes,
   AgentTypesOf,
+  DiscoveryToolSet,
   Inbox,
   InboxMessage,
   InboxSource,
@@ -60,4 +62,18 @@ test("the inbox of an agent is a core Inbox, and InboxMessage names its messages
   };
 
   expectTypeOf(check).toBeFunction();
+});
+
+test("the tool sets a model gets by default can be named from the entry", () => {
+  expectTypeOf<keyof AgentToolSet>().toEqualTypeOf<
+    | keyof DiscoveryToolSet
+    | "start_agent"
+    | "message_agent"
+    | "ask_agent"
+    | "stop_agent"
+    | "reply"
+  >();
+  expectTypeOf<keyof DiscoveryToolSet>().toEqualTypeOf<
+    "list_agents" | "describe_agent"
+  >();
 });
