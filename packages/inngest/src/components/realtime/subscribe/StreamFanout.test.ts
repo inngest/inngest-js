@@ -75,6 +75,50 @@ describe("StreamFanout", () => {
     expect(results.map((r) => r.value)).toEqual([1, 2, 3]);
   });
 
+  test("drains writes queued immediately before close", async () => {
+    const fanout = new StreamFanout<number>();
+    const reader = fanout.createStream().getReader();
+
+    fanout.write(1);
+    fanout.write(2);
+    fanout.close();
+
+    expect(await reader.read()).toEqual({ value: 1, done: false });
+    expect(await reader.read()).toEqual({ value: 2, done: false });
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  test.each(["cancelled", "errored"])(
+    "keeps delivering when another subscriber is %s",
+    async (failure) => {
+      const fanout = new StreamFanout<number>();
+      const reader = fanout.createStream().getReader();
+      const failingReader = fanout
+        .createStream(() => {
+          throw new Error("transform failed");
+        })
+        .getReader();
+      const failedRead =
+        failure === "errored"
+          ? expect(failingReader.read()).rejects.toThrow("transform failed")
+          : undefined;
+
+      fanout.write(1);
+      if (failure === "cancelled") {
+        await failingReader.cancel();
+      } else {
+        await failedRead;
+      }
+
+      expect((await reader.read()).value).toBe(1);
+      fanout.write(2);
+      expect((await reader.read()).value).toBe(2);
+      fanout.close();
+      expect((await reader.read()).done).toBe(true);
+      expect(fanout.size()).toBe(0);
+    },
+  );
+
   test("new subscribers only receive future chunks", async () => {
     const fanout = new StreamFanout<string>();
 
