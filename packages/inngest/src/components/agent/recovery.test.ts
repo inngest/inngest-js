@@ -545,17 +545,6 @@ describe("the finished function", () => {
     expect(await lastRun()).toMatchObject({ runId: "r1", status: "completed" });
   });
 
-  test("a failure after a honored stop resends nothing", async () => {
-    const { agent, sent, seed } = setup({ recovery: true });
-
-    await seed({ status: "stopped", runId: "r1" });
-    await run(agent.finished, {
-      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
-    });
-
-    expect(sent).toEqual([]);
-  });
-
   test("a newer run on the thread is named in what is said", async () => {
     const { agent, posts, seed } = setup({ recovery: true });
 

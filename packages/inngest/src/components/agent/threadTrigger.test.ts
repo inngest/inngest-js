@@ -83,39 +83,6 @@ describe("thread key from a trigger", () => {
     );
   });
 
-  test("a message made from a trigger comes back as itself after putBack", async () => {
-    const agent = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        kv,
-        on: {
-          event: "slack/message",
-          thread: slackThread,
-        },
-      },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-
-        if (first) {
-          inbox.putBack([first]);
-        }
-
-        const again = await inbox.next();
-
-        return [
-          again?.name,
-          again?.id,
-          (again?.data as { text?: string }).text,
-        ];
-      },
-    );
-
-    const { output } = await run(agent.fn, { event: slackMessage });
-
-    expect(output).toEqual(["slack/message", "evt1", "hi"]);
-  });
-
   test("the run starts from the trigger event: its thread, session and a subscription per event", async () => {
     const seen: { event?: string; if?: string }[] = [];
     let message: unknown;
@@ -141,19 +108,9 @@ describe("thread key from a trigger", () => {
     const { output } = await run(agent.fn, {
       event: slackMessage,
       onOp: (op) => {
-        const opts = op.opts as {
-          event?: string;
-          if?: string;
-          subscribe?: {
-            mode?: string;
-            streams?: { event: string; if?: string }[];
-          };
-        };
+        const opts = op.opts as { sources?: { event: string; if?: string }[] };
 
-        if (opts.subscribe?.mode === "open") {
-          seen.push({ event: opts.event, if: opts.if });
-          seen.push(...(opts.subscribe.streams ?? []));
-        }
+        seen.push(...(op.op === "Subscribe" ? (opts.sources ?? []) : []));
       },
     });
 
@@ -164,9 +121,7 @@ describe("thread key from a trigger", () => {
       data: { channel: "C1", text: "hi" },
     });
 
-    const opened = seen.filter((s) => {
-      return s.event;
-    });
+    const opened = seen;
     expect(
       opened.map((s) => {
         return s.event;
@@ -174,12 +129,11 @@ describe("thread key from a trigger", () => {
     ).toEqual([
       "agent/message",
       "agent/steer",
-      "agent/stop",
       "agent/request",
       "slack/message",
     ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[4]?.if).toBe(
+    expect(opened[3]?.if).toBe(
       `(event.data.bot != true) && (${slackThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",

@@ -2,17 +2,17 @@ import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
+import type { InboxRead } from "./inboxState.ts";
 
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
 /**
- * What `agent.loop()` reads to steer and stop through the agent's inbox.
+ * What `agent.loop()` reads to steer through the agent's inbox.
  */
 export interface AgentBridge {
   control?: {
     steer: () => Promise<{ id?: string; name: string; data: unknown }[]>;
-    stop: () => Promise<boolean>;
   };
 }
 
@@ -114,27 +114,45 @@ export interface AsyncContext {
     agent?: { thread: string; session: string };
 
     /**
-     * The messages of a `step.subscribe()` subscription, read from the run's
-     * state in the order the executor saved them. Only subscriptions use it.
+     * What the executor said it supports on this request. Undefined when
+     * unknown.
      */
-    subscriptionMessages?: (key: string) => unknown[];
+    executorCapabilities?: string[];
+
+    /**
+     * What an inbox (`step.subscribe()`) reads from the run's state: its
+     * messages in the order the executor saved them, and the last step of the
+     * stack this request loaded.
+     */
+    inbox?: {
+      read: (inbox: string, taken: number, wait: string) => InboxRead;
+      unread: (inbox: string, taken: number, upTo?: string) => string[];
+      message: (id: string) => unknown;
+      lastSeen: () => string;
+
+      /**
+       * Settles when replay reaches the message step `id` in the run's stack,
+       * after every found step earlier in the stack has been handed back.
+       */
+      place: (id: string) => Promise<void>;
+    };
 
     /**
      * Tells the engine that a step was skipped because its answer was already
-     * in the state, so it is not waited for. Only subscriptions use it.
+     * in the state, so it is not waited for. Only inboxes use it.
      */
     skipStep?: (id: string) => Promise<void>;
 
     /**
      * The inbox control of the agent run this function execution is, set by the
-     * agent function once it exists. `agent.loop()` uses it to steer and stop
+     * agent function once it exists. `agent.loop()` uses it to steer
      * when it is not given its own.
      */
     agentBridge?: AgentBridge;
 
     /**
      * The answer the run's state holds for a step, if it has one. Only
-     * subscriptions use it, to tell a park that timed out from one that has not
+     * inboxes use it, to tell a read that timed out from one that has not
      * been answered.
      */
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };

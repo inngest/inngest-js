@@ -137,10 +137,10 @@ check(
   turns,
 );
 
-// 4. stop now cancels the live run, and a stop on the idle thread starts nothing.
-await t1.stop({ when: "now" });
+// 4. stop cancels the live run, and a stop on the idle thread starts nothing.
+await t1.stop();
 await sleep(3000);
-await t1.stop({ when: "nextTurn" });
+await t1.stop();
 await sleep(3000);
 const afterStop = await t1.state();
 check(
@@ -153,7 +153,7 @@ check(
 const t5 = chat.thread(`stopnow-${run}`);
 await t5.send("long");
 await sleep(800);
-await t5.stop({ when: "now" });
+await t5.stop();
 await sleep(6000);
 const stopped = await t5.state();
 check(

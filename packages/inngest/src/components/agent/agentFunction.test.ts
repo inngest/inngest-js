@@ -8,6 +8,7 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { eventType, invoke, staticSchema } from "../triggers/triggers.ts";
+import type { ThreadInbox } from "./agentFunction.ts";
 import {
   type AgentFunctionConfig,
   createAgentFunction,
@@ -15,6 +16,7 @@ import {
 import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
+import { agentMessage } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { type AgentMessage, type AgentModelResponse, agent } from "./loop.ts";
 import { skills } from "./skills.ts";
@@ -29,7 +31,7 @@ const say = (text: string): AgentModelResponse => {
 };
 
 const message = (
-  kind: "user" | "steer" | "stop" | "request",
+  kind: "user" | "steer" | "request",
   content?: string,
   thread = "t1",
   extra: Record<string, unknown> = {},
@@ -47,12 +49,6 @@ const message = (
         name: "agent/steer",
         ...carried,
         data: { ...routing, text: content, ...data },
-      };
-    case "stop":
-      return {
-        name: "agent/stop",
-        ...carried,
-        data: { ...routing, when: "nextTurn", ...data },
       };
     case "request":
       return {
@@ -100,7 +96,6 @@ describe("agent function", () => {
       key: "event.data.thread",
       mode: "skip",
     });
-    // A stop never starts a run.
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
       "agent/steer",
@@ -117,14 +112,17 @@ describe("agent function", () => {
       async ({ inbox, control }) => {
         let history: AgentMessage[] = [];
         let last = "";
+        let n = -1;
 
         for await (const m of inbox) {
+          n += 1;
+
           const result = await agent.loop({
-            id: `turn${m.seq}`,
+            id: `turn${n}`,
             model: agent.model(async (request) => {
               prompts.push(userTexts(request.messages));
 
-              return say(`ok ${m.seq}`);
+              return say(`ok ${n}`);
             }),
             prompt: m,
             tools: {},
@@ -134,7 +132,7 @@ describe("agent function", () => {
           history = result.history;
           last = result.text;
 
-          if (m.seq === 2) {
+          if (n === 2) {
             break;
           }
         }
@@ -152,46 +150,6 @@ describe("agent function", () => {
     expect(prompts).toEqual([["one"], ["one", "two"], ["one", "two", "three"]]);
   });
 
-  test("steer messages fold into the running turn and a stop ends the loop; a user message waits for its own turn", async () => {
-    const seen: unknown[][] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        const first = await inbox.next();
-
-        const result = await agent.loop({
-          model: agent.model(async (request) => {
-            seen.push(userTexts(request.messages));
-
-            return {
-              message: { role: "assistant", content: [] },
-              toolCalls: [{ id: "c1", name: "missing", input: {} }],
-            };
-          }),
-          prompt: first ?? "",
-          tools: {},
-          ...control,
-        });
-        const next = await inbox.next();
-
-        return [result.stopped, result.turns, textOf(next)];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [
-        message("steer", "left"),
-        message("stop"),
-        message("user", "next"),
-      ],
-    });
-
-    expect(seen).toEqual([["go"]]);
-    expect(output).toEqual(["stopped", 1, "next"]);
-  });
-
   test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
@@ -203,16 +161,13 @@ describe("agent function", () => {
         return [first, second].map((m) => {
           return {
             name: m?.name,
-            seq: m?.seq,
             text: textOf(m),
             extra: m
               ? Object.keys(m).filter((key) => {
-                  return !["data", "id", "name", "seq", "ts", "user"].includes(
-                    key,
-                  );
+                  return !["data", "id", "name", "ts", "user"].includes(key);
                 })
               : null,
-            isMessage: m?.is("agent/message"),
+            isMessage: m?.is(agentMessage),
           };
         });
       },
@@ -226,14 +181,12 @@ describe("agent function", () => {
     expect(output).toEqual([
       {
         name: "agent/message",
-        seq: 0,
         text: "go",
         extra: [],
         isMessage: true,
       },
       {
         name: "agent/steer",
-        seq: 1,
         text: "left",
         extra: [],
         isMessage: false,
@@ -293,26 +246,6 @@ describe("agent function", () => {
       { agent: `${testClientId}/bot`, thread: "t1", text: "go" },
     ]);
   });
-
-  test("a stop message that arrives while waiting is skipped", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-        const second = await inbox.next();
-
-        return [textOf(first), textOf(second)];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("a"),
-      saved: [message("stop"), message("user", "b")],
-    });
-
-    expect(output).toEqual(["a", "b"]);
-  });
 });
 
 describe("inbox arrival", () => {
@@ -320,9 +253,12 @@ describe("inbox arrival", () => {
     return agent.model(async (request) => {
       seen.push(userTexts(request.messages));
 
+      // The first call asks for a tool, so a second call follows and folds in
+      // what arrived meanwhile; the second one ends the loop.
       return {
         message: { role: "assistant", content: [] },
-        toolCalls: [{ id: "c1", name: "missing", input: {} }],
+        toolCalls:
+          seen.length === 1 ? [{ id: "c1", name: "missing", input: {} }] : [],
       };
     });
   };
@@ -349,15 +285,11 @@ describe("inbox arrival", () => {
 
     const { output } = await run(fn, {
       event: trigger("go"),
-      saved: [
-        message("steer", "left"),
-        message("stop"),
-        message("user", "next"),
-      ],
+      saved: [message("steer", "left"), message("user", "next")],
     });
 
-    expect(seen).toEqual([["go"]]);
-    expect(output).toEqual(["stopped", 1, "next"]);
+    expect(seen).toEqual([["go"], ["go", "left"]]);
+    expect(output).toEqual(["done", 2, "next"]);
   });
 
   test("foldMessages: all folds a user message into the turn, and next() does not return it again", async () => {
@@ -401,17 +333,17 @@ describe("inbox arrival", () => {
     expect(output).toBe("nothing left");
   });
 
-  test("inbox.unread() takes the pending messages, stops included, and next() does not return them again", async () => {
+  test("inbox.drain() takes the pending messages, and next() does not return them again", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         await inbox.next();
-        const drained = await inbox.unread();
+        const drained = await inbox.drain();
         const after = await inbox.next({ timeout: "1s" });
 
         return [
-          drained.map((m) => {
+          drained.map((m: { name: string }) => {
             return m.name;
           }),
           after,
@@ -421,14 +353,11 @@ describe("inbox arrival", () => {
 
     const { output } = await run(fn, {
       event: trigger("go"),
-      saved: [message("user", "a"), message("stop"), message("steer", "b")],
+      saved: [message("user", "a"), message("steer", "b")],
       timeouts: 1,
     });
 
-    expect(output).toEqual([
-      ["agent/message", "agent/stop", "agent/steer"],
-      undefined,
-    ]);
+    expect(output).toEqual([["agent/message", "agent/steer"], null]);
   });
 
   describe("onArrival", () => {
@@ -543,7 +472,7 @@ describe("inbox sources", () => {
           {
             event: "ci/status",
             thread: "event.data.t",
-            if: 'event.data.state != "ok"',
+            if: 'async.data.state != "ok"',
           },
           {
             event: "deploy/done",
@@ -564,13 +493,17 @@ describe("inbox sources", () => {
       event: trigger("go"),
       incoming: [
         ci("red"),
-        { name: "deploy/done", data: { t: "t1", v: "1.2" }, stream: 5 },
+        { name: "deploy/done", data: { t: "t1", v: "1.2" } },
       ],
       onOp: (op) => {
-        const opts = op.opts as { event?: string; if?: string } | undefined;
+        const opts = op.opts as
+          | { sources?: { event: string; if?: string }[] }
+          | undefined;
 
-        if (opts?.event === "ci/status" || opts?.event === "deploy/done") {
-          filters.push([opts.event, opts.if]);
+        for (const source of opts?.sources ?? []) {
+          if (source.event === "ci/status" || source.event === "deploy/done") {
+            filters.push([source.event, source.if]);
+          }
         }
       },
     });
@@ -632,25 +565,18 @@ describe("inbox sources", () => {
     });
   });
 
-  test("listen() adds a source mid-run, stop() removes it, and a source needs a thread or an if", async () => {
+  test("every source is one subscribe of the handler's inbox: the run's own messages and the definition's sources, and no listen op", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: [{ event: "ci/status", thread: "event.data.t" }],
+      },
       async ({ inbox }) => {
         await inbox.next();
-        const listener = await inbox.listen("ci/status", {
-          thread: "event.data.t",
-        });
-        const heard = await inbox.next();
 
-        await listener.stop();
-
-        const bare = await inbox.listen("ci/status", {} as never).then(
-          () => "added",
-          (error: Error) => error.message,
-        );
-
-        return [heard?.name, bare];
+        return (await inbox.next())?.name;
       },
     );
 
@@ -659,94 +585,158 @@ describe("inbox sources", () => {
       incoming: [ci("red")],
     });
 
-    expect(output).toEqual([
-      "ci/status",
-      "An inbox source needs a `thread` or an `if`.",
-    ]);
+    expect(output).toBe("ci/status");
+
+    const opens = ops.filter((op) => {
+      return (op.opts as { sources?: unknown } | undefined)?.sources;
+    });
+
+    expect(opens).toHaveLength(1);
     expect(
-      ops.map((op) => {
-        return [op.mode, op.stream ?? 0];
+      (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
+        return s.event;
       }),
-    ).toContainEqual(["stop", 4]);
+    ).toEqual(["agent/message", "agent/steer", "agent/request", "ci/status"]);
   });
 
-  test("listen() returns the view of its event: it reads with its own cursor while the main inbox gets the events too", async () => {
+  test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inboxTools: {
+          listen: [{ event: "ci/status", thread: "event.data.t" }],
+        },
+      },
+      async ({ inbox, inboxTools, control }) => {
         await inbox.next();
-
-        const listener = await inbox.listen("ci/status", {
-          thread: "event.data.t",
+        await (
+          inboxTools.inbox_listen?.run as unknown as (
+            input: unknown,
+          ) => Promise<unknown>
+        )({
+          source: "ci/status",
+          match: { "data.state": "red" },
+          as: "ci",
         });
-        const viewed = await listener.next({ timeout: "1m" });
-        const all = await listener.current();
-        const unread = await listener.unread();
-        const main = await inbox.next();
 
-        return [
-          viewed?.name,
-          all.length,
-          unread.length,
-          main?.name,
-          typeof listener.stop,
-          Symbol.asyncIterator in listener,
-          Symbol.asyncDispose in listener,
-        ];
+        return control.inboxes().map((open) => {
+          return [open.as, open.source];
+        });
       },
     );
 
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      incoming: [ci("red")],
-    });
+    const { output, ops } = await run(fn, { event: trigger("go") });
 
     expect(output).toEqual([
-      "ci/status",
-      1,
-      0,
-      "ci/status",
-      "function",
-      true,
-      true,
+      [
+        "ci",
+        {
+          event: "ci/status",
+          if: '((async.data.state == "red")) && (async.data.t) == "t1"',
+        },
+      ],
     ]);
+    expect(
+      ops.some((op) => {
+        return (
+          op.opts as { sources?: { event: string }[] } | undefined
+        )?.sources?.some((source) => {
+          return source.event === "ci/status";
+        });
+      }),
+    ).toBe(true);
   });
 
-  test("current() lists every message saved so far, stops included but not the trigger, and moves no cursor", async () => {
+  test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox }) => {
         const first = await inbox.next();
-        const all = await inbox.current();
         const second = await inbox.next();
 
-        return [
-          textOf(first),
-          all.map((m) => {
-            return m.name;
-          }),
-          textOf(second),
-        ];
+        return [first?.name, second?.name];
       },
     );
 
-    const { output } = await run(fn, {
+    const { output, ops, reads } = await run(fn, {
       event: trigger("go"),
-      saved: [message("user", "b"), message("stop"), message("user", "c")],
+      incoming: [message("user", "again")],
+      runId: "run-start-row",
     });
 
-    expect(output).toEqual([
-      "go",
-      ["agent/message", "agent/stop", "agent/message"],
-      "b",
-    ]);
+    expect(output).toEqual(["agent/message", "agent/message"]);
+    expect(reads).toContain("inbox:start");
+    // The read is lazy: it is not one of the ops that cost a step.
+    expect(
+      ops.map((op) => {
+        return op.id;
+      }),
+    ).not.toContain("inbox:start");
   });
-});
 
-describe("inbox timeouts", () => {
-  test("next({ timeout }) returns undefined when it expires, and a later message is read by the next call", async () => {
+  test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
+    const names = ["reply", "reaction", "mention", "tap", "dry"] as const;
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "improver",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        inbox: names.map((name) => {
+          return {
+            event: `slack/${name}`,
+            if: "async.data.thread == event.data.thread",
+          };
+        }),
+      },
+      async ({ inbox }) => {
+        await inbox.next();
+        const heard: string[] = [];
+
+        for (const _ of names) {
+          const next = await inbox.next();
+
+          heard.push(next?.name ?? "none");
+        }
+
+        return heard;
+      },
+    );
+
+    const { output, ops } = await run(fn, {
+      event: trigger("go"),
+      incoming: names.map((name) => {
+        return { name: `slack/${name}`, data: { thread: "t1" }, stream: 4 };
+      }),
+    });
+
+    expect(output).toEqual(names.map((name) => `slack/${name}`));
+
+    const sources = ops.flatMap((op) => {
+      return (
+        (op.opts as { sources?: { event: string; if?: string }[] })?.sources ??
+        []
+      );
+    });
+
+    // The if is handed to the executor as written: `event` is the trigger.
+    expect(
+      sources.filter((source) => {
+        return source.event.startsWith("slack/");
+      }),
+    ).toEqual(
+      names.map((name) => {
+        return {
+          event: `slack/${name}`,
+          if: "(async.data.thread == event.data.thread)",
+        };
+      }),
+    );
+  });
+
+  test("next({ timeout }) returns null when it expires, and a later message is read by the next call", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -765,28 +755,7 @@ describe("inbox timeouts", () => {
       timeouts: 1,
     });
 
-    expect(output).toEqual(["a", undefined, "b"]);
-  });
-
-  test("a stop message that is skipped starts a new wait, which can expire", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        await inbox.next();
-        const expired = await inbox.next({ timeout: "1s" });
-
-        return expired === undefined ? "expired" : "message";
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("a"),
-      saved: [message("stop")],
-      timeouts: 1,
-    });
-
-    expect(output).toBe("expired");
+    expect(output).toEqual(["a", null, "b"]);
   });
 
   test("a message that arrives before the timeout is returned", async () => {
@@ -840,7 +809,55 @@ describe("agent cleanup", () => {
     expect(await bound.scope("run", "run2").all()).toEqual({ scratch: 2 });
   });
 
-  test("the agent function defers the cleanup with its run ID", async () => {
+  test("the trigger is the inbox's first message and is read without a step or a wait", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        const first = await inbox.next();
+
+        return textOf(first);
+      },
+    );
+
+    const { output, ops } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("go");
+    expect(
+      ops.map((op) => {
+        return op.op;
+      }),
+    ).not.toContain("wait");
+  });
+
+  test("nextBatch() returns what is unread, skipping a message that breaks nothing, and a closed inbox returns undefined", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox }) => {
+        await inbox.next();
+        const batch = await inbox.nextBatch();
+        await inbox.close();
+        const closed = await inbox.next();
+
+        return [
+          batch?.map((m) => {
+            return textOf(m);
+          }),
+          closed,
+        ];
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: trigger("go"),
+      saved: [message("user", "a"), message("steer", "b")],
+    });
+
+    expect(output).toEqual([["a", "b"], undefined]);
+  });
+
+  test("the agent opens one inbox for its own events, with a source per event", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
@@ -849,44 +866,14 @@ describe("agent cleanup", () => {
 
     const { ops } = await run(fn, { event: trigger("hi") });
 
-    expect(ops[0]).toMatchObject({
-      id: "inbox:open:all",
-      mode: "open",
-      streams: 4,
-    });
-  });
-});
-
-describe("steering", () => {
-  test("a stop sent after a next-turn message still applies to the running turn, and the next-turn message keeps its place", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        const first = await inbox.next();
-        const result = await agent.loop({
-          model: agent.model(async () => {
-            return {
-              message: { role: "assistant", content: [] },
-              toolCalls: [{ id: "c1", name: "missing", input: {} }],
-            };
-          }),
-          prompt: first ?? "",
-          tools: {},
-          ...control,
-        });
-        const next = await inbox.next();
-
-        return [result.stopped, textOf(next)];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("user", "next"), message("stop")],
-    });
-
-    expect(output).toEqual(["stopped", "next"]);
+    expect(ops[0]).toMatchObject({ id: "inbox", op: "open" });
+    expect(
+      (ops[0]?.opts as { sources: { event: string }[] }).sources.map(
+        (source) => {
+          return source.event;
+        },
+      ),
+    ).toEqual(["agent/message", "agent/steer", "agent/request"]);
   });
 });
 
@@ -973,15 +960,19 @@ describe("thread state", () => {
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
-    // The body replays on every request, so a turn's record is kept by seq.
+    // The body replays on every request, so a turn's record is kept by turn.
     const seen = new Map<number, unknown>();
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot", kv },
       async ({ inbox, control }) => {
+        let n = -1;
+
         for await (const m of inbox) {
+          n += 1;
+
           await agent.loop({
-            id: `turn${m.seq}`,
+            id: `turn${n}`,
             model: agent.model(async () => {
               return {
                 ...say(`reply to ${textOf(m)}`),
@@ -992,9 +983,9 @@ describe("thread state", () => {
             tools: {},
             ...control,
           });
-          seen.set(m.seq, await record(kv));
+          seen.set(n, await record(kv));
 
-          if (m.seq === 1) {
+          if (n === 1) {
             break;
           }
         }
@@ -1043,6 +1034,68 @@ describe("thread state", () => {
     expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
+  test("a batch waited for after the first marks the thread waiting", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        for await (const _batch of inbox.batches()) {
+          // Each batch is answered, then the next one is waited for.
+        }
+      },
+    );
+
+    // The second read finds nothing, so the run ends waiting.
+    await run(fn, { event: trigger("one") });
+
+    expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
+  });
+
+  test("a delivered batch after the first marks the thread running with its message in flight", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.next();
+        await inbox.nextBatch();
+        seen.push(await record(kv));
+      },
+    );
+
+    await run(fn, {
+      event: trigger("one"),
+      saved: [message("user", "two")],
+    });
+
+    expect(seen.at(-1)).toMatchObject({
+      status: "running",
+      inflight: { text: "two" },
+    });
+  });
+
+  test("a batch wait that expires marks the thread running again when a message was delivered", async () => {
+    const kv = createKv({ adapter: memoryKvAdapter() });
+    const seen: unknown[] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv },
+      async ({ inbox }) => {
+        await inbox.nextBatch();
+        await inbox.nextBatch({ timeout: "1s" }).catch(() => undefined);
+        seen.push(
+          ((await record(kv)) as { status?: string } | undefined)?.status,
+        );
+      },
+    );
+
+    await run(fn, { event: trigger("one"), timeouts: 1 });
+
+    expect(seen.at(-1)).toBe("running");
+  });
+
   test("a wait that expires marks the thread running again when a message was delivered", async () => {
     const kv = createKv({ adapter: memoryKvAdapter() });
     const seen: unknown[] = [];
@@ -1062,131 +1115,6 @@ describe("thread state", () => {
 
     // The wait marked the thread waiting; its expiry means the agent goes on.
     expect(seen.at(-1)).toBe("running");
-  });
-
-  test("a wait that expires after only a skipped stop leaves a running thread running", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const seen: unknown[] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv },
-      async ({ inbox }) => {
-        await inbox.next();
-        const before = ((await record(kv)) as { status?: string } | undefined)
-          ?.status;
-        // The next message is a stop, which the inbox skips.
-        const expired = await inbox.next({ timeout: "1s" });
-
-        seen.push(
-          expired,
-          before,
-          ((await record(kv)) as { status?: string } | undefined)?.status,
-        );
-      },
-    );
-
-    await run(fn, {
-      event: trigger("go"),
-      saved: [message("stop")],
-      timeouts: 1,
-    });
-
-    // The body ran again for each request; the last run is the final one.
-    expect(seen.length).toBeGreaterThanOrEqual(3);
-    expect(seen.slice(-3)).toEqual([undefined, "running", "running"]);
-  });
-
-  test("a wait that expires does not undo a stop", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const seen: unknown[] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv },
-      async ({ inbox }) => {
-        await inbox.next();
-        await kv
-          .with({ id: testClientId, env: null })
-          .scope("thread", "t1")
-          .set("__state", { status: "stopped", turn: 0, runId: "run" });
-        await inbox.next({ timeout: "1s" });
-        seen.push(
-          ((await record(kv)) as { status?: string } | undefined)?.status,
-        );
-      },
-    );
-
-    await run(fn, { event: trigger("one"), timeouts: 1 });
-
-    expect(seen.at(-1)).toBe("stopped");
-  });
-
-  test("honoring a stop request marks the thread stopped", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv },
-      async ({ inbox, control }) => {
-        await inbox.next();
-        await agent.loop({
-          model: agent.model(async () => {
-            return {
-              message: { role: "assistant", content: [] },
-              toolCalls: [{ id: "c1", name: "missing", input: {} }],
-            };
-          }),
-          prompt: "go",
-          tools: {},
-          ...control,
-        });
-      },
-    );
-
-    await run(fn, { event: trigger("go"), saved: [message("stop")] });
-
-    expect(await record(kv)).toMatchObject({ status: "stopped" });
-  });
-
-  test("a stop request is scored on the step that records it, unless scores are off", async () => {
-    const scored: string[] = [];
-
-    for (const scores of [true, false]) {
-      const kv = createKv({ adapter: memoryKvAdapter() });
-      const { fn } = createAgentFunction(
-        makeClient(),
-        { id: "bot", kv, scores },
-        async ({ inbox, control }) => {
-          await inbox.next();
-          await agent.loop({
-            model: agent.model(async () => {
-              return {
-                message: { role: "assistant", content: [] },
-                toolCalls: [{ id: "c1", name: "missing", input: {} }],
-              };
-            }),
-            prompt: "go",
-            tools: {},
-            ...control,
-          });
-        },
-      );
-
-      await run(fn, {
-        event: trigger("go"),
-        saved: [message("stop")],
-        onStep: (op) => {
-          for (const update of op.metadata ?? []) {
-            if (update.kind.startsWith("inngest.score.agent.stopped")) {
-              scored.push(`${scores}:${op.userland?.id}`);
-            }
-          }
-        },
-      });
-    }
-
-    expect(scored.length).toBeGreaterThan(0);
-    expect(scored.every((entry) => entry.startsWith("true:kv.update"))).toBe(
-      true,
-    );
   });
 
   test("a finished run marks its own record idle and leaves a newer run's alone", async () => {

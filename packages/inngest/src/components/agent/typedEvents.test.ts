@@ -42,7 +42,6 @@ describe("typed events", () => {
           | "shop/order.created"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();
@@ -59,9 +58,6 @@ describe("typed events", () => {
           case "agent/steer":
             expectTypeOf(message.data.text).toBeString();
             expectTypeOf(message.data.thread).toBeString();
-            break;
-          case "agent/stop":
-            expectTypeOf(message.data.when).toEqualTypeOf<"nextTurn">();
             break;
           case "agent/request":
             expectTypeOf(message.data.replyTo).toBeString();
@@ -189,7 +185,7 @@ describe("typed events", () => {
     );
   });
 
-  test("is() narrows the messages of on, and a source's messages are typed through a view", () => {
+  test("is() narrows the messages of on and of the sources", () => {
     agents.agent(
       {
         id: "a-src",
@@ -204,10 +200,12 @@ describe("typed events", () => {
           expectTypeOf(message.data.total).toBeNumber();
         }
 
-        // A source's message keeps its own event name; the view types it.
-        const refunds = await inbox.of(refund).next();
+        // A source's message keeps its own event name; is() types it.
+        const refunds = await inbox.next();
 
-        expectTypeOf(refunds?.data.amount).toEqualTypeOf<number | undefined>();
+        if (refunds?.is(refund)) {
+          expectTypeOf(refunds.data.amount).toBeNumber();
+        }
 
         return undefined;
       },
@@ -224,7 +222,6 @@ describe("typed events", () => {
           | "slack/message"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();
@@ -244,7 +241,6 @@ describe("typed events", () => {
         | "inngest/scheduled.timer"
         | "agent/message"
         | "agent/steer"
-        | "agent/stop"
         | "agent/request"
         | undefined
       >();

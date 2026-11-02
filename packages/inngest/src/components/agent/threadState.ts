@@ -26,7 +26,6 @@ import {
   turnInFlight,
   turnOf,
 } from "./recovery.ts";
-import { scoreThisStep } from "./scores.ts";
 import {
   type Inflight,
   lastRunRecordKey,
@@ -91,10 +90,6 @@ export const threadRecorder = (
    * The live run, stamped on every write.
    */
   runId: string,
-  /**
-   * Whether the stop is scored `agent.stopped` on its own step.
-   */
-  scores = false,
 ) => {
   // How many times this run has continued in another process, as the latest
   // write saw it. Every write is a memoized step, so a replay reads the same
@@ -189,37 +184,21 @@ export const threadRecorder = (
     },
 
     /**
-     * The run waits for its next message. A thread that honored a stop stays
-     * stopped until a message runs it.
+     * The run waits for its next message.
      */
     waiting: () => {
-      return record((current) => {
-        return current.status === "stopped"
-          ? {}
-          : { status: "waiting", inflight: undefined };
+      return record(() => {
+        return { status: "waiting", inflight: undefined };
       });
     },
 
     /**
      * A wait for the next message ended without one. A thread that was waiting
-     * is running again; one that honored a stop stays stopped.
+     * is running again.
      */
     resumed: () => {
       return record((current) => {
         return current.status === "waiting" ? { status: "running" } : {};
-      });
-    },
-
-    /**
-     * The thread honored a stop request.
-     */
-    stopped: () => {
-      return record(() => {
-        if (scores) {
-          scoreThisStep("agent.stopped", 1);
-        }
-
-        return { status: "stopped", inflight: undefined };
       });
     },
 
@@ -307,7 +286,7 @@ export const markThreadIdle = async (
   await store.scope("thread", thread).update(recordKey, (found) => {
     const current = found ?? emptyRecord();
 
-    return current.runId === runId && current.status !== "stopped"
+    return current.runId === runId
       ? withTransition(current, { ...current, status: "idle" as const })
       : current;
   });

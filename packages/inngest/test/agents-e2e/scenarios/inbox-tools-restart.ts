@@ -3,8 +3,8 @@
  * Proves the model's inbox listeners survive a worker restart. The model
  * listens to an event with a `match`, the app process is killed and started
  * again, and only then do events arrive: one the `match` excludes and one it
- * admits. The model's `inbox_wait` then returns the admitted one, and
- * `inbox_read` and `inbox_stop` still know the listener, so the tools' state
+ * admits. The model's `inbox_next` then returns the admitted one, and
+ * `inbox_next_batch` and `inbox_close` still know the listener, so the tools' state
  * is rebuilt from the memoized steps of the run, not kept in the process.
  */
 import { Inngest } from "inngest";
@@ -63,7 +63,7 @@ export const inboxToolsRestart = scenario({
       async ({ inbox, control, inboxTools: tools }) => {
         for await (const message of inbox) {
           const result = await agent.loop({
-            id: `turn${message.seq}`,
+            id: `turn:${message.id}`,
             model: agent.model(async (request) => {
               switch (request.turn) {
                 case 1:
@@ -73,11 +73,11 @@ export const inboxToolsRestart = scenario({
                     as: "ci",
                   });
                 case 2:
-                  return call(2, "inbox_wait", { timeout: "5m", as: "ci" });
+                  return call(2, "inbox_next", { timeout: "5m", as: "ci" });
                 case 3:
-                  return call(3, "inbox_read", { all: true });
+                  return call(3, "inbox_next_batch", { as: "ci" });
                 case 4:
-                  return call(4, "inbox_stop", { as: "ci" });
+                  return call(4, "inbox_close", { as: "ci" });
                 default:
                   return {
                     message: {
@@ -148,7 +148,7 @@ export const inboxToolsRestart = scenario({
     ctx.check(
       "an event the match excludes does not end the wait, after a restart",
       !(await log()).some((line) => {
-        return line.startsWith("inbox_wait");
+        return line.startsWith("inbox_next");
       }),
       await log(),
     );
@@ -167,27 +167,27 @@ export const inboxToolsRestart = scenario({
 
     ctx.check("the model finished", finished === "done", finished);
     ctx.check(
-      "inbox_wait returned the admitted event",
+      "inbox_next returned the admitted event",
       final.some((line) => {
-        return line.startsWith("inbox_wait:ok") && line.includes("green");
+        return line.startsWith("inbox_next:ok") && line.includes("green");
       }),
       final,
     );
     ctx.check(
-      "inbox_read knew the listener and saw only the admitted event",
+      "inbox_next_batch knew the listener and had nothing newer than the admitted event",
       final.some((line) => {
         return (
-          line.startsWith("inbox_read:ok") &&
-          line.includes("green") &&
+          line.startsWith("inbox_next_batch:ok") &&
+          line.includes('"messages":[]') &&
           !line.includes("red")
         );
       }),
       final,
     );
     ctx.check(
-      "inbox_stop knew the listener",
+      "inbox_close knew the listener",
       final.some((line) => {
-        return line.startsWith("inbox_stop:ok");
+        return line.startsWith("inbox_close:ok");
       }),
       final,
     );

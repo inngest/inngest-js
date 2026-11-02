@@ -148,6 +148,7 @@ export const runFnWithStack = async (
     disableImmediateExecution?: boolean;
     attempt?: number;
     maxAttempts?: number;
+    runId?: string;
   },
 ) => {
   const execution = fn["createExecution"]({
@@ -156,11 +157,11 @@ export const runFnWithStack = async (
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
         events: opts?.events,
-        runId: "run",
+        runId: opts?.runId ?? "run",
         attempt: opts?.attempt,
         maxAttempts: opts?.maxAttempts,
       }),
-      runId: "run",
+      runId: opts?.runId ?? "run",
       stepState,
       priorDefers: opts?.priorDefers,
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),

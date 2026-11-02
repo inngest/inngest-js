@@ -15,7 +15,6 @@ import {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   getThread,
   type ThreadHandle,
 } from "./thread.ts";
@@ -95,7 +94,7 @@ export function threadListSql(
 ): string {
   const session = "JSONExtractString(meta, 'sessions', 'agent_session')";
   const filters = [
-    `name IN (${[agentMessageEvent, agentSteerEvent, agentStopEvent, agentRequestEvent].map(literal).join(", ")})`,
+    `name IN (${[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(literal).join(", ")})`,
     `JSONExtractString(data, 'agent') = ${literal(agent)}`,
     ...(options.session === undefined
       ? []

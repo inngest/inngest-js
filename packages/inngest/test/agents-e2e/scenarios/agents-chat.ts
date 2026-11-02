@@ -1,6 +1,6 @@
 /**
  * @module
- * A chat agent on `step.subscribe`: every message is a turn, steering and
+ * A chat agent on `step.subscribeLegacy`: every message is a turn, steering and
  * stopping reach the running turn, a burst is processed once each, and
  * stopping an idle thread starts nothing.
  */
@@ -57,7 +57,7 @@ export const agentsChat = scenario({
         });
         const history = await kv.thread.get(kvKey<never[]>("history"));
         const result = await agent.loop({
-          id: `turn${message.seq}`,
+          id: `turn:${message.id}`,
           model: script([
             { call: { name: "think", input: {} } },
             { say: "echo: {{last}}" },
@@ -69,7 +69,7 @@ export const agentsChat = scenario({
         });
 
         await kv.thread.set("history", result.history);
-        await kv.thread.set("last", { seq: message.seq, text: result.text });
+        await kv.thread.set("last", { id: message.id, text: result.text });
         await kv.thread.update(kvKey<string[]>("turns"), function (turns) {
           return [...(turns ?? []), textOf(message) ?? ""];
         });
@@ -152,11 +152,11 @@ export const agentsChat = scenario({
       turns,
     );
 
-    // stop now cancels the live run; a stop with no live run starts nothing.
+    // stop cancels the live run; a stop with no live run starts nothing.
     const before = ((await t1.state()).turns as string[]).length;
-    await t1.stop({ when: "now" });
+    await t1.stop();
     await sleep(2000);
-    await t1.stop({ when: "nextTurn" });
+    await t1.stop();
     await sleep(2000);
     ctx.check(
       "stop on an idle thread starts no run",
@@ -169,7 +169,7 @@ export const agentsChat = scenario({
     await ctx.until(t2.state, (s) => {
       return ((s.started as string[] | undefined) ?? []).includes("long");
     });
-    await t2.stop({ when: "now" });
+    await t2.stop();
     await sleep(3000);
     ctx.check(
       "stop now cancels the running turn",

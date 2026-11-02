@@ -75,12 +75,12 @@ describe("scoreThisStep", () => {
   test("rides on the step that is running, at step scope", async () => {
     const scores = await stepScores(async () => {
       scoreThisStep("agent.model_ms", 12);
-      scoreThisStep("agent.stopped", true);
+      scoreThisStep("agent.tool_error", true);
     });
 
     expect(scores).toEqual({
       "agent.model_ms": { scope: "step", value: 12 },
-      "agent.stopped": { scope: "step", value: true },
+      "agent.tool_error": { scope: "step", value: true },
     });
   });
 

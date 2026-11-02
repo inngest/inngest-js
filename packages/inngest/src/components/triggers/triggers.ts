@@ -1,6 +1,8 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { EventMeta } from "../../types.ts";
+import { matchesEventName } from "./eventName.ts";
+import type { EventTypeToShape } from "./typeHelpers.ts";
 
 /**
  * Represents a cron trigger for scheduled function execution.
@@ -23,8 +25,7 @@ type EventTrigger = {
   event: string;
   if?: string;
 
-  // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
-  schema?: StandardSchemaV1<any>;
+  schema?: StandardSchemaV1<Record<string, unknown>>;
 };
 
 /**
@@ -105,8 +106,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
   TName,
-  // biome-ignore lint/suspicious/noExplicitAny: any is fine
-  any
+  StandardSchemaV1<Record<string, unknown>> | undefined
 >;
 
 /**
@@ -144,6 +144,16 @@ export class EventType<
     this.name = name;
     this.schema = schema;
     this.version = version;
+  }
+
+  /**
+   * Narrows any value, including plain JSON such as the result of an
+   * `invoke`, to this event type. A name check.
+   */
+  is<TValue>(
+    value: TValue, // the value to check
+  ): value is TValue & EventTypeToShape<EventType<TName, TSchema>> {
+    return hasEventName(value, this.name);
   }
 
   /**
@@ -200,6 +210,44 @@ export class EventType<
 
     return event;
   }
+}
+
+/**
+ * Whether a value is an object whose event name matches the given name, which
+ * may end in a wildcard as a trigger's does.
+ */
+export function hasEventName(value: unknown, name: string): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const valueName = (value as { name?: unknown }).name;
+
+  return typeof valueName === "string" && matchesEventName(valueName, name);
+}
+
+/**
+ * Adds `is()` to an event the SDK hands to user code. The method is not
+ * enumerable, so the event serialises and compares as it did before.
+ */
+export function addEventIs<TEvent extends object>(event: TEvent): TEvent {
+  if (typeof event !== "object" || event === null || "is" in event) {
+    return event;
+  }
+
+  Object.defineProperty(event, "is", {
+    value: (types: { name: string } | readonly { name: string }[]): boolean => {
+      const list = Array.isArray(types) ? types : [types];
+
+      return list.some((type) => {
+        return hasEventName(event, type.name);
+      });
+    },
+    enumerable: false,
+    configurable: true,
+  });
+
+  return event;
 }
 
 /**

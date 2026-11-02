@@ -39,18 +39,6 @@
 
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
-export type {
-  ExactOptions,
-  InboxMessage,
-  NamedOptions,
-  NextOptions,
-  SubscribeData,
-  SubscribeEvent,
-  SubscribeMessages,
-  SubscribeOptions,
-  SubscribeTool,
-  Subscription,
-} from "./components/agent/subscribe";
 export { experiment } from "./components/ExperimentStrategies.ts";
 export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
@@ -75,6 +63,15 @@ export type {
   ParallelOptions,
 } from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
+export type {
+  BatchOptions,
+  Inbox,
+  InboxMessage,
+  InboxMessageOf,
+  InboxSources,
+  ReadOptions,
+  UntypedInboxMessage,
+} from "./components/inbox/Inbox";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
@@ -88,7 +85,12 @@ export {
   invoke,
   staticSchema,
 } from "./components/triggers/triggers.ts";
-export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
+export type {
+  EventIs,
+  EventShape,
+  EventTypeToShape,
+  HandlerWithTriggers,
+} from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,

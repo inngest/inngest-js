@@ -99,7 +99,7 @@ export const agentsCron = scenario({
       live,
     );
 
-    await thread.stop({ when: "now" });
+    await thread.stop();
     const again = await ctx.until(
       keys,
       (s) => {

@@ -86,6 +86,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { Stream } from "../StreamTools.ts";
+import { addEventIs } from "../triggers/triggers.ts";
 import { validateEvents } from "../triggers/utils.js";
 import {
   getAsyncCtx,
@@ -102,6 +103,12 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
+import {
+  inboxMessage,
+  inboxRead,
+  inboxUnread,
+  unseenSteps,
+} from "./inboxState.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
@@ -115,7 +122,6 @@ import {
   prependToStream,
   type SseResponse,
 } from "./streaming.ts";
-import { stepsToBeSeen, subscriptionMessages } from "./subscription.ts";
 
 const { sha1 } = hashjs;
 
@@ -185,6 +191,14 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+
+  /**
+   * Settles when replay reaches a step in the run's stack. Set up with the step
+   * tools, which own the order steps are handed back in.
+   */
+  private reachStackPlace: (id: string) => Promise<void> = () => {
+    return Promise.resolve();
+  };
   private failuresAreFinal = false;
   private middlewareManager: MiddlewareManager;
   /**
@@ -311,10 +325,6 @@ class InngestExecutionEngine
 
       const tracer = trace.getTracer("inngest", version);
 
-      // The state of a request does not change, so a subscription's messages are
-      // read out of it once.
-      const subscriptionMessagesByKey = new Map<string, unknown[]>();
-
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
           {
@@ -323,19 +333,35 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               functionId: this.options.fn.id(),
-              subscriptionMessages: (key: string) => {
-                let messages = subscriptionMessagesByKey.get(key);
-
-                if (!messages) {
-                  messages = subscriptionMessages(
-                    key,
+              executorCapabilities: this.options.executorCapabilities,
+              inbox: {
+                read: (inbox: string, taken: number, wait: string) => {
+                  return inboxRead(
+                    inbox,
+                    taken,
+                    wait,
                     this.options.stepCompletionOrder,
                     this.options.stepState,
                   );
-                  subscriptionMessagesByKey.set(key, messages);
-                }
-
-                return messages;
+                },
+                unread: (inbox: string, taken: number, upTo?: string) => {
+                  return inboxUnread(
+                    inbox,
+                    taken,
+                    this.options.stepCompletionOrder,
+                    this.options.stepState,
+                    upTo,
+                  );
+                },
+                message: (id: string) => {
+                  return inboxMessage(id, this.options.stepState);
+                },
+                lastSeen: () => {
+                  return this.options.stepCompletionOrder.at(-1) ?? "";
+                },
+                place: (id: string) => {
+                  return this.reachStackPlace(id);
+                },
               },
               skipStep: async (id: string) => {
                 this.state.remainingStepsToBeSeen.delete(hashId(id));
@@ -2260,10 +2286,10 @@ class InngestExecutionEngine
       loop,
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
-      // Messages of a subscription are read from the state, never requested as
+      // Messages of an inbox are read from the state, never requested as
       // steps, so they are not waited for.
       remainingStepsToBeSeen: new Set(
-        stepsToBeSeen(this.options.stepCompletionOrder),
+        unseenSteps(this.options.stepCompletionOrder, this.options.stepState),
       ),
       setCheckpoint: (checkpoint: Checkpoint) => {
         this.devDebug("setting checkpoint:", checkpoint.type);
@@ -2297,6 +2323,11 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
       defer,
     } as unknown as Context.Any;
+
+    addEventIs(fnArg.event);
+    for (const event of fnArg.events ?? []) {
+      addEventIs(event);
+    }
 
     // Aggregate the run's triggering events into its propagated sessions in
     // `ctx.sessions`
@@ -2346,11 +2377,13 @@ class InngestExecutionEngine
 
     // Mutate in place so the ALS store's reference to this.fnArg stays valid.
     if (event !== this.fnArg.event) {
-      this.fnArg.event = event;
+      this.fnArg.event = addEventIs(event);
     }
 
     if (events !== this.fnArg.events) {
-      this.fnArg.events = events;
+      this.fnArg.events = events.map((e) => {
+        return addEventIs(e);
+      }) as typeof events;
     }
 
     if (step !== this.fnArg.step) {
@@ -2389,7 +2422,10 @@ class InngestExecutionEngine
      * A map of the subset of found steps to report that have not yet been
      * handled. Used for fast access to steps that need to be handled in order.
      */
-    const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
+    const unhandledFoundStepsToReport: Map<
+      string,
+      Pick<FoundStep, "handle">
+    > = new Map();
 
     /**
      * A map of the latest sequential step indexes found for each step ID. Used
@@ -2518,6 +2554,44 @@ class InngestExecutionEngine
       foundStepsToReport.set(step.hashedId, step);
       unhandledFoundStepsToReport.set(step.hashedId, step);
       reportNextTick();
+    };
+
+    /**
+     * Resolvers of the reads waiting for a message step's place in the stack.
+     */
+    const stackPlaces = new Map<string, (() => void)[]>();
+
+    /**
+     * Settles when a step already in the stack is handed back, in the same order
+     * as the found steps: a read answered from state waits here so it settles at
+     * its message's place, never before a step that comes earlier.
+     */
+    this.reachStackPlace = (id: string) => {
+      if (!remainingStepCompletionOrder.includes(id)) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        const waiting = stackPlaces.get(id);
+        if (waiting) {
+          waiting.push(resolve);
+
+          return;
+        }
+
+        stackPlaces.set(id, [resolve]);
+        unhandledFoundStepsToReport.set(id, {
+          handle: () => {
+            for (const resolver of stackPlaces.get(id) ?? []) {
+              resolver();
+            }
+            stackPlaces.delete(id);
+
+            return true;
+          },
+        });
+        reportNextTick();
+      });
     };
 
     const stepHandler: StepHandler = async ({
@@ -2755,15 +2829,9 @@ class InngestExecutionEngine
                   if (typeof result.data !== "undefined") {
                     // Validate waitForEvent results against the schema if present
                     // Skip validation if result.data is null (timeout case)
-                    //
-                    // Subscription ops (`step.subscribe`) answer with their own
-                    // shapes (acks, counts), so they are not validated here.
                     if (
                       opId.op === StepOpCode.WaitForEvent &&
-                      result.data !== null &&
-                      !(
-                        step.rawArgs?.[1] as { subscribe?: unknown } | undefined
-                      )?.subscribe
+                      result.data !== null
                     ) {
                       const { event } = (step.rawArgs?.[1] ?? {}) as {
                         event: unknown;

@@ -22,9 +22,6 @@ import { agent } from "./loop.ts";
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
 });
-const refund = eventType("shop/refund.created", {
-  schema: z.object({ order: z.string(), amount: z.number() }),
-});
 const asked = invoke(z.object({ question: z.string() }));
 
 const agents = createAgents(new Inngest({ id: testClientId }));
@@ -59,7 +56,7 @@ const lookup = tool.step({
 });
 
 describe("composition", () => {
-  test("an agent on an event type uses typed agents, subscriptions, channels and sandboxes", () => {
+  test("an agent on an event type uses typed agents, channels and sandboxes", () => {
     agents.agent(
       {
         id: "lead",
@@ -76,26 +73,6 @@ describe("composition", () => {
 
         expectTypeOf(found).toEqualTypeOf<{ answer: string }>();
 
-        const refunds = await step.subscribe("refunds", { event: refund });
-        const refunded = await refunds.next();
-
-        expectTypeOf(refunded?.data.amount).toEqualTypeOf<number | undefined>();
-
-        const mixed = await step.subscribe("mixed", {
-          events: [{ event: order }, { event: refund }],
-        });
-        const either = await mixed.next();
-
-        expectTypeOf(either?.data).toEqualTypeOf<
-          | { id: string; total: number }
-          | { order: string; amount: number }
-          | undefined
-        >();
-
-        const named = await step.subscribe("named", { event: "x/y" });
-
-        expectTypeOf((await named.next())?.data).toBeUnknown();
-
         await report("found it");
         await report({ text: "done", kind: "result" });
 
@@ -105,7 +82,6 @@ describe("composition", () => {
           | "shop/order.created"
           | "agent/message"
           | "agent/steer"
-          | "agent/stop"
           | "agent/request"
           | undefined
         >();
@@ -135,28 +111,6 @@ describe("composition", () => {
     expectTypeOf<
       NonNullable<(typeof lead)["~types"]>["output"]
     >().toEqualTypeOf<{ ok: true }>();
-  });
-
-  test("an explicit subscription type is for named events, and any stays any", () => {
-    const check = async () => {
-      const explicit = await step.subscribe<{ q: 1 }>("e", {
-        event: "shop/order.created",
-      });
-
-      expectTypeOf((await explicit.next())?.data).toEqualTypeOf<
-        { q: 1 } | undefined
-      >();
-
-      // biome-ignore lint/suspicious/noExplicitAny: the test is that any stays any
-      const loose = await step.subscribe<any>("l", { event: "shop/x" });
-
-      expectTypeOf((await loose.next())?.data).toBeAny();
-
-      // @ts-expect-error an event type gives the message data, so it is not overridden
-      await step.subscribe<{ q: 1 }>("o", { event: order });
-    };
-
-    expect(check).toBeTypeOf("function");
   });
 });
 

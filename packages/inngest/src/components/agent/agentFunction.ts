@@ -5,10 +5,10 @@
  * conversation that spans runs:
  *
  * - a singleton per thread, so there is never more than one live run per thread;
- * - `inbox`, a `step.subscribe()` of the thread's messages, whose first message
+ * - `inbox`, a `step.subscribe()` inbox of the thread's messages, whose first message
  *   is the event that started the run;
  * - `control`, which spreads into `agent.loop()` so a running turn takes
- *   steering messages and a stop request.
+ *   steering messages.
  *
  * The inbox closes when the body returns. Messages it saved but the body never
  * read are discarded, and a message that arrives after that, while the thread's
@@ -39,10 +39,21 @@ import {
 } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
+import {
+  type BatchOptions,
+  type Inbox,
+  type InboxMessageOf,
+  inboxOpenedPromise,
+  type ReadOptions,
+  type UntypedInboxMessage,
+} from "../inbox/Inbox.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
-import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
+import {
+  addEventIs,
+  type EventTypeWithAnySchema,
+} from "../triggers/triggers.ts";
 import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { toAsync } from "./cel.ts";
 import {
@@ -71,7 +82,6 @@ import {
   type AgentRequestData,
   type AgentResendData,
   type AgentSteerData,
-  type AgentStopData,
   agentMessage,
 } from "./events.ts";
 import {
@@ -104,19 +114,9 @@ import {
 import { type AgentScores, createAgentScores } from "./scores.ts";
 import type { SkillsRuntime } from "./skills.ts";
 import {
-  type EventMessage,
-  eventNameOf,
-  type InboxMessage,
-  type NextOptions,
-  type Subscription,
-  type View,
-  withIs,
-} from "./subscribe.ts";
-import {
   agentMessageEvent,
   agentRequestEvent,
   agentSteerEvent,
-  agentStopEvent,
   getThread,
   type Inflight,
   type ThreadHandle,
@@ -333,6 +333,8 @@ const functionOptions = (
  * - `client`: the Inngest client, whose middleware types the body's context.
  * - `middleware`: the function-level middleware, which adds to the context.
  * - `inboxTools`: the config of the model's inbox tools, if any.
+ * - `sources`: the `inbox` sources of the config, whose event types type the
+ *   messages they add to the inbox.
  */
 export interface AgentTypes {
   /**
@@ -374,6 +376,11 @@ export interface AgentTypes {
    * The config of the model's inbox tools, or `undefined` for none.
    */
   inboxTools?: InboxToolsConfig | undefined;
+
+  /**
+   * The `inbox` sources of the agent's config.
+   */
+  sources?: readonly InboxSource[] | undefined;
 }
 
 /**
@@ -419,6 +426,11 @@ export interface AgentTypeDefaults {
    * Inbox tools that may or may not be configured.
    */
   inboxTools: InboxToolsConfig | undefined;
+
+  /**
+   * No typed sources.
+   */
+  sources: undefined;
 }
 
 /**
@@ -448,6 +460,11 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
   }
     ? V
     : AgentTypeDefaults["inboxTools"];
+  sources: TTypes extends {
+    sources: infer V extends readonly InboxSource[] | undefined;
+  }
+    ? V
+    : AgentTypeDefaults["sources"];
 };
 
 /**
@@ -532,15 +549,17 @@ export interface AgentFunctionConfig<
 
   /**
    * Event sources that reach a live run of the thread they map to and never
-   * start one, as if the run had called `inbox.listen()` for each when it began.
+   * start one, and read through the one `inbox`.
    * `on` still starts and wakes runs. Each source maps its own events to the
    * thread key with its `thread` expression.
    */
-  inbox?: readonly InboxSource[];
+  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSource[]
+    ? AgentTypesOf<TTypes>["sources"]
+    : readonly InboxSource[];
 
   /**
    * Lets the model listen for events while it works: the body gets
-   * `inboxTools` (`inbox_listen`, `inbox_wait`, `inbox_read`, `inbox_stop`) to
+   * `inboxTools` (`inbox_listen`, `inbox_next`, `inbox_next_batch`, `inbox_close`) to
    * pass to `agent.loop()`, and to `sandbox.tools.code({ tools })` so `run_code`
    * scripts use the same inbox. Off unless set. The model can only listen to the
    * sources listed here, each tied to this thread by its own `thread`; its
@@ -555,7 +574,7 @@ export interface AgentFunctionConfig<
    * call. `"steer"` (default): only `agent/steer` events; the rest wait
    * for their own turn. `"all"`: every event that would start a turn too (an
    * `agent/message`, a trigger event, an inbox source's event), as steering
-   * messages; requests and stops keep their meaning. A folded message is consumed: `next()` does
+   * messages; requests keep their meaning. A folded message is consumed: `next()` does
    * not return it again.
    */
   foldMessages?: "steer" | "all";
@@ -603,8 +622,7 @@ export interface AgentFunctionConfig<
   /**
    * Whether the agent scores itself. Default: `true`. The loop scores each
    * model and tool step (see `agent.loop()`), `report()` scores how long
-   * the first post and each gap between posts took, and a stop request sets
-   * `agent.stopped` on the step that records it. Every score rides on a
+   * the first post and each gap between posts took. Every score rides on a
    * step that already runs, so none adds a step. `false` turns those off;
    * `scores.score()` in the body still works.
    */
@@ -617,7 +635,7 @@ export interface AgentFunctionConfig<
    * turn that fails twice with the same error is not resent, and the failure
    * is reported as stuck. Only the message `inbox.next()` delivered last is
    * resent: messages that arrived during the failed turn and were not read
-   * stay with the failed run. A cancelled run (a stop now, a `cancelOn` event
+   * stay with the failed run. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
    * is kept either way: see `previousRun` and `thread.state().lastRun`.
@@ -647,8 +665,10 @@ export type AgentStartData<TEvent = TriggerEvent> = {
 /**
  * An event source for an agent's inbox. Its events reach the run of the thread
  * they map to while it is live, and never start one. `thread` is an expression
- * over `event` that gives the thread key; `if` is an expression over
- * `event`. At least one is required.
+ * over `event` (the arriving event) that gives the thread key. `if` is written
+ * like the `if` of `step.subscribe()`: `async` is the arriving event and
+ * `event` is the event that started the run, so `async.data.pr == event.data.pr`
+ * ties a source to the trigger. At least one is required.
  */
 export type InboxSource = {
   /**
@@ -656,35 +676,6 @@ export type InboxSource = {
    */
   event: string | EventTypeWithAnySchema<string>;
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
-
-/**
- * What `listen()` takes beside a bare event: the filter that ties it to the
- * thread.
- */
-export type InboxListenOptions =
-  | { thread: string; if?: string }
-  | { if: string; thread?: string };
-
-/**
- * A source added to the inbox mid-run. It is the view of the source's event,
- * the same as `inbox.of(event)`: it reads the event's messages with a cursor of
- * its own (`next()`, `current()`, `unread()`, `for await`), typed by the event
- * type, and takes nothing from the main inbox, which receives the events too.
- */
-export interface ThreadListener<
-  TType extends InboxSource["event"] = InboxSource["event"],
-> extends View<EventMessage<TType>>,
-    AsyncDisposable {
-  /**
-   * Stops listening. Messages already saved stay in the inbox.
-   */
-  stop(): Promise<void>;
-}
-
-/**
- * The part of a listener that is not a view: what stops the source.
- */
-type SourceListener = Pick<ThreadListener, "stop" | typeof asyncDispose>;
 
 /**
  * What `onArrival` is given.
@@ -702,7 +693,7 @@ export interface AgentArrivalContext {
 
   /**
    * The event that arrived: a thread message (`agent/message`,
-   * `agent/steer`, `agent/stop`, `agent/request`) or an event of the
+   * `agent/steer`, `agent/request`) or an event of the
    * agent's triggers or inbox sources.
    */
   event: { id?: string; name: string; data: unknown };
@@ -776,8 +767,8 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
-   * The model's inbox tools: `inbox_listen`, `inbox_wait`, `inbox_read` and
-   * `inbox_stop`, all of them when the config has `inboxTools` and none
+   * The model's inbox tools: `inbox_listen`, `inbox_next`, `inbox_next_batch` and
+   * `inbox_close`, all of them when the config has `inboxTools` and none
    * without it.
    */
   inboxTools: InboxToolsOf<AgentTypesOf<TTypes>["inboxTools"]>;
@@ -800,12 +791,13 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 
   /**
    * Messages sent to the thread, one per delivery, in order. The first is the
-   * event that started the run (`seq` 0).
+   * event that started the run.
    */
   inbox: ThreadInbox<
     AgentTypesOf<TTypes>["event"],
     AgentTypesOf<TTypes>["request"],
-    AgentTypesOf<TTypes>["reply"]
+    AgentTypesOf<TTypes>["reply"],
+    AgentTypesOf<TTypes>["sources"]
   >;
 
   /**
@@ -828,8 +820,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 
   /**
    * Spread into `agent.loop()`: `steer` folds steering messages that arrived
-   * during a turn into the next model call, and `stop` ends the loop when a
-   * stop message arrived. Messages that start the next turn stay in the inbox.
+   * during a turn into the next model call. Messages that start the next turn stay in the inbox.
    * `onTurn` records the turn, the usage and a summary for
    * `thread.state()`: if you pass your own `onTurn`, put `...control` first
    * and call `control.onTurn(turn)` from yours with the turn unchanged: the
@@ -838,7 +829,12 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    */
   control: {
     steer: () => Promise<AgentEvent[]>;
-    stop: () => Promise<boolean>;
+
+    /**
+     * The inboxes the model has open, with the source each was opened on, for
+     * a loop that reads them with the thread's own.
+     */
+    inboxes: () => OpenedInbox[];
     onTurn: (turn: AgentTurn) => Promise<void>;
 
     /**
@@ -858,6 +854,31 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 }
 
 /**
+ * A message made from an event: the core message with its `name` and `data`
+ * fixed.
+ */
+type MessageOf<TData, TName extends string> = Omit<
+  UntypedInboxMessage,
+  "name" | "data"
+> & {
+  name: TName;
+  data: TData;
+};
+
+/**
+ * The messages of the typed sources of the config's `inbox`. A source written
+ * as a name has no type to give, so it stays out of the union and `name` still
+ * narrows the agent's own messages.
+ */
+type SourceMessages<TSources> = TSources extends readonly (infer TItem)[]
+  ? TItem extends { event: infer TEvent }
+    ? TEvent extends EventTypeWithAnySchema<string>
+      ? InboxMessageOf<{ event: TEvent }>
+      : never
+    : never
+  : never;
+
+/**
  * The event of a trigger of `on`, as an inbox message: its own name and data.
  */
 type TriggerMessage<TEvent> = TEvent extends {
@@ -868,35 +889,35 @@ type TriggerMessage<TEvent> = TEvent extends {
     // of the union, so `name` still narrows the agent's own events.
     string extends TName
     ? never
-    : InboxMessage<TData, TName>
+    : MessageOf<TData, TName>
   : never;
 
 /**
  * A message of the thread's inbox. It is a plain event (`id`, `name`, `data`,
- * `ts` and its place `seq`): narrow it by `name`, and `data` is typed.
+ * `ts`): narrow it by `name` or `is()`, and `data` is typed.
  *
  * - An event of `on` (a trigger, which also starts the run as message 1) has
  *   its own name and data, typed from `on`.
  * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
- *   `agent/stop` (`thread.stop()`) carry the thread and agent beside their
+ *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
  * - `agent/request` is a question from another thread's `handle.request()`,
  *   answered with `reply()`.
  *
  * A message from an inbox source is its event too, under the event's own
- * `name`; it is not in the type of `on`, so read it typed through
- * `inbox.of(type)`.
+ * `name`; it is not in the type of `on`, so narrow it with `is(type)`.
  */
 export type ThreadInboxMessage<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSources = undefined,
 > =
   | TriggerMessage<TEvent>
-  | InboxMessage<AgentMessageData, "agent/message">
-  | InboxMessage<AgentSteerData, "agent/steer">
-  | InboxMessage<AgentStopData, "agent/stop">
-  | (InboxMessage<AgentRequestData<TRequest>, "agent/request"> & {
+  | SourceMessages<TSources>
+  | MessageOf<AgentMessageData, "agent/message">
+  | MessageOf<AgentSteerData, "agent/steer">
+  | (MessageOf<AgentRequestData<TRequest>, "agent/request"> & {
       /**
        * Answers the request: sends `data` to the thread that asked. It is a
        * step.
@@ -910,132 +931,39 @@ export type ThreadInboxMessage<
     });
 
 /**
- * The thread's inbox: a subscription whose messages can reply.
+ * The thread's inbox: an `Inbox` (`step.subscribe()`'s) whose first message is
+ * the event that started the run, and whose messages can reply. A message that
+ * breaks its schema is dropped. It is opened for you with the run's triggers,
+ * the config's `inbox` sources and the agent's own messages, and has one
+ * reader, like any inbox.
  */
-export interface ThreadInbox<
+export type ThreadInbox<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
-> extends Omit<
-      Subscription<unknown>,
-      | "next"
-      | "current"
-      | "unread"
-      | "of"
-      | "listen"
-      | "putBack"
-      | "close"
-      | typeof Symbol.asyncIterator
-    >,
-    AsyncIterable<ThreadInboxMessage<TEvent, TRequest, TReply>> {
-  /**
-   * Waits for the next message, or returns `null` once the inbox is closed
-   * and every saved message has been read.
-   */
-  next(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null>;
-
-  /**
-   * Waits for the next message for at most `timeout`. The wait is durable,
-   * like `step.waitForEvent()`'s: it does not hold the run's process, and a
-   * message that arrives after the timeout is read by the next call. Messages
-   * the inbox skips (a stop, or one that breaks its schema) start a new wait
-   * with the same timeout.
-   *
-   * It resolves to `undefined` when the timeout expires, and to `null` when
-   * the inbox is closed and every saved message has been read, so check
-   * `=== undefined` to tell an idle wait from the end.
-   *
-   * @example
-   * ```ts
-   * const message = await inbox.next({ timeout: "10m" });
-   *
-   * if (message === undefined) {
-   *   // Nothing arrived in ten minutes: do periodic work, then wait again.
-   * } else if (message === null) {
-   *   // The inbox is closed and drained.
-   * }
-   * ```
-   */
-  next(
-    options: NextOptions,
-  ): Promise<ThreadInboxMessage<TEvent, TRequest, TReply> | null | undefined>;
-
-  /**
-   * Every message the inbox has saved so far, read or not, stops included (not
-   * the event that started the run, which is only the first `next()`), in
-   * order. It moves no cursor and has no read state, and never waits. One step
-   * records how many there were, so a replay returns the same ones. To take what
-   * arrived since you last looked, read with `next({ timeout: 0 })` until it
-   * returns `undefined`.
-   */
-  current(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
-
-  /**
-   * Takes every message after this reader's cursor, in order, without waiting,
-   * and advances the cursor past them: `next()` does not return them again. Stops
-   * are included, so a loop of your own can honor them. Each message is a step,
-   * so a replay takes the same messages. This is what `control.steer()` is made
-   * of; use it to fold in what arrived at the safe point of a loop that is not
-   * `agent.loop()`.
-   */
-  unread(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
-
-  /**
-   * A view of the messages of one event: it reads them with a cursor of its
-   * own and hides nothing from the inbox or other views. Messages are typed by
-   * the event type, and ones that break its schema are dropped, as in the
-   * inbox.
-   * @param type The event name or event type.
-   */
-  of<TType extends InboxSource["event"]>(
-    type: TType,
-  ): View<EventMessage<TType>>;
-
-  /**
-   * Adds an event source to the inbox mid-run: its events reach this thread's
-   * run from now on, never start a run, and join the inbox in order. It is one
-   * step. A source needs a `thread` or an `if` that ties it to this thread.
-   * @param source The event and how it maps to the thread.
-   */
-  listen<TSource extends InboxSource>(
-    source: TSource,
-  ): Promise<ThreadListener<TSource["event"]>>;
-  listen<TType extends InboxSource["event"]>(
-    source: TType,
-    options: InboxListenOptions,
-  ): Promise<ThreadListener<TType>>;
-
-  /**
-   * Puts messages back, in order, so the next reads return them before
-   * anything newer. Use it for messages you took with `unread()` that are not
-   * yours to handle yet.
-   * @param messages Messages that came from this inbox.
-   */
-  putBack(messages: ThreadInboxMessage<TEvent, TRequest, TReply>[]): void;
-
-  /**
-   * Ends the subscription. See `Subscription.close()`: it only ends the
-   * subscription, and a message that arrives afterwards is dropped.
-   * @returns The messages that were saved but not read.
-   */
-  close(): Promise<ThreadInboxMessage<TEvent, TRequest, TReply>[]>;
-}
+  TSources = undefined,
+> = Inbox<ThreadInboxMessage<TEvent, TRequest, TReply, TSources>>;
 
 /**
- * What the inbox tools need of the thread's inbox. They read through views of
- * the events they listen to, which have cursors of their own, so a stop, a
- * user message or a request is never taken from the loop.
+ * An inbox the model opened with `inbox_listen`.
  */
-const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
-  return {
-    listen: (event, options) => {
-      return inbox.listen(event, options);
-    },
-    of: (event) => {
-      return inbox.of(event);
-    },
-  };
-};
+export interface OpenedInbox {
+  /**
+   * The name the model gave it.
+   */
+  as: string;
+
+  /**
+   * The source it was opened on: the event, and the filter that ties it to the
+   * thread.
+   */
+  source: { event: string; if: string };
+
+  /**
+   * The inbox. Messages that break their source's schema are dropped.
+   */
+  inbox: Inbox<UntypedInboxMessage>;
+}
 
 /**
  * The function context an agent's body shares with a plain function, typed
@@ -1193,13 +1121,12 @@ const triggerOf = (event: TriggerEvent | undefined) => {
 const ownEvents: string[] = [
   agentMessageEvent,
   agentSteerEvent,
-  agentStopEvent,
   agentRequestEvent,
 ];
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
- * message that does not start a turn (a steer, a stop or a request).
+ * message that does not start a turn (a steer or a request).
  * @param event The event.
  */
 const inflightOf = (event: {
@@ -1207,11 +1134,7 @@ const inflightOf = (event: {
   name: string;
   data: unknown;
 }): Inflight | undefined => {
-  if (
-    event.name === agentSteerEvent ||
-    event.name === agentStopEvent ||
-    event.name === agentRequestEvent
-  ) {
+  if (event.name === agentSteerEvent || event.name === agentRequestEvent) {
     return undefined;
   }
 
@@ -1268,15 +1191,40 @@ const startInflight = (
 };
 
 /**
- * The thread's view of its subscription: a message is the event as it came,
- * and stop messages are skipped, because while the agent waits for its next
- * message there is nothing to stop.
+ * The inboxes an agent's inbox is made of: the thread's, the one that steers,
+ * and how views and listeners are made.
+ */
+interface ThreadSources {
+  /**
+   * The thread's inbox.
+   */
+  inbox: Inbox<UntypedInboxMessage>;
+}
+
+/**
+ * A reader of an inbox with the agent's rules over it: the surface of an
+ * `Inbox`.
+ */
+interface Reader<TMessage> extends AsyncIterable<TMessage>, AsyncDisposable {
+  next(): Promise<TMessage | undefined>;
+  next(options: ReadOptions): Promise<TMessage | null | undefined>;
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
+  nextBatch(
+    options: BatchOptions & ReadOptions,
+  ): Promise<TMessage[] | null | undefined>;
+  drain(options?: BatchOptions): Promise<TMessage[]>;
+  batches(
+    options?: BatchOptions & Partial<ReadOptions>,
+  ): AsyncGenerator<TMessage[], void, undefined>;
+  close(): Promise<TMessage[]>;
+  readonly closed: boolean;
+}
+
+/**
+ * The thread's view of its inbox: a message is the event as it came.
  */
 function threadInbox(
-  /**
-   * The subscription to the thread's events.
-   */
-  inbox: Subscription<unknown>,
+  sources: ThreadSources,
   problemOf: (raw: RawEvent, started: boolean) => Promise<string | undefined>,
 
   /**
@@ -1293,18 +1241,25 @@ function threadInbox(
   >,
   log: { warn: (message: string) => void },
   runId: string,
-  listenTo: (
-    source: InboxSource["event"] | InboxSource,
-    options?: InboxListenOptions,
-  ) => Promise<SourceListener>,
   replySchema?: ThreadRequests["reply"],
+
+  // The event that started the run: the inbox's first message, and the one
+  // message that is not checked against a schema, because core checked it.
+  started?: UntypedInboxMessage,
 ): {
   inbox: ThreadInbox;
+  view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
+  steering: {
+    take: () => Promise<ThreadInboxMessage[]>;
+    keep: (messages: ThreadInboxMessage[]) => void;
+  };
 } {
-  // The event each message was made from, to put it back as it came.
-  const raws = new WeakMap<object, InboxMessage>();
+  // The event each message was made from, to leave it unread as it came.
+  const raws = new WeakMap<object, UntypedInboxMessage>();
 
-  function unwrap(message: InboxMessage | null): ThreadInboxMessage | null {
+  function unwrap(
+    message: UntypedInboxMessage | null,
+  ): ThreadInboxMessage | null {
     if (!message) {
       return null;
     }
@@ -1315,7 +1270,7 @@ function threadInbox(
       message.name === agentMessageEvent
         ? (message.data as Partial<AgentResendData>).event
         : undefined;
-    const unwrapped = withIs({
+    const unwrapped = addEventIs({
       ...message,
       ...(resent
         ? {
@@ -1330,7 +1285,7 @@ function threadInbox(
             ? await parseWithAsync(replySchema, answer, "message.reply() data")
             : answer;
 
-          await step.run(`reply:${message.seq}`, async () => {
+          await step.run(`reply:${message.id}`, async () => {
             await client.sendSignal({
               signal: (message.data as AgentRequestData).replyTo,
               data: checked,
@@ -1347,10 +1302,9 @@ function threadInbox(
     return unwrapped as unknown as ThreadInboxMessage;
   }
 
-  function rawOf(message: ThreadInboxMessage): InboxMessage {
-    // A message that did not come from `unwrap` is already an event; its type
-    // cannot be derived from the `ThreadInboxMessage` union.
-    return raws.get(message) ?? (message as unknown as InboxMessage);
+  function rawOf(message: ThreadInboxMessage): UntypedInboxMessage {
+    // A message that did not come from `unwrap` is already an event.
+    return raws.get(message) ?? (message as unknown as UntypedInboxMessage);
   }
 
   let delivered = 0;
@@ -1359,8 +1313,8 @@ function threadInbox(
   // it does not reach a live one either: it is dropped. The event that started
   // the run was checked by core, except for the payload of a request, which
   // core does not see.
-  async function skipped(raw: InboxMessage) {
-    const problem = await problemOf(raw, raw.seq < 1);
+  async function skipped(raw: UntypedInboxMessage) {
+    const problem = await problemOf(raw, raw === started);
     if (!problem) {
       return false;
     }
@@ -1373,8 +1327,8 @@ function threadInbox(
   // The drop is decided again when the run replays, and the handler's logger
   // is quiet while a run replays, so the warning goes to the client's own
   // logger once per message and process.
-  function warnOnce(raw: InboxMessage, problem: string) {
-    const id = `${runId}:${raw.id || raw.seq}`;
+  function warnOnce(raw: UntypedInboxMessage, problem: string) {
+    const id = `${runId}:${raw.id}`;
     if (warned.has(id)) {
       return;
     }
@@ -1390,175 +1344,221 @@ function threadInbox(
     );
   }
 
-  function next(): Promise<ThreadInboxMessage | null>;
-  function next(
-    options: NextOptions,
-  ): Promise<ThreadInboxMessage | null | undefined>;
-  async function next(
-    options?: NextOptions,
-  ): Promise<ThreadInboxMessage | null | undefined> {
-    if (delivered > 0) {
-      await recorder.waiting();
-    }
+  // Messages to return before the source's: the event that started the run,
+  // and the ones steering took and left for the next turn. They are rebuilt on
+  // every replay, which takes and keeps the same messages.
+  const lead: UntypedInboxMessage[] = started ? [started] : [];
 
-    for (;;) {
-      const raw = options ? await inbox.next(options) : await inbox.next();
-      if (raw === undefined) {
-        // The wait expired: the agent goes on working, so it is not waiting.
-        if (delivered > 0) {
-          await recorder.resumed();
-        }
+  // What is left of messages the source handed over once the ones that break
+  // their schema are dropped.
+  async function keep(raws: UntypedInboxMessage[]) {
+    const kept: UntypedInboxMessage[] = [];
 
-        return undefined;
-      }
-
-      if (!raw) {
-        return null;
-      }
-
-      if (await skipped(raw)) {
-        continue;
-      }
-
-      const message = unwrap(raw) as ThreadInboxMessage;
-
-      delivered += 1;
-
-      // While the agent waits for its next message there is nothing to stop.
-      if (message.name !== agentStopEvent) {
-        if (delivered > 1) {
-          await recorder.running(undefined, inflightOf(message));
-        }
-
-        return message;
+    for (const raw of raws) {
+      if (!(await skipped(raw))) {
+        kept.push(raw);
       }
     }
+
+    return kept;
   }
 
-  // A reader of one event with a cursor of its own, that skips what the inbox
-  // skips. `inbox.of()` and the views of listeners are made by it.
-  function viewOf<TType extends InboxSource["event"]>(type: TType) {
-    const view = inbox.of(type);
-    const clean = async <T extends InboxMessage>(messages: T[]) => {
-      const kept: T[] = [];
+  // A reader with the agent's rules over an `Inbox`. Only the main one starts
+  // with the event that started the run and records the thread's status.
+  function view<TOut>(
+    source: Inbox<UntypedInboxMessage>,
+    present: (raw: UntypedInboxMessage) => TOut,
+    main: boolean,
+  ): Reader<TOut> {
+    const first = main ? lead : [];
 
-      for (const raw of messages) {
-        if (!(await skipped(raw))) {
-          kept.push(raw);
+    const reader: Reader<TOut> = {
+      next: (async (options?: ReadOptions) => {
+        if (main && delivered > 0) {
+          await recorder.waiting();
         }
-      }
 
-      return kept;
-    };
-    const mine: View<EventMessage<typeof type>> = {
-      next: (async (options?: NextOptions) => {
         for (;;) {
-          const raw = options ? await view.next(options) : await view.next();
+          const queued = first.shift();
 
-          if (!raw) {
-            return raw;
+          // The trigger comes from the run's state: it still gets its row.
+          if (queued && main && queued === started) {
+            source.noteStart();
           }
 
-          if (!(await skipped(raw))) {
-            return raw;
+          const raw =
+            queued ??
+            (options ? await source.next(options) : await source.next());
+
+          if (raw === undefined) {
+            return undefined;
           }
-        }
-      }) as View<EventMessage<typeof type>>["next"],
-      async unread() {
-        return clean(await view.unread()) as never;
-      },
-      async current() {
-        return clean(await view.current()) as never;
-      },
-      [Symbol.asyncIterator]() {
-        return {
-          async next() {
-            const message = await mine.next();
 
-            return message
-              ? { done: false, value: message }
-              : { done: true, value: undefined };
-          },
-        };
-      },
-    };
-
-    return mine;
-  }
-
-  return {
-    inbox: {
-      next,
-      async current() {
-        const taken: ThreadInboxMessage[] = [];
-
-        for (const raw of await inbox.current()) {
-          if (!(await skipped(raw))) {
-            taken.push(unwrap(raw) as ThreadInboxMessage);
-          }
-        }
-
-        return taken;
-      },
-      async unread() {
-        const taken: ThreadInboxMessage[] = [];
-
-        for (const raw of await inbox.unread()) {
-          if (!(await skipped(raw))) {
-            taken.push(unwrap(raw) as ThreadInboxMessage);
-          }
-        }
-
-        return taken;
-      },
-      of: viewOf,
-      async listen(
-        source: InboxSource["event"] | InboxSource,
-        options?: InboxListenOptions,
-      ) {
-        const listener = await listenTo(source, options);
-        const view = viewOf(isInboxSource(source) ? source.event : source);
-
-        // The view's methods close over it, not `this`, so spreading is safe.
-        return {
-          ...view,
-          stop: () => {
-            return listener.stop();
-          },
-          [asyncDispose]: () => {
-            return listener[asyncDispose]();
-          },
-        };
-      },
-      putBack(messages) {
-        inbox.putBack(messages.map(rawOf));
-      },
-      async close() {
-        const unread = await inbox.close();
-        const kept: ThreadInboxMessage[] = [];
-
-        for (const message of unread) {
-          if (!(await skipped(message))) {
-            kept.push(unwrap(message) as ThreadInboxMessage);
-          }
-        }
-
-        return kept;
-      },
-      async [asyncDispose]() {
-        await inbox[asyncDispose]();
-      },
-      [Symbol.asyncIterator]() {
-        return {
-          async next() {
-            const message = await next();
-            if (!message) {
-              return { done: true, value: undefined };
+          if (raw === null) {
+            // The wait expired: the agent goes on working, so it is not waiting.
+            if (main && delivered > 0) {
+              await recorder.resumed();
             }
 
-            return { done: false, value: message };
+            return null;
+          }
+
+          if (await skipped(raw)) {
+            continue;
+          }
+
+          if (!main) {
+            return present(raw);
+          }
+
+          const message = present(raw);
+
+          delivered += 1;
+
+          if (delivered > 1) {
+            await recorder.running(
+              undefined,
+              inflightOf(message as unknown as ThreadInboxMessage),
+            );
+          }
+
+          return message;
+        }
+      }) as Reader<TOut>["next"],
+      nextBatch: (async (options?: BatchOptions & Partial<ReadOptions>) => {
+        if (main && delivered > 0) {
+          await recorder.waiting();
+        }
+
+        for (;;) {
+          const queued = first.splice(0);
+          let raws: UntypedInboxMessage[];
+
+          if (queued.length > 0) {
+            raws = [...queued, ...(await source.drain(options))];
+          } else {
+            const got = await source.nextBatch(
+              options as BatchOptions & ReadOptions,
+            );
+
+            if (got === undefined) {
+              return got;
+            }
+
+            if (got === null) {
+              // The wait expired: the agent goes on working, so it is not waiting.
+              if (main && delivered > 0) {
+                await recorder.resumed();
+              }
+
+              return got;
+            }
+
+            raws = got;
+          }
+
+          const kept = await keep(raws);
+          if (kept.length > 0) {
+            const batch = kept.map(present);
+
+            if (!main) {
+              return batch;
+            }
+
+            delivered += batch.length;
+
+            // The thread resends one message when a failed run recovers: the
+            // last one of the batch that starts a turn.
+            let inflight: Inflight | undefined;
+
+            for (const message of batch) {
+              inflight =
+                inflightOf(message as unknown as ThreadInboxMessage) ??
+                inflight;
+            }
+
+            if (delivered > 1) {
+              await recorder.running(undefined, inflight);
+            }
+
+            return batch;
+          }
+        }
+      }) as Reader<TOut>["nextBatch"],
+      async *batches(options?: BatchOptions & Partial<ReadOptions>) {
+        for (;;) {
+          const batch = await reader.nextBatch(
+            options as BatchOptions & ReadOptions,
+          );
+
+          if (batch === undefined || batch === null) {
+            return;
+          }
+
+          yield batch;
+        }
+      },
+      async drain(options?: BatchOptions) {
+        const raws = [...first.splice(0), ...(await source.drain(options))];
+
+        return (await keep(raws)).map(present);
+      },
+      async close() {
+        const raws = [...first.splice(0), ...(await source.close())];
+
+        return (await keep(raws)).map(present);
+      },
+      get closed() {
+        return source.closed;
+      },
+      async [asyncDispose]() {
+        await source.close();
+      },
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            const message = await reader.next();
+
+            return message === undefined
+              ? { done: true, value: undefined }
+              : { done: false, value: message };
           },
         };
+      },
+    };
+
+    return reader;
+  }
+
+  const plain = (raw: UntypedInboxMessage) => {
+    return addEventIs({ ...raw });
+  };
+  const main = view(
+    sources.inbox,
+    (raw) => {
+      return unwrap(raw) as ThreadInboxMessage;
+    },
+    true,
+  );
+
+  return {
+    inbox: main as unknown as ThreadInbox,
+    view: (source: Inbox<UntypedInboxMessage>) => {
+      return view(source, plain, false);
+    },
+    steering: {
+      async take() {
+        const raws = await keep([
+          ...lead.splice(0),
+          ...(await sources.inbox.drain()),
+        ]);
+
+        return raws.map((raw) => {
+          return unwrap(raw) as ThreadInboxMessage;
+        });
+      },
+      keep(messages) {
+        lead.unshift(...messages.map(rawOf));
       },
     },
   };
@@ -1579,21 +1579,6 @@ function quote(value: string) {
 }
 
 /**
- * Whether a value is an inbox source object, not a bare event name or type.
- * @param value The first argument of `listen()`.
- */
-function isInboxSource(
-  value: InboxSource["event"] | InboxSource,
-): value is InboxSource {
-  return (
-    typeof value === "object" &&
-    "event" in value &&
-    !("schema" in value) &&
-    !("create" in value)
-  );
-}
-
-/**
  * The subscription source of an inbox source: its `if` and `thread`
  * expressions (over `event`) turned into one filter over `async` that also
  * ties it to the thread.
@@ -1602,7 +1587,7 @@ function isInboxSource(
  */
 function inboxFilter(source: { if?: string; thread?: string }, thread: string) {
   const conditions = [
-    source.if && `(${toAsync(source.if)})`,
+    source.if && `(${source.if})`,
     source.thread && `(${toAsync(source.thread)}) == ${quote(thread)}`,
   ].filter((condition): condition is string => {
     return Boolean(condition);
@@ -1908,8 +1893,11 @@ export function createAgentFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // An agent's reads wake it as soon as a message lands, and a reader left
+      // waiting beside its work never holds the run back.
+      optimizeParallelism: false,
       triggers: [
-        // A stop never starts a run, so stopping an idle thread does nothing.
         ...[agentMessageEvent, agentSteerEvent, agentRequestEvent].map(
           (name) => {
             return { event: name, if: `event.data.agent == ${quote(ref)}` };
@@ -1953,7 +1941,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId, scoring);
+        const recorder = threadRecorder(store, runId);
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -2030,79 +2018,72 @@ export function createAgentFunction(
           );
         }
 
-        // Opened first, so the gap in which a message could be missed is the few
-        // milliseconds between the run starting and this op.
-        // Closed when the run's work is done, whichever way it ends. That only
-        // ends the subscription.
-        await using subscription = await step.subscribe("inbox", {
-          events: [
-            ...ownEvents.map((name) => {
-              return {
-                event: name,
-                if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
-              };
-            }),
-            ...triggers
-              .filter((trigger) => {
-                return trigger.listen;
-              })
-              .map((trigger) => {
-                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+        // What each inbox source's events are checked against, by the name of
+        // the source's event.
+        const sourceSchemas = new Map<string, StandardSchemaV1>();
 
-                return {
-                  event: trigger.event,
-                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-                };
-              }),
-            ...(config.inbox ?? []).map((source) => {
-              return {
-                event: source.event,
-                if: inboxFilter(source, data.thread),
-              };
-            }),
-          ],
-        });
-
-        // What each inbox source's events are checked against, by the source's
-        // stream. The first streams are the agent's own events and the triggers
-        // that reach a live run.
-        const sourceSchemas = new Map<number, StandardSchemaV1>();
-        const firstSource =
-          ownEvents.length +
-          triggers.filter((trigger) => {
-            return trigger.listen;
-          }).length;
-
-        const noteSource = (stream: number, source: InboxSource) => {
+        const noteSource = (source: InboxSource) => {
           const schema =
             typeof source.event === "object" ? source.event.schema : undefined;
 
           if (schema) {
-            sourceSchemas.set(stream, schema as StandardSchemaV1);
+            sourceSchemas.set(
+              eventNameOf(source.event),
+              schema as StandardSchemaV1,
+            );
           }
         };
 
-        for (const [index, source] of (config.inbox ?? []).entries()) {
-          noteSource(firstSource + index, source);
+        for (const source of config.inbox ?? []) {
+          noteSource(source);
         }
 
-        // Adds a source mid-run: a bare event takes its filter from the options.
-        async function listenTo(
-          source: InboxSource["event"] | InboxSource,
-          options?: InboxListenOptions,
-        ): Promise<SourceListener> {
-          const given: InboxSource = isInboxSource(source)
-            ? source
-            : ({ event: source, ...options } as InboxSource);
-          const listener = await subscription.listen({
-            event: given.event,
-            if: inboxFilter(given, data.thread),
-          });
+        // Opened first, so the gap in which a message could be missed is the few
+        // milliseconds between the run starting and this op.
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the inbox.
+        await using subscription = step.subscribe("inbox", [
+          ...ownEvents.map((name) => {
+            return {
+              event: name,
+              if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+            };
+          }),
+          ...triggers
+            .filter((trigger) => {
+              return trigger.listen;
+            })
+            .map((trigger) => {
+              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
 
-          noteSource(listener.stream, given);
+              return {
+                event: trigger.event,
+                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+              };
+            }),
+          ...(config.inbox ?? []).map((source) => {
+            return {
+              event: eventNameOf(source.event),
+              if: inboxFilter(source, data.thread),
+            };
+          }),
+        ]);
 
-          return listener;
-        }
+        await inboxOpenedPromise(subscription);
+
+        // The inboxes the model opened, by the name it gave them. They end with
+        // the run, whichever way it ends, before the thread's own inbox.
+        const named = new Map<string, OpenedInbox>();
+        await using _named = {
+          async [Symbol.asyncDispose]() {
+            for (const open of [...named.values()]) {
+              if (!open.inbox.closed) {
+                await open.inbox.close();
+              }
+            }
+          },
+        };
+
         // A plain agent (no `invoke()` trigger) that `step.invoke` started with
         // `{ agent, thread, text }` reads that as the `agent/message` it is.
         const invokedAsMessage =
@@ -2112,16 +2093,16 @@ export function createAgentFunction(
           unknown
         >;
 
-        subscription.putBack([
-          withIs({
-            seq: 0,
-            id: event.id ?? "",
-            name: invokedAsMessage ? agentMessageEvent : event.name,
-            data: invokedAsMessage ? invokedData : event.data,
-            ts: event.ts ?? 0,
-            user: {},
-          }) as InboxMessage,
-        ]);
+        // The event that started the run is the inbox's first message, made
+        // from the run's own state: it costs no step. The inbox can receive it
+        // too, when it was sent just before the inbox opened: it is read once.
+        const startMessage = addEventIs({
+          id: event.id ?? "",
+          name: invokedAsMessage ? agentMessageEvent : event.name,
+          data: invokedAsMessage ? invokedData : event.data,
+          ts: event.ts ?? 0,
+          user: {},
+        }) as unknown as UntypedInboxMessage;
 
         const bindings = await resolveSandboxes(config.sandboxes, {
           event: event as unknown as AgentConfigContext["event"],
@@ -2202,9 +2183,10 @@ export function createAgentFunction(
         );
         const agentScores = createAgentScores(client);
 
-        let stopRequested = false;
-        const { inbox } = threadInbox(
-          subscription,
+        const { inbox, view, steering } = threadInbox(
+          {
+            inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
+          },
           async function problemOf(raw, started) {
             // A request's payload is checked against `requests`, which core
             // does not know. The asker gets no reply, so it times out: the
@@ -2219,7 +2201,7 @@ export function createAgentFunction(
             }
 
             // An event of an inbox source is checked against its event type.
-            const sourceSchema = sourceSchemas.get(raw.stream ?? -1);
+            const sourceSchema = sourceSchemas.get(raw.name);
 
             if (sourceSchema) {
               return dataProblem(sourceSchema, raw.data ?? {});
@@ -2240,44 +2222,37 @@ export function createAgentFunction(
           recorder,
           client[internalLoggerSymbol],
           runId,
-          listenTo,
           config.requests?.reply,
+          startMessage,
         );
 
         const control = {
           async steer() {
             const folded: AgentEvent[] = [];
-            const waiting: ThreadInboxMessage[] = [];
 
             // Read everything that has arrived: steering messages and stops
             // apply to the turn that is running; messages for the next turn
-            // keep their place in the inbox.
-            for (const message of await inbox.unread()) {
+            // stay unread in the inbox.
+            const waiting: ThreadInboxMessage[] = [];
+
+            for (const message of await steering.take()) {
               if (
                 message.name === agentSteerEvent ||
                 (config.foldMessages === "all" &&
                   inflightOf(message) !== undefined)
               ) {
                 folded.push(message);
-              } else if (message.name === agentStopEvent) {
-                stopRequested = true;
               } else {
                 waiting.push(message);
               }
             }
-            inbox.putBack(waiting);
+
+            steering.keep(waiting);
 
             return folded;
           },
-          async stop() {
-            const requested = stopRequested;
-            stopRequested = false;
-
-            if (requested) {
-              await recorder.stopped();
-            }
-
-            return requested;
+          inboxes() {
+            return [...named.values()];
           },
           budget() {
             return budgetReason(limits);
@@ -2304,7 +2279,7 @@ export function createAgentFunction(
           },
         };
 
-        // `agent.loop()` steers and stops through the inbox unless it is given
+        // `agent.loop()` steers through the inbox unless it is given
         // its own.
         bridge.control = control;
 
@@ -2336,7 +2311,57 @@ export function createAgentFunction(
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
             inboxTools: config.inboxTools
-              ? createInboxTools(toolInbox(inbox), config.inboxTools)
+              ? createInboxTools(
+                  {
+                    handler: inbox,
+                    open: async (as, event, options) => {
+                      // The tools write `thread` and `if` over `event`, the
+                      // arriving event.
+                      const given: InboxSource = {
+                        event,
+                        ...options,
+                        ...(options.if !== undefined && {
+                          if: toAsync(options.if),
+                        }),
+                      } as InboxSource;
+
+                      noteSource(given);
+
+                      const filter = inboxFilter(given, data.thread);
+                      const opened = step.subscribe(`inbox:${as}`, {
+                        event: eventNameOf(event),
+                        if: filter,
+                      });
+
+                      await inboxOpenedPromise(opened);
+
+                      const mine = view(
+                        opened as unknown as Inbox<UntypedInboxMessage>,
+                      );
+
+                      named.set(as, {
+                        as,
+                        source: { event: eventNameOf(event), if: filter },
+                        inbox: mine as unknown as Inbox<UntypedInboxMessage>,
+                      });
+
+                      return {
+                        next: (options) => {
+                          return mine.next(options);
+                        },
+                        drain: () => {
+                          return mine.drain();
+                        },
+                        close: async () => {
+                          named.delete(as);
+
+                          return mine.close();
+                        },
+                      };
+                    },
+                  },
+                  config.inboxTools,
+                )
               : {},
             channels,
             report,
@@ -2432,4 +2457,12 @@ export function createAgentFunction(
       },
     },
   };
+}
+
+/**
+ * The name of an event source.
+ * @param source A name or an event type.
+ */
+function eventNameOf(source: InboxSource["event"]): string {
+  return typeof source === "string" ? source : source.name;
 }

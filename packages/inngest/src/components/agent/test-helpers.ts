@@ -1,22 +1,23 @@
 /**
  * @module
- * A fake executor for the subscription tests: runs a function request by
- * request and answers the subscription ops the way the executor does. Messages
- * are steps of the run named after the subscription, in the stack, as the
- * executor saves them.
+ * A fake executor for the inbox tests: runs a function request by request and
+ * answers the inbox ops the way the executor does. A message is a step of the
+ * run in the stack, holding the event, the inbox it belongs to and the pauses
+ * of the sources it came through.
  */
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
-import { subscriptionMessageIdPrefix } from "../execution/subscription.ts";
+import {
+  hashedStepId,
+  inboxKey,
+  isInboxMessage,
+} from "../execution/inboxState.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 
-interface SubscribeOpts {
-  key: string;
-  mode: "open" | "park" | "poll" | "close" | "stop" | "current";
-  seq?: number;
-  stream?: number;
-  streams?: { stream: number }[];
+interface Pause {
+  id: string;
+  event: string;
 }
 
 /**
@@ -34,71 +35,75 @@ export const run = async (
     incoming?: unknown[];
 
     /**
-     * Answers an open the way an executor that predates many-source opens
-     * does: without the count of streams it opened.
-     */
-    legacyExecutor?: boolean;
-
-    /**
-     * What a park is answered with instead of the usual wake, whatever the
-     * state holds: `{ closed: true }` is how close() ends a park.
-     */
-    parkAnswer?: unknown;
-
-    /**
      * Steps the run already holds, by the ID the function gave them: the memos
      * of a run that started before the IDs changed.
      */
     memos?: Record<string, unknown>;
 
     /**
-     * How many parks that carry a timeout end unanswered before a message is
+     * How many reads that carry a timeout end unanswered before a message is
      * allowed to arrive.
      */
     timeouts?: number;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
+
+    /**
+     * The run's ID, for a test that needs the run's lazy reads to be its own.
+     */
+    runId?: string;
     /**
      * Called with each `step.run` step as it ran, metadata included.
      */
     onStep?: (op: OutgoingOp) => void;
   } = {},
 ) => {
-  const key = options.key ?? "inbox";
-  const prefix = subscriptionMessageIdPrefix(key);
+  const root = hashedStepId(options.key ?? "inbox");
   const incoming = [...(options.incoming ?? [])];
   let timeoutsLeft = options.timeouts ?? 0;
-  const ops: { id: string; mode: string; seq?: number; stream?: number }[] = [];
+  const ops: { id: string; op: string; opts: unknown }[] = [];
+  // The lazy reads that draw rows, which are not steps.
+  const reads: string[] = [];
   const saved: unknown[] = [];
   const stack: string[] = [];
+  const pauses: Pause[] = [];
   let state: Parameters<typeof runFnWithStack>[1] = {};
 
-  // The executor saves a message as a step named after the event, holding the
-  // whole event. A value that is not an event is the data of one.
+  // The executor saves a message as a step holding the event, the inbox and
+  // the pauses of the sources that matched it. A value that is not an event is
+  // the data of one.
   const save = (value: unknown) => {
-    const id = `${prefix}${saved.length + 1}`;
-    // An event, or a memo from before messages were flat ({ seq, data: event }),
-    // is saved as it is.
+    const n = saved.length + 1;
     const isEvent =
       typeof value === "object" &&
       value !== null &&
       "data" in value &&
-      ("name" in value || "seq" in value);
-    const data = isEvent
-      ? value
-      : {
-          id: `evt-${saved.length + 1}`,
-          name: "msg",
-          data: value,
-          ts: 0,
-          user: {},
-        };
+      "name" in value;
+    const event = isEvent
+      ? { id: `evt-${n}`, ts: 0, user: {}, ...(value as object) }
+      : { id: `evt-${n}`, name: "msg", data: value, ts: 0, user: {} };
+    const name = (event as { name: string }).name;
+    const matching = pauses.filter((pause) => {
+      return pause.event === name;
+    });
+    const src = (matching.length > 0 ? matching : pauses.slice(0, 1)).map(
+      (pause) => {
+        return pause.id;
+      },
+    );
+    const id = `message:${(event as { id: string }).id}`;
+    const data = { data: event, [inboxKey]: root, src };
 
-    saved.push(data);
+    saved.push(event);
     stack.push(id);
     state = { ...state, [id]: { id, data } };
   };
 
   const answer = (id: string, data: unknown) => {
+    // The executor saves a step once, however often the SDK reports its op.
+    if (id in state) {
+      return;
+    }
+
     stack.push(id);
     state = { ...state, [id]: { id, data } };
   };
@@ -107,6 +112,8 @@ export const run = async (
     answer(_internals.hashId(stepId), data);
   }
 
+  // The root inbox has its sources before anything is saved, so saved messages
+  // can name them. Its open is answered the first time it is reported.
   for (const data of options.saved ?? []) {
     save(data);
   }
@@ -120,6 +127,7 @@ export const run = async (
       event,
       events: [structuredClone(event)],
       stackOrder: [...stack],
+      runId: options.runId,
     });
     const found =
       result.type === "step-ran"
@@ -129,20 +137,18 @@ export const run = async (
           : [];
 
     if (result.type === "function-resolved") {
-      return { ops, saved, output: result.data, waiting: false };
+      return { ops, reads, saved, output: result.data, waiting: false };
     }
 
     if (result.type === "function-rejected") {
-      return { ops, saved, output: result.error, waiting: false };
+      return { ops, reads, saved, output: result.error, waiting: false };
     }
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
-        return { ops, saved, output: op.data, waiting: false };
+        return { ops, reads, saved, output: op.data, waiting: false };
       }
 
-      const sub = (op.opts as { subscribe?: SubscribeOpts } | undefined)
-        ?.subscribe;
       if (op.op === StepOpCode.StepPlanned) {
         // A planned step runs in a request of its own, as the executor does.
         const ran = await runFnWithStack(fn, state, {
@@ -150,6 +156,7 @@ export const run = async (
           events: [structuredClone(event)],
           stackOrder: [...stack],
           runStep: op.id,
+          runId: options.runId,
         });
 
         if (ran.type === "step-ran") {
@@ -168,74 +175,116 @@ export const run = async (
         continue;
       }
 
-      if (op.op !== StepOpCode.WaitForEvent || !sub) {
-        if (op.op === StepOpCode.StepRun) {
-          options.onStep?.(op);
-        }
+      const opts = op.opts as Record<string, unknown> | undefined;
 
-        state = {
-          ...state,
-          [op.id]: { id: op.id, data: op.data, error: op.error },
-        };
-        stack.push(op.id);
+      if (op.op === StepOpCode.SubscribeRead) {
+        reads.push(op.userland?.id ?? op.id);
+
         continue;
       }
 
-      ops.push({
-        id: op.userland?.id ?? op.id,
-        mode: sub.mode,
-        seq: sub.seq,
-        ...(sub.stream ? { stream: sub.stream } : {}),
-        ...(sub.streams ? { streams: sub.streams.length + 1 } : {}),
-      });
-      options.onOp?.(op, saved);
+      if (op.op === StepOpCode.Subscribe) {
+        const sources = (opts?.sources ?? []) as { event: string }[];
+        const made = sources.map((source, i) => {
+          return { id: `${op.id}:${i}`, event: source.event };
+        });
 
-      if (sub.mode === "open") {
-        answer(
-          op.id,
-          options.legacyExecutor
-            ? { opened: true }
-            : { opened: true, streams: 1 + (sub.streams?.length ?? 0) },
-        );
-      } else if (sub.mode === "close") {
-        answer(op.id, { count: saved.length });
-      } else if (sub.mode === "stop") {
-        answer(op.id, { stopped: true });
-      } else if (sub.mode === "current") {
-        answer(op.id, { count: saved.length });
-      } else if (sub.mode === "poll") {
-        answer(op.id, saved[(sub.seq as number) - 1] ?? null);
-      } else {
-        if (options.parkAnswer !== undefined) {
-          answer(op.id, options.parkAnswer);
-          continue;
+        pauses.push(...made);
+        ops.push({ id: op.userland?.id ?? op.id, op: "open", opts });
+        options.onOp?.(op, saved);
+        answer(op.id, {
+          pauses: made.map((pause) => {
+            return pause.id;
+          }),
+        });
+        continue;
+      }
+
+      if (op.op === StepOpCode.SubscribeClose) {
+        ops.push({ id: op.userland?.id ?? op.id, op: "close", opts });
+        options.onOp?.(op, saved);
+        answer(op.id, opts?.ids ?? []);
+        continue;
+      }
+
+      if (op.op === StepOpCode.SubscribeWait) {
+        ops.push({ id: op.userland?.id ?? op.id, op: "wait", opts });
+        options.onOp?.(op, saved);
+
+        const batch = opts?.batch as
+          | { drain?: boolean; unread?: boolean; room?: number }
+          | undefined;
+        const seen = String(opts?.seen ?? "");
+        const want = opts?.want as
+          | { events?: string[]; src?: string[] }
+          | undefined;
+
+        // The message steps saved after the step the read last saw that it
+        // wants, as the executor finds them for a batch read.
+        const since = () => {
+          const after = stack.slice(seen === "" ? 0 : stack.indexOf(seen) + 1);
+          const ids = after.filter((id) => {
+            const value = state[id]?.data as
+              | { data?: { name?: string }; src?: string[] }
+              | undefined;
+
+            return (
+              isInboxMessage(value) &&
+              (want?.events === undefined ||
+                want.events.includes(value.data?.name ?? "")) &&
+              (want?.src === undefined ||
+                (value.src ?? []).some((pause) => {
+                  return want.src?.includes(pause);
+                }))
+            );
+          });
+
+          return batch?.room === undefined ? ids : ids.slice(0, batch.room);
+        };
+
+        if (batch !== undefined) {
+          const found = since();
+
+          if (batch.drain || batch.unread || found.length > 0) {
+            answer(op.id, { seen, ids: found });
+            continue;
+          }
         }
 
-        // A park with a timeout ends unanswered while timeouts are left.
-        if (
-          (sub as { timeout?: string }).timeout !== undefined &&
-          timeoutsLeft > 0 &&
-          saved.length < (sub.seq as number)
-        ) {
+        // A read with a timeout ends unanswered while timeouts are left.
+        if (opts?.timeout !== undefined && timeoutsLeft > 0) {
           timeoutsLeft -= 1;
           answer(op.id, null);
           continue;
         }
 
-        // next: the function is blocked until the message exists.
-        while (saved.length < (sub.seq as number)) {
-          if (incoming.length === 0) {
-            return { ops, saved, output: undefined, waiting: true };
-          }
-
-          save(incoming.shift());
+        // The run is blocked until a message arrives; the replay finds it.
+        if (incoming.length === 0) {
+          return { ops, reads, saved, output: undefined, waiting: true };
         }
 
-        // The executor answers the wait with the ID of the message it waited for.
-        if (saved.length >= (sub.seq as number)) {
-          answer(op.id, `${prefix}${sub.seq}`);
+        save(incoming.shift());
+
+        if (batch !== undefined) {
+          answer(op.id, { seen, ids: since() });
         }
+
+        continue;
       }
+
+      if (op.op === StepOpCode.StepRun) {
+        options.onStep?.(op);
+      }
+
+      if (op.id in state) {
+        continue;
+      }
+
+      state = {
+        ...state,
+        [op.id]: { id: op.id, data: op.data, error: op.error },
+      };
+      stack.push(op.id);
     }
   }
 
