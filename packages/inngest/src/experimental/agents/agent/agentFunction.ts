@@ -39,6 +39,7 @@ import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { toAsync } from "../cel.ts";
 import { cardOf } from "../discovery/discovery.ts";
+import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
 import { createInboxTools } from "../inbox/inboxTools.ts";
 import {
@@ -59,6 +60,7 @@ import {
   sandboxTools,
   stepSandboxes,
 } from "../sandboxes/defs.ts";
+import { openRunSandboxes } from "../sandboxes/runSandboxes.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
@@ -85,6 +87,7 @@ import {
   singletonKey,
 } from "../threads/threadTrigger.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import { createControl } from "./control.ts";
 import { invokeDepthOf } from "./invoke.ts";
 import {
   budgetReason,
@@ -350,43 +353,19 @@ export function createAgentFunction(
           user: {},
         }) as unknown as UntypedInboxMessage;
 
-        const bindings = await resolveSandboxes(config.sandboxes, {
-          event: event as unknown as AgentConfigContext["event"],
+        const { opened, closeAll } = await openRunSandboxes({
+          config,
+          client,
+          ref,
+          event,
+          thread: data.thread,
+          runId,
+          store,
+          step,
+          logger,
+          defer,
+          cleanup,
         });
-        const opened =
-          Object.keys(bindings).length > 0
-            ? openSandboxes(
-                bindings,
-                stepSandboxes(step),
-                {
-                  event: event as unknown as AgentConfigContext["event"],
-                  run: (id, fn) => {
-                    return step.run(id, fn) as ReturnType<typeof fn>;
-                  },
-                },
-                threadSandboxOwner({
-                  client: client as unknown as Parameters<
-                    typeof threadSandboxOwner
-                  >[0]["client"],
-                  ref,
-                  thread: data.thread,
-                  runId,
-                  scope: store.thread,
-                  warn: (data, message) => {
-                    logger.warn(data, message);
-                  },
-                  run: (id, fn) => {
-                    return step.run(id, fn) as ReturnType<typeof fn>;
-                  },
-                  defer: (id, sandbox) => {
-                    return defer(id, {
-                      function: cleanup,
-                      data: { runId, thread: data.thread, sandbox },
-                    });
-                  },
-                }),
-              )
-            : {};
 
         const agentScores = createAgentScores(client);
 
@@ -423,149 +402,62 @@ export function createAgentFunction(
           startMessage,
         );
 
-        const control = {
-          async steer() {
-            const folded: AgentEvent[] = [];
-
-            // Read everything that has arrived: steering messages and stops
-            // apply to the turn that is running; messages for the next turn
-            // stay unread in the inbox.
-            const waiting: ThreadInboxMessage[] = [];
-
-            for (const message of await steering.take()) {
-              if (
-                message.name === agentSteerEvent ||
-                (config.foldMessages === "all" &&
-                  inflightOf(message) !== undefined)
-              ) {
-                folded.push(message);
-              } else {
-                waiting.push(message);
-              }
-            }
-
-            steering.keep(waiting);
-
-            return folded;
-          },
-          inboxes() {
-            return [...named.values()];
-          },
-          budget() {
-            return budgetReason(limits);
-          },
-          scores: scoring,
-          ...(config.limits?.price && { price: config.limits.price }),
-          async recordTurn(turn: AgentTurn) {
-            const next = await recorder.turn(turn, thread.key);
-
-            return { usage: next.usage, restarts: next.restarts ?? 0 };
-          },
-          async onTurn(turn: AgentTurn) {
-            // A turn recorded inside its step came back with the reply, also
-            // on a replay. One from before that (or from a loop without
-            // `recordTurn`) is recorded now.
-            const recorded = turn.recorded as
-              | { usage: ThreadRecord["usage"]; restarts: number }
-              | undefined;
-            const next = recorded
-              ? recorder.observe(recorded)
-              : await recorder.turn(turn);
-
-            limits.used = { ...next.usage };
-          },
-        };
+        const control = createControl({
+          config,
+          steering,
+          named,
+          limits,
+          scoring,
+          recorder,
+          threadKey: thread.key,
+        });
 
         // `agent.loop()` steers through the inbox unless it is given
         // its own.
         bridge.control = control;
 
-        // Closes every sandbox. Returns the first failure instead of throwing, so
-        // a failed eager start nothing used never replaces the body's own error.
-        const closeAll = async () => {
-          const closed = await Promise.allSettled(
-            Object.values(opened).map((handle) => {
-              return handle.close();
-            }),
-          );
-
-          return closed.find((outcome) => {
-            return outcome.status === "rejected";
-          });
-        };
         let result: unknown;
 
         try {
           result = await body({
             ...functionContext,
             logger,
+
+            // Slot: event. What started the run.
             event: { ...event, data } as AgentBodyContext["event"],
             trigger: triggerOf(data.event),
             depth: invokeDepthOf(
               event as unknown as { data?: Record<string, unknown> },
             ),
+
+            // Slot: thread. The handle of the thread the run belongs to.
             thread,
+
+            // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
-            inboxTools: config.inboxTools
-              ? createInboxTools(
-                  {
-                    handler: inbox,
-                    open: async (as, event, options) => {
-                      // The tools write `thread` and `if` over `event`, the
-                      // arriving event.
-                      const given: InboxSource = {
-                        event,
-                        ...options,
-                        ...(options.if !== undefined && {
-                          if: toAsync(options.if),
-                        }),
-                      } as InboxSource;
 
-                      noteSource(given);
-
-                      const filter = inboxFilter(given, data.thread);
-                      const opened = step.subscribe(`inbox:${as}`, {
-                        event: eventNameOf(event),
-                        if: filter,
-                      });
-
-                      await inboxOpenedPromise(opened);
-
-                      const mine = view(
-                        opened as unknown as Inbox<UntypedInboxMessage>,
-                      );
-
-                      named.set(as, {
-                        as,
-                        source: { event: eventNameOf(event), if: filter },
-                        inbox: mine as unknown as Inbox<UntypedInboxMessage>,
-                      });
-
-                      return {
-                        next: (options) => {
-                          return mine.next(options);
-                        },
-                        drain: () => {
-                          return mine.drain();
-                        },
-                        close: async () => {
-                          named.delete(as);
-
-                          return mine.close();
-                        },
-                      };
-                    },
-                  },
-                  config.inboxTools,
-                )
-              : {},
-            scores: agentScores,
+            // Slot: inbox. The thread's messages, the model's inbox tools and
+            // how the run before this one ended.
+            inboxTools: createBodyInboxTools({
+              config,
+              inbox,
+              view,
+              named,
+              noteSource,
+              step,
+              thread: data.thread,
+            }),
             inbox,
             previousRun,
             get restarts() {
               return recorder.restarts;
             },
+
+            // Slot: score. The agent's own scores.
+            scores: agentScores,
+
+            // Slot: loop. What `agent.loop()` takes: steering, budget, turns.
             control,
           });
 

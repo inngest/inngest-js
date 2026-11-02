@@ -80,7 +80,9 @@ interface ThreadSources {
  * A reader of an inbox with the agent's rules over it: the surface of an
  * `Inbox`.
  */
-interface Reader<TMessage> extends AsyncIterable<TMessage>, AsyncDisposable {
+export interface Reader<TMessage>
+  extends AsyncIterable<TMessage>,
+    AsyncDisposable {
   next(): Promise<TMessage | undefined>;
   next(options: ReadOptions): Promise<TMessage | null | undefined>;
   nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
