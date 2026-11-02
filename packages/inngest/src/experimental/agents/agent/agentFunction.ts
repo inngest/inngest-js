@@ -125,9 +125,12 @@ export function createAgentFunction(
   config: AgentFunctionConfig,
 
   /**
-   * Your loop. Read `inbox`, call `agent.loop()` with `control`.
+   * Your loop. Read `inbox`, call `agent.loop()` with `control`. Without one
+   * the run takes its trigger, posts nothing and ends with output `undefined`.
    */
-  body: AgentBody,
+  body: AgentBody = async () => {
+    return undefined;
+  },
 ): AgentFunction {
   const ref = `${client.id}/${config.id}`;
   const triggers = compileTriggers(config.id, config);

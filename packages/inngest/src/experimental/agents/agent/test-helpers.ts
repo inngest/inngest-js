@@ -138,16 +138,37 @@ export const run = async (
           : [];
 
     if (result.type === "function-resolved") {
-      return { ops, reads, saved, output: result.data, waiting: false };
+      return {
+        ops,
+        reads,
+        saved,
+        output: result.data,
+        error: undefined as unknown,
+        waiting: false,
+      };
     }
 
     if (result.type === "function-rejected") {
-      return { ops, reads, saved, output: result.error, waiting: false };
+      return {
+        ops,
+        reads,
+        saved,
+        output: result.error,
+        error: result.error as unknown,
+        waiting: false,
+      };
     }
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
-        return { ops, reads, saved, output: op.data, waiting: false };
+        return {
+          ops,
+          reads,
+          saved,
+          output: op.data,
+          error: op.error as unknown,
+          waiting: false,
+        };
       }
 
       if (op.op === StepOpCode.StepPlanned) {
@@ -261,7 +282,14 @@ export const run = async (
 
         // The run is blocked until a message arrives; the replay finds it.
         if (incoming.length === 0) {
-          return { ops, reads, saved, output: undefined, waiting: true };
+          return {
+          ops,
+          reads,
+          saved,
+          output: undefined,
+          error: undefined as unknown,
+          waiting: true,
+        };
         }
 
         save(incoming.shift());

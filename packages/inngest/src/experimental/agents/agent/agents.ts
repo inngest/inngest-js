@@ -49,7 +49,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
    * Defines an agent: a function whose body owns its loop and reads a
    * durable inbox.
    * @param config Function ID and KV store.
-   * @param body Your loop. Read `inbox`, call `agent.loop()` with `control`.
+   * @param body Your loop; optional. Without one the run ends with output `undefined`.
    */
   agent<
     TType extends EventTypeWithAnySchema<string>,
@@ -69,7 +69,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }
     >,
-    body: (
+    body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TType>;
         sandboxes: TSandboxes;
@@ -98,7 +98,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }
     >,
-    body: (
+    body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TTypes>;
         sandboxes: TSandboxes;
@@ -127,7 +127,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }
     >,
-    body: (
+    body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TOne>;
         sandboxes: TSandboxes;
@@ -155,7 +155,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }
     >,
-    body: (
+    body?: (
       context: AgentBodyContext<{
         event: ThreadCronEvent;
         sandboxes: TSandboxes;
@@ -184,7 +184,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sources: TSources;
       }
     >,
-    body: (
+    body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TMany>;
         sandboxes: TSandboxes;
@@ -270,7 +270,7 @@ export const createAgents = <TClient extends Inngest.Any>(
     // overload is checked at the call site, not here.
     agent: ((
       config: AgentFunctionConfig<unknown, any>,
-      body: AgentBody<any>,
+      body?: AgentBody<any>,
     ) => {
       const created = createAgentFunction(
         client,
