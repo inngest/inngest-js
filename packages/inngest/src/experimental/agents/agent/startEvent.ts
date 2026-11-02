@@ -6,6 +6,7 @@
 
 import { internalEvents } from "../../../helpers/consts.ts";
 import { inflightOf } from "../inbox/threadInbox.ts";
+import type { Json } from "../json.ts";
 import type { Inflight, TriggerEvent } from "../threads/thread.ts";
 import {
   type CompiledTrigger,
@@ -61,9 +62,9 @@ export const startInflight = (
 
   // An invoke of a plain agent is read as an `agent/message`.
   if (event.name === internalEvents.FunctionInvoked) {
-    const text = (event.data as { text?: unknown } | undefined)?.text;
+    const content = (event.data as { content?: Json } | undefined)?.content;
 
-    return typeof text === "string" ? { text } : undefined;
+    return content === undefined ? undefined : { content };
   }
 
   return inflightOf({ ...event, data: event.data });

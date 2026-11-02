@@ -48,7 +48,7 @@ describe("thread handle", () => {
     expect(sent).toMatchObject([
       {
         name: "agent/message",
-        data: { agent: "app/bot", thread: "t1", text: "hi" },
+        data: { agent: "app/bot", thread: "t1", content: "hi" },
         meta: { sessions },
       },
       {

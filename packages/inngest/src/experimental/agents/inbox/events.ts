@@ -31,10 +31,22 @@ export type AgentRouting = {
 };
 
 /**
- * The data of `agent/message`: text that starts the next turn.
+ * Who sent a message, as it travels in `data.from`. An agent is its address
+ * and the key of the thread that sent; a plain function is its ID and key.
+ * `depth` is how many agents deep the chain that led here is; it is internal
+ * and the public `Sender` leaves it out.
+ */
+export type SenderData =
+  | { kind: "agent"; address: string; key: string; depth?: number }
+  | { kind: "function"; id: string; key: string; depth?: number };
+
+/**
+ * The data of `agent/message`: what starts the next turn. `content` is text
+ * or JSON.
  */
 export type AgentMessageData = AgentRouting & {
-  text: string;
+  content: Json;
+  from?: SenderData;
 };
 
 /**
@@ -72,6 +84,7 @@ export const agentSteer = eventType("agent/steer", {
  * `ask_agent` sent. The sender is `data.from` when it is set.
  */
 export type AgentQuestionData = {
+  from?: SenderData;
   /**
    * The question's ID. The answer's `re` is this value.
    */

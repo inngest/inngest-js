@@ -440,7 +440,7 @@ export function createAgentFunction(
         };
 
         // A plain agent (no `invoke()` trigger) that `step.invoke` started with
-        // `{ agent, thread, text }` reads that as the `agent/message` it is.
+        // `{ agent, thread, content }` reads that as the `agent/message` it is.
         const invokedAsMessage =
           !found && (event.name as string) === internalEvents.FunctionInvoked;
         const { _agent: _told, ...invokedData } = (event.data ?? {}) as Record<

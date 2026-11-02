@@ -10,8 +10,10 @@ import {
   type AgentQuestionData,
   agentAnswer,
   agentFinished,
+  agentMessage,
   agentQuestion,
 } from "./events.ts";
+import { inflightOf } from "./threadInbox.ts";
 
 test("the event names are agent/question, agent/answer and agent/finished", () => {
   expect(agentQuestion.name).toBe("agent/question");
@@ -51,4 +53,30 @@ test("agent/finished narrows by outcome", () => {
   if (finished.outcome === "stopped") {
     expectTypeOf(finished).not.toHaveProperty("error");
   }
+});
+
+test("agent/message carries JSON content and a sender with a depth", async () => {
+  const message = agentMessage.create({
+    agent: "app/bot",
+    thread: "t1",
+    content: { plan: ["a", "b"] },
+    from: { kind: "agent", address: "app/lead", key: "k1", depth: 2 },
+  });
+
+  await expect(message.validate()).resolves.toBeUndefined();
+  expect(message.data.from).toEqual({
+    kind: "agent",
+    address: "app/lead",
+    key: "k1",
+    depth: 2,
+  });
+});
+
+test("a turn in flight keeps JSON content, as a failed run resends it", () => {
+  expect(
+    inflightOf({
+      name: "agent/message",
+      data: { agent: "app/bot", thread: "t1", content: { n: 1 } },
+    }),
+  ).toEqual({ content: { n: 1 } });
 });
