@@ -106,6 +106,7 @@ import {
 } from "../threads/threadTrigger.ts";
 import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import { childWait, openChildren, settleChild } from "./children.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -592,6 +593,17 @@ export function createAgentFunction(
           runId,
           startMessage,
           idle,
+          {
+            open: () => {
+              return openChildren(instance);
+            },
+            settle: (key) => {
+              settleChild(instance, key);
+            },
+            wait: () => {
+              return childWait.ms;
+            },
+          },
           (question, given) => {
             return answerQuestion(client, question, given);
           },

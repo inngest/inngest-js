@@ -229,7 +229,7 @@ describe("a run opened through a handle waits for the runs it started with start
         waited(ops).map((op) => {
           return (op.opts as { timeout: unknown }).timeout;
         }),
-      ).toEqual([5000]);
+      ).toEqual(["5s"]);
     } finally {
       childWait.ms = before;
     }
