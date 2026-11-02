@@ -130,14 +130,15 @@ const closeId = (base: string): string => {
 };
 
 /**
- * What an inbox needs from the step tools and the run's state. Ops are named by
- * the unhashed ID of the op, which every op of the inbox is named from.
+ * What an inbox is called once its opening op has its final ID. The engine adds
+ * a suffix to the ID of a step the run already has (`inbox:1`), so this is
+ * known only after the op has settled, and every other op of the inbox is named
+ * from it: two inboxes opened with the same ID in one run do not share one.
  */
-export interface InboxDeps {
-  sources: OpenedSource[];
-
+export interface OpenedInbox {
   /**
-   * The unhashed ID of the op that opens the inbox: the base of its reads.
+   * The unhashed ID of the opening op: the base of the IDs of its reads and
+   * its close.
    */
   id: string;
 
@@ -145,12 +146,27 @@ export interface InboxDeps {
    * The ID the executor knows the opening op by. Messages carry it.
    */
   inbox: string;
+}
+
+/**
+ * What an inbox needs from the step tools and the run's state. Ops are named by
+ * the unhashed ID of the op, which every op of the inbox is named from.
+ */
+export interface InboxDeps {
+  sources: OpenedSource[];
 
   /**
-   * Opens the inbox on the executor. Settles with what the executor recorded
-   * (the pauses of the sources) once the run has replayed past the record.
+   * The ID the user gave the inbox, which names the op that opens it. A run
+   * that already has a step with this ID gives the opening op a suffix, so
+   * nothing else is named from this: see {@link OpenedInbox}.
    */
-  open: (op: string, sources: OpenedSource[]) => Promise<unknown>;
+  id: string;
+
+  /**
+   * Opens the inbox on the executor. Settles with the final identity of the
+   * opening op once the run has replayed past the executor's record.
+   */
+  open: (op: string, sources: OpenedSource[]) => Promise<OpenedInbox>;
 
   /**
    * The hashed ID of the wait op `op`. It is known before the op is reported, so
@@ -322,7 +338,7 @@ export type InboxMessage<TInbox = Inbox<UntypedInboxMessage>> =
  */
 export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   private _deps: InboxDeps;
-  private _opened: Promise<void>;
+  private _opened: Promise<OpenedInbox>;
 
   // Set once `close()` has been called, settled or not. A read made after it
   // takes a message it can already read, and otherwise ends.
@@ -353,15 +369,17 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     this._whenClosed = new Promise<void>((resolve) => {
       this._markClosed = resolve;
     });
-    this._opened = deps.open(deps.id, deps.sources).then(() => {
+    this._opened = deps.open(deps.id, deps.sources);
+
+    const settled = this._opened.then(() => {
       return undefined;
     });
 
-    openedPromises.set(this, this._opened);
+    openedPromises.set(this, settled);
 
     // A failed open is reported where the inbox is read; this keeps it from
     // also being reported as unhandled.
-    this._opened.catch(() => {
+    settled.catch(() => {
       return undefined;
     });
   }
@@ -488,10 +506,10 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
       return wait ? undefined : [];
     }
 
-    await this._opened;
+    const { id, inbox } = await this._opened;
 
-    const op = readId(this._deps.id, n);
-    const held = this._deps.unread(this._deps.inbox, this._taken);
+    const op = readId(id, n);
+    const held = this._deps.unread(inbox, this._taken);
 
     // A read that finds nothing and whose inbox was closed, or whose close was
     // called before the read started, ends instead of waiting.
@@ -499,7 +517,7 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
       wait &&
       held.length === 0 &&
       !this._deps.answered(op) &&
-      (afterClose || this._closedInState())
+      (afterClose || this._closedInState(id))
     ) {
       await this._whenClosed;
 
@@ -510,7 +528,7 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     // the read's record: a replay reads the same messages from the state it
     // loaded.
     const answer = (await this._deps.batch(op, {
-      inbox: this._deps.inbox,
+      inbox,
       seen: this._deps.lastSeen(),
       drain: !wait,
       unread: held.length > 0,
@@ -526,12 +544,12 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     const covered =
       answer.cut === null
         ? []
-        : this._deps.unread(this._deps.inbox, this._taken, answer.cut);
+        : this._deps.unread(inbox, this._taken, answer.cut);
     const ids = max === undefined ? covered : covered.slice(0, max);
 
     this._taken += ids.length;
 
-    this._deps.report(`${op}:read`, this._deps.inbox, ids, true, op);
+    this._deps.report(`${op}:read`, inbox, ids, true, op);
 
     return ids.map((id) => {
       return addEventIs(this._deps.message(id) as object) as TMessage;
@@ -547,15 +565,11 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
       return undefined;
     }
 
-    await this._opened;
+    const { id, inbox } = await this._opened;
 
-    const op = readId(this._deps.id, n);
+    const op = readId(id, n);
 
-    const found = this._deps.read(
-      this._deps.inbox,
-      this._taken,
-      this._deps.waitId(op),
-    );
+    const found = this._deps.read(inbox, this._taken, this._deps.waitId(op));
 
     if (found.found === "message") {
       this._taken += 1;
@@ -564,7 +578,7 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
         await this._deps.skip(op);
       }
 
-      this._deps.report(op, this._deps.inbox, [found.id], true);
+      this._deps.report(op, inbox, [found.id], true);
 
       await this._deps.place(found.id);
 
@@ -574,7 +588,7 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     // The inbox was closed while this read had nothing to read, or its close
     // was called before the read started: it ends. The close op cannot name a
     // read that started after it, so a wait here would never be ended.
-    if (found.found === "nothing" && (afterClose || this._closedInState())) {
+    if (found.found === "nothing" && (afterClose || this._closedInState(id))) {
       await this._whenClosed;
 
       return undefined;
@@ -585,7 +599,7 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     // read that timed out settles with the null the executor saved.
     const answer = await this._deps.wait(
       op,
-      this._deps.inbox,
+      inbox,
       this._deps.lastSeen(),
       timeout,
     );
@@ -603,8 +617,10 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
    * came before it, so a race against a step has the same winner on every
    * replay.
    */
-  private _closedInState(): boolean {
-    return this._deps.closed(closeId(this._deps.id));
+  private _closedInState(
+    id: string, // the unhashed ID of the op that opened the inbox
+  ): boolean {
+    return this._deps.closed(closeId(id));
   }
 
   /**
@@ -640,18 +656,14 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   }
 
   private async _close(): Promise<string[]> {
-    await this._opened;
+    const { id, inbox } = await this._opened;
 
-    const { cut } = await this._deps.close(closeId(this._deps.id), {
-      inbox: this._deps.inbox,
-    });
+    const { cut } = await this._deps.close(closeId(id), { inbox });
 
     this._closed = true;
     this._markClosed();
 
-    return cut === null
-      ? []
-      : this._deps.unread(this._deps.inbox, this._taken, cut);
+    return cut === null ? [] : this._deps.unread(inbox, this._taken, cut);
   }
 
   async [asyncDispose](): Promise<void> {

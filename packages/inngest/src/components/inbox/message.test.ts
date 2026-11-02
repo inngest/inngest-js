@@ -20,9 +20,8 @@ const fakeDeps = (): InboxDeps => {
   return {
     sources: [{ event: "review" }],
     id: "inbox",
-    inbox: "inbox",
     open: async () => {
-      return { pauses: ["p1"] };
+      return { id: "inbox", inbox: "inbox" };
     },
     waitId: (op) => {
       return `hash:${op}`;

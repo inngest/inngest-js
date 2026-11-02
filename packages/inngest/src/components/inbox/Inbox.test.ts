@@ -18,9 +18,8 @@ const fakeDeps = (ids: string[] = []) => {
   const deps: InboxDeps = {
     sources: [{ event: "msg" }],
     id: "inbox",
-    inbox: "inbox",
     open: async () => {
-      return { pauses: ["p1"] };
+      return { id: "inbox", inbox: "inbox" };
     },
     waitId: (op) => {
       return `hash:${op}`;
@@ -315,7 +314,7 @@ describe("opening an inbox", () => {
     deps.open = () => {
       return new Promise((resolve) => {
         finish = () => {
-          resolve({ pauses: [] });
+          resolve({ id: "inbox", inbox: "inbox" });
         };
       });
     };
