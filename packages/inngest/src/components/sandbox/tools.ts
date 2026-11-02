@@ -566,7 +566,7 @@ const functionTool = (
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
   if (entry instanceof McpServer) {
     throw new SandboxValidationError(
-      "An MCP server goes in agent.loop({ tools }) as it is; anywhere else, spread its tools: { ...(await server.tools()) }",
+      "This tools record can't expand an MCP server here; spread its tools instead: { ...(await server.tools()) }",
     );
   }
 

@@ -18,7 +18,9 @@ import {
   McpAuthError,
   McpUnavailableError,
 } from "./mcpClient.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
 import { fakeMcpFetch } from "./mcpFakes.ts";
+import type { SandboxRawTool } from "./protocol.ts";
 import { script } from "./scriptedModel.ts";
 import { secret } from "./secret.ts";
 import { resolveToolCall, type SandboxTool, tool } from "./tools.ts";
@@ -460,6 +462,60 @@ const drive = async (fn: InngestFunction.Any) => {
 
   throw new Error("The function did not finish");
 };
+
+describe("a bare tool.mcp server in sandbox code", () => {
+  process.env.MCP_TEST_TOKEN = token;
+
+  const sandboxRef = {
+    kind: "inngest/sandbox" as const,
+    version: 1 as const,
+    id: "22222222-2222-4222-8222-222222222222",
+    name: "mcp-box",
+    status: "RUNNING" as const,
+    vpcId: "11111111-1111-4111-8111-111111111111",
+    imageRef: "default",
+    resources: { vcpu: 2, memoryMb: 2048 },
+    createdAt: "2026-07-28T00:00:00Z",
+  };
+
+  test("commands.run lists the server's tools in a step and offers them as <key>_<tool>", async () => {
+    const { hex } = connect();
+    const offered: string[][] = [];
+    const rawTool: SandboxRawTool = async (_id, _operation, _check, tools) => {
+      offered.push(Object.keys(tools?.tools ?? {}));
+
+      return {
+        protocolVersion: 1,
+        action: "exec",
+        result: {
+          stdout: "",
+          stderr: "",
+          encoding: "base64",
+          exitCode: 0,
+          output: { truncated: false },
+        },
+      } as never;
+    };
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "mcp-script", triggers: [{ event: "mcp/script" }] },
+      async () => {
+        const sandbox = createDurableSandboxFacade(sandboxRef, () => {
+          return rawTool;
+        });
+
+        await sandbox.commands.run("work", "node script.mjs", {
+          tools: { hex },
+        });
+      },
+    );
+    const { type, ran } = await drive(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(ran).toContain("work:mcp:hex:list");
+    expect(offered).toEqual([["hex_create_thread", "hex_get_thread"]]);
+  });
+});
 
 describe("tool.mcp in agent.loop", () => {
   process.env.MCP_TEST_TOKEN = token;
