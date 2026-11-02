@@ -548,7 +548,11 @@ export const summaryOf = (card: AgentCard): AgentSummary => {
   };
 };
 
-const callerOf = (): { client: Inngest.Any; appId: string } => {
+const callerOf = (): {
+  client: Inngest.Any;
+  appId: string;
+  address?: string;
+} => {
   const client = getAsyncCtxSync()?.app as unknown as Inngest.Any | undefined;
 
   if (!client) {
@@ -557,7 +561,9 @@ const callerOf = (): { client: Inngest.Any; appId: string } => {
     );
   }
 
-  return { client, appId: client.id };
+  const address = getAsyncCtxSync()?.execution?.agent?.ref;
+
+  return { client, appId: client.id, ...(address && { address }) };
 };
 
 /**
@@ -667,15 +673,25 @@ export type DiscoveryToolSet = {
     { query?: string; refresh?: boolean },
     { agents: AgentSummary[] }
   >;
-  describe_agent: AgentTool<{ address: string }, AgentCard>;
+  describe_agent: AgentTool<
+    { address: string },
+    AgentCard & {
+      /**
+       * Present and `true` when the card is the calling agent's own.
+       */
+      self?: true;
+    }
+  >;
 };
 
 /**
  * The two tools that let an agent find other agents without naming them in
  * code.
  *
- * - `list_agents({ query?, refresh? })`: the visible agents that match.
- * - `describe_agent({ address })`: the whole card of one.
+ * - `list_agents({ query?, refresh? })`: the visible agents that match, not
+ *   counting the caller itself.
+ * - `describe_agent({ address })`: the whole card of one; `self: true` when it
+ *   is the caller's own.
  *
  * An agent is visible to its own app, and to any app when its card says
  * `share: "team"`.
@@ -703,13 +719,13 @@ export const discoveryToolSet = (
         query?: string;
         refresh?: boolean;
       }) => {
-        const { appId } = callerOf();
+        const { appId, address } = callerOf();
         const cards = await discoverCards(refresh === true, options);
 
         return {
           agents: matchCards(
             cards.filter((card) => {
-              return mayUse(card, appId);
+              return mayUse(card, appId) && card.address !== address;
             }),
             query,
           ).map(summaryOf),
@@ -725,7 +741,11 @@ export const discoveryToolSet = (
         address: z.string().describe("The agent's address, `app/agent`."),
       }),
       run: async ({ address }: { address: string }) => {
-        return findCard(address, options);
+        const card = await findCard(address, options);
+
+        return callerOf().address === address
+          ? { ...card, self: true as const }
+          : card;
       },
     }),
   };

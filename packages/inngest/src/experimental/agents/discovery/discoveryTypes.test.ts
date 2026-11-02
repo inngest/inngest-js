@@ -118,7 +118,9 @@ describe("discovery types", () => {
               expectTypeOf(call.call.input).toEqualTypeOf<{
                 address: string;
               }>();
-              expectTypeOf(call.output).toEqualTypeOf<AgentCard>();
+              expectTypeOf(call.output).toEqualTypeOf<
+                AgentCard & { self?: true }
+              >();
             }
           }
 

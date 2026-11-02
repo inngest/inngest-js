@@ -188,8 +188,10 @@ const createHandlerLoop = async (options: {
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
   skills: readonly Skill[];
+  ref: string;
+  thread: string;
 }): Promise<AgentHandlerLoop> => {
-  const { config, fields, listenTools, skills } = options;
+  const { config, fields, listenTools, skills, ref, thread } = options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -207,10 +209,16 @@ const createHandlerLoop = async (options: {
     "system",
     config.system as RunField<string | undefined>,
   );
-  const system =
-    skills.length > 0
-      ? [written, skillsPrompt(skills)].filter(Boolean).join("\n\n")
-      : written;
+  // Who the model is, ahead of the developer's text. It holds only values that
+  // are fixed for the thread, so the cached prompt prefix stays the same.
+  const identity = `You are the agent \`${ref}\` (id \`${config.id}\`), on thread \`${thread}\`.`;
+  const system = [
+    identity,
+    written,
+    skills.length > 0 ? skillsPrompt(skills) : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const tools = await fields.get(
     "tools",
     config.tools as RunField<SandboxTools | undefined>,
@@ -227,7 +235,7 @@ const createHandlerLoop = async (options: {
   return buildHandlerLoop({
     ...config.loop,
     model: config.model,
-    ...(system !== undefined && { system }),
+    system,
     tools: addTools(
       {
         ...agentToolsFor(config.discovery),
@@ -694,6 +702,8 @@ export function createAgentFunction(
           config,
           fields,
           skills: runSkills,
+          ref,
+          thread: thread.key,
           listenTools: { ...sandboxTools(opened), ...listenTools },
         });
 
