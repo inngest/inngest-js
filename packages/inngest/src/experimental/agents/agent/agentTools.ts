@@ -52,8 +52,8 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {
  * The tools that start and stop agents.
  */
 export type AgentToolSet = {
-  start_agent: AgentTool;
-  stop_agent: AgentTool;
+  start_agent: AgentTool<{ address: string; input?: Json }, { thread: string }>;
+  stop_agent: AgentTool<{ thread: string }, { ok: true }>;
 };
 
 const clientOf = (): Inngest.Any => {
@@ -182,6 +182,8 @@ const stopDescription = "Stops the run of an agent you started.";
 export const agentToolSet = (
   options: AgentToolSetOptions = {},
 ): AgentToolSet => {
+  // The `input` of start_agent is `z.any()` so that it is any text or JSON; its
+  // type is written out above.
   return {
     start_agent: tool({
       id: "start_agent",
