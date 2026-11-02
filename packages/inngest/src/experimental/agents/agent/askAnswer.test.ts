@@ -11,9 +11,7 @@ import { threadHandle } from "../threads/thread.ts";
 import { run } from "./test-helpers.ts";
 
 const setup = (
-  body: (
-    thread: ReturnType<typeof threadHandle>,
-  ) => Promise<unknown>,
+  body: (thread: ReturnType<typeof threadHandle>) => Promise<unknown>,
 ) => {
   const bodies: { name: string; data: Record<string, unknown>; id?: string }[] =
     [];
@@ -48,6 +46,7 @@ describe("thread.ask()", () => {
     });
     const { output, ops } = await run(fn, {
       event: go,
+      key: "ask:r1.0",
       runId: "r1",
       incoming: [
         {
@@ -71,7 +70,9 @@ describe("thread.ask()", () => {
       },
     ]);
     expect(ops[0]).toMatchObject({ op: "open" });
-    expect(JSON.stringify(ops[0]?.opts)).toContain('async.data.re == \\"ask:r1.0\\"');
+    expect(JSON.stringify(ops[0]?.opts)).toContain(
+      'async.data.re == \\"ask:r1.0\\"',
+    );
   });
 
   test("is null when nobody answers in time", async () => {
@@ -89,6 +90,7 @@ describe("thread.ask()", () => {
     });
     const { output } = await run(fn, {
       event: go,
+      key: "ask:r1.0",
       runId: "r1",
       incoming: [
         { name: "agent/answer", data: { re: "ask:r1.0", outcome: "refused" } },
@@ -110,7 +112,6 @@ describe("thread.ask()", () => {
 
 describe("answerQuestion()", () => {
   const question = {
-    id: "q1",
     data: {
       id: "q1",
       text: "why?",
@@ -153,7 +154,6 @@ describe("answerQuestion()", () => {
     await answerQuestion(
       client,
       {
-        id: "q2",
         data: {
           id: "q2",
           text: "?",
