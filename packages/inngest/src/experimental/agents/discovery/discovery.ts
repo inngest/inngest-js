@@ -683,6 +683,7 @@ export const discoveryToolSet = (
   return {
     list_agents: tool({
       id: "list_agents",
+      group: true,
       description:
         "Lists the agents you can start or message, with what each does. Pass a few words in `query` to narrow the list. `refresh` reads again instead of reusing this run's list.",
       input: z.object({
@@ -714,6 +715,7 @@ export const discoveryToolSet = (
     }),
     describe_agent: tool({
       id: "describe_agent",
+      group: true,
       description:
         "The whole card of one agent: what it does, its skills and the input a call takes.",
       input: z.object({

@@ -8,6 +8,7 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { createFnRunner, testClientId } from "../../../test/helpers.ts";
+import { agentToolSet } from "../agent/agentTools.ts";
 import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
@@ -546,6 +547,22 @@ describe("the tools", () => {
       options,
     );
     expect(reads).toBe(2);
+  });
+});
+
+describe("the tools run as groups", () => {
+  test("list_agents and describe_agent use steps, so neither runs inside a step of its own", () => {
+    const tools = discoveryToolSet();
+
+    expect(tools.list_agents).toMatchObject({ group: true });
+    expect(tools.describe_agent).toMatchObject({ group: true });
+  });
+
+  test("start_agent and stop_agent are groups too", () => {
+    const tools = agentToolSet();
+
+    expect(tools.start_agent).toMatchObject({ group: true });
+    expect(tools.stop_agent).toMatchObject({ group: true });
   });
 });
 
