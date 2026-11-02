@@ -26,7 +26,15 @@ export const readPin = () => {
     throw new Error(`The pin file ${pinFile} is missing`);
   }
 
-  return readFileSync(pinFile, "utf8").trim();
+  const pin = readFileSync(pinFile, "utf8").trim();
+
+  if (!/^[0-9a-f]{40}$/.test(pin)) {
+    throw new Error(
+      `${pinFile} must hold a full 40-character commit sha, not "${pin}"`,
+    );
+  }
+
+  return pin;
 };
 
 /**

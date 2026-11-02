@@ -704,7 +704,7 @@ export const App = () => {
             type="button"
             className="ghost"
             onClick={handlers.devserver}
-            title="The Dev Server in this tour is a bare binary with no dashboard, so this opens a stub page. The Trace pane shows the same runs."
+            title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
             aria-keyshortcuts={shortcutsOf("devserver")}
           >
             Dev Server <Kbd action="devserver" />
