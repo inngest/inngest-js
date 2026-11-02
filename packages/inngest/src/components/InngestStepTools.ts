@@ -662,11 +662,25 @@ export const createStepTools = <
       return new Inbox({
         sources: sourcesOf(sources),
         id,
-        inbox: hashedStepId(`${prefix}${id}`),
-        open: (_op, opened) => {
-          return tools["~inboxOpen"](inboxStatement(id, "subscribe", id), {
+        open: async (_op, opened) => {
+          let opening: { id: string } | undefined;
+
+          await tools["~inboxOpen"](inboxStatement(id, "subscribe", id), {
             sources: opened,
+            track: (op) => {
+              opening = op;
+            },
           });
+
+          // The engine gives the op a suffix (`inbox:1`) when the run already
+          // has a step with its ID, after the op is made. Everything else
+          // about the inbox is named from the ID it settled with.
+          const final = opening?.id ?? `${prefix}${id}`;
+
+          return {
+            id: final.startsWith(prefix) ? final.slice(prefix.length) : final,
+            inbox: hashedStepId(final),
+          };
         },
         waitId: (op) => {
           return hashedStepId(`${prefix}${op}`);
@@ -776,10 +790,15 @@ export const createStepTools = <
     "~inboxOpen": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { sources: { event: string; if?: string }[] },
+        opts: {
+          sources: { event: string; if?: string }[];
+
+          // Called with the op, which the engine gives its final ID later.
+          track?: (op: { id: string }) => void;
+        },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
-      return {
+      const op = {
         id,
         mode: StepMode.Async,
         op: StepOpCode.Subscribe,
@@ -788,6 +807,10 @@ export const createStepTools = <
         opts: { sources: opts.sources },
         userland: { id },
       };
+
+      opts.track?.(op);
+
+      return op;
     }),
 
     /**

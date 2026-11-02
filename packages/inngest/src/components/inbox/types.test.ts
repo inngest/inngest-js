@@ -46,6 +46,12 @@ const checks = async () => {
   expectTypeOf(await inbox.nextBatch({ max: 2, timeout: 100 })).toEqualTypeOf<
     InboxMessage[] | null | undefined
   >();
+
+  // Options held in a variable carry a timeout the call cannot see as excess.
+  const held = { max: 2, timeout: "1s" };
+  expectTypeOf(await inbox.nextBatch(held)).toEqualTypeOf<
+    InboxMessage[] | null | undefined
+  >();
   expectTypeOf(await inbox.drain()).toEqualTypeOf<InboxMessage[]>();
   expectTypeOf(await inbox.drain({ max: 2 })).toEqualTypeOf<InboxMessage[]>();
   expectTypeOf(await inbox.close()).toEqualTypeOf<InboxMessage[]>();
