@@ -99,13 +99,31 @@ const ui = join(src, "ui/apps/dev-server-ui");
 step(
   "installing the Dev Server UI's packages",
   "pnpm",
-  ["install", "--frozen-lockfile"],
+  [
+    "install",
+    "--frozen-lockfile",
+    "--filter",
+    "@inngest/dev-server-ui...",
+    "--filter",
+    "@inngest/dashboard...",
+  ],
   ui,
 );
 step("building the Dev Server UI", "pnpm", ["build"], ui);
 cpSync(join(ui, "dist"), join(src, "pkg/devserver/static"), {
   recursive: true,
 });
+
+// Without the shell the Go build still passes and the Dev Server serves a
+// blank page, so check for it here.
+const shell = join(src, "pkg/devserver/static/client/_shell.html");
+
+if (!existsSync(shell)) {
+  console.error(
+    `\nThe Dev Server UI build did not produce ${shell}. The Dev Server would serve a blank page; stopping.`,
+  );
+  process.exit(1);
+}
 
 mkdirSync(dirname(bin), { recursive: true });
 
