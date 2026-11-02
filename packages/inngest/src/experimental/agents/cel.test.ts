@@ -80,7 +80,7 @@ describe("thread key expressions", () => {
     }
   });
 
-  test("a number key is its decimal string, so 42 and \"42\" are one thread", () => {
+  test('a number key is its decimal string, so 42 and "42" are one thread', () => {
     const key = compileKey("event.data.pr");
 
     expect(key.key({ data: { pr: 42 } })).toBe("42");

@@ -14,7 +14,10 @@ import type {
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
 import type { SandboxTools } from "../../../components/sandbox/tools.ts";
-import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
+import {
+  EventType,
+  type EventTypeWithAnySchema,
+} from "../../../components/triggers/triggers.ts";
 import type {
   EventIs,
   EventShape,
@@ -114,7 +117,7 @@ export interface AgentTypes {
   /**
    * The `inbox` sources of the agent's config.
    */
-  sources?: readonly InboxSource[] | undefined;
+  sources?: readonly InboxSourceInput[] | undefined;
 
   /**
    * The agent's `model`, if it has one: only an agent with a model gets a
@@ -183,7 +186,7 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
     ? V
     : AgentTypeDefaults["middleware"];
   sources: TTypes extends {
-    sources: infer V extends readonly InboxSource[] | undefined;
+    sources: infer V extends readonly InboxSourceInput[] | undefined;
   }
     ? V
     : AgentTypeDefaults["sources"];
@@ -290,9 +293,9 @@ export interface AgentFunctionConfig<
    * `triggers` still starts and wakes runs. Each source maps its own events to the
    * thread key with its `thread` expression.
    */
-  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSource[]
+  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSourceInput[]
     ? AgentTypesOf<TTypes>["sources"]
-    : readonly InboxSource[];
+    : readonly InboxSourceInput[];
 
   /**
    * The event types the model may start watching while it works, with its
@@ -388,6 +391,30 @@ export type InboxSource = {
    */
   event: string | EventTypeWithAnySchema<string>;
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
+
+/**
+ * What an `inbox` entry is written as, like a trigger: a bare event (a name or
+ * an `eventType()`), which is keyed by the agent's own `thread` expression, or
+ * an `InboxSource` with options.
+ */
+export type InboxSourceInput =
+  | string
+  | EventTypeWithAnySchema<string>
+  | InboxSource;
+
+/**
+ * The `InboxSource` form of an `inbox` entry. A bare event has no `thread`
+ * and no `if`, so it takes the agent's `thread` expression.
+ * @param source What the `inbox` entry was written as.
+ */
+export function inboxSourceOf(source: InboxSourceInput): InboxSource {
+  if (typeof source === "string" || source instanceof EventType) {
+    // The agent's `thread` expression fills in the key when the source is used.
+    return { event: source } as InboxSource;
+  }
+
+  return source;
+}
 
 /**
  * The handle to a run's own thread.
@@ -508,11 +535,13 @@ type MessageOf<TData, TName extends string> = Omit<
  * narrows the agent's own messages.
  */
 type SourceMessages<TSources> = TSources extends readonly (infer TItem)[]
-  ? TItem extends { event: infer TEvent }
-    ? TEvent extends EventTypeWithAnySchema<string>
-      ? InboxMessageOf<{ event: TEvent }>
+  ? TItem extends EventTypeWithAnySchema<string>
+    ? InboxMessageOf<{ event: TItem }>
+    : TItem extends { event: infer TEvent }
+      ? TEvent extends EventTypeWithAnySchema<string>
+        ? InboxMessageOf<{ event: TEvent }>
+        : never
       : never
-    : never
   : never;
 
 /**

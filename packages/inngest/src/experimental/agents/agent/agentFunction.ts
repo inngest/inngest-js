@@ -143,6 +143,7 @@ import type {
   InboxSource,
   OpenedInbox,
 } from "./types.ts";
+import { inboxSourceOf } from "./types.ts";
 
 /**
  * The handler of an agent with a `model` and no handler of its own: each batch
@@ -444,7 +445,9 @@ export function createAgentFunction(
           }
         };
 
-        for (const source of config.inbox ?? []) {
+        const inboxSources = (config.inbox ?? []).map(inboxSourceOf);
+
+        for (const source of inboxSources) {
           noteSource(source);
         }
 
@@ -471,7 +474,7 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
-          ...(config.inbox ?? []).flatMap((source) => {
+          ...inboxSources.flatMap((source) => {
             const missing = missingThreadFilter(source, config.thread);
 
             return [

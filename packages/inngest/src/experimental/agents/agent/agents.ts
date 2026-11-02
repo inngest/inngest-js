@@ -34,6 +34,7 @@ import type {
   AgentFunction,
   AgentFunctionConfig,
   InboxSource,
+  InboxSourceInput,
   StartInput,
 } from "./types.ts";
 
@@ -77,7 +78,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
     const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -108,7 +109,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
     const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -139,7 +140,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
     const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -169,7 +170,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
     const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -197,7 +198,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
     const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -431,6 +432,7 @@ export type {
   AgentTypes,
   AgentTypesOf,
   InboxSource,
+  InboxSourceInput,
   OpenedInbox,
   StartInput,
 } from "./types.ts";
