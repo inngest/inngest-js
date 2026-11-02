@@ -13,6 +13,15 @@ import { createTour } from "../server/app.ts";
 const root = join(import.meta.dirname, "fixtures");
 const ports = { api: 1, gateway: 2, gatewayGrpc: 3, executorGrpc: 4 };
 
+interface Answer {
+  result: {
+    protocolVersion: string;
+    capabilities: object;
+    serverInfo: { name: string };
+  };
+  error?: object;
+}
+
 const call = async (entry: unknown, input: unknown) => {
   const run = (entry as { run: (...args: unknown[]) => unknown }).run;
 
@@ -100,13 +109,13 @@ describe("the tour's MCP server", () => {
   it("answers initialize with a protocol version and tools", async () => {
     delete process.env.TOUR_MCP_TOKEN;
 
-    const answer = await (
+    const answer = (await (
       await rpc({
         id: 1,
         method: "initialize",
         params: { protocolVersion: "2025-03-26" },
       })
-    ).json();
+    ).json()) as Answer;
 
     assert.equal(answer.result.protocolVersion, "2025-03-26");
     assert.deepEqual(answer.result.capabilities, { tools: {} });
@@ -124,10 +133,12 @@ describe("the tour's MCP server", () => {
   it("answers an unknown method or tool with an error", async () => {
     delete process.env.TOUR_MCP_TOKEN;
 
-    const method = await (await rpc({ id: 1, method: "ping" })).json();
-    const name = await (
+    const method = (await (
+      await rpc({ id: 1, method: "ping" })
+    ).json()) as Answer;
+    const name = (await (
       await rpc({ id: 2, method: "tools/call", params: { name: "nope" } })
-    ).json();
+    ).json()) as Answer;
 
     assert.ok(method.error);
     assert.ok(name.error);
