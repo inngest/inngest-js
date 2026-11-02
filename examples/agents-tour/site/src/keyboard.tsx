@@ -238,6 +238,7 @@ export const Kbd = ({
   short?: boolean;
 }) => {
   const def = keyOf(action);
+
   const spec = short
     ? (def.outside[0] ?? def.inField[0])
     : (def.inField[0] ?? def.outside[0]);

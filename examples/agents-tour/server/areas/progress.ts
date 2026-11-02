@@ -110,6 +110,7 @@ export const area: AreaFactory = (ctx) => {
                   page: page.id,
                   definition: ctx.definitions[concept] ?? "",
                 };
+
                 mark.collected.push(concept);
               }
             }

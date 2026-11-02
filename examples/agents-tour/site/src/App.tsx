@@ -84,6 +84,7 @@ export const App = () => {
   const [narrow, setNarrow] = useState(() => {
     return window.matchMedia("(max-width: 900px)").matches;
   });
+
   const [navOpen, setNavOpen] = useState(false);
   // The runs on screen when Run was pressed, so only a newer finished run
   // counts as the run having finished.
@@ -96,6 +97,7 @@ export const App = () => {
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
+
     const onChange = () => {
       setNarrow(query.matches);
       setNavOpen(false);
@@ -329,14 +331,15 @@ export const App = () => {
 
   // A page has "ran" once the run Run started has finished.
   useEffect(() => {
-    const waiting = pressed.current;
+    const started = pressed.current;
+
     const fresh = runs.filter((entry) => {
-      return !waiting?.before.has(entry.id);
+      return !started?.before.has(entry.id);
     });
 
-    if (waiting && waiting.page === page?.id && fresh.length > 0 && !live) {
+    if (started && started.page === page?.id && fresh.length > 0 && !live) {
       pressed.current = null;
-      void api.mark(waiting.page, "ran");
+      void api.mark(started.page, "ran");
     }
   }, [runs, live, page?.id]);
 
@@ -365,6 +368,7 @@ export const App = () => {
 
     saveEdits(page, values, store);
     void api.run(page.id, values);
+
     pressed.current = {
       page: page.id,
       before: new Set(
@@ -373,6 +377,7 @@ export const App = () => {
         }),
       ),
     };
+
     editor.current?.focus();
   };
 
@@ -569,11 +574,13 @@ export const App = () => {
     },
     resetProgress: askReset,
   };
+
   const handlers: Handlers = {
     ...panelHandlers,
     ...progressHandlers,
     ...core,
   };
+
   const latest = useRef(handlers);
 
   latest.current = handlers;
