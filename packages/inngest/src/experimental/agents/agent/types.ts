@@ -37,7 +37,6 @@ import type {
   AgentLoopOptions,
   AgentModel,
 } from "../loop/loop.ts";
-import type { AgentScores } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -400,12 +399,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-
-  /**
-   * Your own scores, next to the ones the framework writes. See
-   * `AgentScores`.
-   */
-  scores: AgentScores;
 
   /**
    * Scores the run: `score("quality", 1)`. Written once wherever it is

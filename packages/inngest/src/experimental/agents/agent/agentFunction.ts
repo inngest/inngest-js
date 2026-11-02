@@ -61,7 +61,7 @@ import {
   addTools,
   buildHandlerLoop,
 } from "../loop/loop.ts";
-import { createAgentScores } from "../loop/scores.ts";
+import { createAgentScore } from "../loop/scores.ts";
 import {
   agentSandbox,
   openSandboxes,
@@ -490,7 +490,7 @@ export function createAgentFunction(
           cleanup,
         });
 
-        const agentScores = createAgentScores(client);
+        const agentScore = createAgentScore(client);
 
         const idle = await idleMs(fields, config.idle);
 
@@ -599,11 +599,8 @@ export function createAgentFunction(
               return recorder.restarts;
             },
 
-            // Slot: score. The agent's own scores.
-            scores: agentScores,
-            score: (name: string, value: number | boolean) => {
-              return agentScores.score(name, value);
-            },
+            // Slot: score. The run's own scores.
+            score: agentScore.score,
 
             // Slot: loop. The agent's own loop: its model, system and tools,
             // with the model's `inbox_listen` and `inbox_close` among them.
@@ -613,6 +610,9 @@ export function createAgentFunction(
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
+
+          // A score the handler did not await is still written.
+          await agentScore.flush();
         } catch (error) {
           await closeAll();
 

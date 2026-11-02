@@ -11,7 +11,7 @@ import {
 } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
-import { createAgentScores, scoreThisStep } from "./scores.ts";
+import { createAgentScore, scoreThisStep } from "./scores.ts";
 
 /**
  * Runs a function whose body is `body` until its one step has run, and
@@ -105,47 +105,112 @@ describe("scoreThisStep", () => {
   });
 });
 
-describe("scores.score", () => {
+/**
+ * Runs a function whose handler calls `score` outside any step, with a client
+ * whose `score` is `write`. Returns what each run reported.
+ */
+const handlerScores = async (options: {
+  write: () => Promise<void>;
+  call?: (score: ReturnType<typeof createAgentScore>["score"]) => Promise<void>;
+  stepState?: Parameters<typeof runFnWithStack>[1];
+}) => {
+  const warn = vi.fn();
+  const client = new InngestClient({ id: testClientId });
+  const score = vi.fn(options.write);
+
+  Object.defineProperty(client, "score", { value: score });
+  Object.defineProperty(client, internalLoggerSymbol, { value: { warn } });
+
+  const fn = client.createFunction(
+    { id: "scores", triggers: [{ event: "scores/run" }] },
+    async () => {
+      const scorer = createAgentScore(client);
+
+      await (options.call ?? ((s) => s("support.noted", 7)))(scorer.score);
+      await scorer.flush();
+
+      return "done";
+    },
+  );
+
+  return {
+    score,
+    warn,
+    ran: await runFnWithStack(fn, options.stepState ?? {}),
+  };
+};
+
+describe("score", () => {
   test("inside a step it rides on the step and calls no API", async () => {
     const { client, score } = failingClient();
     const scores = await stepScores(async () => {
-      await createAgentScores(client).score("support.noted", 7);
+      await createAgentScore(client).score("support.noted", 7);
     });
 
     expect(scores).toEqual({ "support.noted": { scope: "step", value: 7 } });
     expect(score).not.toHaveBeenCalled();
   });
 
-  test("outside a step it sets a run score through the client", async () => {
-    const score = vi.fn(async () => {});
-    const client = { score } as unknown as Inngest.Any;
+  test("outside a step it is one memoized step named from the score", async () => {
+    const first = await handlerScores({ write: async () => {} });
 
-    await createAgentScores(client).score("support.noted", true);
+    if (first.ran.type !== "step-ran") {
+      throw new Error(`expected a step, got ${first.ran.type}`);
+    }
 
-    expect(score).toHaveBeenCalledWith({ name: "support.noted", value: true });
+    expect(first.ran.step.displayName).toBe("score:support.noted");
+    expect(first.score).toHaveBeenCalledTimes(1);
+    expect(first.score).toHaveBeenCalledWith({
+      name: "support.noted",
+      value: 7,
+    });
+
+    // The replay finds the step's answer, so nothing is written again.
+    const replay = await handlerScores({
+      write: async () => {},
+      stepState: {
+        [first.ran.step.id]: { id: first.ran.step.id, data: null },
+      },
+    });
+
+    expect(replay.ran.type).toBe("function-resolved");
+    expect(replay.score).not.toHaveBeenCalled();
+  });
+
+  test("an un-awaited score is still written before the handler ends", async () => {
+    const { score } = await handlerScores({
+      write: async () => {},
+      call: async (call) => {
+        void call("support.late", 1);
+      },
+    });
+
+    expect(score).toHaveBeenCalledWith({ name: "support.late", value: 1 });
   });
 
   test("refuses a bad name or value, and a name that starts with agent.", async () => {
     const { client, score } = failingClient();
-    const scores = createAgentScores(client);
+    const { score: call } = createAgentScore(client);
 
-    await expect(scores.score("", 1)).rejects.toThrow("name");
-    await expect(scores.score("it's", 1)).rejects.toThrow("single quotes");
-    await expect(scores.score("x", Number.NaN)).rejects.toThrow("finite");
-    await expect(scores.score("agent.model_ms", 1)).rejects.toThrow(
+    await expect(call("", 1)).rejects.toThrow("name");
+    await expect(call("it's", 1)).rejects.toThrow("single quotes");
+    await expect(call("x", Number.NaN)).rejects.toThrow("finite");
+    await expect(call("agent.model_ms", 1)).rejects.toThrow(
       "kept for the scores the framework writes",
     );
     expect(score).not.toHaveBeenCalled();
   });
 
-  test("a server that refuses the score does not fail the call, and is logged once", async () => {
-    const { client, warn, score } = failingClient();
-    const scores = createAgentScores(client);
+  test("a refused score logs a warning and the run goes on", async () => {
+    const { ran, warn, score } = await handlerScores({
+      write: async () => {
+        throw new Error("Failed to update metadata: Invalid metadata");
+      },
+    });
 
-    await expect(scores.score("support.a", 1)).resolves.toBeUndefined();
-    await expect(scores.score("support.b", 2)).resolves.toBeUndefined();
-
-    expect(score).toHaveBeenCalledTimes(2);
+    // The step still completes, so the failure is not retried.
+    expect(ran.type).toBe("step-ran");
+    expect(score).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toEqual({
       error: "Failed to update metadata: Invalid metadata",

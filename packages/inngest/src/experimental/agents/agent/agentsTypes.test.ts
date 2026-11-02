@@ -186,6 +186,9 @@ test("agents: the old handler fields are gone", () => {
 
       // @ts-expect-error thread is me
       void context.thread;
+
+      // @ts-expect-error scores is score
+      void context.scores;
     });
   });
 });
