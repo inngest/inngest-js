@@ -1127,11 +1127,9 @@ const finishAuthorization = async (options: {
 }): Promise<McpAuthorizedData> => {
   const { store, pending, key } = options;
 
-  // One use: take it before the exchange so a replayed link fails.
-  if (
-    Date.now() - pending.createdAt > pendingMs ||
-    !(await store.compareAndSet(key, options.raw, "{}"))
-  ) {
+  // One use: take it before the exchange so a replayed link fails. The age was
+  // checked when the request came in.
+  if (!(await store.compareAndSet(key, options.raw, "{}"))) {
     throw new McpAuthorizationError(
       "This authorization link has expired or was already used: ask for a new one",
     );

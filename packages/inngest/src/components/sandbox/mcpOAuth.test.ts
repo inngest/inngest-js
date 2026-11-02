@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { memoryKvAdapter } from "../../experimental/agents/kv/kv.ts";
 import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { getAsyncLocalStorage, runWithAsyncCtx } from "../execution/als.ts";
-import { fakeMcpFetch } from "./mcpFakes.ts";
+import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
 import {
   type McpAuthorizedData,
   type McpNeedsAuthorization,
@@ -40,29 +40,6 @@ const tools = {
   },
 };
 
-const memoryStore = (): McpOAuthStore & { values: Map<string, string> } => {
-  const values = new Map<string, string>();
-
-  return {
-    values,
-    get: async (key) => {
-      return values.get(key) ?? null;
-    },
-    compareAndSet: async (key, expected, next) => {
-      if ((values.get(key) ?? null) !== expected) {
-        return false;
-      }
-
-      values.set(key, next);
-
-      return true;
-    },
-    delete: async (key) => {
-      values.delete(key);
-    },
-  };
-};
-
 const setup = (
   options: {
     ttl?: number;
@@ -79,7 +56,7 @@ const setup = (
       client: { id: "preset" },
     },
   });
-  const store = memoryStore();
+  const store = memoryOAuthStore();
   const needs: McpNeedsAuthorization[] = [];
   const hex = tool.mcp({
     id: "hex",

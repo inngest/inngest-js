@@ -89,6 +89,18 @@ describe("tool.mcp", () => {
     });
   });
 
+  test("every tool built from a server is flagged untrusted", async () => {
+    const { hex } = connect();
+    const tools = await build(hex);
+
+    expect(Object.keys(tools).length).toBeGreaterThan(0);
+    expect(
+      Object.values(tools).every((entry) => {
+        return (entry as SandboxTool).untrusted === true;
+      }),
+    ).toBe(true);
+  });
+
   test("sends the bearer on every request, and the idempotency key", async () => {
     const { hex, server } = connect();
     const tools = await build(hex);
@@ -362,15 +374,15 @@ describe("tool.mcp", () => {
   });
 
   test("refuses plain http except for localhost, and credentials in the url", () => {
-    expect(() => tool.mcp({ id: "x", url: "http://example.com/mcp" })).toThrow(
-      "https",
-    );
-    expect(() =>
-      tool.mcp({ id: "x", url: "http://localhost:1/mcp" }),
-    ).not.toThrow();
-    expect(() =>
-      tool.mcp({ id: "x", url: "https://u:p@example.com/mcp" }),
-    ).toThrow("credentials");
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://example.com/mcp" });
+    }).toThrow("https");
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://localhost:1/mcp" });
+    }).not.toThrow();
+    expect(() => {
+      return tool.mcp({ id: "x", url: "https://u:p@example.com/mcp" });
+    }).toThrow("credentials");
   });
 
   test("a server in a plain tools record fails with a pointer to tools()", async () => {
@@ -378,7 +390,9 @@ describe("tool.mcp", () => {
 
     const { toolDefinitions } = await import("./tools.ts");
 
-    expect(() => toolDefinitions({ hex })).toThrow("await server.tools()");
+    expect(() => {
+      return toolDefinitions({ hex });
+    }).toThrow("await server.tools()");
   });
 
   test("sandbox code calls the tools by name with named arguments, and a tool error is an error", async () => {

@@ -8,7 +8,7 @@
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { getAsyncLocalStorage, runWithAsyncCtx } from "../execution/als.ts";
 import { disconnect } from "./mcp.ts";
-import { fakeMcpFetch } from "./mcpFakes.ts";
+import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
 import type { McpOAuthStore } from "./mcpOAuth.ts";
 import { mcpCallback } from "./mcpOAuth.ts";
 import type { SandboxTool } from "./tools.ts";
@@ -20,29 +20,6 @@ beforeAll(async () => {
 });
 
 const redirectUri = "https://app.example.test/oauth/hex/callback";
-
-const memoryStore = (): McpOAuthStore & { values: Map<string, string> } => {
-  const values = new Map<string, string>();
-
-  return {
-    values,
-    get: async (key) => {
-      return values.get(key) ?? null;
-    },
-    compareAndSet: async (key, expected, next) => {
-      if ((values.get(key) ?? null) !== expected) {
-        return false;
-      }
-
-      values.set(key, next);
-
-      return true;
-    },
-    delete: async (key) => {
-      values.delete(key);
-    },
-  };
-};
 
 interface Hooked {
   url: string;
@@ -63,7 +40,7 @@ const setup = (
           thread?: { key: string };
         }) => string);
     server?: ReturnType<typeof fakeMcpFetch>;
-    store?: ReturnType<typeof memoryStore>;
+    store?: ReturnType<typeof memoryOAuthStore>;
   } = {},
 ) => {
   const server =
@@ -72,7 +49,7 @@ const setup = (
       tools: { ping: { run: () => "pong" } },
       oauth: { client: { id: "preset" } },
     });
-  const store = options.store ?? memoryStore();
+  const store = options.store ?? memoryOAuthStore();
   const hooked: Hooked[] = [];
   const warnings: string[] = [];
   const hex = tool.mcp({
@@ -180,13 +157,28 @@ describe("MCP sign-in: the model never sees the URL", () => {
     expect(fixture.warnings.join("\n")).not.toContain("http");
   });
 
-  test("the pending link never reaches the model through a tool call either", async () => {
+  test("the connect tool the model is shown holds no link", async () => {
     const fixture = setup();
     const listing = await inRun(() => {
       return fixture.hex["~list"]("hex");
     });
+    const shown = JSON.stringify(build(fixture.hex));
 
     expect(listing.connect).toBe(true);
+    expect(shown).not.toContain("http");
+    expect(shown).not.toContain("mcp_start");
+  });
+
+  test("with no hook nothing is discovered, registered or stored for a link nobody gets", async () => {
+    const fixture = setup({ hook: false });
+
+    await inRun(() => {
+      return call(build(fixture.hex).hex_connect);
+    }, fixture.warnings);
+
+    expect(fixture.server.oauthCalls).toHaveLength(0);
+    expect(fixture.server.calls).toHaveLength(0);
+    expect(fixture.store.values.size).toBe(0);
   });
 });
 
@@ -382,5 +374,152 @@ describe("MCP OAuth user function", () => {
       event: { name: "chat/message", data: { q: "x" } },
       thread: { key: "T-9" },
     });
+  });
+});
+
+describe("MCP sign-in cookie and expiry", () => {
+  const link = async (fixture: ReturnType<typeof setup>) => {
+    await inRun(() => {
+      return call(build(fixture.hex).hex_connect);
+    });
+
+    return fixture.hooked.at(-1)?.url ?? "";
+  };
+  const pendingKeys = (fixture: ReturnType<typeof setup>) => {
+    return [...fixture.store.values.keys()].filter((key) => {
+      return key.startsWith("pending:");
+    });
+  };
+
+  test("the cookie is random per sign-in, short-lived, scoped and flagged", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const first = await callback(new Request(await link(fixture)));
+    const second = await callback(new Request(await link(fixture)));
+    const header = first.headers.get("set-cookie") ?? "";
+    const [name, value] = header.split(";")[0]?.split("=") ?? [];
+    const otherName = (second.headers.get("set-cookie") ?? "").split("=")[0];
+
+    expect(value?.length).toBeGreaterThanOrEqual(32);
+    expect(value).not.toBe(
+      (second.headers.get("set-cookie") ?? "").split(";")[0]?.split("=")[1],
+    );
+    // One cookie per sign-in, so two pending sign-ins do not overwrite each other.
+    expect(name).not.toBe(otherName);
+
+    const maxAge = Number(/Max-Age=(\d+)/.exec(header)?.[1]);
+
+    expect(maxAge).toBeGreaterThan(0);
+    expect(maxAge).toBeLessThanOrEqual(600);
+    expect(header).toContain("Path=/oauth/hex/callback");
+    expect(header).toContain("HttpOnly");
+    expect(header).toContain("SameSite=Lax");
+    expect(header).toContain("Secure");
+    expect(first.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("the cookie is cleared when the sign-in succeeds", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const opened = await callback(new Request(await link(fixture)));
+    const returned = await fixture.server.approve(
+      opened.headers.get("location") ?? "",
+    );
+    const done = await callback(
+      new Request(returned, { headers: { cookie: cookieOf(opened) } }),
+    );
+    const cleared = done.headers.get("set-cookie") ?? "";
+
+    expect(done.status).toBe(200);
+    expect(cleared.split(";")[0]).toBe(`${cookieOf(opened).split("=")[0]}=`);
+    expect(cleared).toContain("Max-Age=0");
+    expect(done.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("a link older than ten minutes is refused, opened or not", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const url = await link(fixture);
+    const [key] = pendingKeys(fixture);
+    const record = JSON.parse(fixture.store.values.get(key ?? "") ?? "{}");
+
+    fixture.store.values.set(
+      key ?? "",
+      JSON.stringify({ ...record, createdAt: Date.now() - 11 * 60_000 }),
+    );
+
+    expect((await callback(new Request(url))).status).toBe(400);
+  });
+
+  test("a pending record with no creation time is refused", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const url = await link(fixture);
+    const [key] = pendingKeys(fixture);
+
+    fixture.store.values.set(key ?? "", "{}");
+
+    expect((await callback(new Request(url))).status).toBe(400);
+  });
+
+  test("two callbacks at once finish the sign-in once", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const opened = await callback(new Request(await link(fixture)));
+    const returned = await fixture.server.approve(
+      opened.headers.get("location") ?? "",
+    );
+    const request = () => {
+      return callback(
+        new Request(returned, { headers: { cookie: cookieOf(opened) } }),
+      );
+    };
+    const statuses = (await Promise.all([request(), request()])).map(
+      (response) => {
+        return response.status;
+      },
+    );
+
+    expect(statuses.sort()).toEqual([200, 400]);
+  });
+
+  test("a denial deletes the pending record", async () => {
+    const fixture = setup();
+    const callback = handler(fixture);
+    const opened = await callback(new Request(await link(fixture)));
+    const state = new URL(
+      opened.headers.get("location") ?? "",
+    ).searchParams.get("state");
+    const denied = await callback(
+      new Request(`${redirectUri}?error=access_denied&state=${state}`, {
+        headers: { cookie: cookieOf(opened) },
+      }),
+    );
+
+    expect(denied.status).toBe(400);
+    expect(pendingKeys(fixture)).toEqual([]);
+  });
+});
+
+describe("MCP disconnect", () => {
+  test("removes the lease key with the token", async () => {
+    const fixture = setup();
+
+    fixture.store.values.set("token:hex:U1", "{}");
+    fixture.store.values.set("token:hex:U1:lease", "123");
+
+    await fixture.hex.disconnect("U1");
+
+    expect([...fixture.store.values.keys()]).toEqual([]);
+  });
+
+  test("a server with no per-user sign-in has nothing to disconnect", async () => {
+    const plain = tool.mcp({
+      id: "plain",
+      url: "https://mcp.example.com/mcp",
+      auth: { bearer: "t" },
+    });
+
+    await expect(plain.disconnect("U1")).rejects.toThrow(/no auth.oauth/);
   });
 });

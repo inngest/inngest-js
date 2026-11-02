@@ -23,8 +23,7 @@ describe("tools types", () => {
       expectTypeOf(await hex.disconnect("user-1")).toBeVoid();
       expectTypeOf(await disconnect(hex, "user-1")).toBeVoid();
 
-      // Deliberate unknown: the schema and the result of a remote server's
-      // tools are not known until it is listed.
+      // tools() gives the same plain record of tools as a hand-written one.
       expectTypeOf(listed).toEqualTypeOf<SandboxTools>();
 
       // @ts-expect-error the id names the server's tokens, so it is required
@@ -48,6 +47,13 @@ describe("tools types", () => {
       });
       type Run = Extract<(typeof result.toolCalls)[number], { isError: false }>;
 
+      expectTypeOf<Run["name"]>().toEqualTypeOf<`hex_${string}`>();
+      // Deliberate unknown: a remote server's tools are not known until it is
+      // listed, so their input is JSON and their output is unknown.
+      expectTypeOf<Run["call"]["input"]>().toEqualTypeOf<
+        Record<string, unknown>
+      >();
+      expectTypeOf<Run["output"]>().toEqualTypeOf<unknown>();
       expectTypeOf<"hex_create_thread">().toExtend<Run["name"]>();
 
       // The bare key is not a name the model ever uses.
