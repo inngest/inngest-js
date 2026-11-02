@@ -138,3 +138,22 @@ describe("toolDefinitions", () => {
     expect(tools).toHaveLength(1);
   });
 });
+
+describe("tool() id", () => {
+  test("a tool without an id is defined, and the key names it", () => {
+    const found = tool({ input, run: () => "x" });
+
+    expect(found.id).toBeUndefined();
+    expect(
+      toolDefinitions({ found }).map((definition) => {
+        return definition.name;
+      }),
+    ).toEqual(["found"]);
+  });
+
+  test("an id that is not a valid name still throws", () => {
+    expect(() => {
+      return tool({ id: "not valid", run: () => "x" });
+    }).toThrow(/Invalid tool name/);
+  });
+});
