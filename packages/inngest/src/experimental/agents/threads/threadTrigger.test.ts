@@ -195,9 +195,6 @@ describe("thread key from a trigger", () => {
       };
     };
 
-    expect(define({ triggers: { event: "e" } })).toThrow(
-      /supplies no thread key/,
-    );
     expect(define({ triggers: { event: "a/*", thread: '"t"' } })).toThrow(
       /(is a wildcard|owns)/,
     );
@@ -215,6 +212,21 @@ describe("thread key from a trigger", () => {
     expect(
       define({ triggers: { event: "a", thread: "event.data.x[0]" } }),
     ).toThrow(/trigger "a"/);
+  });
+});
+
+describe("a trigger with no thread expression", () => {
+  test("is accepted, and each event starts a fresh thread", () => {
+    const [trigger] = compileTriggers("bot", { triggers: { event: "e" } });
+    const started = startOf("app/bot", trigger as never, {
+      id: "evt-1",
+      name: "e",
+      data: { room: "C1" },
+    });
+
+    expect(started.thread).toBe("fresh:evt-1");
+    expect(started.fresh).toBe(true);
+    expect(singletonKey([trigger as never])).toContain('"fresh:" + event.id');
   });
 });
 

@@ -80,6 +80,20 @@ describe("thread key expressions", () => {
     }
   });
 
+  test("a number key is its decimal string, so 42 and \"42\" are one thread", () => {
+    const key = compileKey("event.data.pr");
+
+    expect(key.key({ data: { pr: 42 } })).toBe("42");
+    expect(key.key({ data: { pr: "42" } })).toBe("42");
+    expect(key.key({ data: { pr: 1234567 } })).toBe("1234567");
+    expect(() => {
+      return key.key({ data: { pr: true } });
+    }).toThrow(/non-empty string/);
+    expect(() => {
+      return key.key({ data: { pr: Number.NaN } });
+    }).toThrow(/non-empty string/);
+  });
+
   test("string(int()) writes a whole number in full, as ids need", () => {
     const key = compileKey('event.data.repo + "#" + string(int(event.data.n))');
 
