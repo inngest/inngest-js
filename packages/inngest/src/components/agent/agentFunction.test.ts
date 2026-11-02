@@ -16,7 +16,7 @@ import { createAgents } from "./agents.ts";
 import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
-import { type AgentMessage, type AgentModelResponse, agent } from "./loop.ts";
+import { type AgentModelResponse, agent, type ModelMessage } from "./loop.ts";
 import { skills } from "./skills.ts";
 import { run, textOf } from "./test-helpers.ts";
 
@@ -115,7 +115,7 @@ describe("agent function", () => {
       makeClient(),
       { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
       async ({ inbox, control }) => {
-        let history: AgentMessage[] = [];
+        let history: ModelMessage[] = [];
         let last = "";
         let n = -1;
 

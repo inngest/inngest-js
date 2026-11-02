@@ -20,12 +20,12 @@ import {
 } from "../sandbox/tools.ts";
 import type { AgentPriceTable } from "./cost.ts";
 import type {
-  AgentMessage,
   AgentModel,
   AgentModelRequest,
   AgentModelResponse,
   AgentToolCall,
   AgentUsage,
+  ModelMessage,
 } from "./loop.ts";
 import { classifyModelError } from "./modelErrors.ts";
 
@@ -223,7 +223,7 @@ export interface AnthropicCall {
   /**
    * The conversation. Default: one user message with `prompt`.
    */
-  messages?: AgentMessage[];
+  messages?: ModelMessage[];
 
   /**
    * One user message, when you have no `messages`.
@@ -393,7 +393,7 @@ const keepBlock = (block: Block): Block => {
  * message, since the API reads them as one turn anyway. Tool results stay
  * first in their message.
  */
-const toParams = (messages: AgentMessage[]): Param[] => {
+const toParams = (messages: ModelMessage[]): Param[] => {
   const params: Param[] = [];
 
   const add = (role: Param["role"], blocks: Block[]) => {
@@ -568,7 +568,7 @@ const buildBody = (
     );
   }
 
-  const messages: AgentMessage[] = call.messages ?? [
+  const messages: ModelMessage[] = call.messages ?? [
     { role: "user", content: call.prompt as string },
   ];
   const request: AgentModelRequest = {

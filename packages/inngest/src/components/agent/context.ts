@@ -5,7 +5,7 @@
  * provider format is involved. Until then the conversation is sent whole, so
  * a provider's prompt cache keeps hitting the same prefix.
  */
-import type { AgentMessage, AgentUsage } from "./loop.ts";
+import type { AgentUsage, ModelMessage } from "./loop.ts";
 
 /**
  * A summary of the start of a conversation. The first `upTo` messages are
@@ -48,7 +48,7 @@ export interface AgentCompactionOptions {
     /**
      * The messages being replaced by the summary.
      */
-    messages: AgentMessage[];
+    messages: ModelMessage[];
 
     /**
      * The summary made before, which these messages come after.
@@ -73,7 +73,7 @@ const summaryPrompt =
 
 const maxTranscriptResult = 20_000;
 
-const transcriptOf = (messages: AgentMessage[]): string => {
+const transcriptOf = (messages: ModelMessage[]): string => {
   return messages
     .map((message) => {
       if (message.role === "tool") {
@@ -103,7 +103,7 @@ const transcriptOf = (messages: AgentMessage[]): string => {
  * A rough token count: about three characters a token, counted on the JSON of
  * the messages.
  */
-export const estimateTokens = (messages: AgentMessage[]): number => {
+export const estimateTokens = (messages: ModelMessage[]): number => {
   return Math.ceil(JSON.stringify(messages).length / 3);
 };
 
@@ -113,9 +113,9 @@ export const estimateTokens = (messages: AgentMessage[]): number => {
  * messages themselves.
  */
 export const compactedView = (
-  messages: AgentMessage[],
+  messages: ModelMessage[],
   compaction: AgentCompaction | undefined,
-): AgentMessage[] => {
+): ModelMessage[] => {
   if (!compaction || compaction.upTo > messages.length) {
     return messages;
   }
@@ -137,12 +137,12 @@ export const compactedView = (
  * since those only make sense after the reply that asked for them.
  */
 export const withCompaction = async (input: {
-  messages: AgentMessage[];
+  messages: ModelMessage[];
   held: AgentCompaction | undefined;
   options: AgentCompactionOptions;
   summarise: Summariser;
 }): Promise<{
-  messages: AgentMessage[];
+  messages: ModelMessage[];
   made?: AgentCompaction;
   usage?: AgentUsage;
 }> => {
