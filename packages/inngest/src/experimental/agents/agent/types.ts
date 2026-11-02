@@ -56,6 +56,7 @@ import type {
   ThreadKeyConfig,
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
+import type { AgentToolSet } from "./agentTools.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
@@ -616,7 +617,7 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
            * `loop.with(options)` derives another from it. Only an agent with a
            * `model` has one.
            */
-          loop: AgentHandlerLoop;
+          loop: AgentHandlerLoop<AgentToolSet>;
         }
       : Record<never, never>);
 
