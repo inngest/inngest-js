@@ -12,13 +12,13 @@ import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
 import { mapMcpResult } from "./mcp.ts";
 import {
   forgetMcpSessions,
   McpAuthError,
   McpUnavailableError,
 } from "./mcpClient.ts";
-import { createDurableSandboxFacade } from "./durable.ts";
 import { fakeMcpFetch } from "./mcpFakes.ts";
 import type { SandboxRawTool } from "./protocol.ts";
 import { script } from "./scriptedModel.ts";

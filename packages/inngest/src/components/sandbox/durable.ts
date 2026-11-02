@@ -23,6 +23,7 @@ import { checkExit, commandText } from "./commandError.ts";
 import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
 import { runManagedCommand } from "./managedCommand.ts";
+import { expandMcpTools } from "./mcp.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -36,7 +37,6 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
-import { expandMcpTools } from "./mcp.ts";
 import { createShell } from "./shell.ts";
 import { validateShims, withShims } from "./shims.ts";
 import { bundledToolBinary } from "./toolBinary.ts";
