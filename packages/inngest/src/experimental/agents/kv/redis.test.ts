@@ -215,48 +215,56 @@ describe("RESP", () => {
     server.close();
   });
 
-  test("a script that never closes the connection still exits on its own", async () => {
-    const server = net.createServer((socket) => {
-      socket.on("data", () => {
-        socket.write("+PONG\r\n");
-      });
-    });
-    await new Promise<void>((resolve) => {
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const { port } = server.address() as net.AddressInfo;
-    const module = fileURLToPath(new URL("./redis.ts", import.meta.url));
+  // The script is run with Node's type stripping, which Node 20 doesn't have.
+  const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
+  const canStripTypes = major > 22 || (major === 22 && minor >= 6);
 
-    const child = spawn(
-      process.execPath,
-      [
-        "--experimental-strip-types",
-        "--input-type=module",
-        "-e",
-        `import { redisConnection } from ${JSON.stringify(module)};
+  test.skipIf(!canStripTypes)(
+    "a script that never closes the connection still exits on its own",
+    async () => {
+      const server = net.createServer((socket) => {
+        socket.on("data", () => {
+          socket.write("+PONG\r\n");
+        });
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, "127.0.0.1", resolve);
+      });
+      const { port } = server.address() as net.AddressInfo;
+      const module = fileURLToPath(new URL("./redis.ts", import.meta.url));
+
+      const child = spawn(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          "--input-type=module",
+          "-e",
+          `import { redisConnection } from ${JSON.stringify(module)};
          const client = await redisConnection("redis://127.0.0.1:${port}")();
          console.log(await client.command("PING"));`,
-      ],
-      { stdio: ["ignore", "pipe", "inherit"] },
-    );
-    let out = "";
-    child.stdout.on("data", (chunk) => {
-      out += String(chunk);
-    });
-
-    const code = await new Promise<number | "timeout">((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill();
-        resolve("timeout");
-      }, 8000);
-      child.on("exit", (exit) => {
-        clearTimeout(timer);
-        resolve(exit ?? -1);
+        ],
+        { stdio: ["ignore", "pipe", "inherit"] },
+      );
+      let out = "";
+      child.stdout.on("data", (chunk) => {
+        out += String(chunk);
       });
-    });
-    server.close();
 
-    expect(out.trim()).toBe("PONG");
-    expect(code).toBe(0);
-  }, 15000);
+      const code = await new Promise<number | "timeout">((resolve) => {
+        const timer = setTimeout(() => {
+          child.kill();
+          resolve("timeout");
+        }, 8000);
+        child.on("exit", (exit) => {
+          clearTimeout(timer);
+          resolve(exit ?? -1);
+        });
+      });
+      server.close();
+
+      expect(out.trim()).toBe("PONG");
+      expect(code).toBe(0);
+    },
+    15000,
+  );
 });
