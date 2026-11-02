@@ -104,7 +104,6 @@ import {
   singletonKey,
 } from "../threads/threadTrigger.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
-import { invokeDepthOf } from "./invoke.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -125,7 +124,7 @@ import {
   resolveRunField,
 } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
-import { startThread } from "./startThread.ts";
+import { invokeDepthOf, startThread } from "./startThread.ts";
 import { traceWarning } from "./traceWarning.ts";
 import type {
   AgentBody,

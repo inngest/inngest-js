@@ -50,6 +50,23 @@ export class AgentStoppedError extends NonRetriableError {
   }
 }
 
+/**
+ * How many agents deep a started run is: 1 for one started by a function that
+ * is not an agent, 2 for the next, and so on. 0 for an event that did not come
+ * from `start()`.
+ */
+export const invokeDepthOf = (
+  /**
+   * The event the function was started with.
+   */
+  event: { data?: Record<string, unknown> },
+): number => {
+  const from = event.data?.from;
+  const depth = isRecord(from) ? from.depth : undefined;
+
+  return typeof depth === "number" && depth > 0 ? depth : 0;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };

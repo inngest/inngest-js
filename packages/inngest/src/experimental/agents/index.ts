@@ -20,10 +20,10 @@ export type {
 } from "../../components/sandbox/gitPush.ts";
 export type { SandboxHandle } from "../../components/sandbox/types.ts";
 export * from "./agent/agents.ts";
-export { AgentCancelledError } from "./agent/invoke.ts";
 export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
+export { AgentStoppedError } from "./agent/startThread.ts";
 export type { Json, JsonSchema } from "./json.ts";
 export type {
   AnthropicCall,

@@ -20,7 +20,6 @@ import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { invokeAgent } from "./invoke.ts";
 import { freshKv, run, textOf } from "./test-helpers.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -72,6 +71,8 @@ const trigger = (content: string) => {
 const makeClient = () => {
   return new Inngest({ id: testClientId });
 };
+
+const leaf = createAgentFunction(makeClient(), { id: "leaf" });
 
 const userTexts = (messages: { role: string; content?: unknown }[]) => {
   return messages.flatMap((m) => {
@@ -1351,7 +1352,7 @@ describe("agent limits", () => {
       { id: "bot" },
       async () => {
         try {
-          await invokeAgent("team/leaf", {}, {});
+          await leaf.start("x");
         } catch (error) {
           return (error as Error).message;
         }
@@ -1367,7 +1368,7 @@ describe("agent limits", () => {
       },
     });
 
-    expect(output).toContain("team/leaf was not started");
+    expect(output).toContain("/leaf was not started");
   });
 });
 
@@ -1379,7 +1380,7 @@ describe("inherited limits persist on the thread", () => {
       { id: "bot" },
       async () => {
         try {
-          await invokeAgent("team/leaf", {}, {});
+          await leaf.start("x");
         } catch (error) {
           return (error as Error).message;
         }
@@ -1397,7 +1398,7 @@ describe("inherited limits persist on the thread", () => {
 
     const { output } = await run(fn, { event: trigger("again") });
 
-    expect(output).toContain("team/leaf was not started");
+    expect(output).toContain("/leaf was not started");
   });
 });
 
