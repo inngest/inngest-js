@@ -107,6 +107,9 @@ export function stepTypeFromOpCode(
     if (opts?.type === "step.sendEvent") {
       return "sendEvent";
     }
+    if (opts?.type === "step.sendSignal") {
+      return "sendSignal";
+    }
     if (opts?.type === "step.realtime.publish") {
       return "realtime.publish";
     }

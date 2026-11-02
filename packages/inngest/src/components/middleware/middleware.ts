@@ -253,6 +253,7 @@ export namespace Middleware {
     | "realtime.publish"
     | "run"
     | "sendEvent"
+    | "sendSignal"
     | "sleep"
     | "waitForEvent"
     | "waitForSignal"
