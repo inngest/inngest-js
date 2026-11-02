@@ -33,7 +33,7 @@ import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import { quote } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import { getThread } from "../threads/thread.ts";
+import { threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import { startThread } from "./startThread.ts";
 
@@ -145,7 +145,7 @@ const startAgent = (
 };
 
 const stopAgent = async ({ thread }: { thread: string }) => {
-  await getThread(clientOf(), executionOf().agent?.ref ?? "", thread).stop();
+  await threadHandle(clientOf(), executionOf().agent?.ref ?? "", thread).stop();
 
   return { ok: true as const };
 };
