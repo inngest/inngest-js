@@ -264,3 +264,41 @@ describe("start().result({ timeout })", () => {
     expect(output).toBe("AgentTimeoutError");
   });
 });
+
+describe("start() and budgets", () => {
+  test("nothing of the starter's budget is handed to the thread it starts", async () => {
+    const agents = makeAgents();
+    const callee = agents.agent({ id: "callee", budget: { tokens: 100000 } });
+    const caller = agents.agent(
+      { id: "caller", budget: { tokens: 5 } },
+      async () => {
+        await callee.start("x");
+      },
+    );
+    const sent: unknown[] = [];
+
+    await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: {
+          agent: `${testClientId}/caller`,
+          thread: "c1",
+          content: "go",
+          from: { depth: 1, limits: { depth: 2 } },
+        },
+      },
+      onInvoke: (op) => {
+        sent.push(op.opts);
+
+        return { data: null };
+      },
+    });
+
+    const from = (
+      sent[0] as { payload: { data: { from: { limits?: object } } } }
+    ).payload.data.from;
+
+    expect(from.limits).not.toHaveProperty("budget");
+    expect(from.limits).toEqual({ depth: 1 });
+  });
+});
