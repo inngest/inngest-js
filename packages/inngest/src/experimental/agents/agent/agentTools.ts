@@ -31,10 +31,13 @@ import {
 } from "../discovery/discovery.ts";
 import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
+import { answerQuestion } from "../inbox/answer.ts";
+import { agentAskTimeout, agentQuestion } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { threadHandle } from "../threads/thread.ts";
+import { threadHandle, threadSessions } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import { AgentStoppedError } from "./runResults.ts";
+import { senderOf } from "./sender.ts";
 import { type StartedThread, startThread } from "./startThread.ts";
 
 /**
@@ -53,7 +56,10 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {
  */
 export type AgentToolSet = {
   start_agent: AgentTool<{ address: string; input?: Json }, { thread: string }>;
+  message_agent: AgentTool<{ thread: string; content: Json }, { ok: true }>;
+  ask_agent: AgentTool<{ thread: string; question: string }, { id: string }>;
   stop_agent: AgentTool<{ thread: string }, { ok: true }>;
+  reply: AgentTool<{ to: string; text: string }, { ok: true }>;
 };
 
 const clientOf = (): Inngest.Any => {
@@ -162,6 +168,108 @@ const stopAgent = async ({ thread }: { thread: string }) => {
   return { ok: true as const };
 };
 
+const messageInput = z.object({
+  thread: z.string().describe("The thread key `start_agent` returned."),
+  content: z
+    .any()
+    .describe("The text or JSON to send. The agent reads it as a message."),
+});
+
+const askInput = z.object({
+  thread: z.string().describe("The thread key `start_agent` returned."),
+  question: z.string().describe("The question."),
+});
+
+const replyInput = z.object({
+  to: z.string().describe("The ID of the question you are answering."),
+  text: z.string().describe("Your answer."),
+});
+
+/**
+ * The agent a thread key belongs to. `start_agent` makes keys that begin with
+ * the agent's address; any other key is not one this tool can reach.
+ */
+const addressOfThread = (thread: string): string => {
+  const colon = thread.lastIndexOf(":");
+  const address = colon < 0 ? "" : thread.slice(0, colon);
+
+  if (!address.includes("/")) {
+    throw new Error(
+      `"${thread}" is not a thread key start_agent returned, so no agent can be reached through it.`,
+    );
+  }
+
+  return address;
+};
+
+const messageAgent = async ({
+  thread,
+  content,
+}: {
+  thread: string;
+  content: Json;
+}) => {
+  await threadHandle(clientOf(), addressOfThread(thread), thread).message(
+    content,
+  );
+
+  return { ok: true as const };
+};
+
+const askAgent = async ({
+  thread,
+  question,
+}: {
+  thread: string;
+  question: string;
+}) => {
+  const agent = addressOfThread(thread);
+  const execution = executionOf();
+  const self = execution.agent;
+
+  if (!self?.ref) {
+    throw new Error("ask_agent can only be used by an agent");
+  }
+
+  const n = nextCount(execution.instance, "ask");
+  const id = `ask:${execution.ctx.runId}.${n}`;
+
+  execution.agentBridge?.questions?.ask(id, question);
+
+  // The question and the clock on it go out together. Nothing waits: the
+  // answer, or `timed_out`, arrives as an `agent/answer` message.
+  await step.sendEvent(`${id}:send`, [
+    agentQuestion.create(
+      { agent, thread, id, text: question, from: senderOf(execution) },
+      { meta: { sessions: threadSessions(thread) } },
+    ),
+    agentAskTimeout.create({
+      id,
+      agent: self.ref,
+      thread: self.thread,
+      timeout: "1h",
+    }),
+  ]);
+
+  return { id };
+};
+
+const replyTo = async ({ to, text }: { to: string; text: string }) => {
+  const questions = executionOf().agentBridge?.questions;
+  const found = questions?.question(to);
+
+  if (!questions || !found) {
+    throw new Error(
+      `No question "${to}" is waiting for you. Answer a question by the ID it came with.`,
+    );
+  }
+
+  questions.markReplied(to);
+  await answerQuestion(clientOf(), found, { text });
+
+  return { ok: true as const };
+};
+
 const startDescription =
   "Starts another agent on a new thread and returns at once with the thread's key. It does not wait. Use describe_agent to see what input it takes.";
 const stopDescription = "Stops the run of an agent you started.";
@@ -192,6 +300,22 @@ export const agentToolSet = (
       input: startInput,
       run: startAgent(options, "start_agent"),
     }),
+    message_agent: tool({
+      id: "message_agent",
+      description:
+        "Sends a message to an agent you started. It does not wait for a reply.",
+      group: true,
+      input: messageInput,
+      run: messageAgent,
+    }),
+    ask_agent: tool({
+      id: "ask_agent",
+      description:
+        "Asks an agent you started a question and returns the question's ID at once. The answer arrives later as a message that names the ID; if there is none within an hour, you get a message that says so.",
+      group: true,
+      input: askInput,
+      run: askAgent,
+    }),
     stop_agent: tool({
       id: "stop_agent",
       description: `${stopDescription} You get its outcome as a message.`,
@@ -199,8 +323,23 @@ export const agentToolSet = (
       input: stopInput,
       run: stopAgent,
     }),
+    reply: replyTool,
   };
 };
+
+/**
+ * `reply({ to, text })`: answers a question that reached the agent, by the
+ * ID it came with. It is not a discovery tool: a model agent always has it,
+ * even with `discovery: false`.
+ */
+export const replyTool: AgentToolSet["reply"] = tool({
+  id: "reply",
+  description:
+    "Answers a question another agent asked you, by the question's ID.",
+  group: true,
+  input: replyInput,
+  run: replyTo,
+});
 
 /**
  * The tools a model agent gets by default, from its definition's `discovery`
@@ -211,7 +350,7 @@ export const agentToolsFor = (
   discovery: AgentDiscovery | undefined,
 ): Record<string, AgentTool> => {
   if (discovery === false) {
-    return {};
+    return { reply: replyTool };
   }
 
   return {

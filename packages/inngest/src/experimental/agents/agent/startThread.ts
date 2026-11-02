@@ -162,7 +162,9 @@ export function startThread<TOutput>(
   }
 
   const n = nextCount(instance, "start");
-  const key = `${target.id}:${ctx.runId}.${n}`;
+  // The address leads the key, so a tool that is given only the key can tell
+  // which agent the thread belongs to.
+  const key = `${target.address}:${ctx.runId}.${n}`;
   const sessions = {
     agent_session: currentSessions(ctx).agent_session ?? (ctx.runId as string),
     agent_thread: key,

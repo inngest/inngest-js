@@ -8,7 +8,6 @@
  */
 
 import type { QuestionRef } from "./answer.ts";
-import type { AgentQuestionData } from "./events.ts";
 
 /**
  * The question and answer messages of a run.
@@ -22,7 +21,7 @@ export class QuestionBook {
   /**
    * Notes a question that reached the inbox.
    */
-  receive(data: AgentQuestionData): void {
+  receive(data: QuestionRef["data"]): void {
     this.received.set(data.id, { data });
   }
 

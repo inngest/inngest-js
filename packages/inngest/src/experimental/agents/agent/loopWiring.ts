@@ -5,6 +5,7 @@
  */
 
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
+import type { QuestionBook } from "../inbox/questionBook.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
@@ -34,12 +35,26 @@ export const createLoopWiring = (options: {
   threadKey: string;
 
   /**
+   * The questions of this run.
+   */
+  questions: QuestionBook;
+
+  /**
    * Whether the loops of this run remember the thread's history.
    */
   remember: boolean;
 }): AgentLoopWiring => {
-  const { config, inbox, view, named, limits, recorder, threadKey, remember } =
-    options;
+  const {
+    config,
+    inbox,
+    view,
+    named,
+    limits,
+    recorder,
+    threadKey,
+    questions,
+    remember,
+  } = options;
 
   return {
     remember,
@@ -54,7 +69,16 @@ export const createLoopWiring = (options: {
         }
       }
 
-      return taken;
+      // An answer is shown once; a second or late one is dropped.
+      return taken.filter((event) => {
+        return questions.admit(event);
+      });
+    },
+    answered(id: string) {
+      return questions.isReplied(id);
+    },
+    questions() {
+      return questions.texts();
     },
     inboxes() {
       return [...named.values()].map((open) => {

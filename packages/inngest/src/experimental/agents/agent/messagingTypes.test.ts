@@ -32,6 +32,30 @@ describe("messaging types", () => {
               expectTypeOf(call.output).toEqualTypeOf<{ thread: string }>();
             }
 
+            if (call.name === "message_agent") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                thread: string;
+                content: Json;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<{ ok: true }>();
+            }
+
+            if (call.name === "ask_agent") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                thread: string;
+                question: string;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<{ id: string }>();
+            }
+
+            if (call.name === "reply") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                to: string;
+                text: string;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<{ ok: true }>();
+            }
+
             if (call.name === "stop_agent") {
               expectTypeOf(call.call.input).toEqualTypeOf<{ thread: string }>();
               expectTypeOf(call.output).toEqualTypeOf<{ ok: true }>();

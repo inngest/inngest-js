@@ -43,6 +43,7 @@ import { cardOf } from "../discovery/discovery.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
+import { QuestionBook } from "../inbox/questionBook.ts";
 import {
   eventNameOf,
   inboxFilter,
@@ -289,7 +290,8 @@ export function createAgentFunction(
       });
       const data = startData(ref, found, event);
       // Read by `agent.loop()` once the body's inbox exists.
-      const bridge: AgentBridge = {};
+      const questions = new QuestionBook();
+      const bridge: AgentBridge = { questions };
 
       // Run-scoped KV keys end with the run, whichever way it ends.
       defer("kv-cleanup", {
@@ -583,7 +585,14 @@ export function createAgentFunction(
           startMessage,
           idle,
           (question, given) => {
+            // Marked first: a question that code answered costs the model no
+            // turn, and the model cannot answer it again.
+            questions.markReplied(question.data.id);
+
             return answerQuestion(client, question, given);
+          },
+          (data) => {
+            questions.receive(data);
           },
         );
 
@@ -597,6 +606,7 @@ export function createAgentFunction(
           limits,
           recorder,
           threadKey: thread.key,
+          questions,
           remember:
             (await fields.get(
               "remember",

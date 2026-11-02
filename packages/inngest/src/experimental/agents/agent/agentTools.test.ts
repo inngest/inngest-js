@@ -122,7 +122,13 @@ beforeEach(() => {
   Object.defineProperty(client, "_send", {
     configurable: true,
     value: async (input: { payload: unknown }) => {
+      // The fake executor reports an op again on each pass until it has
+      // answered it; an event is sent once.
       for (const event of [input.payload].flat()) {
+        if (JSON.stringify(sent).includes(JSON.stringify(event))) {
+          continue;
+        }
+
         sent.push(event as (typeof sent)[number]);
       }
 

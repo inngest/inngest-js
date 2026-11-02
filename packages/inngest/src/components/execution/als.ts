@@ -1,3 +1,4 @@
+import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.ts";
 import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
@@ -19,6 +20,12 @@ export interface AgentBridge {
    * for a score a tool did not await.
    */
   score?: (name: string, value: number | boolean) => Promise<void>;
+
+  /**
+   * The questions this run received, answered and asked, which the model's
+   * `reply` and `ask_agent` tools read and write.
+   */
+  questions?: QuestionBook;
 }
 
 export interface AsyncContext {
