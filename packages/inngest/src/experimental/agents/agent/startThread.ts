@@ -22,33 +22,17 @@ import {
   limitStateOf,
   readInheritedLimits,
 } from "./limits.ts";
+import {
+  AgentStoppedError,
+  AgentTimeoutError,
+  flush,
+  isRecord,
+  noop,
+  type ResultOptions,
+  stoppedRun,
+  timedOut,
+} from "./runResults.ts";
 import { currentSessions } from "./sessions.ts";
-
-/**
- * Thrown by `result()` when the run it waits for was stopped (a `stop()`, a
- * `cancelOn` event, or the cancellation of the caller's own parent), so the
- * caller never takes a cancelled run's non-answer for a result.
- */
-export class AgentStoppedError extends NonRetriableError {
-  /**
-   * The ID of the stopped run, when the executor says.
-   */
-  public readonly runId: string | undefined;
-
-  constructor(
-    /**
-     * The agent's address.
-     */
-    address: string,
-    runId?: string,
-  ) {
-    super(
-      `${address} was stopped${runId ? ` (run ${runId})` : ""}, so it returned no result.`,
-    );
-    this.name = "AgentStoppedError";
-    this.runId = runId;
-  }
-}
 
 /**
  * How many agents deep a started run is: 1 for one started by a function that
@@ -65,45 +49,6 @@ export const invokeDepthOf = (
   const depth = isRecord(from) ? from.depth : undefined;
 
   return typeof depth === "number" && depth > 0 ? depth : 0;
-};
-
-/**
- * Thrown by `result({ timeout })` when the run did not finish in time. The run
- * keeps going: ask for its `result()` again to keep waiting.
- */
-export class AgentTimeoutError extends NonRetriableError {
-  constructor(
-    /**
-     * The agent's address.
-     */
-    address: string,
-  ) {
-    super(`${address} did not finish in time; its run is still going.`);
-    this.name = "AgentTimeoutError";
-  }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-/**
- * What `step.invoke` gives back for a cancelled run: the whole
- * `inngest/function.finished` event, not an output.
- */
-const stoppedRun = (result: unknown): { runId?: string } | undefined => {
-  if (!isRecord(result) || result.name !== "inngest/function.finished") {
-    return undefined;
-  }
-
-  const data = result.data;
-  const info = isRecord(data) ? data._inngest : undefined;
-
-  if (!isRecord(data) || !isRecord(info) || info.status !== "Cancelled") {
-    return undefined;
-  }
-
-  return { runId: typeof data.run_id === "string" ? data.run_id : undefined };
 };
 
 /**
@@ -137,16 +82,6 @@ export interface StartTarget {
    * reaches `agent_result`).
    */
   via?: "start_agent" | "sandbox";
-}
-
-/**
- * Options of `result()`.
- */
-export interface ResultOptions {
-  /**
-   * How long to wait, as a duration string (`"5m"`) or milliseconds.
-   */
-  timeout?: string | number;
 }
 
 /**
@@ -184,20 +119,6 @@ export type StartedThreadPromise<TOutput = unknown> = Promise<
   StartedThread<TOutput>
 > &
   Pick<StartedThread<TOutput>, "result" | "stop">;
-
-const noop = () => {};
-
-const timedOut = Symbol("timedOut");
-
-/**
- * The macrotask a `start()` yields after issuing its invoke, so the engine
- * reports the op before the handler can return without awaiting it.
- */
-const flush = (): Promise<void> => {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-};
 
 /**
  * Starts the agent.

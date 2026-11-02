@@ -26,7 +26,7 @@ export type { RunField, RunFieldContext } from "./agent/runField.ts";
 export {
   AgentStoppedError,
   AgentTimeoutError,
-} from "./agent/startThread.ts";
+} from "./agent/runResults.ts";
 export type { Json, JsonSchema } from "./json.ts";
 export type {
   AnthropicCall,
