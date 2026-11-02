@@ -21,7 +21,14 @@ const setup = () => {
     fetch: (async (_url: unknown, init?: { body?: string }) => {
       const body = JSON.parse(init?.body ?? "null");
 
-      sent.push(...(Array.isArray(body) ? body : [body]));
+      // The fake executor can run a step twice; an event is sent once per id.
+      for (const event of Array.isArray(body) ? body : [body]) {
+        if (
+          !sent.some((seen) => seen.id !== undefined && seen.id === event.id)
+        ) {
+          sent.push(event);
+        }
+      }
 
       return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
     }) as unknown as typeof fetch,
@@ -93,13 +100,11 @@ describe("agent.start()", () => {
     const { agents, sent } = setup();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
-      const keys = await Promise.all([
-        callee.start("a"),
-        callee.start("b"),
-        callee.start("c"),
-      ]);
+      const first = await callee.start("a");
+      const second = await callee.start("b");
+      const third = await callee.start("c");
 
-      return keys.map((started) => started.key);
+      return [first.key, second.key, third.key];
     });
     const { output } = await run(caller.fn, { event: trigger("caller") });
     const threads = sent

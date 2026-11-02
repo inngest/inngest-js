@@ -13,6 +13,7 @@ import type {
 } from "../../../components/inbox/Inbox.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
+import { internalEvents } from "../../../helpers/consts.ts";
 import type { AgentMessage, InboxSource } from "../agent/types.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import {
@@ -112,8 +113,7 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
     message.name === agentRecoverEvent
       ? (message.data as Partial<AgentRecoverData>).event
       : undefined;
-
-  return addEventIs({
+  const as = {
     ...message,
     ...(resent
       ? {
@@ -122,7 +122,22 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
           data: resent.data,
         }
       : {}),
-  });
+  };
+  const data = as.data as
+    | { content?: unknown; from?: { typed?: boolean } }
+    | undefined;
+
+  // The message `start()` sends to an agent with an `invoke()` trigger carries
+  // the typed input as its content; the run's event has the trigger's shape.
+  if (as.name === agentMessageEvent && data?.from?.typed === true) {
+    return addEventIs({
+      ...as,
+      name: internalEvents.FunctionInvoked,
+      data: data.content,
+    } as UntypedInboxMessage);
+  }
+
+  return addEventIs(as);
 };
 
 /**

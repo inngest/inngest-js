@@ -48,29 +48,6 @@ export class AgentTimeoutError extends NonRetriableError {
   }
 }
 
-export const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-};
-
-/**
- * What `step.invoke` gives back for a cancelled run: the whole
- * `inngest/function.finished` event, not an output.
- */
-export const stoppedRun = (result: unknown): { runId?: string } | undefined => {
-  if (!isRecord(result) || result.name !== "inngest/function.finished") {
-    return undefined;
-  }
-
-  const data = result.data;
-  const info = isRecord(data) ? data._inngest : undefined;
-
-  if (!isRecord(data) || !isRecord(info) || info.status !== "Cancelled") {
-    return undefined;
-  }
-
-  return { runId: typeof data.run_id === "string" ? data.run_id : undefined };
-};
-
 /**
  * Options of `result()`.
  */
@@ -82,15 +59,3 @@ export interface ResultOptions {
 }
 
 export const noop = () => {};
-
-export const timedOut = Symbol("timedOut");
-
-/**
- * The macrotask a `start()` yields after issuing its invoke, so the engine
- * reports the op before the handler can return without awaiting it.
- */
-export const flush = (): Promise<void> => {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-};
