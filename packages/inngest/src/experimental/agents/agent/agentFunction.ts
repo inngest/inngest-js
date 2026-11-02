@@ -86,6 +86,7 @@ import {
 } from "../skills/skills.ts";
 import {
   agentMessageEvent,
+  agentQuestionEvent,
   agentRecoverEvent,
   type ThreadRecord,
   threadHandle,
@@ -106,6 +107,7 @@ import {
 } from "../threads/threadTrigger.ts";
 import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import { childWait, openChildren, settleChild } from "./children.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -495,7 +497,9 @@ export function createAgentFunction(
         // too, when it was sent just before the inbox opened: it is read once.
         // What the SDK told an invoked agent in `from` is not the caller's
         // input, except for an `agent/message`, whose `from` is its sender.
-        const told = "from" in ((event.data ?? {}) as object);
+        const told =
+          (event.name as string) === internalEvents.FunctionInvoked &&
+          "from" in ((event.data ?? {}) as object);
         const startMessage = addEventIs({
           id: event.id ?? "",
           name: invokedAsMessage ? agentMessageEvent : event.name,
@@ -542,7 +546,14 @@ export function createAgentFunction(
 
         bridge.score = agentScore.score;
 
-        const idle = await idleMs(fields, config.idle);
+        // A run opened through a handle (`start()`, `message()`, `ask()`, or a
+        // model's agent tools) has a sender, and ends once it has answered and
+        // nothing is unread; a run a trigger started waits `idle`.
+        const openedByHandle =
+          (runEvent.name === agentMessageEvent ||
+            runEvent.name === agentQuestionEvent) &&
+          (runEvent.data as { from?: unknown } | undefined)?.from !== undefined;
+        const idle = openedByHandle ? 0 : await idleMs(fields, config.idle);
 
         const { inbox, view } = threadInbox(
           {
@@ -584,6 +595,17 @@ export function createAgentFunction(
           runId,
           startMessage,
           idle,
+          {
+            open: () => {
+              return openChildren(instance);
+            },
+            settle: (key) => {
+              settleChild(instance, key);
+            },
+            wait: () => {
+              return childWait.ms;
+            },
+          },
           (question, given) => {
             // Marked first: a question that code answered costs the model no
             // turn, and the model cannot answer it again.
