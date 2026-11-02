@@ -8,9 +8,9 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { createFnRunner, testClientId } from "../../../test/helpers.ts";
-import { agentToolSet } from "../agent/agentTools.ts";
 import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
+import { agentToolSet } from "../agent/agentTools.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import {
   type AgentCard,
