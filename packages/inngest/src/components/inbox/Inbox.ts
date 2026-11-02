@@ -188,7 +188,7 @@ export interface InboxDeps {
    * message the read covers (`{ cut }`, saved under the op), or `{ cut: null }`
    * if there is none, and wakes the run. It answers with `null` if the timeout
    * passed with nothing unread. A `drain` is always answered at once; a read
-   * waits only if it is not a `drain`, the SDK holds `unread` messages and none
+   * waits only if it is not a `drain`, the SDK holds no `unread` messages and none
    * was saved since.
    */
   batch: (
