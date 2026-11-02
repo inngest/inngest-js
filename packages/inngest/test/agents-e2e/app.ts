@@ -7,13 +7,11 @@
 import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Inngest } from "inngest";
-import { connect } from "inngest/connect";
 import { sandboxMiddleware } from "inngest/experimental";
 import { serve } from "inngest/node";
 import { eventName, type Scenario } from "./kit/driver.ts";
 import { fakeSandbox } from "./kit/sandbox.ts";
 
-const mode = process.env.AGENTS_E2E_MODE === "connect" ? "connect" : "serve";
 const ids = (process.env.AGENTS_E2E_SCENARIOS ?? "").split(",").filter(Boolean);
 const fakesUrl = process.env.AGENTS_E2E_FAKES ?? "";
 
@@ -32,10 +30,7 @@ for (const id of ids) {
     throw new Error(`scenarios/${id}.ts exports no scenario with id "${id}"`);
   }
 
-  // The connected app runs only the scenarios that ask for it.
-  if (mode === "serve" || (found as Scenario).connect) {
-    scenarios.push(found as Scenario);
-  }
+  scenarios.push(found as Scenario);
 }
 
 const fakeSandboxes = scenarios.some((s) => {
@@ -47,7 +42,7 @@ const localDirs = scenarios.flatMap((s) => {
 const commands = Object.assign({}, ...scenarios.map((s) => s.sandboxCommands));
 
 export const client = new Inngest({
-  id: mode === "connect" ? "agents-e2e-connect" : "agents-e2e",
+  id: "agents-e2e",
   middleware: [sandboxMiddleware()],
   ...(fakeSandboxes
     ? {
@@ -69,7 +64,6 @@ export const client = new Inngest({
 const listed = scenarios.flatMap((s) => {
   return s.functions({
     client,
-    mode,
     fakes: { url: fakesUrl },
     redisUrl: process.env.INNGEST_EXPERIMENTAL_KV_URL,
     event: (name) => {
@@ -79,18 +73,10 @@ const listed = scenarios.flatMap((s) => {
 });
 const functions = [...new Set(listed)];
 
-if (mode === "connect") {
-  await connect({ apps: [{ client, functions }], handleShutdownSignals: [] });
-
-  // The open connection keeps the process alive; nothing below applies.
-  await new Promise<never>(() => {});
-}
-
 const others = scenarios.flatMap((s) => {
   return (
     s.apps?.({
       client,
-      mode,
       fakes: { url: fakesUrl },
       redisUrl: process.env.INNGEST_EXPERIMENTAL_KV_URL,
       event: (name) => {

@@ -26,12 +26,6 @@ export type KitClient = Inngest<{
 
 export interface AppEnv {
   client: KitClient;
-
-  /**
-   * How the app running these functions talks to the Dev Server. Only a
-   * scenario with `connect: true` is ever loaded by the connected app.
-   */
-  mode: "serve" | "connect";
   fakes: { url: string };
   redisUrl: string | undefined;
 
@@ -50,19 +44,6 @@ export interface RunInfo {
    * The display names of the run's steps, in the order they started.
    */
   steps: string[];
-
-  /**
-   * The ticks the trace rolled onto each row, by the row's display name: the
-   * messages that arrived at an inbox, or that a read took (those have
-   * `readAt`). Ticks are never rows of their own.
-   */
-  ticks: Record<string, { id: string; at: string; readAt: string | null }[]>;
-
-  /**
-   * Whether each row has ended, by the row's display name: true when every row
-   * of that name has an end time.
-   */
-  ended: Record<string, boolean>;
 
   /**
    * The Dev Server's IDs for the steps: the SHA-1 of the ID the function gave
@@ -175,13 +156,6 @@ export interface Scenario {
   capMs?: number;
 
   /**
-   * Also load this scenario in a second app that uses `connect()` instead of
-   * `serve()`, so its functions can run in both modes. Needs the devstack
-   * stack.
-   */
-  connect?: boolean;
-
-  /**
    * `"fake"` serves the Sandboxes API from memory in the app.
    */
   sandbox?: "fake";
@@ -230,28 +204,6 @@ const gql = async (devUrl: string, query: string, variables: object) => {
   }
 
   return json.data;
-};
-
-const endedOf = (found: any[]): RunInfo["ended"] => {
-  const byRow: RunInfo["ended"] = {};
-
-  for (const span of found) {
-    byRow[span.name] = (byRow[span.name] ?? true) && Boolean(span.endedAt);
-  }
-
-  return byRow;
-};
-
-const ticksOf = (found: any[]): RunInfo["ticks"] => {
-  const byRow: RunInfo["ticks"] = {};
-
-  for (const span of found) {
-    if (span.ticks?.length) {
-      byRow[span.name] = [...(byRow[span.name] ?? []), ...span.ticks];
-    }
-  }
-
-  return byRow;
 };
 
 const spans = (span: any): { name: string; stepID: string | null }[] => {
@@ -314,7 +266,7 @@ const hash = (id: string) => {
 const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
   const data = await gql(
     devUrl,
-    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } childrenSpans { name stepID endedAt ticks { id at readAt } } } } } } } }`,
+    `query ($id: String!) { run(runID: $id) { status output trace { childrenSpans { name stepID childrenSpans { name stepID childrenSpans { name stepID childrenSpans { name stepID } } } } } } }`,
     { id },
   );
   const run = data.run;
@@ -331,11 +283,9 @@ const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
 
   // The Dev Server wraps a run's output in the ops it recorded.
   if (Array.isArray(output)) {
-    const complete = output.find((op) => {
+    output = output.find((op) => {
       return op?.op === "RunComplete";
-    });
-
-    output = complete ? complete.data : output;
+    })?.data;
   }
 
   const found = run.trace ? spans(run.trace) : [];
@@ -347,8 +297,6 @@ const readRun = async (devUrl: string, id: string): Promise<RunInfo | null> => {
     steps: found.map((span) => {
       return span.name;
     }),
-    ticks: ticksOf(found),
-    ended: endedOf(found),
     stepHashes: found.flatMap((span) => {
       return span.stepID ? [span.stepID] : [];
     }),
