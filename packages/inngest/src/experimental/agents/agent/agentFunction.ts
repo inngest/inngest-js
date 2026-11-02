@@ -640,7 +640,10 @@ export function createAgentFunction(
     cleanup,
     finished,
     ref,
-    card: cardOf(client.id, config.id, fn, config),
+    card: cardOf(client.id, config.id, fn, {
+      card: config.card,
+      description: config.description,
+    }),
     thread(key) {
       return getThread(client, ref, key);
     },

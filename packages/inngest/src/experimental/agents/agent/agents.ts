@@ -12,11 +12,7 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
-import {
-  agentsAnnounceEvent,
-  announcement,
-  rememberCard,
-} from "../discovery/discovery.ts";
+import { announceFunction, rememberCard } from "../discovery/discovery.ts";
 import { type KvStore, setAppKvStore } from "../kv/kv.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
 import type {
@@ -192,19 +188,10 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
    * ```
    */
   functions(): InngestFunction.Any[];
-
-  /**
-   * Sends the `agents/registered` event with the cards of this client's
-   * agents, so discovery in any app of the environment finds them. Call it
-   * once the app is up (after `serve()` or `connect()`). A daily heartbeat
-   * function in `functions()` sends it again, which keeps the cards inside
-   * the event retention.
-   */
-  announce(): Promise<void>;
 }
 
 /**
- * The heartbeat function of each client: one, however many `createAgents()`
+ * The announce function of each client: one, however many `createAgents()`
  * calls the client has.
  */
 const announceFunctions = new WeakMap<object, InngestFunction.Any>();
@@ -263,21 +250,10 @@ export const createAgents = <TClient extends Inngest.Any>(
       );
 
       made.push(created);
-      rememberCard(client, created.card);
+      rememberCard(client.id, created.card);
 
       if (!announceFunctions.has(client)) {
-        announceFunctions.set(
-          client,
-          client.createFunction(
-            {
-              id: "agents-announce",
-              triggers: [{ cron: "0 6 * * *" }, { event: agentsAnnounceEvent }],
-            },
-            async ({ step: announceStep }) => {
-              await announceStep.sendEvent("announce", announcement(client));
-            },
-          ),
-        );
+        announceFunctions.set(client, announceFunction(client));
       }
 
       return created;
@@ -286,14 +262,11 @@ export const createAgents = <TClient extends Inngest.Any>(
       const functions = made.flatMap((created) => {
         return [created.fn, created.cleanup, created.finished];
       });
-      const heartbeat = announceFunctions.get(client);
+      const announcer = announceFunctions.get(client);
 
-      return heartbeat && made.length > 0
-        ? [...functions, heartbeat]
+      return announcer && made.length > 0
+        ? [...functions, announcer]
         : functions;
-    },
-    async announce() {
-      await client.send(announcement(client));
     },
   };
 };
@@ -306,17 +279,15 @@ export type {
 } from "../../../components/inbox/Inbox.ts";
 export type {
   AgentCard,
+  AgentCardConfig,
+  AgentCardSkill,
+  AgentDiscovery,
+  AgentEffects,
   AgentShare,
+  AgentSummary,
   AgentsRegisteredData,
-  DiscoveryTools,
-  DiscoveryToolsOptions,
 } from "../discovery/discovery.ts";
-export {
-  addressOf,
-  callAgent,
-  discoveryTools,
-  findAgents,
-} from "../discovery/discovery.ts";
+export { addressOf } from "../discovery/discovery.ts";
 export type {
   AgentMessageData,
   AgentResendData,
