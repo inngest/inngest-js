@@ -33,4 +33,4 @@ fi
 
 echo
 echo "Deployed ${sha:0:8}. Open the Production dashboard and confirm inngest-js-ci is connected"
-echo "with the new agents pipeline functions (the agents pipeline and its agent-checks and agent-scenarios jobs)."
+echo "with the functions of the agents and pr pipelines."
