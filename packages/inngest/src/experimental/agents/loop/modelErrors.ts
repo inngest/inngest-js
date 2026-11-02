@@ -1,7 +1,7 @@
 /**
  * @module
- * EXPERIMENTAL: `classifyModelError`, a thin helper for loops that call a
- * model. It says which model errors are worth retrying.
+ * EXPERIMENTAL: `classifyModelError`, which says which model errors are worth
+ * retrying. The loop and `anthropic()` apply it to every model call.
  */
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { RetryAfterError } from "../../../components/RetryAfterError.ts";
@@ -92,19 +92,7 @@ const typesOf = (error: Record<string, unknown>): string[] => {
  * error type: `invalid_request_error` and the like are final,
  * `overloaded_error` and `rate_limit_error` retry. An account out of quota
  * (`insufficient_quota`, sent with a 429) is final too. Only the error itself
- * is read, not its `cause`. `agent.loop()` applies this to every model call;
- * call it yourself where you catch a model error.
- *
- * @example
- * ```ts
- * const reply = await step.run("model", async () => {
- *   try {
- *     return await anthropic.messages.create(request);
- *   } catch (error) {
- *     throw agent.classifyModelError(error);
- *   }
- * });
- * ```
+ * is read, not its `cause`. `agent.loop()` applies this to every model call.
  */
 export const classifyModelError = (error: unknown): unknown => {
   const record = asRecord(error);
