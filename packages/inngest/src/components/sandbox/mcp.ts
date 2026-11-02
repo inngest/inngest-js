@@ -31,6 +31,7 @@ import {
   McpOAuth,
   type McpOAuthOptions,
 } from "./mcpOAuth.ts";
+import { assertMcpUrl } from "./mcpGuard.ts";
 import { isSecret, type Secret } from "./secret.ts";
 import { toolErrorOf } from "./toolError.ts";
 import type { SandboxTool, SandboxTools } from "./tools.ts";
@@ -108,35 +109,6 @@ export interface McpListing {
    */
   connect?: boolean;
 }
-
-const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
-const validateOptions = (options: McpServerOptions): void => {
-  let url: URL;
-
-  try {
-    url = new URL(options.url);
-  } catch {
-    throw new SandboxValidationError(
-      `tool.mcp() needs a full url: "${options.url}" is not one`,
-    );
-  }
-
-  if (
-    url.protocol !== "https:" &&
-    !(url.protocol === "http:" && localHosts.has(url.hostname))
-  ) {
-    throw new SandboxValidationError(
-      `tool.mcp() url must be https (http is only allowed for localhost): ${url.origin}`,
-    );
-  }
-
-  if (url.username || url.password) {
-    throw new SandboxValidationError(
-      "tool.mcp() url must not hold credentials: use auth",
-    );
-  }
-};
 
 const resolveAuth = async (
   auth: Exclude<McpAuth, { oauth: unknown }> | undefined,
@@ -298,7 +270,7 @@ export class McpServer {
   private readonly oauth?: McpOAuth;
 
   constructor(options: McpServerOptions) {
-    validateOptions(options);
+    assertMcpUrl(options.url, "url");
 
     this.url = options.url;
     this.id = options.id;

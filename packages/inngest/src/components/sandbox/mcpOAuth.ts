@@ -19,6 +19,7 @@ import hashjs from "hash.js";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { mcpProtocolVersion } from "./mcpClient.ts";
+import { assertMcpUrl } from "./mcpGuard.ts";
 import { redact, type Secret } from "./secret.ts";
 
 /**
@@ -314,23 +315,13 @@ const sleep = (ms: number): Promise<void> => {
 };
 
 const secureUrl = (value: string, what: string): URL => {
-  let url: URL;
-
   try {
-    url = new URL(value);
-  } catch {
-    throw new NonRetriableError(`The MCP server's ${what} is not a URL`);
-  }
-
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+    return assertMcpUrl(value, `OAuth ${what}`);
+  } catch (error) {
     throw new NonRetriableError(
-      `The MCP server's ${what} must be https: ${url.origin}`,
+      `The MCP server's ${what} is not allowed: ${(error as Error).message}`,
     );
   }
-
-  return url;
 };
 
 const parse = <T>(text: string | null): T | undefined => {
