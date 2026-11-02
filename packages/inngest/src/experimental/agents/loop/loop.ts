@@ -30,6 +30,7 @@ import {
   toolErrorOf,
 } from "../../../components/sandbox/tools.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
+import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import { anthropic } from "./anthropic.ts";
 import {
@@ -352,7 +353,8 @@ export type AgentToolRun<TTools extends SandboxTools = AnyTools> =
     }[keyof TTools & string]
   | AgentToolRunOf<string, unknown, true, unknown>;
 
-type IsMcpServer<T> = 0 extends 1 & T
+// Whether a tool entry is an MCP server, which is many tools.
+type IsMcpServer<T> = IsAny<T> extends true
   ? false
   : T extends McpServer
     ? true

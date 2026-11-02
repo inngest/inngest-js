@@ -21,7 +21,7 @@
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { mcpProtocolVersion } from "./mcpClient.ts";
-import { assertMcpUrl } from "./mcpGuard.ts";
+import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
 import { redact, type Secret } from "./secret.ts";
 
 /**
@@ -84,7 +84,8 @@ export interface McpOAuthUserContext {
   runId?: string;
 
   /**
-   * The event that triggered the run.
+   * The event that triggered the run. Its `data` came from outside the
+   * function and is `unknown`: check it before use.
    */
   event?: { name: string; data?: unknown; id?: string };
 
@@ -179,7 +180,7 @@ export interface McpNeedsAuthorization {
 
 /**
  * Thrown inside the client when the user has no usable token. Never leaves
- * `tool.mcp()`: it becomes a `McpNeedsAuthorization` result.
+ * `tool.mcp()`: it becomes a sign-in link for `onNeedsAuthorization`.
  */
 export class McpAuthorizationRequired extends Error {
   constructor() {
@@ -316,13 +317,15 @@ const sleep = (ms: number): Promise<void> => {
   });
 };
 
-const secureUrl = (value: string, what: string): URL => {
+// An endpoint a remote server names may never point at loopback; a server in
+// dev or tests that is itself on loopback may.
+const secureUrl = (serverUrl: string, value: string, what: string): URL => {
   try {
-    return assertMcpUrl(value, `OAuth ${what}`);
+    return assertMcpUrl(value, `OAuth ${what}`, {
+      loopback: isLoopbackUrl(serverUrl),
+    });
   } catch (error) {
-    throw new NonRetriableError(
-      `The MCP server's ${what} is not allowed: ${(error as Error).message}`,
-    );
+    throw new NonRetriableError((error as Error).message);
   }
 };
 
@@ -363,14 +366,13 @@ export class McpOAuth {
 
   constructor(
     options: McpOAuthOptions,
-    url: string,
-    id: string,
+    server: { url: string; id: string },
     store: () => McpOAuthStore,
     fetchFn?: typeof fetch,
   ) {
     this.#options = options;
-    this.#url = url;
-    this.#id = id;
+    this.#url = server.url;
+    this.#id = server.id;
     this.#store = store;
     this.#fetch = fetchFn ?? ((...args) => fetch(...args));
   }
@@ -698,7 +700,8 @@ export class McpOAuth {
       ? "none"
       : "client_secret_post";
     const response = await this.#request(
-      secureUrl(found.registrationEndpoint, "registration endpoint").href,
+      secureUrl(this.#url, found.registrationEndpoint, "registration endpoint")
+        .href,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -854,9 +857,12 @@ export class McpOAuth {
   }
 
   async #json(url: string): Promise<Record<string, unknown> | undefined> {
-    const response = await this.#request(secureUrl(url, "metadata URL").href, {
-      headers: { accept: "application/json" },
-    });
+    const response = await this.#request(
+      secureUrl(this.#url, url, "metadata URL").href,
+      {
+        headers: { accept: "application/json" },
+      },
+    );
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
@@ -925,7 +931,7 @@ export class McpOAuth {
       Array.isArray(servers) && typeof servers[0] === "string"
         ? servers[0]
         : mcp.origin;
-    const issuerUrl = secureUrl(issuer, "authorization server");
+    const issuerUrl = secureUrl(this.#url, issuer, "authorization server");
     const path = issuerUrl.pathname === "/" ? "" : issuerUrl.pathname;
     let meta: Record<string, unknown> | undefined;
 
@@ -960,8 +966,8 @@ export class McpOAuth {
       );
     }
 
-    secureUrl(authorizationEndpoint, "authorization endpoint");
-    secureUrl(tokenEndpoint, "token endpoint");
+    secureUrl(this.#url, authorizationEndpoint, "authorization endpoint");
+    secureUrl(this.#url, tokenEndpoint, "token endpoint");
 
     const offered = list(meta?.scopes_supported);
     // The resource's scopes, else everything the authorization server offers.
@@ -1051,6 +1057,25 @@ const bindingCookieName = (state: string): string => {
   return `mcp_oauth_${sha256Hex(state).slice(0, 16)}`;
 };
 
+// The binding cookie: HttpOnly so no script reads it, Lax so it comes back on
+// the redirect from the authorization server, Secure on https, and scoped to
+// the route.
+const bindingCookie = (
+  name: string,
+  value: string,
+  redirectUri: URL,
+  maxAgeSeconds: number,
+): string => {
+  return [
+    `${name}=${value}`,
+    `Max-Age=${maxAgeSeconds}`,
+    `Path=${redirectUri.pathname}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    ...(redirectUri.protocol === "https:" ? ["Secure"] : []),
+  ].join("; ");
+};
+
 const cookieOf = (request: Request, name: string): string | undefined => {
   for (const part of (request.headers.get("cookie") ?? "").split(";")) {
     const [key, ...rest] = part.trim().split("=");
@@ -1064,7 +1089,7 @@ const cookieOf = (request: Request, name: string): string | undefined => {
 };
 
 // Compares without stopping at the first different character.
-const sameText = (a: string, b: string): boolean => {
+const constantTimeEqual = (a: string, b: string): boolean => {
   let diff = a.length ^ b.length;
 
   for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
@@ -1074,7 +1099,11 @@ const sameText = (a: string, b: string): boolean => {
   return diff === 0;
 };
 
-const page = (status: number, text: string, headers: HeadersInit = {}) => {
+const textResponse = (
+  status: number,
+  text: string,
+  headers: HeadersInit = {},
+): Response => {
   return new Response(text, {
     status,
     headers: { "content-type": "text/plain; charset=utf-8", ...headers },
@@ -1123,8 +1152,7 @@ const finishAuthorization = async (options: {
       : await options.clientSecret.value();
   const oauth = new McpOAuth(
     { user: pending.user, redirectUri: pending.redirectUri },
-    pending.url,
-    pending.id,
+    { url: pending.url, id: pending.id },
     () => {
       return store;
     },
@@ -1159,7 +1187,8 @@ export interface McpCallbackOptions {
   clientSecret?: string | Secret;
 
   /**
-   * Sends the event, such as `(event) => inngest.send(event)`.
+   * Sends the event, such as `(event) => inngest.send(event)`. What it
+   * resolves to is ignored, so it is `unknown`.
    */
   send?: (event: {
     name: typeof mcpAuthorizedEvent;
@@ -1188,9 +1217,9 @@ export interface McpCallbackOptions {
  * ```ts
  * const callback = mcpCallback({ store, send: (event) => inngest.send(event) });
  *
- * app.get("/oauth/hex/callback", async (req, res) => {
- *   res.send(await callback(req));
- * });
+ * // A framework whose route handlers take a Web `Request` and return a
+ * // `Response` (Next.js, Hono, Remix, Cloudflare Workers) mounts it directly.
+ * export const GET = callback;
  * ```
  */
 export const mcpCallback = (
@@ -1210,45 +1239,52 @@ export const mcpCallback = (
       typeof pending.createdAt !== "number" ||
       Date.now() - pending.createdAt > pendingMs
     ) {
-      return page(
+      return textResponse(
         400,
         "This sign-in link has expired or was already used: ask for a new one.",
       );
     }
 
+    const redirect = new URL(pending.redirectUri);
     const cookieName = bindingCookieName(state);
     const cookie = cookieOf(request, cookieName);
     const sameBrowser =
-      cookie !== undefined && sameText(cookie, pending.binding);
+      cookie !== undefined && constantTimeEqual(cookie, pending.binding);
 
     if (started !== null) {
       if (!pending.claimed) {
         const claimed = JSON.stringify({ ...pending, claimed: true });
 
         if (!(await options.store.compareAndSet(key, raw, claimed))) {
-          return page(409, "This sign-in link is being opened: try again.");
+          return textResponse(
+            409,
+            "This sign-in link is being opened: try again.",
+          );
         }
       } else if (!sameBrowser) {
-        return page(
+        return textResponse(
           403,
           "This sign-in link was already opened in another browser: ask for a new one.",
         );
       }
-
-      const secure = new URL(pending.redirectUri).protocol === "https:";
 
       return new Response(null, {
         status: 302,
         headers: {
           location: pending.authorizeUrl,
           "cache-control": "no-store",
-          "set-cookie": `${cookieName}=${pending.binding}; Max-Age=${pendingMs / 1000}; Path=${new URL(pending.redirectUri).pathname}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`,
+          "set-cookie": bindingCookie(
+            cookieName,
+            pending.binding,
+            redirect,
+            pendingMs / 1000,
+          ),
         },
       });
     }
 
     if (!pending.claimed || !sameBrowser) {
-      return page(
+      return textResponse(
         403,
         "This sign-in must be finished in the browser that opened the link: ask for a new link.",
       );
@@ -1257,7 +1293,7 @@ export const mcpCallback = (
     if (url.searchParams.get("error")) {
       await options.store.delete(key);
 
-      return page(400, "Access was not approved.");
+      return textResponse(400, "Access was not approved.");
     }
 
     try {
@@ -1278,14 +1314,15 @@ export const mcpCallback = (
         error instanceof McpAuthorizationError ||
         error instanceof NonRetriableError
       ) {
-        return page(400, error.message);
+        return textResponse(400, error.message);
       }
 
-      return page(502, "Could not finish the sign-in: try again.");
+      return textResponse(502, "Could not finish the sign-in: try again.");
     }
 
-    return page(200, "Connected. You can close this tab.", {
-      "set-cookie": `${cookieName}=; Max-Age=0; Path=${new URL(pending.redirectUri).pathname}`,
+    return textResponse(200, "Connected. You can close this tab.", {
+      "cache-control": "no-store",
+      "set-cookie": bindingCookie(cookieName, "", redirect, 0),
     });
   };
 };

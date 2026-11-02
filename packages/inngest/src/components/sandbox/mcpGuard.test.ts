@@ -4,7 +4,7 @@
  * the MCP server itself and the OAuth endpoints it points to.
  */
 import { describe, expect, test } from "vitest";
-import { fakeMcpFetch } from "./mcpFakes.ts";
+import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
 import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
 import { tool } from "./tools.ts";
 
@@ -199,5 +199,144 @@ describe("tool.mcp network guard", () => {
     });
 
     await expect(hex["~list"]("hex")).rejects.toThrow();
+  });
+});
+
+describe("tool.mcp network guard on the OAuth endpoints", () => {
+  // Discovery is remembered per server URL, so each case has its own.
+  let serial = 0;
+  const nextUrl = () => {
+    serial += 1;
+
+    return `https://mcp-${serial}.fake.test/mcp`;
+  };
+  const redirectUri = "https://app.example.test/oauth/hex";
+  const bad = "https://10.0.0.5";
+
+  const signIn = async (
+    endpoints: NonNullable<
+      NonNullable<Parameters<typeof fakeMcpFetch>[0]["oauth"]>["endpoints"]
+    >,
+    registration = true,
+  ) => {
+    const server = fakeMcpFetch({
+      tools: { ping: { run: () => "pong" } },
+      oauth: { endpoints, registration, client: { id: "preset" } },
+    });
+    const requested: string[] = [];
+    const hex = tool.mcp({
+      id: "hex",
+      url: nextUrl(),
+      fetch: (input, init) => {
+        requested.push(String(input instanceof Request ? input.url : input));
+
+        return server.fetch(input, init);
+      },
+      auth: {
+        oauth: {
+          user: "U1",
+          redirectUri,
+          store: memoryOAuthStore(),
+          ...(!registration && { clientId: "preset" }),
+          onNeedsAuthorization: () => {},
+        },
+      },
+    });
+    const built = hex["~build"]("hex", { tools: [], connect: true });
+    const connect = built.hex_connect as unknown as {
+      run: (input: unknown, ctx: unknown) => Promise<unknown>;
+    };
+    const result = await connect
+      .run({}, { signal: new AbortController().signal, idempotencyKey: "k" })
+      .then(
+        () => undefined,
+        (error: Error) => error,
+      );
+
+    return { result, requested };
+  };
+
+  test.each([
+    ["the protected-resource metadata", { metadata: `${bad}/meta` }],
+    ["the authorization server", { authorizationServer: bad }],
+    ["the authorization endpoint", { authorize: `${bad}/authorize` }],
+    ["the token endpoint", { token: `${bad}/token` }],
+  ])("refuses %s at a private address", async (_name, endpoints) => {
+    const { result, requested } = await signIn(endpoints);
+
+    expect(String(result)).toMatch(/private or internal/);
+    expect(requested.some((url) => url.startsWith(bad))).toBe(false);
+  });
+
+  test("refuses the registration endpoint at a private address", async () => {
+    const { result, requested } = await signIn({
+      register: `${bad}/register`,
+    });
+
+    expect(String(result)).toMatch(/private or internal/);
+    expect(requested.some((url) => url.startsWith(bad))).toBe(false);
+  });
+
+  test("refuses an endpoint that is not https", async () => {
+    const { result } = await signIn({
+      token: "http://auth.example.com/token",
+    });
+
+    expect(String(result)).toMatch(/must be https/);
+  });
+
+  test("a remote server's endpoints may never point at loopback", async () => {
+    for (const endpoints of [
+      { token: "http://localhost:9000/token" },
+      { authorize: "https://127.0.0.1/authorize" },
+    ]) {
+      const { result } = await signIn(endpoints);
+
+      expect(String(result)).toMatch(/https|private or internal/);
+    }
+  });
+
+  test("the message names the endpoint once", async () => {
+    const { result } = await signIn({ token: `${bad}/token` });
+
+    expect(String(result).match(/token endpoint/g)).toHaveLength(1);
+  });
+
+  test("every OAuth request is sent with redirect: error", async () => {
+    const server = fakeMcpFetch({
+      tools: { ping: { run: () => "pong" } },
+      oauth: { client: { id: "preset" } },
+    });
+    const redirects: unknown[] = [];
+    const hex = tool.mcp({
+      id: "hex",
+      url: nextUrl(),
+      fetch: (input, init) => {
+        redirects.push(init?.redirect);
+
+        return server.fetch(input, init);
+      },
+      auth: {
+        oauth: {
+          user: "U1",
+          redirectUri,
+          store: memoryOAuthStore(),
+          onNeedsAuthorization: () => {},
+        },
+      },
+    });
+    const connect = hex["~build"]("hex", { tools: [], connect: true })
+      .hex_connect as unknown as {
+      run: (input: unknown, ctx: unknown) => Promise<unknown>;
+    };
+
+    await connect.run(
+      {},
+      { signal: new AbortController().signal, idempotencyKey: "k" },
+    );
+
+    // The probe, the metadata, the registration.
+    expect(redirects.length).toBeGreaterThanOrEqual(4);
+    expect(redirects.every((value) => value === "error")).toBe(true);
   });
 });

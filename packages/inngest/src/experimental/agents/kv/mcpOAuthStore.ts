@@ -66,7 +66,7 @@ export interface KvOAuthStoreOptions {
 /**
  * EXPERIMENTAL: The default `McpOAuthStore`: the agents KV, encrypted. Build
  * it once and share it between `tool.mcp({ auth: { oauth: { store } } })` and
- * your callback route's `completeMcpAuthorization({ store })`.
+ * your callback route's `mcpCallback({ store })`.
  */
 export const kvOAuthStore = (
   options: KvOAuthStoreOptions = {},

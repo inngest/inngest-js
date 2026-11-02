@@ -318,8 +318,7 @@ export class McpServer {
 
       this.oauth = new McpOAuth(
         oauthOptions,
-        options.url,
-        options.id,
+        { url: options.url, id: options.id },
         () => {
           return store;
         },
@@ -370,7 +369,10 @@ export class McpServer {
    * Forgets `user`'s sign-in for this server: their stored token is removed,
    * and they sign in again on their next call.
    */
-  async disconnect(user: string): Promise<void> {
+  async disconnect(
+    /** The person, as `auth.oauth.user` named them. */
+    user: string,
+  ): Promise<void> {
     if (!this.oauth) {
       throw new SandboxValidationError(
         `MCP server "${this.id}" has no auth.oauth, so there is no per-user sign-in to disconnect`,
@@ -496,10 +498,11 @@ export class McpServer {
   ): Promise<unknown> {
     const oauth = this.oauth as McpOAuth;
     const options = (this.options.auth as { oauth: McpOAuthOptions }).oauth;
-    const started = await oauth.start(user, name, signal);
     const { logger } = run;
     const { thread } = run.user;
 
+    // Nobody would be given a link, so nothing is discovered, registered or
+    // stored for one.
     if (!options.onNeedsAuthorization) {
       logger?.warn(
         `MCP server "${name}" needs ${user} to sign in, but tool.mcp() has no auth.oauth.onNeedsAuthorization to deliver the link, so nobody was given it.`,
@@ -509,6 +512,8 @@ export class McpServer {
         `${name} needs the user to sign in, and no sign-in link could be sent. Tell the user that ${name} is not connected. Do not call ${name} tools again.`,
       );
     }
+
+    const started = await oauth.start(user, name, signal);
 
     await options.onNeedsAuthorization({
       ...started,
@@ -605,7 +610,12 @@ export const mcp = (options: McpServerOptions): McpServer => {
  * Removes `user`'s stored sign-in for `server`. Same as
  * `server.disconnect(user)`.
  */
-export const disconnect = (server: McpServer, user: string): Promise<void> => {
+export const disconnect = (
+  /** The server the person signed in to. */
+  server: McpServer,
+  /** The person, as `auth.oauth.user` named them. */
+  user: string,
+): Promise<void> => {
   return server.disconnect(user);
 };
 
