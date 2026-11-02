@@ -34,7 +34,7 @@ const setup = (recovery = false) => {
     }) as unknown as typeof fetch,
   });
 
-  freshKv();
+  const store = freshKv();
 
   const agent = createAgentFunction(
     client,
@@ -42,7 +42,7 @@ const setup = (recovery = false) => {
     async () => {},
   );
 
-  return { agent, sent };
+  return { agent, sent, store, client };
 };
 
 const finished = (
@@ -170,5 +170,85 @@ describe("with recovery", () => {
         data: { id: "m5", status: "completed", output: "ok" },
       },
     ]);
+  });
+});
+
+describe("messages folded into a live run", () => {
+  const seed = async (
+    { store, client }: ReturnType<typeof setup>,
+    folded: { run: string; ids: string[] },
+  ) => {
+    await store
+      .with(client)
+      .scope("thread", "t1")
+      .set("__state", {
+        status: "idle",
+        turn: 0,
+        usage: { input: 0, output: 0 },
+        runId: "r1",
+        folded,
+      });
+  };
+
+  test("the finished function reports every folded message beside the one that started the run", async () => {
+    const made = setup();
+
+    await seed(made, { run: "r1", ids: ["m6", "m7"] });
+    await run(made.agent.finished, {
+      event: finished(trigger("m1"), {
+        _inngest: { status: "Completed" },
+        result: "ok",
+      }),
+    });
+
+    expect(
+      made.sent
+        .map((event) => {
+          return event.data.id;
+        })
+        .sort(),
+    ).toEqual(["m1", "m6", "m7"]);
+  });
+
+  test("ids folded by another run are not reported", async () => {
+    const made = setup();
+
+    await seed(made, { run: "older", ids: ["m6"] });
+    await run(made.agent.finished, {
+      event: finished(trigger("m1"), { _inngest: { status: "Completed" } }),
+    });
+
+    expect(
+      made.sent.map((event) => {
+        return event.data.id;
+      }),
+    ).toEqual(["m1"]);
+  });
+
+  test("a run records the ids of the messages it takes after the one that started it", async () => {
+    const { client, store } = setup();
+    const agent = createAgentFunction(
+      client,
+      { id: "bot" },
+      async ({ inbox }) => {
+        await inbox.next();
+
+        return (await inbox.drain()).length;
+      },
+    );
+    const { output } = await run(agent.fn, {
+      event: trigger("m1"),
+      runId: "r1",
+      saved: [{ ...trigger("m2"), id: "m2" }],
+    });
+
+    expect(output).toBe(1);
+    expect(
+      (
+        (await store.with(client).scope("thread", "t1").get("__state")) as {
+          folded?: unknown;
+        }
+      ).folded,
+    ).toEqual({ run: "r1", ids: ["m2"] });
   });
 });
