@@ -15,11 +15,11 @@ import { anthropic } from "./anthropic.ts";
 import {
   type AgentLoopOptions,
   type AgentLoopResult,
-  type AgentMessage,
   type AgentModelRequest,
   type AgentModelResponse,
   type AgentToolRun,
   agent,
+  type ModelMessage,
 } from "./loop.ts";
 
 const say = (text: string): AgentModelResponse => {
@@ -972,7 +972,7 @@ describe("agent.loop", () => {
         return "x".repeat(5_000);
       },
     });
-    const bigLengths = (messages: AgentMessage[] | undefined) => {
+    const bigLengths = (messages: ModelMessage[] | undefined) => {
       return messages?.flatMap((message) => {
         return message.role === "tool"
           ? message.results.map((r) => r.content.length)
@@ -1300,9 +1300,9 @@ describe("tool types", () => {
     expect(typecheck).toBeTypeOf("function");
   });
 
-  test("passing result.history back needs no annotation when history is declared as AgentMessage[]", () => {
+  test("passing result.history back needs no annotation when history is declared as ModelMessage[]", () => {
     const typecheck = async () => {
-      let history: AgentMessage[] = [];
+      let history: ModelMessage[] = [];
 
       for (let turn = 0; turn < 2; turn += 1) {
         const result = await agent.loop({

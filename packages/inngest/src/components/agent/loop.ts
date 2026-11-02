@@ -88,7 +88,7 @@ export const defaultFormat = (event: AgentEvent): string => {
  * provider-specific parts (such as Anthropic thinking blocks and their
  * signatures) go back to the model untouched.
  */
-export type AgentMessage =
+export type ModelMessage =
   | { role: "user"; content: AgentUserContent }
   | { role: "assistant"; content: unknown }
   | { role: "tool"; results: AgentToolResult[] };
@@ -211,7 +211,7 @@ export interface AgentModelRequest {
    * format; a `tool` message holds the results of all the calls the
    * previous reply made, in one message.
    */
-  messages: AgentMessage[];
+  messages: ModelMessage[];
 
   /**
    * This call's number, from 1.
@@ -244,7 +244,7 @@ export interface AgentModelResponse {
   /**
    * The assistant's reply, kept in the history as it is.
    */
-  message: Extract<AgentMessage, { role: "assistant" }>;
+  message: Extract<ModelMessage, { role: "assistant" }>;
 
   /**
    * The reply's text, for the final result and `onTurn`.
@@ -453,7 +453,7 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   /**
    * The `history` of an earlier result, to continue its conversation.
    */
-  history?: AgentMessage[];
+  history?: ModelMessage[];
 
   /**
    * Called between model calls, after the tool results. What it returns
@@ -578,7 +578,7 @@ export interface AgentLoopResult<TTools extends SandboxTools = AnyTools> {
   /**
    * The whole conversation. Pass it as `history` to continue.
    */
-  history: AgentMessage[];
+  history: ModelMessage[];
 
   /**
    * Tokens used by every model call of this loop.
@@ -858,7 +858,7 @@ const loop = async <TTools extends SandboxTools>(
       ? input
       : format(input);
   };
-  const messages: AgentMessage[] = [
+  const messages: ModelMessage[] = [
     ...(options.history ?? []),
     { role: "user", content: contentOf(options.prompt) },
   ];
