@@ -15,13 +15,14 @@ import type { InngestApi } from "../../../api/api.ts";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
-import type { EffectiveLimits } from "../agent/limits.ts";
+import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
   type AgentMessageData,
   type AgentSteerData,
   agentMessage,
+  agentRecover,
   agentSteer,
 } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
@@ -36,6 +37,11 @@ export const agentMessageEvent = agentMessage.name;
  * The name of the other event a thread receives from the agent layer.
  */
 export const agentSteerEvent = agentSteer.name;
+
+/**
+ * The name of the event that sends a failed run's message again.
+ */
+export const agentRecoverEvent = agentRecover.name;
 
 /**
  * An event that started or reached an agent, as the agent sees it: the name
@@ -75,7 +81,7 @@ export interface ThreadState {
 
   /**
    * Tokens used by every model call of the thread, across runs, and what they
-   * cost in US dollars when the agent has a `limits.price`.
+   * cost in US dollars when the agent has a the agent's `price`.
    */
   usage: { input: number; output: number; usd?: number };
 
@@ -109,6 +115,13 @@ export interface ThreadRecord {
    * woken by a plain message stays inside them.
    */
   inherited?: EffectiveLimits;
+
+  /**
+   * What the thread may spend, from the definition of the agent that owns it.
+   * Set by the first run and kept, so every later run enforces the same
+   * budget and it is never handed down to another agent's thread.
+   */
+  budget?: AgentBudget;
 
   /**
    * The run that wrote the record last, so a finished run never overwrites

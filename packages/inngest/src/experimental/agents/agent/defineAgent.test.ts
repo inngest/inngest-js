@@ -366,7 +366,7 @@ describe("recovery", () => {
 
     const { output } = await run(fn, {
       event: {
-        name: "agent/message",
+        name: "agent/recover",
         data: {
           agent: `${testClientId}/recovers`,
           thread: "o1",

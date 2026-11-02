@@ -277,9 +277,12 @@ describe("the finished function", () => {
     });
     expect(sent).toMatchObject([
       {
-        name: "agent/message",
+        name: "agent/recover",
         id: "recover-r1",
-        data: { thread: "t1", content: "build it" },
+        data: {
+          thread: "t1",
+          event: { name: "agent/message", data: { content: "build it" } },
+        },
       },
     ]);
   });
@@ -340,16 +343,6 @@ describe("the finished function", () => {
     expect(sent).toEqual([]);
   });
 
-  test("resume: false resends nothing", async () => {
-    const { agent, sent } = setup({ recovery: { resume: false } });
-
-    await run(agent.finished, {
-      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
-    });
-
-    expect(sent).toEqual([]);
-  });
-
   test("a run that had answered and was waiting when it failed resends nothing", async () => {
     const { agent, sent, seed, lastRun } = setup({ recovery: true });
 
@@ -374,7 +367,9 @@ describe("the finished function", () => {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(sent).toMatchObject([{ data: { content: "second" } }]);
+    expect(sent).toMatchObject([
+      { data: { event: { data: { content: "second" } } } },
+    ]);
   });
 
   test("a newer run owning the record is not resumed", async () => {

@@ -61,7 +61,7 @@ import {
   addTools,
   buildHandlerLoop,
 } from "../loop/loop.ts";
-import { createAgentScores } from "../loop/scores.ts";
+import { createAgentScore } from "../loop/scores.ts";
 import {
   agentSandbox,
   openSandboxes,
@@ -84,6 +84,7 @@ import {
 } from "../skills/skills.ts";
 import {
   agentMessageEvent,
+  agentRecoverEvent,
   agentSteerEvent,
   getThread,
   type ThreadRecord,
@@ -105,6 +106,7 @@ import {
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { invokeDepthOf } from "./invoke.ts";
 import {
+  type AgentBudget,
   budgetReason,
   narrowInherited,
   narrowLimits,
@@ -113,13 +115,14 @@ import {
 } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
-import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedOf, turnInFlight } from "./recovery.ts";
 import {
   createRunFields,
   idleMs,
   type RunField,
   type RunFieldContext,
   type RunFields,
+  resolveRunField,
 } from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import { traceWarning } from "./traceWarning.ts";
@@ -264,9 +267,11 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...[agentMessageEvent, agentSteerEvent].map((name) => {
-          return { event: name, if: `event.data.agent == ${quote(ref)}` };
-        }),
+        ...[agentMessageEvent, agentRecoverEvent, agentSteerEvent].map(
+          (name) => {
+            return { event: name, if: `event.data.agent == ${quote(ref)}` };
+          },
+        ),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
         }),
@@ -317,12 +322,22 @@ export function createAgentFunction(
         const startedBefore =
           getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
             .found === true;
+        // The thread's budget as this agent defines it, read before the start
+        // so the first run can keep it on the thread.
+        const ownBudget =
+          config.budget === undefined
+            ? undefined
+            : await resolveRunField(config.budget as RunField<AgentBudget>, {
+                event: event as unknown as AgentBodyContext["event"],
+                thread: { key: data.thread },
+              });
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
               passed,
               startInflight(found, event) ?? null,
               inStep,
+              ownBudget,
             ),
             previousRun: (await readLastRun(store, inStep)) ?? null,
           };
@@ -367,12 +382,13 @@ export function createAgentFunction(
 
         const limits = registerLimits(
           instance,
-          // The thread's kept limits, and the dollar budget of this start.
+          // The thread's kept limits.
           narrowLimits(
             config.limits,
             narrowInherited(started.inherited, passed),
           ),
           { ...started.usage },
+          started.budget,
         );
 
         // What each inbox source's events are checked against, by the name of
@@ -524,7 +540,7 @@ export function createAgentFunction(
           cleanup,
         });
 
-        const agentScores = createAgentScores(client);
+        const agentScore = createAgentScore(client);
 
         const idle = await idleMs(fields, config.idle);
 
@@ -634,11 +650,8 @@ export function createAgentFunction(
               return recorder.restarts;
             },
 
-            // Slot: score. The agent's own scores.
-            scores: agentScores,
-            score: (name: string, value: number | boolean) => {
-              return agentScores.score(name, value);
-            },
+            // Slot: score. The run's own scores.
+            score: agentScore.score,
 
             // Slot: loop. The agent's own loop: its model, system and tools,
             // with the model's `inbox_listen` and `inbox_close` among them.
@@ -648,6 +661,9 @@ export function createAgentFunction(
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
+
+          // A score the handler did not await is still written.
+          await agentScore.flush();
         } catch (error) {
           await closeAll();
 
