@@ -8,6 +8,8 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { threadHandle } from "../threads/thread.ts";
+import { memoryKvAdapter } from "../kv/kv.ts";
+import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
 const setup = (
@@ -165,5 +167,38 @@ describe("answerQuestion()", () => {
 
     expect(bodies[0]?.data).toMatchObject({ re: "q2", outcome: "answered" });
     expect(bodies[0]?.data).not.toHaveProperty("agent");
+  });
+});
+
+describe("msg.reply()", () => {
+  test("a folded question is answered with reply(), which sends the agent/answer", async () => {
+    const { client, bodies } = setup(async () => {});
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+    const callee = agents.agent({ id: "callee" }, async ({ inbox }) => {
+      const message = await inbox.next();
+
+      if (message?.name === "agent/question") {
+        await message.reply("because");
+      }
+
+      return message?.name;
+    });
+    const { output } = await run(callee.fn, {
+      event: {
+        name: "agent/question",
+        data: {
+          agent: `${testClientId}/callee`,
+          thread: "t1",
+          id: "q9",
+          text: "why?",
+          from: { kind: "function", id: "caller", key: "r1" },
+        },
+      },
+    });
+
+    expect(output).toBe("agent/question");
+    expect(bodies).toMatchObject([
+      { id: "answer:q9", name: "agent/answer", data: { re: "q9", text: "because" } },
+    ]);
   });
 });
