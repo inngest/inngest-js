@@ -558,12 +558,6 @@ export {
   getThread,
 } from "./thread.ts";
 export type {
-  InsightsQuery,
-  ThreadList,
-  ThreadListOptions,
-} from "./threadList.ts";
-export { listThreads } from "./threadList.ts";
-export type {
   ThreadCronEvent,
   ThreadCronTrigger,
   ThreadEventTrigger,

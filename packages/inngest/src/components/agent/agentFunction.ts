@@ -114,7 +114,6 @@ import {
   type TriggerEvent,
   threadSessions,
 } from "./thread.ts";
-import { listThreads, type ThreadList } from "./threadList.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
@@ -1049,11 +1048,6 @@ export interface AgentFunction<
      */
     session?: string,
   ): ThreadHandle<TRequest, TReply>;
-
-  /**
-   * The agent's threads.
-   */
-  threads: ThreadList;
 }
 
 /**
@@ -2320,17 +2314,6 @@ export function createAgentFunction(
         kv: store,
         requests: config.requests,
       });
-    },
-    threads: {
-      list(options) {
-        return listThreads(client, ref, options, (key, session) => {
-          return getThread(client, ref, key, {
-            session,
-            kv: store,
-            requests: config.requests,
-          });
-        });
-      },
     },
   };
 }
