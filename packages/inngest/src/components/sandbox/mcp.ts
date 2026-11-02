@@ -472,6 +472,8 @@ export class McpServer {
           description: info.description,
         }),
         input: info.inputSchema,
+        // What a remote server sends back is text from outside.
+        untrusted: true,
         run: (input: Record<string, unknown>, ctx) => {
           return this.call(name, info, input, ctx);
         },

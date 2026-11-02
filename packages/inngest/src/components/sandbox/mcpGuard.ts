@@ -115,6 +115,8 @@ const isPrivateIpv6 = (host: string): boolean => {
   );
 };
 
+// The limit: this reads the URL and does not resolve DNS, so a public name that
+// resolves to a private address is not caught here.
 const isPrivateHost = (hostname: string): boolean => {
   if (hostname.startsWith("[")) {
     return isPrivateIpv6(hostname);

@@ -149,6 +149,13 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly waits?: boolean;
 
   /**
+   * Marks the tool's results as text from outside. Set on every tool of an MCP
+   * server. The option itself (a label function, and the wrapping the model
+   * reads) is ticket 12a's.
+   */
+  readonly untrusted?: true | ((input: never) => string);
+
+  /**
    * Carries `TInput` and `TOutput` for the compiler. It is never set.
    */
   readonly "~types"?: { input: TInput; output: TOutput };
