@@ -38,7 +38,10 @@ import {
 import { internalEvents } from "../../../helpers/consts.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import {
+  agentAnswerEvent,
+  agentFinishedEvent,
   agentMessageEvent,
+  agentQuestionEvent,
   agentRecoverEvent,
   type TriggerEvent,
 } from "./thread.ts";
@@ -256,7 +259,13 @@ const cronEvent = internalEvents.ScheduledTimer;
 /**
  * The events the agent layer owns, which cannot trigger an agent.
  */
-const reservedEvents: string[] = [agentMessageEvent, agentRecoverEvent];
+const reservedEvents: string[] = [
+  agentMessageEvent,
+  agentRecoverEvent,
+  agentQuestionEvent,
+  agentAnswerEvent,
+  agentFinishedEvent,
+];
 
 /**
  * Quotes a string as a CEL literal.

@@ -302,3 +302,53 @@ describe("start() and budgets", () => {
     expect(from.limits).toEqual({ depth: 1 });
   });
 });
+
+describe("result({ timeout }) after the start was planned", () => {
+  test("throws at the call and names the chained form, even when the run is done", async () => {
+    const agents = makeAgents();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      const started = await callee.start("x");
+
+      try {
+        await started.result({ timeout: "1h" });
+      } catch (error) {
+        return (error as Error).message;
+      }
+
+      return "no throw";
+    });
+    const { output } = await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
+      },
+      onInvoke: () => {
+        return { data: "done" };
+      },
+    });
+
+    expect(output).toContain("start(input).result({ timeout })");
+  });
+
+  test("result() without a timeout still works on the awaited handle", async () => {
+    const agents = makeAgents();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      const started = await callee.start("x");
+
+      return await started.result();
+    });
+    const { output } = await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
+      },
+      onInvoke: () => {
+        return { data: "done" };
+      },
+    });
+
+    expect(output).toBe("done");
+  });
+});

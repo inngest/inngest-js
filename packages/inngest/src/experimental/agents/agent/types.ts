@@ -30,7 +30,12 @@ import type {
   AgentCardConfig,
   AgentDiscovery,
 } from "../discovery/discovery.ts";
-import type { AgentMessageData } from "../inbox/events.ts";
+import type {
+  AgentAnswerData,
+  AgentFinishedData,
+  AgentMessageData,
+  AgentQuestionData,
+} from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
@@ -540,7 +545,16 @@ export type StartInput<TEvent> = [
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
-  | MessageOf<AgentMessageData, "agent/message">;
+  | MessageOf<AgentMessageData, "agent/message">
+  | (MessageOf<AgentQuestionData, "agent/question"> & {
+      /**
+       * Answers the question: with text, or with `{ outcome: "refused" }`. Only
+       * the first answer counts; a second or late one is dropped.
+       */
+      reply(answer: string | { outcome: "refused" }): Promise<void>;
+    })
+  | MessageOf<AgentAnswerData, "agent/answer">
+  | MessageOf<AgentFinishedData, "agent/finished">;
 
 /**
  * An inbox the model opened with `inbox_listen`.

@@ -37,7 +37,12 @@ describe("typed events", () => {
         // The message is the trigger event, flat; a plain thread message is
         // `agent/message`.
         expectTypeOf(message?.name).toEqualTypeOf<
-          "shop/order.created" | "agent/message" | undefined
+          | "shop/order.created"
+          | "agent/message"
+          | "agent/question"
+          | "agent/answer"
+          | "agent/finished"
+          | undefined
         >();
 
         if (message?.name === "shop/order.created") {
@@ -202,7 +207,12 @@ describe("typed events", () => {
         const message = await inbox.next();
 
         expectTypeOf(message?.name).toEqualTypeOf<
-          "chat/message" | "agent/message" | undefined
+          | "chat/message"
+          | "agent/message"
+          | "agent/question"
+          | "agent/answer"
+          | "agent/finished"
+          | undefined
         >();
 
         if (message?.name === "chat/message") {
@@ -219,7 +229,12 @@ describe("typed events", () => {
         const message = await inbox.next();
 
         expectTypeOf(message?.name).toEqualTypeOf<
-          "inngest/scheduled.timer" | "agent/message" | undefined
+          | "inngest/scheduled.timer"
+          | "agent/message"
+          | "agent/question"
+          | "agent/answer"
+          | "agent/finished"
+          | undefined
         >();
 
         if (message?.name === "inngest/scheduled.timer") {

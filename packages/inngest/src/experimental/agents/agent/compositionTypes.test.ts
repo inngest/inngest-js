@@ -54,7 +54,12 @@ describe("composition", () => {
         const next = await inbox.next();
 
         expectTypeOf(next?.name).toEqualTypeOf<
-          "shop/order.created" | "agent/message" | undefined
+          | "shop/order.created"
+          | "agent/message"
+          | "agent/question"
+          | "agent/answer"
+          | "agent/finished"
+          | undefined
         >();
 
         return runLoop({
