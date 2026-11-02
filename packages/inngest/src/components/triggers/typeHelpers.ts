@@ -4,7 +4,11 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
 import type { DeferFn, ReceivedEventMeta } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
-import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+  StaticTypeError,
+} from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
 type BasicDataUnknown = Record<string, unknown>;
@@ -27,6 +31,35 @@ type ContainsWildcard<T extends string> = T extends `${string}*${string}`
 type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
   ? unknown
   : T;
+
+type WildcardNameMessage =
+  StaticTypeError<"is() matches exact event names only: this event type has a wildcard name">;
+
+/**
+ * Whether an event type, or any in a list of them, has a wildcard in its name.
+ * A name that is only known to be a `string` has none.
+ */
+type HasWildcardName<T> = T extends EventType<infer TName, any>
+  ? ContainsWildcard<TName>
+  : false;
+
+/**
+ * The event types `is()` accepts, which is the type given when none of them
+ * has a wildcard name and an error message otherwise: `is()` matches exact
+ * names, so no type passed to it can match by prefix.
+ */
+type ExactEventTypes<T> = true extends HasWildcardName<
+  T extends readonly (infer TItem)[] ? TItem : T
+>
+  ? WildcardNameMessage
+  : unknown;
+
+/**
+ * The `this` an event type needs to call `is()`: any, unless its name has a
+ * wildcard.
+ */
+export type ExactNameThis<TName extends string> =
+  ContainsWildcard<TName> extends true ? WildcardNameMessage : unknown;
 
 /**
  * The data fields of an event, without the methods the SDK adds to the events
@@ -59,7 +92,9 @@ export type EventIs = {
     const T extends
       | EventTypeWithAnySchema<string>
       | readonly EventTypeWithAnySchema<string>[],
-  >(types: T): this is EventTypesToShape<T>;
+  >(
+    types: T & ExactEventTypes<T>, // event types without a wildcard name
+  ): this is EventTypesToShape<T>;
 };
 
 /**

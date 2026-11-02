@@ -1,8 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { EventMeta } from "../../types.ts";
-import { matchesEventName } from "./eventName.ts";
-import type { EventTypeToShape } from "./typeHelpers.ts";
+import type { EventTypeToShape, ExactNameThis } from "./typeHelpers.ts";
 
 /**
  * Represents a cron trigger for scheduled function execution.
@@ -148,9 +147,11 @@ export class EventType<
 
   /**
    * Narrows any value, including plain JSON such as the result of an
-   * `invoke`, to this event type. A name check.
+   * `invoke`, to this event type. A name check: the name must be equal, so an
+   * event type with a wildcard name (`user/*`) cannot be used here.
    */
   is<TValue>(
+    this: this & ExactNameThis<TName>, // not an event type with a wildcard name
     value: TValue, // the value to check
   ): value is TValue & EventTypeToShape<EventType<TName, TSchema>> {
     return hasEventName(value, this.name);
@@ -213,17 +214,14 @@ export class EventType<
 }
 
 /**
- * Whether a value is an object whose event name matches the given name, which
- * may end in a wildcard as a trigger's does.
+ * Whether a value is an object carrying the given event name.
  */
 export function hasEventName(value: unknown, name: string): boolean {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
-  const valueName = (value as { name?: unknown }).name;
-
-  return typeof valueName === "string" && matchesEventName(valueName, name);
+  return (value as { name?: unknown }).name === name;
 }
 
 /**
@@ -254,7 +252,7 @@ export function addEventIs<TEvent extends object>(event: TEvent): TEvent {
  * This type's only purpose is to clearly highlight static type error messages
  * in our codebase. To end users, it's exactly the same as a normal string.
  */
-type StaticTypeError<TMessage extends string> = TMessage;
+export type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
  * Ensure that users don't use transforms in their schemas, since we don't

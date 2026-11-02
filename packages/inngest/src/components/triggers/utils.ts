@@ -2,7 +2,6 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../../helpers/consts";
 import type { InngestFunction } from "../InngestFunction";
 import { NonRetriableError } from "../NonRetriableError";
-import { matchesEventName } from "./eventName";
 import { EventType } from "./triggers";
 import type { AnySchema } from "./typeHelpers";
 
@@ -84,7 +83,14 @@ function findWildcardValidators(
   const matchingValidators: EventValidator[] = [];
 
   for (const [triggerName, validator] of Object.entries(validators)) {
-    if (triggerName.endsWith("*") && matchesEventName(eventName, triggerName)) {
+    const isWildcard = triggerName.endsWith("*");
+    if (!isWildcard) {
+      continue;
+    }
+
+    const wildcardPrefix = triggerName.slice(0, -1);
+    const matchesWildcard = eventName.startsWith(wildcardPrefix);
+    if (matchesWildcard) {
       matchingValidators.push(validator);
     }
   }

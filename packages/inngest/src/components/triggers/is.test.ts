@@ -45,46 +45,56 @@ describe("EventType.is", () => {
   });
 });
 
-describe("EventType.is with a wildcard type", () => {
+describe("is() with a wildcard type", () => {
   const user = eventType("user/*", { schema: z.object({ id: z.string() }) });
   const anyUser = eventType("user/*");
 
-  test("true for a name under the prefix", () => {
-    expect(user.is({ name: "user/created", data: { id: "x" } })).toBe(true);
-    expect(user.is({ name: "user/profile/updated", data: { id: "x" } })).toBe(
-      true,
-    );
+  const named = (name: string) => {
+    return addEventIs({ name, data: {} }) as unknown as EventIs;
+  };
+
+  test("EventType.is is a type error, and never matches by prefix", () => {
+    // @ts-expect-error a wildcard event type cannot be passed to is()
+    expect(user.is({ name: "user/created", data: { id: "x" } })).toBe(false);
+
+    // @ts-expect-error a wildcard event type cannot be passed to is()
+    expect(anyUser.is({ name: "user/created", data: {} })).toBe(false);
   });
 
-  test("false for a name outside the prefix", () => {
-    expect(user.is({ name: "account/created", data: {} })).toBe(false);
-    expect(user.is({ name: "user", data: {} })).toBe(false);
+  test("event.is is a type error, and never matches by prefix", () => {
+    // @ts-expect-error a wildcard event type cannot be passed to is()
+    expect(named("user/created").is(user)).toBe(false);
+
+    // @ts-expect-error one wildcard event type in a list is enough
+    expect(named("user/created").is([a, anyUser])).toBe(false);
   });
 
   test("an exact type still matches by equality", () => {
     expect(a.is({ name: "a/b", data: {} })).toBe(false);
+    expect(named("a").is([a, b])).toBe(true);
   });
 
-  test("event.is matches a wildcard type too", () => {
-    const named = (name: string) => {
-      return addEventIs({ name, data: {} }) as unknown as EventIs;
-    };
+  test("a handler's false branch keeps the other events", () => {
+    const created = eventType("user/created", {
+      schema: z.object({ id: z.string() }),
+    });
+    const other = eventType("other/created");
 
-    expect(named("user/created").is(user)).toBe(true);
-    expect(named("account/created").is(user)).toBe(false);
-    expect(named("user/created").is([a, anyUser])).toBe(true);
-  });
+    createClient({ id: "test" }).createFunction(
+      { id: "fn", triggers: [created, other] },
+      ({ event }) => {
+        // @ts-expect-error a wildcard event type cannot be passed to is()
+        event.is(user);
 
-  test("keeps the schema data type, and plain data without one", () => {
-    const value = { name: "user/created", data: { id: "x" } } as unknown;
-
-    if (user.is(value)) {
-      expectTypeOf(value.data).toEqualTypeOf<{ id: string }>();
-    }
-
-    if (anyUser.is(value)) {
-      expectTypeOf(value.data).toExtend<Record<string, unknown>>();
-    }
+        if (event.is(created)) {
+          expectTypeOf(event.name).toEqualTypeOf<"user/created">();
+        } else {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "other/created" | "inngest/function.invoked"
+          >();
+        }
+      },
+    );
   });
 });
 
