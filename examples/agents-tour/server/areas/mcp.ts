@@ -42,6 +42,7 @@ export const area: AreaFactory = () => {
       res.writeHead(answer.status, {
         "content-type": answer.headers.get("content-type") ?? "text/plain",
       });
+
       res.end(Buffer.from(await answer.arrayBuffer()));
 
       return true;
