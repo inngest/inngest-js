@@ -543,15 +543,50 @@ describe("inbox sources", () => {
         },
       ],
     ]);
-    expect(asked[0]).toEqual(["inbox_listen", "inbox_close"]);
+    expect(asked[0]).toEqual([
+      "list_agents",
+      "describe_agent",
+      "start_agent",
+      "stop_agent",
+      "inbox_listen",
+      "inbox_close",
+    ]);
   });
 
-  test("an agent with no listen gives the model neither inbox_listen nor inbox_close", async () => {
+  test("an agent with no listen gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
     const asked: string[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
+        model: model(async (request) => {
+          asked.push((request.tools ?? []).map((tool) => tool.name));
+
+          return say("done");
+        }),
+      },
+      async ({ inbox, loop }) => {
+        await inbox.next();
+        await loop("go");
+
+        return "ok";
+      },
+    );
+
+    await run(fn, { event: trigger("go") });
+
+    expect(asked).toEqual([
+      ["list_agents", "describe_agent", "start_agent", "stop_agent"],
+    ]);
+  });
+
+  test("an agent with no listen with discovery false gives the model none of the agent tools", async () => {
+    const asked: string[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        discovery: false,
         model: model(async (request) => {
           asked.push((request.tools ?? []).map((tool) => tool.name));
 

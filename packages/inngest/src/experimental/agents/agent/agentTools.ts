@@ -25,6 +25,7 @@ import {
 import {
   type AgentDiscovery,
   type DiscoveryToolSetOptions,
+  discoveryToolSet,
   findCard,
   prepareInput,
 } from "../discovery/discovery.ts";
@@ -184,6 +185,24 @@ export const agentToolSet = (
       input: stopInput,
       run: stopAgent,
     }),
+  };
+};
+
+/**
+ * The tools a model agent gets by default, from its definition's `discovery`
+ * field: `list_agents`, `describe_agent`, `start_agent` and `stop_agent`, and
+ * none for `false`.
+ */
+export const agentToolsFor = (
+  discovery: AgentDiscovery | undefined,
+): Record<string, AgentTool> => {
+  if (discovery === false) {
+    return {};
+  }
+
+  return {
+    ...discoveryToolSet(),
+    ...agentToolSet({ discovery }),
   };
 };
 
