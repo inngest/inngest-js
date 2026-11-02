@@ -5,7 +5,9 @@
  * sender that carries the chain depth; the result comes back to a private inbox
  * opened before the send, so no step waits for the child.
  */
+import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
+import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
@@ -357,5 +359,63 @@ describe("start() without await", () => {
     expect(sent.filter((e) => e.name === "agent/message")).toMatchObject([
       { data: { content: "fire and forget" } },
     ]);
+  });
+});
+
+describe("a typed start is checked by the child (L101)", () => {
+  const make = () => {
+    const { agents } = setup();
+    let ran = 0;
+    const typed = agents.agent(
+      { id: "typed", triggers: invoke(z.object({ q: z.string() })) },
+      async ({ event }) => {
+        ran += 1;
+
+        return event.data.q;
+      },
+    );
+
+    return { typed, ran: () => ran };
+  };
+  const startMessage = (content: unknown) => {
+    return {
+      name: "agent/message",
+      data: {
+        agent: `${testClientId}/typed`,
+        thread: "t1",
+        content,
+        from: {
+          kind: "function",
+          id: "caller",
+          key: "r1",
+          depth: 1,
+          typed: true,
+        },
+      },
+    };
+  };
+
+  test("an input that breaks the schema fails the run with a non-retriable error that names the problem", async () => {
+    const { typed, ran } = make();
+
+    await expect(
+      run(typed.fn, { event: startMessage({ q: 1 }) }),
+    ).resolves.toMatchObject({
+      error: expect.objectContaining({
+        name: "NonRetriableError",
+        message: expect.stringContaining("q"),
+      }),
+    });
+    expect(ran()).toBe(0);
+  });
+
+  test("a valid input reaches the handler as the trigger's data", async () => {
+    const { typed, ran } = make();
+    const { output } = await run(typed.fn, {
+      event: startMessage({ q: "why" }),
+    });
+
+    expect(output).toBe("why");
+    expect(ran()).toBeGreaterThan(0);
   });
 });
