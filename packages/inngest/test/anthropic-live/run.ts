@@ -17,12 +17,12 @@ import {
   type AnthropicReply,
   anthropic,
   anthropicPrices,
-} from "../../src/components/agent/anthropic.ts";
-import { priceOf } from "../../src/components/agent/cost.ts";
+} from "../../src/experimental/agents/anthropic.ts";
+import { priceOf } from "../../src/experimental/agents/cost.ts";
 import type {
   AgentModelRequest,
   ModelMessage,
-} from "../../src/components/agent/loop.ts";
+} from "../../src/experimental/agents/loop.ts";
 
 const model = "claude-haiku-5-5";
 

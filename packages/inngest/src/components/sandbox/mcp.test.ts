@@ -4,9 +4,12 @@
  * MCP server.
  */
 import { describe, expect, test } from "vitest";
+import {
+  type AgentModelRequest,
+  agent,
+} from "../../experimental/agents/loop.ts";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
-import { type AgentModelRequest, agent } from "../agent/loop.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { mapMcpResult } from "./mcp.ts";

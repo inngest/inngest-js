@@ -1,7 +1,5 @@
 // AsyncLocalStorage
 
-export type { KvOAuthStoreOptions } from "./components/agent/mcpOAuthStore.ts";
-export { kvOAuthStore } from "./components/agent/mcpOAuthStore.ts";
 export {
   createDefer,
   DeferredFunction,
@@ -170,4 +168,6 @@ export type {
   ToolJsonDefinition,
 } from "./components/sandbox/tools.ts";
 export { tool, toolDefinitions } from "./components/sandbox/tools.ts";
+export type { KvOAuthStoreOptions } from "./experimental/agents/mcpOAuthStore.ts";
+export { kvOAuthStore } from "./experimental/agents/mcpOAuthStore.ts";
 export type { ExperimentRef } from "./types.ts";

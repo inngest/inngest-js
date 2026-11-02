@@ -11,9 +11,10 @@
  * tool that may change things: the model is told the outcome is unknown and
  * decides. Tools the server marks `readOnlyHint` or `idempotentHint` retry.
  */
+
+import { kvOAuthStore } from "../../experimental/agents/mcpOAuthStore.ts";
 import { durationToMs } from "../../helpers/duration.ts";
 import { version } from "../../version.ts";
-import { kvOAuthStore } from "../agent/mcpOAuthStore.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
 import {
