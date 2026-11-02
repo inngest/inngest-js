@@ -26,13 +26,6 @@ export { AgentCancelledError } from "./agent/invoke.ts";
 export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
-export type {
-  InboxToolName,
-  InboxToolSource,
-  InboxToolsConfig,
-  InboxToolsOf,
-} from "./inbox/inboxTools.ts";
-export { createInboxTools } from "./inbox/inboxTools.ts";
 export type { Json, JsonSchema } from "./json.ts";
 export type {
   AnthropicCall,

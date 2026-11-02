@@ -1,82 +1,53 @@
 /**
  * @module
- * Type tests for `inboxTools`: a source takes an event name or an
- * `eventType()` with a schema, and the tools reach the loop.
+ * Type tests for the model's inbox tools: `source` is typed from the names in
+ * `listen`, `match` is a record of scalars keyed by paths under `data`, and
+ * the tools exist only for a non-empty `listen`.
  */
 import { z } from "zod";
-import { Inngest } from "../../../components/Inngest.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
-import { testClientId } from "../../../test/helpers.ts";
-import { createAgents } from "../agent/agents.ts";
-import { agent } from "../loop/loop.ts";
+import type { InputOf } from "../agent/typeFixtures.ts";
+import { createListenTools } from "./inboxTools.ts";
 
-const check = eventType("ci/check_run", {
-  schema: z.object({ pr: z.number() }),
+const pullRequest = eventType("github/pull_request", {
+  schema: z.object({ pull_request: z.object({ number: z.number() }) }),
 });
-const agents = createAgents(new Inngest({ id: testClientId }));
+const status = eventType("ci/status", { schema: z.object({ n: z.number() }) });
+const open = async () => {
+  return { close: async () => [] };
+};
 
-describe("inboxTools types", () => {
-  test("a source is a name or an event type, and the tools spread into the loop", () => {
-    const run = () => {
-      agents.agent(
-        {
-          id: "listener",
-          triggers: { cron: "0 * * * *" },
-          inboxTools: {
-            listen: [
-              { event: check, thread: "string(int(event.data.pr))" },
-              { event: "ci/status", thread: "event.data.deployId" },
-            ],
-          },
-        },
-        async ({ inboxTools }) => {
-          return agent.loop({
-            model: async () => {
-              return {
-                message: { role: "assistant", content: "" },
-                toolCalls: [],
-              };
-            },
-            prompt: "go",
-            tools: { ...inboxTools },
-          });
-        },
-      );
+describe("tools: inbox_listen", () => {
+  test("tools: inbox_listen takes a source from listen and gives a name", () => {
+    const check = () => {
+      const tools = createListenTools({ open }, [pullRequest, status]);
+
+      type Listen = InputOf<typeof tools.inbox_listen>;
+
+      expectTypeOf<Listen["source"]>().toEqualTypeOf<
+        "github/pull_request" | "ci/status"
+      >();
+      expectTypeOf<Listen["match"]>().toEqualTypeOf<
+        Record<string, string | number | boolean> | undefined
+      >();
+      expectTypeOf<Listen["as"]>().toBeString();
+      expectTypeOf<InputOf<typeof tools.inbox_close>["as"]>().toBeString();
+
+      // @ts-expect-error a plain name is not an event type
+      createListenTools({ open }, ["ci/status"]);
     };
 
-    expect(run).toBeTypeOf("function");
+    expect(check).toBeTypeOf("function");
   });
-});
 
-describe("inboxTools body type", () => {
-  test("a configured agent gets all four tools, and one without gets none", () => {
-    const run = () => {
-      agents.agent(
-        {
-          id: "with-tools",
-          triggers: { cron: "0 * * * *" },
-          inboxTools: { listen: [{ event: "ci/status", thread: "t" }] },
-        },
-        async ({ inboxTools }) => {
-          expectTypeOf(inboxTools.inbox_listen).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_next).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_next_batch).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_close).not.toBeUndefined();
+  test("tools: an empty listen has neither tool", () => {
+    const check = () => {
+      const tools = createListenTools({ open }, []);
 
-          return null;
-        },
-      );
-      agents.agent(
-        { id: "without-tools", triggers: { cron: "0 * * * *" } },
-        async ({ inboxTools }) => {
-          // @ts-expect-error there is no inbox_listen without inboxTools
-          void inboxTools.inbox_listen;
-
-          return null;
-        },
-      );
+      expectTypeOf(tools).not.toHaveProperty("inbox_listen");
+      expectTypeOf(tools).not.toHaveProperty("inbox_close");
     };
 
-    expect(run).toBeTypeOf("function");
+    expect(check).toBeTypeOf("function");
   });
 });

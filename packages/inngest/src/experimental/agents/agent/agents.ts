@@ -17,7 +17,6 @@ import {
   announcement,
   rememberCard,
 } from "../discovery/discovery.ts";
-import type { InboxToolsConfig } from "../inbox/inboxTools.ts";
 import { type KvStore, setAppKvStore } from "../kv/kv.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
 import type {
@@ -56,7 +55,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TInboxTools extends InboxToolsConfig | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -65,7 +63,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         event: ThreadTriggerEventOf<TType>;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }
     >,
@@ -75,7 +72,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
@@ -85,7 +81,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TInboxTools extends InboxToolsConfig | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -94,7 +89,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         event: ThreadTriggerListEvent<TTypes>;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }
     >,
@@ -104,7 +98,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
@@ -114,7 +107,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TInboxTools extends InboxToolsConfig | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -123,7 +115,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         event: ThreadTriggerEventOf<TOne>;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }
     >,
@@ -133,7 +124,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
@@ -142,7 +132,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TInboxTools extends InboxToolsConfig | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -151,7 +140,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         event: ThreadCronEvent;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }
     >,
@@ -161,7 +149,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }>,
     ) => Promise<TOutput>,
@@ -171,7 +158,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = unknown,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TInboxTools extends InboxToolsConfig | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
   >(
     config: AgentFunctionConfig<
@@ -180,7 +166,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         event: ThreadTriggerListEvent<TMany>;
         sandboxes: TSandboxes;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }
     >,
@@ -190,7 +175,6 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         client: TClient;
         middleware: TMiddleware;
-        inboxTools: TInboxTools;
         sources: TSources;
       }>,
     ) => Promise<TOutput>,

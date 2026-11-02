@@ -501,26 +501,56 @@ describe("inbox sources", () => {
     ).toEqual(["agent/message", "agent/steer", "ci/status"]);
   });
 
-  test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event", async () => {
+  test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
+    const status = eventType("ci/status", {
+      schema: z.object({ t: z.string(), state: z.string() }),
+    });
+    const asked: string[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
         kv: createKv({ adapter: memoryKvAdapter() }),
-        inboxTools: {
-          listen: [{ event: "ci/status", thread: "event.data.t" }],
-        },
+        thread: "event.data.t",
+        listen: [status],
       },
-      async ({ inbox, inboxTools, control }) => {
+      async ({ inbox, loop, control }) => {
         await inbox.next();
-        await (
-          inboxTools.inbox_listen?.run as unknown as (
-            input: unknown,
-          ) => Promise<unknown>
-        )({
-          source: "ci/status",
-          match: { "data.state": "red" },
-          as: "ci",
+        await loop("go", {
+          model: agent.model(async (request) => {
+            asked.push((request.tools ?? []).map((tool) => tool.name));
+
+            return request.turn === 1
+              ? {
+                  message: {
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "tool_use",
+                        id: "t1",
+                        name: "inbox_listen",
+                        input: {
+                          source: "ci/status",
+                          match: { state: "red" },
+                          as: "ci",
+                        },
+                      },
+                    ],
+                  },
+                  toolCalls: [
+                    {
+                      id: "t1",
+                      name: "inbox_listen",
+                      input: {
+                        source: "ci/status",
+                        match: { state: "red" },
+                        as: "ci",
+                      },
+                    },
+                  ],
+                }
+              : say("done");
+          }),
         });
 
         return control.inboxes().map((open) => {
@@ -529,26 +559,42 @@ describe("inbox sources", () => {
       },
     );
 
-    const { output, ops } = await run(fn, { event: trigger("go") });
+    const { output } = await run(fn, { event: trigger("go") });
 
     expect(output).toEqual([
       [
         "ci",
         {
           event: "ci/status",
-          if: '((async.data.state == "red")) && (async.data.t) == "t1"',
+          if: '(async.data.state == "red") && (async.data.t) == "t1"',
         },
       ],
     ]);
-    expect(
-      ops.some((op) => {
-        return (
-          op.opts as { sources?: { event: string }[] } | undefined
-        )?.sources?.some((source) => {
-          return source.event === "ci/status";
+    expect(asked[0]).toEqual(["inbox_listen", "inbox_close"]);
+  });
+
+  test("an agent with no listen gives the model neither inbox_listen nor inbox_close", async () => {
+    const asked: string[][] = [];
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      async ({ inbox, loop }) => {
+        await inbox.next();
+        await loop("go", {
+          model: agent.model(async (request) => {
+            asked.push((request.tools ?? []).map((tool) => tool.name));
+
+            return say("done");
+          }),
         });
-      }),
-    ).toBe(true);
+
+        return "ok";
+      },
+    );
+
+    await run(fn, { event: trigger("go") });
+
+    expect(asked).toEqual([[]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {

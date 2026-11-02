@@ -17,7 +17,6 @@ import type {
   AgentTypesOf,
   InboxMessage,
   InboxSource,
-  InboxToolsConfig,
   SandboxToolNames,
   ThreadInbox,
   TriggerEvent,
@@ -34,7 +33,6 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
     sandboxes: SandboxToolNames;
     client: typeof client;
     middleware: Middleware.Class[] | undefined;
-    inboxTools: InboxToolsConfig | undefined;
   };
 
   const helper = (context: AgentBodyContext<Bag>) => {

@@ -1,65 +1,32 @@
 /**
  * @module
- * Tests for the model-facing inbox tools, against an inbox that records what
- * they ask of it.
+ * Tests for the model's inbox tools, `inbox_listen` and `inbox_close`,
+ * against an inbox that records what they ask of it.
  */
 import { describe, expect, test } from "vitest";
+import { z } from "zod";
+import { eventType } from "../../../components/triggers/triggers.ts";
 import {
-  createInboxTools,
+  createListenTools,
   type InboxToolInbox,
   type InboxToolMessage,
-  type InboxToolsConfig,
   matchToCel,
 } from "./inboxTools.ts";
 
-/**
- * An inbox whose named inboxes get their messages from `queues`, by event
- * name, each with a read position of its own. The thread's own inbox reads the
- * queue named "handler".
- */
+const pullRequest = eventType("github/pull_request", {
+  schema: z.object({ pull_request: z.object({ number: z.number() }) }),
+});
+const status = eventType("ci/status", { schema: z.object({ n: z.number() }) });
+
 const fakeInbox = () => {
   const calls: unknown[][] = [];
   const closed: string[] = [];
-  const queues = new Map<string, InboxToolMessage[]>();
-  const read = new Map<string, number>();
+  const unread = new Map<string, InboxToolMessage[]>();
   let delay = false;
 
-  const queue = (name: string): InboxToolMessage[] => {
-    if (!queues.has(name)) {
-      queues.set(name, []);
-    }
-
-    return queues.get(name) as InboxToolMessage[];
-  };
-  const reader = (key: string, name: string) => {
-    return {
-      next: async (options: { timeout: number | string }) => {
-        calls.push(["next", key, options]);
-
-        const at = read.get(key) ?? 0;
-        const message = queue(name)[at];
-
-        if (message) {
-          read.set(key, at + 1);
-        }
-
-        return message ?? null;
-      },
-      drain: async () => {
-        calls.push(["drain", key]);
-
-        const at = read.get(key) ?? 0;
-
-        read.set(key, queue(name).length);
-
-        return queue(name).slice(at);
-      },
-    };
-  };
   const inbox: InboxToolInbox = {
-    handler: reader("handler", "handler"),
     open: async (as, event, options) => {
-      calls.push(["open", as, event, options]);
+      calls.push(["open", as, event.name, options]);
 
       if (delay) {
         await new Promise<void>((resolve) => {
@@ -67,14 +34,11 @@ const fakeInbox = () => {
         });
       }
 
-      const mine = reader(as, String(event));
-
       return {
-        ...mine,
         close: async () => {
           closed.push(as);
 
-          return mine.drain();
+          return unread.get(as) ?? [];
         },
       };
     },
@@ -84,8 +48,8 @@ const fakeInbox = () => {
     inbox,
     calls,
     closed,
-    push: (event: string, ...messages: InboxToolMessage[]) => {
-      queue(event).push(...messages);
+    leave: (as: string, ...messages: InboxToolMessage[]) => {
+      unread.set(as, messages);
     },
     slow: () => {
       delay = true;
@@ -93,26 +57,12 @@ const fakeInbox = () => {
   };
 };
 
-const config: InboxToolsConfig = {
-  listen: [
-    {
-      event: "ci/check_run",
-      thread: '"chat:" + event.data.chatThread',
-      if: 'event.data.repo == "app"',
-      maxPerRun: 2,
-    },
-    { event: "ci/status", thread: "event.data.deployId" },
-  ],
-  maxListeners: 2,
-  maxWait: "30m",
-};
-
 type Call = (input: unknown) => Promise<unknown>;
 
-const setup = (overrides: Partial<InboxToolsConfig> = {}) => {
+const setup = () => {
   const fake = fakeInbox();
-  const tools = createInboxTools(fake.inbox, { ...config, ...overrides });
-  const call = (name: keyof typeof tools, input: unknown = {}) => {
+  const tools = createListenTools(fake.inbox, [pullRequest, status]);
+  const call = (name: "inbox_listen" | "inbox_close", input: unknown = {}) => {
     return (tools[name].run as unknown as Call)(input);
   };
 
@@ -120,40 +70,64 @@ const setup = (overrides: Partial<InboxToolsConfig> = {}) => {
 };
 
 describe("inbox_listen", () => {
-  test("listens to an allowed source with the configured thread and if, adding the model's match", async () => {
+  test("a dotted match path lets through only events whose data has that value there", async () => {
     const { call, calls } = setup();
 
     await expect(
       call("inbox_listen", {
-        source: "ci/check_run",
-        match: { "data.pr": 12, "data.user": "U123" },
-        as: "checks",
+        source: "github/pull_request",
+        match: { "pull_request.number": 12, action: "opened" },
+        as: "pr",
       }),
-    ).resolves.toEqual({ listening: "checks", source: "ci/check_run" });
+    ).resolves.toEqual({ listening: "pr", source: "github/pull_request" });
     expect(calls[0]).toEqual([
       "open",
-      "checks",
-      "ci/check_run",
+      "pr",
+      "github/pull_request",
       {
-        thread: '"chat:" + event.data.chatThread',
-        if: '(event.data.repo == "app") && (async.data.pr == 12 && async.data.user == "U123")',
+        if: 'async.data.pull_request.number == 12 && async.data.action == "opened"',
       },
     ]);
   });
 
-  test("refuses a source that isn't listed, naming the ones that are", async () => {
+  test("a type outside listen is refused with a message naming the allowed ones", async () => {
     const { call, calls } = setup();
 
     await expect(
       call("inbox_listen", { source: "stripe/charge", as: "x" }),
     ).rejects.toThrow(
-      "stripe/charge is not a source you can listen to. Allowed: ci/check_run, ci/status.",
+      "stripe/charge is not a source you can listen to. Allowed: github/pull_request, ci/status.",
     );
     expect(calls).toEqual([]);
   });
 
-  test("never lets the model choose the thread: the schema drops it", async () => {
-    const { call, calls, tools } = setup();
+  test("eight match fields are fine and a ninth is an error the model sees", async () => {
+    const { call, calls } = setup();
+    const fields = (count: number) => {
+      return Object.fromEntries(
+        Array.from({ length: count }, (_, n) => {
+          return [`f${n}`, 1];
+        }),
+      );
+    };
+
+    await call("inbox_listen", {
+      source: "ci/status",
+      match: fields(8),
+      as: "eight",
+    });
+    await expect(
+      call("inbox_listen", {
+        source: "ci/status",
+        match: fields(9),
+        as: "nine",
+      }),
+    ).rejects.toThrow('"match" may name at most 8 fields.');
+    expect(calls).toHaveLength(1);
+  });
+
+  test("the model cannot choose the thread: the schema drops it", async () => {
+    const { tools } = setup();
     const schema = tools.inbox_listen.input as unknown as {
       "~standard": { validate: (value: unknown) => Promise<unknown> };
     };
@@ -164,28 +138,19 @@ describe("inbox_listen", () => {
     });
 
     expect(parsed).toEqual({ value: { source: "ci/status", as: "ci" } });
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-
-    expect(calls[0]?.[3]).toEqual({ thread: "event.data.deployId" });
   });
 
   test.each([
-    { "data.x == 1 || true": 1 },
-    { "data..x": 1 },
-    { "data.": 1 },
+    { "x == 1 || true": 1 },
+    { "a..x": 1 },
+    { "a.": 1 },
     { "": 1 },
-    { "data.if": 1 },
-    { "data.x[0]": 1 },
-    { "data.x\n": 1 },
-    { "data.x": "x".repeat(201) },
-    { "data.x": Number.POSITIVE_INFINITY },
-    { "data.x": "\ud800" },
-    Object.fromEntries(
-      Array.from({ length: 9 }, (_, n) => {
-        return [`data.f${n}`, 1];
-      }),
-    ),
+    { "a.if": 1 },
+    { "a.x[0]": 1 },
+    { "a.x\n": 1 },
+    { x: "x".repeat(201) },
+    { x: Number.POSITIVE_INFINITY },
+    { x: "\ud800" },
   ])(
     "refuses a match that is not plain fields and values: %j",
     async (match) => {
@@ -198,93 +163,34 @@ describe("inbox_listen", () => {
     },
   );
 
-  test("a failed listen doesn't remove a newer listener of the same name", async () => {
-    const fake = fakeInbox();
-    let calls = 0;
-    const tools = createInboxTools(
-      {
-        ...fake.inbox,
-        open: async (as, event, options) => {
-          calls += 1;
-
-          if (calls === 1) {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, 20);
-            });
-
-            throw new Error("backend down");
-          }
-
-          return fake.inbox.open(as, event, options);
-        },
-      },
-      { listen: [{ event: "ci/status", thread: "t" }], maxListeners: 3 },
-    );
-    const run = (name: keyof typeof tools, input: unknown) => {
-      return (tools[name].run as unknown as Call)(input);
-    };
-    const first = run("inbox_listen", { source: "ci/status", as: "a" });
-    const firstSettled = first.catch(() => "failed");
-
-    // Stopped and taken again while the first is still pending.
-    const stopped = run("inbox_close", { as: "a" }).catch(() => "stop-failed");
-
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 1);
-    });
-    await run("inbox_listen", { source: "ci/status", as: "a" });
-    await Promise.all([firstSettled, stopped]);
-    await expect(run("inbox_next_batch", { as: "a" })).resolves.toEqual({
-      messages: [],
-    });
-  });
-
-  test("caps the listeners at once, and per source in a run", async () => {
+  test("caps the inboxes open at once, and per source in a run", async () => {
     const { call } = setup();
 
-    await call("inbox_listen", { source: "ci/check_run", as: "a" });
-    await call("inbox_listen", { source: "ci/status", as: "b" });
-    await expect(
-      call("inbox_listen", { source: "ci/status", as: "c" }),
-    ).rejects.toThrow("Already 2 inboxes open");
+    for (const as of ["a", "b", "c", "d", "e"]) {
+      await call("inbox_listen", {
+        source: as < "d" ? "ci/status" : "github/pull_request",
+        as,
+      }).catch(() => undefined);
+    }
 
-    const perSource = setup({ maxListeners: 10 });
+    const overall = setup();
 
-    await perSource.call("inbox_listen", {
-      source: "ci/check_run",
-      as: "a",
-    });
-    await perSource.call("inbox_listen", {
-      source: "ci/check_run",
-      as: "b",
-    });
+    await overall.call("inbox_listen", { source: "ci/status", as: "a" });
+    await overall.call("inbox_listen", { source: "ci/status", as: "b" });
+    await overall.call("inbox_listen", { source: "ci/status", as: "c" });
     await expect(
-      perSource.call("inbox_listen", { source: "ci/check_run", as: "c" }),
-    ).rejects.toThrow("can be listened to 2 times in a run");
+      overall.call("inbox_listen", { source: "ci/status", as: "d" }),
+    ).rejects.toThrow("can be listened to 3 times in a run");
   });
 
   test("listens made at the same time can't pass the same checks", async () => {
-    const one = setup({ maxListeners: 1 });
-
-    one.slow();
-
-    const results = await Promise.allSettled([
-      one.call("inbox_listen", { source: "ci/status", as: "a" }),
-      one.call("inbox_listen", { source: "ci/status", as: "b" }),
-    ]);
-
-    expect(results.map((result) => result.status)).toEqual([
-      "fulfilled",
-      "rejected",
-    ]);
-
     const same = setup();
 
     same.slow();
 
     const named = await Promise.allSettled([
       same.call("inbox_listen", { source: "ci/status", as: "a" }),
-      same.call("inbox_listen", { source: "ci/check_run", as: "a" }),
+      same.call("inbox_listen", { source: "github/pull_request", as: "a" }),
     ]);
 
     expect(named.map((result) => result.status)).toEqual([
@@ -296,9 +202,8 @@ describe("inbox_listen", () => {
   test("a listen that fails gives its name and its slot back", async () => {
     const fake = fakeInbox();
     let first = true;
-    const tools = createInboxTools(
+    const tools = createListenTools(
       {
-        ...fake.inbox,
         open: async (as, event, options) => {
           if (first) {
             first = false;
@@ -309,20 +214,22 @@ describe("inbox_listen", () => {
           return fake.inbox.open(as, event, options);
         },
       },
-      { listen: [{ event: "ci/status", thread: "t", maxPerRun: 1 }] },
+      [status],
     );
     const run = tools.inbox_listen.run as unknown as Call;
 
     await expect(run({ source: "ci/status", as: "a" })).rejects.toThrow(
       "backend down",
     );
-    await expect(run({ source: "ci/status", as: "a" })).resolves.toEqual({
-      listening: "a",
-      source: "ci/status",
-    });
+    await run({ source: "ci/status", as: "a" });
+    await run({ source: "ci/status", as: "b" });
+    await run({ source: "ci/status", as: "c" });
+    await expect(run({ source: "ci/status", as: "d" })).rejects.toThrow(
+      "can be listened to 3 times",
+    );
   });
 
-  test("refuses a name that is already in use and an event listed twice", async () => {
+  test("refuses a name already in use and a type listed twice", async () => {
     const { call } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "a" });
@@ -330,221 +237,17 @@ describe("inbox_listen", () => {
       call("inbox_listen", { source: "ci/status", as: "a" }),
     ).rejects.toThrow("already open");
     expect(() =>
-      createInboxTools(fakeInbox().inbox, {
-        listen: [
-          { event: "ci/status", thread: "a" },
-          { event: "ci/status", thread: "b" },
-        ],
-      }),
-    ).toThrow(/names an event twice/);
+      createListenTools(fakeInbox().inbox, [status, status]),
+    ).toThrow(/twice/);
   });
 });
 
-describe("inbox_next, inbox_next_batch and inbox_close", () => {
-  test("wait takes the next message of the listener, marked untrusted, or null on a timeout", async () => {
-    const { call, calls, push } = setup();
+describe("inbox_close", () => {
+  test("returns what the inbox had not read, marked untrusted", async () => {
+    const { call, leave } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "ci" });
-    push("ci/status", { name: "ci/status", data: { state: "green" } });
-
-    const got = (await call("inbox_next", { timeout: "10m", as: "ci" })) as {
-      message: { source: string; content: string };
-    };
-
-    expect(got.message.source).toBe("ci/status");
-    expect(got.message.content).toBe(
-      '<untrusted source="ci/status">\n{"state":"green"}\n</untrusted>',
-    );
-    expect(calls.at(-1)).toEqual(["next", "ci", { timeout: 600_000 }]);
-    await expect(
-      call("inbox_next", { timeout: "1m", as: "ci" }),
-    ).resolves.toEqual({
-      message: null,
-    });
-  });
-
-  test("an unknown name is an error that lists the open inboxes", async () => {
-    const { call, push } = setup();
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await call("inbox_listen", { source: "ci/check_run", as: "gh" });
-    push("ci/check_run", { name: "ci/check_run", data: { n: 1 } });
-
-    const got = (await call("inbox_next", { timeout: "1m", as: "gh" })) as {
-      message: { source: string };
-    };
-
-    expect(got.message.source).toBe("ci/check_run");
-    await expect(
-      call("inbox_next", { timeout: "1m", as: "nope" }),
-    ).rejects.toThrow("No inbox named nope. Open: ci, gh.");
-  });
-
-  test("wait refuses a timeout above maxWait, and 0 reads without waiting", async () => {
-    const { call, calls } = setup();
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await expect(call("inbox_next", { timeout: "31m" })).rejects.toThrow(
-      "can wait at most 30m",
-    );
-    await call("inbox_next", { timeout: 0, as: "ci" });
-    expect(calls.at(-1)).toEqual(["drain", "ci"]);
-  });
-
-  test("wait is a suspending tool for run_code", () => {
-    expect(setup().tools.inbox_next.waits).toBe(true);
-    expect(setup().tools.inbox_next_batch.waits).toBeUndefined();
-  });
-
-  test("read returns what the listeners have not read, long messages clipped", async () => {
-    const { call, push } = setup();
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-    push(
-      "ci/status",
-      { name: "ci/status", data: { n: 1 } },
-      { name: "ci/status", data: { text: "y".repeat(5000) } },
-    );
-
-    const { messages } = (await call("inbox_next_batch", { as: "ci" })) as {
-      messages: { source: string; content: string }[];
-    };
-
-    expect(messages).toHaveLength(2);
-    expect(messages[1]?.content).toContain("more characters");
-    expect(messages[1]?.content.length).toBeLessThan(4_300);
-    await expect(call("inbox_next_batch", { as: "ci" })).resolves.toEqual({
-      messages: [],
-    });
-  });
-
-  test("read takes what a listener has, and 'as' picks a listener", async () => {
-    const { call, push } = setup();
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-    await call("inbox_listen", { source: "ci/check_run", as: "gh" });
-    push("ci/status", { name: "ci/status", data: { n: 1 } });
-    push("ci/check_run", { name: "ci/check_run", data: { n: 99 } });
-
-    const only = (await call("inbox_next_batch", { as: "gh" })) as {
-      messages: { source: string }[];
-    };
-
-    expect(only.messages.map((message) => message.source)).toEqual([
-      "ci/check_run",
-    ]);
-  });
-
-  test("a value can't become syntax: it is written as an escaped string literal", async () => {
-    const { call, calls } = setup();
-
-    await call("inbox_listen", {
-      source: "ci/status",
-      match: { "data.title": '") || (true' },
-      as: "x",
-    });
-    await call("inbox_listen", {
-      source: "ci/check_run",
-      match: { "data.title": "a\nb\u2028c\\" },
-      as: "y",
-    });
-
-    expect(calls[0]?.[3]).toEqual({
-      thread: "event.data.deployId",
-      if: '(async.data.title == "\\") || (true")',
-    });
-    expect(calls[1]?.[3]).toEqual({
-      thread: '"chat:" + event.data.chatThread',
-      if: '(event.data.repo == "app") && (async.data.title == "a\\nb\\u2028c\\\\")',
-    });
-  });
-
-  test("an empty match adds nothing", async () => {
-    const { call, calls } = setup();
-
-    await call("inbox_listen", { source: "ci/status", match: {}, as: "x" });
-
-    expect(calls[0]?.[3]).toEqual({ thread: "event.data.deployId" });
-  });
-
-  test("a new execution that replays the calls rebuilds the listeners, so wait, read and stop still work", async () => {
-    // Each step of a run is a new execution of the function: the tools are made
-    // again and the loop replays its tool calls in order, listen included (a
-    // memoized step inside the tool body).
-    const fake = fakeInbox();
-    const replay = () => {
-      return createInboxTools(fake.inbox, config);
-    };
-    const run = (
-      tools: ReturnType<typeof replay>,
-      name: keyof typeof tools,
-      input: unknown,
-    ) => {
-      return (tools[name].run as unknown as Call)(input);
-    };
-    const first = replay();
-
-    await run(first, "inbox_listen", { source: "ci/status", as: "ci" });
-
-    // The worker restarts here: new tools, the same calls replayed.
-    const second = replay();
-
-    await run(second, "inbox_listen", { source: "ci/status", as: "ci" });
-    fake.push("ci/status", { name: "ci/status", data: { n: 1 } });
-    await expect(
-      run(second, "inbox_next", { timeout: "1m", as: "ci" }),
-    ).resolves.toMatchObject({ message: { source: "ci/status" } });
-    await expect(run(second, "inbox_close", { as: "ci" })).resolves.toEqual({
-      closed: "ci",
-    });
-  });
-
-  test("a run may wait only so long in all, and a source has a default cap", async () => {
-    const { call } = setup({ maxTotalWait: "50m", maxWait: "30m" });
-
-    await call("inbox_listen", { source: "ci/status", as: "a" });
-    await call("inbox_next", { timeout: "30m" });
-    await expect(call("inbox_next", { timeout: "30m" })).rejects.toThrow(
-      "This run may wait 50m in all",
-    );
-    await call("inbox_next", { timeout: "20m" });
-    await call("inbox_close", { as: "a" });
-    await call("inbox_listen", { source: "ci/status", as: "b" });
-    await call("inbox_close", { as: "b" });
-    await call("inbox_listen", { source: "ci/status", as: "c" });
-    await call("inbox_close", { as: "c" });
-    // Stopping doesn't give a place back: the default is three per source.
-    await expect(
-      call("inbox_listen", { source: "ci/status", as: "d" }),
-    ).rejects.toThrow("can be listened to 3 times");
-  });
-
-  test("without 'as' the tools read the thread's own inbox", async () => {
-    const { call, calls, push } = setup();
-
-    push("handler", { name: "agent/message", data: { text: "hi" } });
-
-    const got = (await call("inbox_next", { timeout: "1m" })) as {
-      message: { source: string };
-    };
-
-    expect(got.message.source).toBe("agent/message");
-    expect(calls.at(-1)).toEqual(["next", "handler", { timeout: 60_000 }]);
-
-    push("handler", { name: "agent/steer", data: { text: "x" } });
-
-    const { messages } = (await call("inbox_next_batch")) as {
-      messages: { source: string }[];
-    };
-
-    expect(messages.map((message) => message.source)).toEqual(["agent/steer"]);
-  });
-
-  test("inbox_close returns what the inbox had not read", async () => {
-    const { call, push } = setup();
-
-    await call("inbox_listen", { source: "ci/status", as: "ci" });
-    push("ci/status", { name: "ci/status", data: { n: 1 } });
+    leave("ci", { name: "ci/status", data: { n: 1 } });
 
     const result = (await call("inbox_close", { as: "ci" })) as {
       closed: string;
@@ -557,46 +260,7 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
     ]);
   });
 
-  test("a failed listen gives back its own slot, not the count it saw", async () => {
-    const fake = fakeInbox();
-    let first = true;
-    const tools = createInboxTools(
-      {
-        ...fake.inbox,
-        open: async (as, event, options) => {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 5);
-          });
-
-          if (first) {
-            first = false;
-
-            throw new Error("backend down");
-          }
-
-          return fake.inbox.open(as, event, options);
-        },
-      },
-      { listen: [{ event: "ci/status", thread: "t", maxPerRun: 2 }] },
-    );
-    const run = tools.inbox_listen.run as unknown as Call;
-    const results = await Promise.allSettled([
-      run({ source: "ci/status", as: "a" }),
-      run({ source: "ci/status", as: "b" }),
-    ]);
-
-    expect(results.map((result) => result.status)).toEqual([
-      "rejected",
-      "fulfilled",
-    ]);
-    // One listener runs, so one more is allowed and a third is not.
-    await run({ source: "ci/status", as: "c" });
-    await expect(run({ source: "ci/status", as: "d" })).rejects.toThrow(
-      "can be listened to 2 times",
-    );
-  });
-
-  test("close closes the inbox and frees its name and its slot", async () => {
+  test("closes the inbox and frees its name and its slot", async () => {
     const { call, closed } = setup();
 
     await call("inbox_listen", { source: "ci/status", as: "a" });
@@ -614,23 +278,20 @@ describe("inbox_next, inbox_next_batch and inbox_close", () => {
 
 describe("matchToCel", () => {
   test.each([
-    [{ "data.a": 1 }, "async.data.a == 1"],
-    [
-      { "data.a": "x", "data.b": true },
-      'async.data.a == "x" && async.data.b == true',
-    ],
-    [{ "data.a": -2.5 }, "async.data.a == -2.5"],
-    [{ "data.a": "\u0085\u007f" }, 'async.data.a == "\\u0085\\u007f"'],
-    [{ "data.a": "ünï" }, 'async.data.a == "ünï"'],
+    [{ a: 1 }, "async.data.a == 1"],
+    [{ a: "x", b: true }, 'async.data.a == "x" && async.data.b == true'],
+    [{ a: -2.5 }, "async.data.a == -2.5"],
+    [{ "p.q": "\u0085\u007f" }, 'async.data.p.q == "\\u0085\\u007f"'],
+    [{ a: "ünï" }, 'async.data.a == "ünï"'],
     [{}, undefined],
   ])("%j", (match, cel) => {
     expect(matchToCel(match)).toBe(cel);
   });
 
   test("a key is at most 128 characters", () => {
-    const long = `data.${"a".repeat(123)}`;
+    const long = "a".repeat(128);
 
-    expect(matchToCel({ [long]: 1 })).toBe(`async.${long} == 1`);
+    expect(matchToCel({ [long]: 1 })).toBe(`async.data.${long} == 1`);
     expect(() => matchToCel({ [`${long}a`]: 1 })).toThrow("at most 128");
   });
 });

@@ -22,10 +22,15 @@ import type {
 } from "../../../types.ts";
 import type { AgentCard, AgentCardConfig } from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
-import type { InboxToolsConfig, InboxToolsOf } from "../inbox/inboxTools.ts";
 import type { KvSource } from "../kv/kv.ts";
 import type { AgentPrice } from "../loop/cost.ts";
-import type { AgentEvent, AgentTurn } from "../loop/loop.ts";
+import type {
+  AgentEvent,
+  AgentInput,
+  AgentLoopOptions,
+  AgentLoopResult,
+  AgentTurn,
+} from "../loop/loop.ts";
 import type { AgentScores } from "../loop/scores.ts";
 import {
   type LazySandbox,
@@ -56,7 +61,6 @@ import type { RunField, RunFieldContext } from "./runField.ts";
  * - `sandboxes`: for each sandbox name, the names of the tools it brings.
  * - `client`: the Inngest client, whose middleware types the body's context.
  * - `middleware`: the function-level middleware, which adds to the context.
- * - `inboxTools`: the config of the model's inbox tools, if any.
  * - `sources`: the `inbox` sources of the config, whose event types type the
  *   messages they add to the inbox.
  */
@@ -85,11 +89,6 @@ export interface AgentTypes {
    * The function-level middleware of the agent.
    */
   middleware?: Middleware.Class[] | undefined;
-
-  /**
-   * The config of the model's inbox tools, or `undefined` for none.
-   */
-  inboxTools?: InboxToolsConfig | undefined;
 
   /**
    * The `inbox` sources of the agent's config.
@@ -127,11 +126,6 @@ export interface AgentTypeDefaults {
   middleware: undefined;
 
   /**
-   * Inbox tools that may or may not be configured.
-   */
-  inboxTools: InboxToolsConfig | undefined;
-
-  /**
    * No typed sources.
    */
   sources: undefined;
@@ -155,11 +149,6 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
   }
     ? V
     : AgentTypeDefaults["middleware"];
-  inboxTools: TTypes extends {
-    inboxTools: infer V extends InboxToolsConfig | undefined;
-  }
-    ? V
-    : AgentTypeDefaults["inboxTools"];
   sources: TTypes extends {
     sources: infer V extends readonly InboxSource[] | undefined;
   }
@@ -240,15 +229,14 @@ export interface AgentFunctionConfig<
     : readonly InboxSource[];
 
   /**
-   * Lets the model listen for events while it works: the body gets
-   * `inboxTools` (`inbox_listen`, `inbox_next`, `inbox_next_batch`, `inbox_close`) to
-   * pass to `agent.loop()`, and to `sandbox.tools.code({ tools })` so `run_code`
-   * scripts use the same inbox. Off unless set. The model can only listen to the
-   * sources listed here, each tied to this thread by its own `thread`; its
-   * `if` can only narrow. A message that arrives while the model works is
-   * folded into its next turn by `control.steer()` when `foldMessages` allows.
+   * The event types the model may start watching while it works, with its
+   * `inbox_listen({ source, match, as })` tool and `inbox_close({ as })` to
+   * stop. Both tools exist only when this list is not empty, and `source`
+   * must name a type listed here: anything else is refused with a message the
+   * model can read. `match` narrows what the model hears to events whose
+   * `data` has given values at given paths. Event types only, no plain names.
    */
-  inboxTools?: AgentTypesOf<TTypes>["inboxTools"];
+  listen?: readonly EventTypeWithAnySchema<string>[];
 
   /**
    * Which messages that arrive during a turn `control.steer()` (and so
@@ -393,11 +381,15 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
-   * The model's inbox tools: `inbox_listen`, `inbox_next`, `inbox_next_batch` and
-   * `inbox_close`, all of them when the config has `inboxTools` and none
-   * without it.
+   * Runs the loop on a prompt with the agent's own wiring: steering, the
+   * budget and the turn record, and, when the agent has `listen`, the model's
+   * `inbox_listen` and `inbox_close`. It takes `agent.loop()`'s options except
+   * `prompt`; `tools` are added to the agent's.
    */
-  inboxTools: InboxToolsOf<AgentTypesOf<TTypes>["inboxTools"]>;
+  loop: (
+    prompt: AgentInput | readonly AgentEvent[],
+    options: Omit<AgentLoopOptions, "prompt">,
+  ) => Promise<AgentLoopResult>;
 
   /**
    * Your own scores, next to the ones the framework writes. See

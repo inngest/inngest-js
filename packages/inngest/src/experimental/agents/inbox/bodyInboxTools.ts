@@ -1,6 +1,6 @@
 /**
  * @module
- * EXPERIMENTAL: the model's inbox tools as the agent body gets them.
+ * EXPERIMENTAL: the model's inbox tools as the agent run gets them.
  */
 
 import type { step } from "../../../components/InngestStepTools.ts";
@@ -15,75 +15,73 @@ import type {
   OpenedInbox,
   ThreadInbox,
 } from "../agent/types.ts";
-import { toAsync } from "../cel.ts";
-import { createInboxTools } from "./inboxTools.ts";
+import { createListenTools } from "./inboxTools.ts";
 import type { Reader } from "./threadInbox.ts";
 import { eventNameOf, inboxFilter } from "./threadInbox.ts";
 
 /**
- * The model's inbox tools for the body, or none when the config has none. A
- * source the model opens is tied to the thread and read through its own view.
+ * The model's `inbox_listen` and `inbox_close`, or none when the config's
+ * `listen` is empty. An inbox the model opens is tied to the thread by the
+ * agent's `thread` expression, when it has one, and read through its own view.
  */
 export const createBodyInboxTools = (options: {
   config: AgentFunctionConfig;
-  inbox: ThreadInbox;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
   named: Map<string, OpenedInbox>;
   noteSource: (source: InboxSource) => void;
   step: typeof step;
   thread: string;
 }) => {
-  const { config, inbox, view, named, noteSource, step, thread } = options;
+  const { config, view, named, noteSource, step, thread } = options;
 
-  return config.inboxTools
-    ? createInboxTools(
-        {
-          handler: inbox,
-          open: async (as, event, options) => {
-            // The tools write `thread` and `if` over `event`, the
-            // arriving event.
-            const given: InboxSource = {
-              event,
-              ...options,
-              ...(options.if !== undefined && {
-                if: toAsync(options.if),
-              }),
-            } as InboxSource;
+  if (!config.listen || config.listen.length === 0) {
+    return {};
+  }
 
-            noteSource(given);
+  return createListenTools(
+    {
+      open: async (as, event, narrow) => {
+        // `thread` is written over `event`, the arriving event, and `if` over
+        // `async`.
+        const given: InboxSource = {
+          event,
+          ...(config.thread !== undefined && { thread: config.thread }),
+          ...(narrow.if !== undefined && { if: narrow.if }),
+        } as InboxSource;
 
-            const filter = inboxFilter(given, thread);
-            const opened = step.subscribe(`inbox:${as}`, {
-              event: eventNameOf(event),
-              if: filter,
-            });
+        if (config.thread === undefined && narrow.if === undefined) {
+          throw new Error(
+            `Give "match": this agent has no thread expression, so ${event.name} could not be tied to this thread without it.`,
+          );
+        }
 
-            await inboxOpenedPromise(opened);
+        noteSource(given);
 
-            const mine = view(opened as unknown as Inbox<UntypedInboxMessage>);
+        const filter = inboxFilter(given, thread);
+        const opened = step.subscribe(`inbox:${as}`, {
+          event: eventNameOf(event),
+          if: filter,
+        });
 
-            named.set(as, {
-              as,
-              source: { event: eventNameOf(event), if: filter },
-              inbox: mine as unknown as Inbox<UntypedInboxMessage>,
-            });
+        await inboxOpenedPromise(opened);
 
-            return {
-              next: (options) => {
-                return mine.next(options);
-              },
-              drain: () => {
-                return mine.drain();
-              },
-              close: async () => {
-                named.delete(as);
+        const mine = view(opened as unknown as Inbox<UntypedInboxMessage>);
 
-                return mine.close();
-              },
-            };
+        named.set(as, {
+          as,
+          source: { event: eventNameOf(event), if: filter },
+          inbox: mine as unknown as Inbox<UntypedInboxMessage>,
+        });
+
+        return {
+          close: async () => {
+            named.delete(as);
+
+            return mine.close();
           },
-        },
-        config.inboxTools,
-      )
-    : {};
+        };
+      },
+    },
+    config.listen,
+  );
 };

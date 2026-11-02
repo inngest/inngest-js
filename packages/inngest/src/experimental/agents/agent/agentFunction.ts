@@ -42,7 +42,6 @@ import { toAsync } from "../cel.ts";
 import { cardOf } from "../discovery/discovery.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
-import { createInboxTools } from "../inbox/inboxTools.ts";
 import {
   eventNameOf,
   inboxFilter,
@@ -53,7 +52,13 @@ import {
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import { kvFrom } from "../kv/kv.ts";
-import type { AgentEvent, AgentTurn } from "../loop/loop.ts";
+import type {
+  AgentContentBlock,
+  AgentEvent,
+  AgentInput,
+  AgentTurn,
+} from "../loop/loop.ts";
+import { agent, defaultFormat } from "../loop/loop.ts";
 import { createAgentScores } from "../loop/scores.ts";
 import {
   openSandboxes,
@@ -111,6 +116,39 @@ import type {
   OpenedInbox,
   ThreadInboxMessage,
 } from "./types.ts";
+
+/**
+ * The prompt of a loop call: an input as it is, or a batch of events formatted
+ * and joined.
+ */
+const promptOf = (
+  prompt: AgentInput | readonly AgentEvent[],
+  format: ((event: AgentEvent) => string | AgentContentBlock[]) | undefined,
+): AgentInput => {
+  if (
+    typeof prompt === "string" ||
+    !Array.isArray(prompt) ||
+    !prompt.every((item) => {
+      return (
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as unknown as AgentEvent).name === "string"
+      );
+    })
+  ) {
+    return prompt as AgentInput;
+  }
+
+  return (prompt as unknown as readonly AgentEvent[])
+    .map((event) => {
+      const formatted = (format ?? defaultFormat)(event);
+
+      return typeof formatted === "string"
+        ? formatted
+        : JSON.stringify(formatted);
+    })
+    .join("\n\n");
+};
 
 // The SDK's own marker for the option: no deprecation warning for agents.
 const quietOptimizeParallelism = { [internalQuietOptimizeParallelism]: true };
@@ -433,6 +471,15 @@ export function createAgentFunction(
         // its own.
         bridge.control = control;
 
+        const listenTools = createBodyInboxTools({
+          config,
+          view,
+          named,
+          noteSource,
+          step,
+          thread: data.thread,
+        });
+
         let result: unknown;
 
         try {
@@ -454,17 +501,8 @@ export function createAgentFunction(
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
 
-            // Slot: inbox. The thread's messages, the model's inbox tools and
-            // how the run before this one ended.
-            inboxTools: createBodyInboxTools({
-              config,
-              inbox,
-              view,
-              named,
-              noteSource,
-              step,
-              thread: data.thread,
-            }),
+            // Slot: inbox. The thread's messages and how the run before this
+            // one ended.
             inbox,
             previousRun,
             get restarts() {
@@ -474,7 +512,17 @@ export function createAgentFunction(
             // Slot: score. The agent's own scores.
             scores: agentScores,
 
-            // Slot: loop. What `agent.loop()` takes: steering, budget, turns.
+            // Slot: loop. `agent.loop()` with the model's inbox tools added.
+            loop: (prompt, loopOptions) => {
+              return agent.loop({
+                ...loopOptions,
+                prompt: promptOf(prompt, loopOptions.format),
+                tools: { ...listenTools, ...loopOptions.tools },
+              });
+            },
+
+            // Slot: control. What `agent.loop()` takes: steering, budget,
+            // turns. Replaced by `loop` as the loops are rebuilt.
             control,
           });
 
