@@ -821,6 +821,7 @@ describe("createAgents", () => {
       `${testClientId}-b-cleanup`,
       `${testClientId}-b-finished`,
       `${testClientId}-agents-announce`,
+      `${testClientId}-agents-finished`,
     ]);
   });
 

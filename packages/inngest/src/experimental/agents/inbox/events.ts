@@ -34,8 +34,9 @@ export type AgentRouting = {
  * Who sent a message, as it travels in `data.from`. An agent is its address
  * and the key of the thread that sent; a plain function is its ID and key.
  * `depth` is how many agents deep the chain that led here is, and `via` marks
- * a run a model started with `start_agent`, whose end is reported back to it;
- * both are internal and the public `Sender` leaves them out.
+ * a run a model started with `start_agent`, whose end is reported back to it
+ * (`target` is the agent started and `thread` its thread); all of these are
+ * internal and the public `Sender` leaves them out.
  */
 export type SenderData =
   | {
@@ -44,6 +45,8 @@ export type SenderData =
       key: string;
       depth?: number;
       via?: "start_agent";
+      target?: string;
+      thread?: string;
     }
   | { kind: "function"; id: string; key: string; depth?: number };
 
@@ -119,10 +122,16 @@ export type AgentAnswerData = {
 /**
  * The data of `agent/finished`: how a run an agent started ended.
  */
-export type AgentFinishedData =
-  | { outcome: "completed"; output?: Json }
-  | { outcome: "failed"; error: string }
-  | { outcome: "stopped" };
+export type AgentFinishedData = AgentRouting & {
+  /**
+   * The agent and thread that finished.
+   */
+  from?: SenderData;
+} & (
+    | { outcome: "completed"; output?: Json }
+    | { outcome: "failed"; error: string }
+    | { outcome: "stopped" }
+  );
 
 /**
  * A question for an agent's inbox, answered with `msg.reply(answer)`.

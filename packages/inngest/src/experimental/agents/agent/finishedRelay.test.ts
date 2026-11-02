@@ -6,6 +6,8 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { memoryKvAdapter } from "../kv/kv.ts";
+import { createAgents } from "./agents.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
 import { run } from "./test-helpers.ts";
 
@@ -111,5 +113,19 @@ describe("the finished relay", () => {
     expect(
       await finish({ result: 1 }, { ...starter, via: undefined } as never),
     ).toEqual([]);
+  });
+
+  test("an app serves one, however many agents it defines", () => {
+    const client = new Inngest({ id: testClientId });
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+
+    agents.agent({ id: "one" });
+    agents.agent({ id: "two" });
+
+    expect(
+      agents.functions().filter((fn) => {
+        return fn.id(testClientId) === `${testClientId}-agents-finished`;
+      }),
+    ).toHaveLength(1);
   });
 });

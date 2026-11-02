@@ -206,7 +206,7 @@ export function startThread<TOutput>(
         key: self.thread,
         depth: depth + 1,
         thread: key,
-        ...(target.via && { via: target.via }),
+        ...(target.via && { via: target.via, target: target.address }),
       }
     : {
         kind: "function",
