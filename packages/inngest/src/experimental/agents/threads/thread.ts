@@ -235,7 +235,9 @@ export interface RunHandle<TOutput = unknown> {
 /**
  * What `message()` returns: a promise of the run handle that also has its
  * methods, so `await thread.message(x).result()` needs one `await`. Without an
- * `await` the message is still sent.
+ * `await` the message is still sent when the caller is an agent; a plain
+ * function that returns at once may return before the engine reports the step,
+ * so `await` it there.
  */
 export type MessageCall<TOutput = unknown> = Promise<RunHandle<TOutput>> &
   RunHandle<TOutput>;

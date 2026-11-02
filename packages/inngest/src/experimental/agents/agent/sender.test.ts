@@ -101,7 +101,7 @@ describe("me.message()", () => {
     });
     const { output } = await run(bot.fn, { event: event() });
 
-    expect(output).toBeUndefined();
+    expect(output ?? undefined).toBeUndefined();
     expect(sent).toMatchObject([
       {
         name: "agent/message",

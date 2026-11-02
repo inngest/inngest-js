@@ -109,6 +109,7 @@ import {
 import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
+import { nextCount } from "./executionCounter.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -128,6 +129,7 @@ import {
   type RunFields,
   resolveRunField,
 } from "./runField.ts";
+import { senderOf } from "./sender.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import { invokeDepthOf, startThread } from "./startThread.ts";
 import { traceWarning } from "./traceWarning.ts";
@@ -670,7 +672,29 @@ export function createAgentFunction(
             ),
 
             // Slot: me. The handle to the run's own thread.
-            me: { key: data.thread },
+            me: {
+              key: data.thread,
+              message: async (content) => {
+                const execution = getAsyncCtxSync()?.execution;
+
+                if (!execution) {
+                  throw new Error("me.message() must be called inside the run");
+                }
+
+                await step.sendEvent(
+                  `me:${data.thread}:message:${nextCount(execution.instance, "me.message")}`,
+                  agentMessage.create(
+                    {
+                      agent: ref,
+                      thread: data.thread,
+                      content,
+                      from: senderOf(execution),
+                    },
+                    { meta: { sessions: threadSessions(data.thread) } },
+                  ),
+                );
+              },
+            },
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: Object.fromEntries(
