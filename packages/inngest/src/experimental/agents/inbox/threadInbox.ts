@@ -179,6 +179,10 @@ export function threadInbox(
     question: { data: { id: string; text?: string; from?: SenderData } },
     answer: Answer,
   ) => Promise<void>,
+
+  // Told of each question that reaches the inbox, so the run can answer it
+  // later by its ID.
+  noteQuestion?: (data: AgentQuestionData) => void,
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -192,6 +196,8 @@ export function threadInbox(
 
     if (unwrapped.name === agentQuestionEvent && answer) {
       const data = unwrapped.data as AgentQuestionData;
+
+      noteQuestion?.(data);
 
       Object.assign(unwrapped, {
         reply: (given: string | { outcome: "refused" }) => {

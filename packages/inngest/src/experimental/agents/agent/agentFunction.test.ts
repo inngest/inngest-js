@@ -545,7 +545,10 @@ describe("inbox sources", () => {
       "list_agents",
       "describe_agent",
       "start_agent",
+      "message_agent",
+      "ask_agent",
       "stop_agent",
+      "reply",
       "inbox_listen",
       "inbox_close",
     ]);
@@ -574,7 +577,15 @@ describe("inbox sources", () => {
     await run(fn, { event: trigger("go") });
 
     expect(asked).toEqual([
-      ["list_agents", "describe_agent", "start_agent", "stop_agent"],
+      [
+        "list_agents",
+        "describe_agent",
+        "start_agent",
+        "message_agent",
+        "ask_agent",
+        "stop_agent",
+        "reply",
+      ],
     ]);
   });
 
@@ -601,7 +612,7 @@ describe("inbox sources", () => {
 
     await run(fn, { event: trigger("go") });
 
-    expect(asked).toEqual([[]]);
+    expect(asked).toEqual([["reply"]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
@@ -861,6 +872,7 @@ describe("createAgents", () => {
       `${testClientId}-b-finished`,
       `${testClientId}-agents-announce`,
       `${testClientId}-agents-finished`,
+      `${testClientId}-agents-ask-timeout`,
     ]);
   });
 

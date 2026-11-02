@@ -26,6 +26,7 @@ import type {
   ThreadTriggerListEvent,
 } from "../threads/threadTrigger.ts";
 import { createAgentFunction } from "./agentFunction.ts";
+import { askTimeoutFunction } from "./askTimeout.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
 import type {
   AgentBody,
@@ -216,6 +217,12 @@ const announceFunctions = new WeakMap<object, InngestFunction.Any>();
 const finishedFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * The function that answers a model's unanswered question `timed_out`, one per
+ * client.
+ */
+const askTimeoutFunctions = new WeakMap<object, InngestFunction.Any>();
+
+/**
  * Options of `createAgents`.
  */
 export interface CreateAgentsOptions {
@@ -274,6 +281,7 @@ export const createAgents = <TClient extends Inngest.Any>(
       if (!announceFunctions.has(client)) {
         announceFunctions.set(client, announceFunction(client));
         finishedFunctions.set(client, agentFinishedFunction(client));
+        askTimeoutFunctions.set(client, askTimeoutFunction(client));
       }
 
       return created;
@@ -284,9 +292,10 @@ export const createAgents = <TClient extends Inngest.Any>(
       });
       const announcer = announceFunctions.get(client);
       const relay = finishedFunctions.get(client);
+      const timeout = askTimeoutFunctions.get(client);
 
-      return announcer && relay && made.length > 0
-        ? [...functions, announcer, relay]
+      return announcer && relay && timeout && made.length > 0
+        ? [...functions, announcer, relay, timeout]
         : functions;
     },
   };

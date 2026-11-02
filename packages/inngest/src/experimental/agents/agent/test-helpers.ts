@@ -322,6 +322,12 @@ export const run = async (
         continue;
       }
 
+      // A sleep ends at once.
+      if (op.op === StepOpCode.Sleep) {
+        answer(op.id, null);
+        continue;
+      }
+
       if (op.op === StepOpCode.InvokeFunction && options.onInvoke) {
         ops.push({ id: op.userland?.id ?? op.id, op: "invoke", opts });
 
