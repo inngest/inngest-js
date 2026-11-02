@@ -5,7 +5,7 @@
  * nor archived, nor missing.
  */
 import type { Inngest } from "../../../components/Inngest.ts";
-import { startability } from "./functions.ts";
+import { readAppFunctions, startability } from "./functions.ts";
 
 const client = { id: "me" } as unknown as Inngest.Any;
 
@@ -75,5 +75,59 @@ describe("startability", () => {
     await startability(client, "other/docs", read);
 
     expect(read).toHaveBeenCalledWith("other");
+  });
+});
+
+describe("readAppFunctions", () => {
+  const pages = (sizes: number[]): { client: Inngest.Any; urls: string[] } => {
+    const urls: string[] = [];
+    const fetch = async (input: unknown) => {
+      const url = new URL(String(input));
+
+      urls.push(url.toString());
+
+      const page = Number(url.searchParams.get("cursor") ?? "0");
+      const data = Array.from({ length: sizes[page] ?? 0 }, (_, n) => {
+        return { slug: `app-fn${page}_${n}`, is_paused: false };
+      });
+      const more = page + 1 < sizes.length;
+
+      return new Response(
+        JSON.stringify({
+          data,
+          page: { cursor: more ? String(page + 1) : null, hasMore: more },
+        }),
+        { status: 200 },
+      );
+    };
+
+    return {
+      urls,
+      client: {
+        id: "me",
+        apiBaseUrl: "http://dev.test",
+        signingKey: "signkey-test-12345678",
+        headers: {},
+        fetch,
+      } as unknown as Inngest.Any,
+    };
+  };
+
+  test("follows the cursor and finds a function on the second page", async () => {
+    const { client: paged, urls } = pages([100, 3]);
+    const found = await readAppFunctions(paged, "app");
+
+    expect(found.size).toBe(103);
+    expect(found.get("fn1_2")).toEqual({ paused: false, archived: false });
+    expect(urls[0]).toContain("limit=100");
+    expect(urls).toHaveLength(2);
+  });
+
+  test("fails with a clear error past the page cap instead of missing functions", async () => {
+    const { client: endless } = pages(Array.from({ length: 80 }, () => 1));
+
+    await expect(readAppFunctions(endless, "app")).rejects.toThrow(
+      /more than 50 pages/,
+    );
   });
 });
