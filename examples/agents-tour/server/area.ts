@@ -56,6 +56,13 @@ export interface TourContext {
   areas: () => Area[];
   // Runs every area's `reset`.
   resetAreas: () => Promise<void>;
+  // Runs a page as Run does; `start: false` leaves out the page's start
+  // entries, for a check that sends its own. Set by the pages area.
+  runPage: (
+    id: string,
+    files: Record<string, string>,
+    options?: { start?: boolean },
+  ) => Promise<void>;
 }
 
 export type AreaFactory = (ctx: TourContext) => Area;

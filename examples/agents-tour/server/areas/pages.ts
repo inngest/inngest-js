@@ -140,7 +140,11 @@ export const area: AreaFactory = (ctx) => {
     }
   };
 
-  const run = (id: string, files: Record<string, string>) => {
+  const run = (
+    id: string,
+    files: Record<string, string>,
+    options: { start?: boolean } = {},
+  ) => {
     session += 1;
 
     const mine = session;
@@ -208,7 +212,9 @@ export const area: AreaFactory = (ctx) => {
       hub.info(`started in ${Date.now() - started} ms`);
       hub.setStatus("live", "Live");
 
-      for (const start of page.manifest.start ?? []) {
+      for (const start of options.start === false
+        ? []
+        : (page.manifest.start ?? [])) {
         if (stale()) {
           return;
         }
@@ -237,6 +243,8 @@ export const area: AreaFactory = (ctx) => {
 
     return task;
   };
+
+  ctx.runPage = run;
 
   const result: Area = {
     name: "pages",

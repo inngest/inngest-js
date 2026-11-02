@@ -23,6 +23,8 @@ export type Start = StartMessage | StartEvent | StartSlack;
 export interface Exercise {
   // The check script in the page's folder.
   check: string;
+  // One line shown on request, nudging without giving the answer away.
+  hint?: string;
   // Folders in the page's folder holding one file per editable file.
   stub: string;
   solution: string;
@@ -137,3 +139,9 @@ export type TourEvent =
   | { type: "fakes"; topic: "slack" | "github" }
   // Any area's own topic: the site turns it into a `tour:area` window event.
   | { type: "area"; area: string; topic: string; data?: unknown };
+
+// What Check answers. A failure carries one sentence saying why; `broken`
+// marks a check script that threw instead of judging.
+export type CheckResult =
+  | { pass: true }
+  | { pass: false; reason: string; broken?: boolean };

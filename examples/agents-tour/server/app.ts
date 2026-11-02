@@ -129,6 +129,9 @@ export const createTour = async (options: TourOptions) => {
     areas: () => {
       return areas;
     },
+    runPage: async () => {
+      throw new Error("No area runs pages");
+    },
     resetAreas: async () => {
       for (const area of areas) {
         await area.reset?.();
