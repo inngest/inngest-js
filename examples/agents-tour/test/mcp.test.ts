@@ -42,6 +42,17 @@ describe("the tour's MCP server", () => {
     await stop();
   });
 
+  const rpc = (body: object, token?: string) => {
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token && { authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", ...body }),
+    });
+  };
+
   const connect = async (auth = false) => {
     const docs = tool.mcp({
       id: "docs",
@@ -62,6 +73,7 @@ describe("the tour's MCP server", () => {
     );
 
     assert.match(found, /deploy/i);
+    assert.doesNotMatch(found, /on call/i);
   });
 
   it("refuses a call without the token when auth is on", async () => {
@@ -74,6 +86,50 @@ describe("the tour's MCP server", () => {
     });
 
     assert.equal(bare.status, 401);
-    assert.equal((await connect(true)).docs_search_docs !== undefined, true);
+    assert.ok((await connect(true)).docs_search_docs);
+  });
+
+  it("refuses a wrong token", async () => {
+    process.env.TOUR_MCP_TOKEN = "tour-token";
+
+    const wrong = await rpc({ id: 1, method: "tools/list" }, "nope");
+
+    assert.equal(wrong.status, 401);
+  });
+
+  it("answers initialize with a protocol version and tools", async () => {
+    delete process.env.TOUR_MCP_TOKEN;
+
+    const answer = await (
+      await rpc({
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-03-26" },
+      })
+    ).json();
+
+    assert.equal(answer.result.protocolVersion, "2025-03-26");
+    assert.deepEqual(answer.result.capabilities, { tools: {} });
+    assert.ok(answer.result.serverInfo.name);
+  });
+
+  it("accepts a notification with no answer", async () => {
+    delete process.env.TOUR_MCP_TOKEN;
+
+    const answer = await rpc({ method: "notifications/initialized" });
+
+    assert.equal(answer.status, 202);
+  });
+
+  it("answers an unknown method or tool with an error", async () => {
+    delete process.env.TOUR_MCP_TOKEN;
+
+    const method = await (await rpc({ id: 1, method: "ping" })).json();
+    const name = await (
+      await rpc({ id: 2, method: "tools/call", params: { name: "nope" } })
+    ).json();
+
+    assert.ok(method.error);
+    assert.ok(name.error);
   });
 });
