@@ -62,7 +62,7 @@ export const inflightOf = (event: {
   if (event.name === agentMessageEvent) {
     const data = event.data as Partial<AgentMessageData>;
 
-    return typeof data.text === "string" ? { text: data.text } : undefined;
+    return data.content === undefined ? undefined : { content: data.content };
   }
 
   return { event: { id: event.id, name: event.name, data: event.data } };

@@ -63,7 +63,7 @@ const ended = async (options: {
   const start = {
     name: "agent/message",
     id: "evt-start",
-    data: { agent: ref, thread: "t1", text: options.text ?? "hello" },
+    data: { agent: ref, thread: "t1", content: options.text ?? "hello" },
   };
 
   await run(finished, {
@@ -96,7 +96,7 @@ describe("recovery resends as agent/recover", () => {
     expect(sent[0]?.data).toMatchObject({
       agent: ref,
       thread: "t1",
-      event: { name: "agent/message", data: { text: "hello" } },
+      event: { name: "agent/message", data: { content: "hello" } },
     });
   });
 });
@@ -121,7 +121,7 @@ describe("a fresh run takes up the recovered message", () => {
           event: {
             id: "evt9",
             name: "agent/message",
-            data: { agent: ref, thread: "t1", text: "hello" },
+            data: { agent: ref, thread: "t1", content: "hello" },
           },
         },
       },
@@ -129,7 +129,7 @@ describe("a fresh run takes up the recovered message", () => {
 
     expect(output).toEqual([
       "agent/message",
-      { agent: ref, thread: "t1", text: "hello" },
+      { agent: ref, thread: "t1", content: "hello" },
     ]);
   });
 });

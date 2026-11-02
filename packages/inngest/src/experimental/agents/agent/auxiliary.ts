@@ -149,7 +149,7 @@ export const createFinishedFunction = (
         },
       );
 
-      if (!inflight || (!inflight.event && inflight.text === undefined)) {
+      if (!inflight || (!inflight.event && inflight.content === undefined)) {
         return last;
       }
 
@@ -161,7 +161,11 @@ export const createFinishedFunction = (
             thread: message.thread,
             event: inflight.event ?? {
               name: agentMessageEvent,
-              data: { agent: ref, thread: message.thread, text: inflight.text },
+              data: {
+                agent: ref,
+                thread: message.thread,
+                content: inflight.content,
+              },
             },
           },
           {
