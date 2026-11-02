@@ -59,11 +59,14 @@ export function createScorer<
             }
             await client.score.experiment({
               experiment: parent.experiment,
-              runId: parent.runId,
               ...runResult,
+              runId: runResult.runId ?? parent.runId,
             });
           } else {
-            await client.score({ runId: parent.runId, ...result });
+            await client.score({
+              ...result,
+              runId: result.runId ?? parent.runId,
+            });
           }
         });
       }
