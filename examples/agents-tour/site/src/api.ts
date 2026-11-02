@@ -56,14 +56,32 @@ export const api = {
   run: (id: string, files: Record<string, string>) => {
     return post("/api/run", { id, files });
   },
-  check: async (id: string, files: Record<string, string>) => {
-    const res = await fetch("/api/check", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, files }),
-    });
+  // A failed request answers as a failed check, so the page can say so.
+  check: async (
+    id: string,
+    files: Record<string, string>,
+  ): Promise<CheckResult> => {
+    try {
+      const res = await fetch("/api/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, files }),
+      });
 
-    return (await res.json()) as CheckResult;
+      if (!res.ok) {
+        return {
+          pass: false,
+          reason: `The check could not run (the server answered ${res.status}).`,
+        };
+      }
+
+      return (await res.json()) as CheckResult;
+    } catch (error) {
+      return {
+        pass: false,
+        reason: `The check could not run: ${String(error)}`,
+      };
+    }
   },
   solution: (id: string) => {
     return get<PageFile[]>(`/api/solution?id=${encodeURIComponent(id)}`);

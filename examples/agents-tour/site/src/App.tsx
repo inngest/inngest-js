@@ -67,6 +67,7 @@ export const App = () => {
     Number(store.get("tour:right")) || 56,
   );
   const [play, setPlay] = useState<string>("message");
+  const [edits, setEdits] = useState(0);
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
@@ -589,6 +590,7 @@ export const App = () => {
                 hint={page.manifest.exercise.hint}
                 check={checkExercise}
                 showSolution={showSolution}
+                edits={edits}
               />
             ) : null}
             {hasCode && page.manifest.start?.length ? (
@@ -690,6 +692,9 @@ export const App = () => {
                   }}
                   onChange={(name, content) => {
                     saveEdits(page, { [name]: content }, store);
+                    setEdits((count) => {
+                      return count + 1;
+                    });
                   }}
                 />
                 <div className="controls">
