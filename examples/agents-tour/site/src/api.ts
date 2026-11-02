@@ -53,14 +53,28 @@ export const api = {
   kill: () => {
     return post("/api/kill", {});
   },
+  // The formatted code; the code as given when the server cannot format it.
   format: async (name: string, content: string) => {
-    const res = await fetch("/api/format", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, content }),
-    });
+    try {
+      const res = await fetch("/api/format", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, content }),
+      });
+      const body = (await res.json()) as { content?: string; error?: string };
 
-    return ((await res.json()) as { content: string }).content;
+      if (!res.ok || typeof body.content !== "string") {
+        console.error(`Format failed: ${body.error ?? res.status}`);
+
+        return content;
+      }
+
+      return body.content;
+    } catch (error) {
+      console.error(`Format failed: ${String(error)}`);
+
+      return content;
+    }
   },
   reset: () => {
     return post("/api/reset", {});
