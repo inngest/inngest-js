@@ -1597,6 +1597,12 @@ const createDeferredTools = <T extends object>(
 
       const tools = tryGetCurrentTools();
 
+      if (tools && !(prop in tools)) {
+        throw new Error(
+          `\`${name}.${prop}\` is not available in this run: add the middleware that provides it to the client's \`middleware\` option`,
+        );
+      }
+
       return tools ? tools[prop] : createStandIn([prop]);
     },
     has: (target, prop) => {

@@ -1,15 +1,14 @@
 /**
  * @module
- * EXPERIMENTAL: The `git_push` agent tool. The model asks to push a branch;
- * the branch is bundled inside the sandbox, the bundle comes home, and your
- * policy checks what it would really change before the function pushes it with
- * a token that exists nowhere else. The sandbox holds no credential, so there
- * is nothing for a model with a shell to print or copy.
+ * The host push behind a sandbox's `repo`. The branch is bundled inside the
+ * sandbox, the bundle comes home, and your policy checks what it would really
+ * change before the function pushes it with a token that exists nowhere else.
+ * The sandbox holds no credential, so there is nothing for a model with a
+ * shell to print or copy.
  *
  * The checks and the push itself are `pushBundle()` in `sandbox/gitPush.ts`.
  */
 import hashjs from "hash.js";
-import { z } from "zod/v4";
 import { step } from "../../../components/InngestStepTools.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import {
@@ -28,12 +27,10 @@ import {
   type PushedRef,
   pushBundle,
 } from "../../../components/sandbox/gitPush.ts";
-import { type AgentTool, tool } from "../../../components/sandbox/tools.ts";
 import {
   type SandboxHandle,
   SandboxValidationError,
 } from "../../../components/sandbox/types.ts";
-import { agent } from "../loop/loop.ts";
 
 const defaultMaxBytes = 1024 * 1024;
 
@@ -49,10 +46,10 @@ const maxApiBytes = 8 * 1024 * 1024;
 const maxBundleBytes = 1536 * 1024;
 
 /**
- * Options of `gitPushTool()` and `sandbox.tools.git()`: where to push, with
- * what credentials, and which pushes to allow.
+ * What the host push needs: where to push, with what credentials, and which
+ * pushes to allow.
  */
-export interface GitPushToolOptions {
+export interface HostPushOptions {
   /**
    * The repository, as the host reaches it: an http(s) URL with no user name
    * or password.
@@ -113,7 +110,7 @@ export interface GitPushToolOptions {
   fetch?: typeof fetch;
 }
 
-const validate = (options: GitPushToolOptions): void => {
+const validate = (options: HostPushOptions): void => {
   let url: URL | undefined;
 
   try {
@@ -174,7 +171,7 @@ const validate = (options: GitPushToolOptions): void => {
  * the GitHub API.
  */
 const chooseTransport = async (
-  options: GitPushToolOptions,
+  options: HostPushOptions,
 ): Promise<"git" | "api"> => {
   const wanted = options.transport ?? "auto";
 
@@ -287,7 +284,7 @@ export type PushBranchResult =
         sandboxSha?: string;
       }[];
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; refused?: string };
 
 const fail = (error: string): PushBranchResult => {
   return { ok: false, error };
@@ -310,7 +307,7 @@ const fail = (error: string): PushBranchResult => {
  */
 export const pushBranch = async (
   sandbox: SandboxHandle,
-  options: GitPushToolOptions,
+  options: HostPushOptions,
   branch: string,
   context: {
     /**
@@ -508,7 +505,11 @@ if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
     });
 
     if ("refused" in outcome) {
-      return fail(`refused: ${outcome.refused}`);
+      return {
+        ok: false,
+        error: `refused: ${outcome.refused}`,
+        refused: outcome.refused,
+      };
     }
 
     if ("failed" in outcome) {
@@ -544,41 +545,4 @@ if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
       { cwd },
     );
   }
-};
-
-/**
- * EXPERIMENTAL: Builds the `git_push` tool for the sandbox behind `sandbox`.
- * Most code uses `sandbox.tools.git()` instead, which does this for the
- * sandbox it is defined on. To push from your own code, use `pushBranch()`.
- *
- * It pushes one branch, to the branch of the same name on `remote`. It never
- * forces, deletes, or pushes elsewhere. A refusal is an error result the model
- * can read and act on.
- */
-export const gitPushTool = (
-  sandbox: SandboxHandle,
-  options: GitPushToolOptions,
-): AgentTool => {
-  validate(options);
-
-  return tool({
-    id: "git_push",
-    group: true,
-    description: `Pushes a branch of the repository in the sandbox to ${normalizeUrl(options.remote)}. The push is checked first and may be refused. It never forces and never deletes.`,
-    input: z.object({
-      branch: z
-        .string()
-        .describe("The local branch to push, such as agent/fix-typo"),
-    }),
-    run: async ({ branch }, context) => {
-      const result = await pushBranch(sandbox, options, branch, context);
-
-      return result.ok
-        ? {
-            pushed: result.pushed,
-            ...(result.warning && { warning: result.warning }),
-          }
-        : agent.toolError(result.error);
-    },
-  });
 };

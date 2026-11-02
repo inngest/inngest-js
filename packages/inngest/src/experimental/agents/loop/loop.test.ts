@@ -115,9 +115,11 @@ const run = async (
   options: Partial<AgentLoopOptions> & {
     prompt?: AgentLoopInput;
     wiring?: AgentLoopWiring;
+    onRequest?: (request: AgentModelRequest) => void;
   } = {},
   reverse = false,
 ) => {
+  const { onRequest, ...loopOptions } = options;
   const requests: AgentModelRequest[] = [];
   const client = new Inngest({ id: testClientId });
   let result: AgentLoopResult | undefined;
@@ -128,12 +130,13 @@ const run = async (
       result = await runLoop({
         model: model(async (request) => {
           requests.push(structuredClone(request));
+          onRequest?.(request);
 
           return script[requests.length - 1] as AgentModelResponse;
         }),
         prompt: "go",
         tools: { add },
-        ...options,
+        ...loopOptions,
       });
     },
   );
@@ -1758,41 +1761,40 @@ describe("per-call options", () => {
 
 describe("onTurn", () => {
   test("a gated onTurn does not block the loop, and the last one finishes before the loop returns", async () => {
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    // The first onTurn is released only once the second model request has
+    // arrived. If onTurn blocked the loop, that request would never come.
+    let secondRequest = false;
     const events: string[] = [];
     const { result, requests } = await run(
       [call("add", { a: 1, b: 2 }), say("ok")],
       {
+        onRequest: (request) => {
+          if (request.turn === 2) {
+            secondRequest = true;
+          }
+        },
         onTurn: async ({ turn }) => {
           if (turn === 1) {
-            await gate;
+            const started = Date.now();
+
+            while (!secondRequest && Date.now() - started < 1000) {
+              await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+
+            events.push(secondRequest ? "released" : "blocked");
           }
 
           events.push(`turn ${turn}`);
         },
-        model: model(async (request) => {
-          // The second request arrives while the first onTurn is still held.
-          if (request.turn === 2) {
-            events.push("second request");
-            release();
-          }
-
-          return request.turn === 1 ? call("add", { a: 1, b: 2 }) : say("ok");
-        }),
       },
     );
 
-    expect(requests).toHaveLength(0);
-    expect(result?.end).toBe("done");
+    expect(requests).toHaveLength(2);
+    expect(events).not.toContain("blocked");
     expect(events).toEqual(
-      expect.arrayContaining(["second request", "turn 1", "turn 2"]),
+      expect.arrayContaining(["released", "turn 1", "turn 2"]),
     );
-    expect(events.indexOf("second request")).toBeLessThan(
-      events.indexOf("turn 1"),
-    );
+    expect(result?.end).toBe("done");
   });
 
   test("a throwing onTurn does not fail the run, even the last one", async () => {

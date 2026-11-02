@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: `sandbox.tools.code()`, the tools a coding agent needs in a
- * sandbox: read, write, edit, search and run. Each call is one command step in
+ * sandbox: run, and read, edit and search when asked for. Each call is one command step in
  * the sandbox, named after the command it runs. `run_code` runs a script whose
  * code can call tools and wait durably.
  */
@@ -19,17 +19,11 @@ import {
 } from "./types.ts";
 
 /**
- * The names of the code tools a sandbox can bring: file `read`, `write`,
+ * The names of the code tools a sandbox can bring: file `read`,
  * `edit` and `search`, a shell `run`, and `run_code` for a script that calls
  * tools.
  */
-export type CodeToolName =
-  | "read"
-  | "write"
-  | "edit"
-  | "search"
-  | "run"
-  | "run_code";
+export type CodeToolName = "read" | "edit" | "search" | "run" | "run_code";
 
 /**
  * Options of `sandbox.tools.code()`.
@@ -55,8 +49,9 @@ export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
   session?: boolean;
 
   /**
-   * Only these tools. Default all of them, with `run_code` only when
-   * `tools` is given.
+   * Only these tools, which may leave out `run`. Default: `run`, plus
+   * `run_code` when `tools` is given. `read`, `search` and `edit` are added
+   * by naming them here.
    */
   only?: TName[];
 
@@ -106,8 +101,7 @@ const isFileNotFound = (error: unknown): boolean => {
 };
 
 /**
- * EXPERIMENTAL: Tools for a model to work on code in a sandbox: `read`,
- * `write`, `edit`, `search` and `run`. Hand them to `agent.loop()`.
+ * EXPERIMENTAL: Tools for a model to work on code in a sandbox: `run`, and `read`, `edit` and `search`. Hand them to `agent.loop()`.
  *
  * `edit` replaces exact text, like the text editor tools models are trained
  * on, and runs in your app: it reads the file, changes it and writes it back,
@@ -128,15 +122,46 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m", session: persist = true } = options;
-  let shell: ReturnType<typeof createShell> | undefined;
-  const session = () => {
+  let starting: Promise<ReturnType<typeof createShell>> | undefined;
+
+  // The thread's sandbox keeps where the shell was left: the first command of
+  // a new run starts there.
+  const place = (
+    sandbox as {
+      "~shellPlace"?: {
+        load(): Promise<
+          | { cwd?: string; env: Record<string, string>; unset: string[] }
+          | undefined
+        >;
+        track(
+          read: () =>
+            | { cwd?: string; env: Record<string, string>; unset: string[] }
+            | undefined,
+        ): void;
+      };
+    }
+  )["~shellPlace"];
+  const session = async () => {
     if (!persist) {
       return undefined;
     }
 
-    shell ??= createShell(sandbox.commands.run, { cwd });
+    starting ??= (async () => {
+      const saved = await place?.load();
+      const made = createShell(sandbox.commands.run, {
+        cwd: saved?.cwd ?? cwd,
+        env: saved?.env,
+        unset: saved?.unset,
+      });
 
-    return shell;
+      place?.track(() => {
+        return { cwd: made.cwd, env: made.env, unset: [...made.unset] };
+      });
+
+      return made;
+    })();
+
+    return starting;
   };
 
   for (const name of Object.keys(scriptTools)) {
@@ -163,8 +188,10 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
     command: string[],
     environment: Record<string, string> = {},
   ): Promise<string> => {
+    // The shell may start in the thread's saved place or the checkout.
+    const current = await session();
     const result = await sandbox.commands.run({ id, name }, command, {
-      cwd: shell?.cwd ?? cwd,
+      cwd: current?.cwd ?? cwd,
       environment,
       timeout,
     });
@@ -194,23 +221,6 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
       },
     }),
 
-    write: tool.group({
-      description: "Create or overwrite a file with the given content.",
-      input: z.object({ path: z.string(), content: z.string() }),
-      run: ({ path, content }) => {
-        return exec(
-          "write",
-          `write ${path}`,
-          [
-            "/bin/sh",
-            "-c",
-            'mkdir -p "$(dirname "$P")" && printf "%s" "$C" > "$P"',
-          ],
-          { P: path, C: content },
-        );
-      },
-    }),
-
     edit: tool.group({
       description:
         "Edit a file by replacing exact text. old_string must match exactly once, or set replace_all to replace every match.",
@@ -223,7 +233,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
       run: async ({ path, ...edit }) => {
         const file = path.startsWith("/")
           ? path
-          : `${shell?.cwd ?? cwd}/${path}`;
+          : `${(await session())?.cwd ?? cwd}/${path}`;
         const bytes = await sandbox.files
           .read({ id: "edit:read", name: `read ${path}` }, file)
           .catch((error: unknown) => {
@@ -266,7 +276,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
       input: z.object({ command: z.string() }),
       run: async ({ command }) => {
-        const current = session();
+        const current = await session();
 
         if (!current) {
           return exec("run", command, ["/bin/sh", "-c", command]);
@@ -355,9 +365,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
 
   const names =
     options.only ??
-    (Object.keys(tools).filter((name) => {
-      return name !== "run_code" || options.tools !== undefined;
-    }) as TName[]);
+    ((options.tools ? ["run", "run_code"] : ["run"]) as TName[]);
 
   return Object.fromEntries(
     names.map((name) => {

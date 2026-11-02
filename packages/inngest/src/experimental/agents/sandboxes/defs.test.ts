@@ -522,7 +522,9 @@ describe("sandbox setup", () => {
       sandboxes,
     );
 
-    await expect(opened.work?.get()).rejects.toThrow("a setup, which need");
+    await expect(opened.work?.get()).rejects.toThrow(
+      "a setup or a repo, which need",
+    );
   });
 });
 

@@ -48,7 +48,7 @@ describe("composition", () => {
         triggers: { event: order, thread: "event.data.id" },
         sandboxes: { work: workbench },
       },
-      async ({ event, inbox, sandboxTools }) => {
+      async ({ event, inbox }) => {
         expectTypeOf(event.data.total).toEqualTypeOf<number>();
 
         const next = await inbox.next();
@@ -65,7 +65,7 @@ describe("composition", () => {
             };
           },
           prompt: "go",
-          tools: { ...sandboxTools, lookup },
+          tools: { lookup },
         });
       },
     );
