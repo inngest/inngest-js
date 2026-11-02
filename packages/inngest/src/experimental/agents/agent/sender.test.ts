@@ -82,3 +82,36 @@ describe("msg.from", () => {
     expect(output).toBe("none");
   });
 });
+
+describe("me.message()", () => {
+  test("puts a message in the agent's own inbox, from the agent, and resolves with nothing", async () => {
+    const sent: { name: string; data: Record<string, unknown> }[] = [];
+    const client = new Inngest({
+      id: testClientId,
+      eventKey: "key",
+      fetch: (async (_url: unknown, init?: { body?: string }) => {
+        sent.push(...JSON.parse(init?.body ?? "[]"));
+
+        return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
+      }) as unknown as typeof fetch,
+    });
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+    const bot = agents.agent({ id: "bot" }, async ({ me }) => {
+      return await me.message({ note: "remember" });
+    });
+    const { output } = await run(bot.fn, { event: event() });
+
+    expect(output).toBeUndefined();
+    expect(sent).toMatchObject([
+      {
+        name: "agent/message",
+        data: {
+          agent: `${testClientId}/bot`,
+          thread: "t1",
+          content: { note: "remember" },
+          from: { kind: "agent", address: `${testClientId}/bot`, key: "t1" },
+        },
+      },
+    ]);
+  });
+});
