@@ -164,7 +164,12 @@ export const createFinishedFunction = (
 
       // The sender of each message the run took hears how the run ended. A
       // run that recovery resumes reports when the resumed run ends.
-      const messageIds = resumed ? [] : senderIdsOf(start);
+      const messageIds = resumed
+        ? []
+        : [
+            ...senderIdsOf(start),
+            ...(record.folded?.run === runId ? record.folded.ids : []),
+          ];
 
       if (messageIds.length > 0) {
         const outcome: MessageOutcome =

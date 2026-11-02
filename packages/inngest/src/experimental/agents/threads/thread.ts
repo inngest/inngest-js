@@ -156,6 +156,13 @@ export interface ThreadRecord {
   turnStep?: string;
 
   /**
+   * The IDs of the `agent/message` events the run took after the one that
+   * started it, so the finished function can tell each sender how the run
+   * ended. Only the run named in `run` counts.
+   */
+  folded?: { run: string; ids: string[] };
+
+  /**
    * The process (boot) that wrote the record last.
    */
   host?: string;
