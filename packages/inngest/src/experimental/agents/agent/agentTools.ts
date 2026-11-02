@@ -35,6 +35,7 @@ import { answerQuestion } from "../inbox/answer.ts";
 import { agentAskTimeout, agentQuestion } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 import { threadHandle, threadSessions } from "../threads/thread.ts";
+import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import { AgentStoppedError } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
@@ -150,6 +151,10 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
       },
       card.input ? prepared : (prepared ?? ""),
     );
+
+    if (via === "start_agent") {
+      trackChild(execution.instance, started.key);
+    }
 
     if (via === undefined) {
       const threads = startedBySandbox.get(execution.instance) ?? new Map();

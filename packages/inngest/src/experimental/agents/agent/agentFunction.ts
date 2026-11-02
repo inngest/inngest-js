@@ -160,6 +160,20 @@ const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
     answer = result.text;
   }
 
+  // A run opened through a handle waits for the children it started, up to a
+  // bound. When the bound is reached with some still running, the model gets
+  // one last turn that names them, and its answer is the run's output.
+  const execution = getAsyncCtxSync()?.execution;
+  const running = execution ? openChildren(execution.instance) : [];
+
+  if (execution?.agentBridge?.handleOpened && running.length > 0) {
+    const result = await loop(
+      `These agents are still running, so their results are not in yet: ${running.join(", ")}. Answer with what you have and say which agents are still running.`,
+    );
+
+    answer = result.text;
+  }
+
   return answer;
 };
 
@@ -557,6 +571,8 @@ export function createAgentFunction(
             runEvent.name === agentQuestionEvent) &&
           (runEvent.data as { from?: unknown } | undefined)?.from !== undefined;
         const idle = openedByHandle ? 0 : await idleMs(fields, config.idle);
+
+        bridge.handleOpened = openedByHandle;
 
         const { inbox, view } = threadInbox(
           {
