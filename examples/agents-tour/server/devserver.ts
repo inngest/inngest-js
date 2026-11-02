@@ -64,7 +64,9 @@ export class DevServer {
         "--connect-executor-grpc-port",
         String(ports.executorGrpc),
         "--tick",
-        "50",
+        "25",
+        "--retry-interval",
+        "1",
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
