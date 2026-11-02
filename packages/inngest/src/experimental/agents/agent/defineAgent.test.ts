@@ -3,6 +3,7 @@
  * Tests for defining an agent: the optional handler, `idle`, the value or
  * function fields and the run's end.
  */
+
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createKv, memoryKvAdapter } from "../kv/kv.ts";
@@ -133,5 +134,50 @@ describe("idle", () => {
     expect(waitTimeouts(ops)).toEqual(["2m"]);
     // Once per request of the run, not once per read.
     expect(calls).toBeGreaterThan(0);
+  });
+});
+
+describe("optimizeParallelism", () => {
+  const warned = () => {
+    const warn = vi.fn();
+    const client = new Inngest({
+      id: testClientId,
+      isDev: true,
+      internalLogger: { warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+
+    return { client, warn };
+  };
+
+  const deprecations = (warn: ReturnType<typeof vi.fn>) => {
+    return warn.mock.calls.filter(([message]) => {
+      return String(message).includes("optimizeParallelism");
+    });
+  };
+
+  test("an agent function runs with it off and the SDK does not warn about it", () => {
+    const { client, warn } = warned();
+    const { fn } = createAgentFunction(client, {
+      id: "quiet-agent",
+      kv: createKv({ adapter: memoryKvAdapter() }),
+    });
+
+    expect(fn["opts"].optimizeParallelism).toBe(false);
+    expect(deprecations(warn)).toHaveLength(0);
+  });
+
+  test("a plain function that sets the option still gets the warning", () => {
+    const { client, warn } = warned();
+
+    client.createFunction(
+      {
+        id: "loud-plain",
+        optimizeParallelism: false,
+        triggers: [{ event: "foo" }],
+      },
+      vi.fn(),
+    );
+
+    expect(deprecations(warn)).toHaveLength(1);
   });
 });

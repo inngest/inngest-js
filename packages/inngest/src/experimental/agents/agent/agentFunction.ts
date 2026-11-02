@@ -28,6 +28,7 @@ import {
   type Inngest,
   internalLoggerSymbol,
 } from "../../../components/Inngest.ts";
+import { internalQuietOptimizeParallelism } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import {
   type Inbox,
@@ -111,6 +112,9 @@ import type {
   ThreadInboxMessage,
 } from "./types.ts";
 
+// The SDK's own marker for the option: no deprecation warning for agents.
+const quietOptimizeParallelism = { [internalQuietOptimizeParallelism]: true };
+
 /**
  * Defines an agent function. Use `createAgents(client).agent()`.
  */
@@ -158,6 +162,7 @@ export function createAgentFunction(
       // An agent's reads wake it as soon as a message lands, and a reader left
       // waiting beside its work never holds the run back.
       optimizeParallelism: false,
+      ...(quietOptimizeParallelism as object),
       triggers: [
         ...[agentMessageEvent, agentSteerEvent].map((name) => {
           return { event: name, if: `event.data.agent == ${quote(ref)}` };
