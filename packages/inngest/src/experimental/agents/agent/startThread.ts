@@ -155,11 +155,11 @@ export interface StartedThread<TOutput = unknown> {
    * Waits for the run `start()` began and gives its output. It throws when the
    * run failed or was stopped. With a `timeout` it throws an
    * `AgentTimeoutError` when the run is not done in time, and the run keeps
-   * going; there is no default timeout. The wait is raced against the run
-   * only when `result()` is called in the same tick as `start()`
-   * (`start(x).result({ timeout })`): a step that is still pending holds back
-   * the code after it, so a timeout asked for after `await start(x)` has
-   * nothing left to race.
+   * going; there is no default timeout. A timeout works only when `result()`
+   * is chained onto the start in the same tick (`await agent.start(x).result({
+   * timeout })`): a pending step holds back the code after it, so once
+   * `start()` has been awaited the timeout would never fire. Asking for one
+   * then throws an error that names the chained form.
    */
   result(options?: ResultOptions): Promise<TOutput>;
 
@@ -267,9 +267,19 @@ export function startThread<TOutput>(
   invoked.catch(() => {});
 
   let waits = 0;
+
+  // Set once the start has been planned: from then on the code after it has
+  // waited for the run's step, so a timeout has nothing left to race.
+  let planned = false;
   const handle: StartedThread<TOutput> = {
     key,
     async result(options) {
+      if (planned && options?.timeout !== undefined) {
+        throw new Error(
+          "result({ timeout }) must be chained onto the start: write `await agent.start(input).result({ timeout })`. After `await agent.start(input)` the run is already planned, so a timeout would never fire.",
+        );
+      }
+
       waits += 1;
 
       const wait = waits;
@@ -308,6 +318,8 @@ export function startThread<TOutput>(
   // A replayed invoke is already answered, so the race ends without waiting
   // for the macrotask, which the engine would take for work it must wait for.
   const started = Promise.race([flush(), invoked.then(noop, noop)]).then(() => {
+    planned = true;
+
     return handle;
   });
 
