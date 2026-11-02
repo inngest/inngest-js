@@ -57,6 +57,13 @@ export const run = async (
      * Called with each `step.run` step as it ran, metadata included.
      */
     onStep?: (op: OutgoingOp) => void;
+
+    /**
+     * Answers a `step.invoke` op the way the executor does once the invoked
+     * run ends: with its output, or with an error. Left out, an invoke is
+     * answered with `undefined`.
+     */
+    onInvoke?: (op: OutgoingOp) => { data?: unknown; error?: unknown };
   } = {},
 ) => {
   const root = hashedStepId(options.key ?? "inbox");
@@ -304,6 +311,22 @@ export const run = async (
 
       if (op.op === StepOpCode.StepRun) {
         options.onStep?.(op);
+      }
+
+      if (op.op === StepOpCode.InvokeFunction && options.onInvoke) {
+        ops.push({ id: op.userland?.id ?? op.id, op: "invoke", opts });
+
+        if (!(op.id in state)) {
+          const answered = options.onInvoke(op);
+
+          state = {
+            ...state,
+            [op.id]: { id: op.id, data: answered.data, error: answered.error },
+          };
+          stack.push(op.id);
+        }
+
+        continue;
       }
 
       if (op.id in state) {
