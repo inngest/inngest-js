@@ -40,9 +40,14 @@ export class Worker {
 
   /**
    * Starts the app from `dir`, and switches to it when it serves. `files`
-   * are the page's files, in the folder, that the app imports.
+   * are the page's files, in the folder, that the app imports. `env` is
+   * added to the app's environment.
    */
-  async reload(dir: string, files: string[]): Promise<Started> {
+  async reload(
+    dir: string,
+    files: string[],
+    env: Record<string, string> = {},
+  ): Promise<Started> {
     const pending = this.pending;
     const port = await freePort();
     const errors: string[] = [];
@@ -61,6 +66,7 @@ export class Worker {
         INNGEST_DEV: "1",
         INNGEST_BASE_URL: this.env.devServerUrl,
         NODE_NO_WARNINGS: "1",
+        ...env,
       },
     });
 

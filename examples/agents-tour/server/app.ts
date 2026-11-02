@@ -40,6 +40,8 @@ export interface TourOptions {
   areas?: AreaFactory[];
   // Where the tour keeps what it writes. Default: `.tour` in the root.
   dataDir?: string;
+  // Tells the app to use the scripted model; `tour:verify` sets it.
+  scriptedModel?: boolean;
 }
 
 const mime: Record<string, string> = {
@@ -119,6 +121,7 @@ export const createTour = async (options: TourOptions) => {
   let areas: Area[] = [];
   const ctx: TourContext = {
     root,
+    scriptedModel: options.scriptedModel ?? false,
     publicUrl,
     dataDir,
     devServer,

@@ -175,6 +175,14 @@ export const area: AreaFactory = (ctx) => {
         page.files.map((file) => {
           return file.name;
         }),
+        ctx.scriptedModel
+          ? {
+              TOUR_MODEL: "scripted",
+              TOUR_MODEL_SCRIPT: JSON.stringify(
+                page.manifest.verify?.model ?? [],
+              ),
+            }
+          : {},
       );
 
       if (stale()) {

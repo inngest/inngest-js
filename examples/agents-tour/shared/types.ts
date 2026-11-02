@@ -30,6 +30,26 @@ export interface Exercise {
   solution: string;
 }
 
+// A run `tour:verify` expects to see after the page's action.
+export interface ExpectedRun {
+  // The function's name: the agent's id.
+  fn: string;
+  // Default: any status but FAILED or CANCELLED.
+  status?: string;
+  // Compared to what the run returned, when given.
+  output?: unknown;
+}
+
+// What `tour:verify` does on a page, beyond running its starting code.
+export interface Verify {
+  // More of the page's promised action, done after Run's start entries.
+  then?: Start[];
+  // The runs that must exist once the action has settled.
+  runs?: ExpectedRun[];
+  // What the scripted model says, one step per turn (`say` or `call`).
+  model?: unknown[];
+}
+
 export interface Manifest {
   // Pages without code (the welcome pages) hide the right side.
   code?: boolean;
@@ -50,6 +70,9 @@ export interface Manifest {
   apis?: string[];
   // Present on an exercise page.
   exercise?: Exercise;
+  // What `tour:verify` checks. Without it a page must start, and none of its
+  // runs may fail.
+  verify?: Verify;
 }
 
 export interface PageFile {

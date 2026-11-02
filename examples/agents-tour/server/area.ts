@@ -45,6 +45,9 @@ export interface Area {
 
 export interface TourContext {
   root: string;
+  // True when `tour:verify` runs the tour: the app is told to use the
+  // scripted model (see `runtime/scripted-model.ts`).
+  scriptedModel: boolean;
   publicUrl: string;
   dataDir: string;
   devServer: DevServer;
