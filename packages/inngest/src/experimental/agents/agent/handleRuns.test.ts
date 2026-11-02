@@ -4,10 +4,12 @@
  * once it has answered and nothing is unread, so its `result()` resolves
  * promptly. A run a trigger started waits `idle`.
  */
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { model } from "../loop/loopKit.ts";
 import { createAgentFunction } from "./agentFunction.ts";
+import { childWait, trackChild } from "./children.ts";
 import { freshKv, run } from "./test-helpers.ts";
 
 const message = (
@@ -148,5 +150,88 @@ describe("a model agent opened through a handle (L58)", () => {
     expect(requests).toHaveLength(1);
     expect(output).toBe("answer 1");
     expect(waited(ops)).toEqual([]);
+  });
+});
+
+describe("a run opened through a handle waits for the runs it started with start_agent (L70, L74)", () => {
+  const finishedFrom = (key: string) => {
+    return {
+      name: "agent/finished",
+      data: {
+        agent: `${testClientId}/bot`,
+        thread: "t1",
+        from: { kind: "agent", address: "team/child", key },
+        outcome: "completed",
+        output: "child done",
+      },
+    };
+  };
+
+  const make = (track: string[]) => {
+    freshKv();
+
+    return createAgentFunction(
+      new Inngest({ id: testClientId }),
+      { id: "bot" },
+      async ({ inbox }) => {
+        const instance = getAsyncCtxSync()?.execution?.instance as object;
+
+        for (const key of track) {
+          trackChild(instance, key);
+        }
+
+        const seen: unknown[] = [];
+
+        for await (const m of inbox) {
+          seen.push(m.name);
+        }
+
+        return seen;
+      },
+    );
+  };
+
+  test("the child's agent/finished folds in and the run ends after the last one", async () => {
+    const agent = make(["c1"]);
+    const { output, ops } = await run(agent.fn, {
+      event: message("first", { from: sender }),
+      incoming: [finishedFrom("c1")],
+    });
+
+    expect(output).toEqual(["agent/message", "agent/finished"]);
+    expect(waited(ops)).toHaveLength(1);
+  });
+
+  test("a child started with start() holds nothing: the run ends at once", async () => {
+    const agent = make([]);
+    const { output, ops } = await run(agent.fn, {
+      event: message("first", { from: sender }),
+    });
+
+    expect(output).toEqual(["agent/message"]);
+    expect(waited(ops)).toEqual([]);
+  });
+
+  test("a child that never finishes is waited for only up to the bound", async () => {
+    const before = childWait.ms;
+
+    childWait.ms = 5000;
+
+    try {
+      const agent = make(["c1"]);
+      const { output, ops } = await run(agent.fn, {
+        event: message("first", { from: sender }),
+        timeouts: 1,
+      });
+
+      expect(output).toEqual(["agent/message"]);
+      expect(
+        waited(ops).map((op) => {
+          return (op.opts as { timeout: unknown }).timeout;
+        }),
+      ).toEqual([5000]);
+    } finally {
+      childWait.ms = before;
+    }
   });
 });
