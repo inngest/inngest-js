@@ -6,12 +6,14 @@
  * and builds it with Go. The binary is cached per commit, so a second run
  * does nothing.
  *
- * The Dev Server UI is not built (the tour has its own trace panel); a
- * placeholder page stands in for it. Set `TOUR_DEVSERVER_BIN` to use a binary
- * you already have, such as a `devstack build-local` result.
+ * The Dev Server's own UI is built from the same commit (`pnpm install` and
+ * `pnpm build` in `ui/apps/dev-server-ui`) and embedded, so the tour's
+ * "Dev Server" button opens the real dashboard. Set `TOUR_DEVSERVER_BIN` to
+ * use a binary you already have, such as a `devstack build-local` result.
  */
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   renameSync,
@@ -84,23 +86,26 @@ step(
   src,
 );
 
-// The Go build embeds a UI directory and the docs; neither is needed here.
-const stubs: [string, string][] = [
-  [
-    "pkg/devserver/static/index.html",
-    "<!doctype html><title>Inngest Dev Server</title><p>The Agents Tour runs this Dev Server without its UI. Use the tour's Trace panel.</p>\n",
-  ],
-  ["internal/embeddocs/website/pages/docs/index.md", "# Inngest docs\n"],
-];
+// The Go build embeds the docs, which the tour does not need.
+const docs = join(src, "internal/embeddocs/website/pages/docs/index.md");
 
-for (const [path, content] of stubs) {
-  const file = join(src, path);
-
-  if (!existsSync(file)) {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, content);
-  }
+if (!existsSync(docs)) {
+  mkdirSync(dirname(docs), { recursive: true });
+  writeFileSync(docs, "# Inngest docs\n");
 }
+
+const ui = join(src, "ui/apps/dev-server-ui");
+
+step(
+  "installing the Dev Server UI's packages",
+  "pnpm",
+  ["install", "--frozen-lockfile"],
+  ui,
+);
+step("building the Dev Server UI", "pnpm", ["build"], ui);
+cpSync(join(ui, "dist"), join(src, "pkg/devserver/static"), {
+  recursive: true,
+});
 
 mkdirSync(dirname(bin), { recursive: true });
 
