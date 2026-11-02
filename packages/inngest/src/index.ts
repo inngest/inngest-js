@@ -107,6 +107,8 @@ export type { LogArg, Logger } from "./middleware/logger";
 export { ConsoleLogger, ProxyLogger } from "./middleware/logger.ts";
 export type {
   BaseContext,
+  CancelledEventArgs,
+  CancelledEventPayload,
   ClientOptions,
   Context,
   EventMeta,
