@@ -536,6 +536,11 @@ export function createAgentFunction(
           limits,
           recorder,
           threadKey: thread.key,
+          remember:
+            (await fields.get(
+              "remember",
+              config.remember as RunField<boolean | undefined>,
+            )) !== false,
         });
 
         const listenTools = createBodyInboxTools({

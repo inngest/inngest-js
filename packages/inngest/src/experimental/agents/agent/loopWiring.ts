@@ -32,10 +32,17 @@ export const createLoopWiring = (options: {
   limits: LimitState;
   recorder: ReturnType<typeof threadRecorder>;
   threadKey: string;
+
+  /**
+   * Whether the loops of this run remember the thread's history.
+   */
+  remember: boolean;
 }): AgentLoopWiring => {
-  const { config, inbox, view, named, limits, recorder, threadKey } = options;
+  const { config, inbox, view, named, limits, recorder, threadKey, remember } =
+    options;
 
   return {
+    remember,
     async drain() {
       // The handler's inbox first, then each inbox the model opened, in the
       // order it opened them.

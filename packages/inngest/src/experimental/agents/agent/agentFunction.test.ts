@@ -1464,3 +1464,133 @@ describe("an inbox source with nothing at its thread path", () => {
     );
   });
 });
+
+describe("the loop in an agent", () => {
+  const recording = (answers: AgentModelResponse[]) => {
+    const requests: { system?: string; messages: ModelMessage[] }[] = [];
+    const scripted = model(async (request) => {
+      requests.push(structuredClone(request));
+
+      return answers[requests.length - 1] ?? say("more");
+    });
+
+    return { requests, scripted };
+  };
+
+  const callMissing: AgentModelResponse = {
+    message: { role: "assistant", content: [] },
+    toolCalls: [{ id: "c1", name: "missing", input: {} }],
+  };
+
+  test("an agent with a model and no handler answers: the final answer is the run's output", async () => {
+    const { requests, scripted } = recording([callMissing, say("all done")]);
+    const { fn } = createAgentFunction(makeClient(), {
+      id: "bot",
+      model: scripted,
+      system: "Be brief.",
+      idle: 0,
+    });
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("all done");
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.system).toBe("Be brief.");
+  });
+
+  test("the definition's loop options apply to the loop the agent builds", async () => {
+    const { requests, scripted } = recording([callMissing, callMissing]);
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", model: scripted, loop: { maxTurns: 2 } },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+        const result = await loop(first ? [first] : "");
+
+        return [result.end, result.turns];
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toEqual(["maxTurns", 2]);
+    expect(requests).toHaveLength(2);
+  });
+
+  test("loop.with({ model }) keeps the agent's system prompt and tools, and changes only the model", async () => {
+    const own = recording([say("own")]);
+    const other = recording([say("other")]);
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "bot",
+        model: own.scripted,
+        system: "Agent system.",
+        listen: [
+          eventType("ci/status", {
+            schema: z.object({ state: z.string() }),
+          }),
+        ],
+      },
+      async ({ loop }) => {
+        return (await loop.with({ model: other.scripted })("hi")).text;
+      },
+    );
+
+    const { output } = await run(fn, { event: trigger("go") });
+
+    expect(output).toBe("other");
+    expect(own.requests).toHaveLength(0);
+    expect(other.requests[0]?.system).toBe("Agent system.");
+  });
+
+  test("a second run of the same thread starts with the first run's history; another thread does not; remember: false stops it", async () => {
+    const remembered = recording([say("one"), say("two")]);
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot", model: remembered.scripted },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+
+        return (await loop(first ? [first] : "")).text;
+      },
+    );
+
+    await run(fn, { event: trigger("first") });
+    await run(fn, { event: trigger("second") });
+
+    expect(remembered.requests[0]?.messages).toHaveLength(1);
+    expect(remembered.requests[1]?.messages.length).toBeGreaterThan(2);
+
+    const other = recording([say("x")]);
+    const { fn: otherFn } = createAgentFunction(
+      makeClient(),
+      { id: "bot2", model: other.scripted },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+
+        return (await loop(first ? [first] : "")).text;
+      },
+    );
+
+    await run(otherFn, { event: message("user", "go", "t9") });
+
+    expect(other.requests[0]?.messages).toHaveLength(1);
+
+    const clean = recording([say("a"), say("b")]);
+    const { fn: cleanFn } = createAgentFunction(
+      makeClient(),
+      { id: "bot3", model: clean.scripted, remember: false },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+
+        return (await loop(first ? [first] : "")).text;
+      },
+    );
+
+    await run(cleanFn, { event: trigger("first") });
+    await run(cleanFn, { event: trigger("second") });
+
+    expect(clean.requests[1]?.messages).toHaveLength(1);
+  });
+});

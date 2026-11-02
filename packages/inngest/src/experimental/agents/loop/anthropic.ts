@@ -102,6 +102,12 @@ export interface AnthropicOptions {
   client?: AnthropicClient;
 
   /**
+   * The model's context size in tokens, which a loop that remembers uses to
+   * decide when to summarise. Default 200,000.
+   */
+  contextWindow?: number;
+
+  /**
    * The API key of the client the adapter makes. Ignored with `client`.
    */
   apiKey?: string;
@@ -196,6 +202,7 @@ export type AnthropicOverrides = Partial<
     AnthropicOptions,
     | "model"
     | "maxTokens"
+    | "contextWindow"
     | "effort"
     | "thinking"
     | "cache"
@@ -293,7 +300,14 @@ export interface AnthropicModel {
    * @param overrides The options to change.
    */
   with(overrides: AnthropicOverrides): AnthropicModel;
+
+  /**
+   * The model's context size in tokens.
+   */
+  readonly contextWindow: number;
 }
+
+const defaultContextWindow = 200_000;
 
 type Block = { type: string } & Record<string, unknown>;
 type Param = { role: "user" | "assistant"; content: Block[] };
@@ -884,6 +898,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
     };
 
     return Object.assign(call, {
+      contextWindow: current.contextWindow ?? defaultContextWindow,
       with: (overrides: AnthropicOverrides) => {
         return make({
           ...current,

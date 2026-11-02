@@ -32,9 +32,11 @@ import {
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import { kv } from "../kv/kv.ts";
 import {
   type AgentCompaction,
   type AgentCompactionOptions,
+  compactionFor,
   withCompaction,
 } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
@@ -71,15 +73,96 @@ export interface AgentEvent {
  */
 export type AgentInput = AgentUserContent | AgentEvent;
 
-/**
- * The default `format`: the text of an `agent/message`, and the name and data
- * of any other event as JSON.
- */
-export const formatEvent = (event: AgentEvent): string => {
-  const data = event.data as { text?: unknown } | null | undefined;
+type Sender =
+  | { kind: "agent"; address?: string; key?: string }
+  | { kind: "function"; id?: string; key?: string };
 
-  if (event.name === "agent/message" && typeof data?.text === "string") {
-    return data.text;
+// Who sent a message, as the model reads it.
+const whoOf = (from: Sender | undefined): string => {
+  if (from?.kind === "function") {
+    return `function ${from.id ?? "unknown"}`;
+  }
+
+  return from?.address ?? "an agent";
+};
+
+const textOfJson = (value: unknown): string => {
+  return typeof value === "string" ? value : JSON.stringify(value);
+};
+
+/**
+ * The default wording of a message for the model. The four agent message
+ * types read as sentences; any other event is its name and data as JSON.
+ *
+ * - `agent/message`: `Message from <address> (thread <key>): <content>` (from a
+ *   plain function: `Message from function <id> (thread <key>): <content>`).
+ *   A message with no sender is its text alone.
+ * - `agent/question`: the question, its id, who asked, and a pointer to the
+ *   `reply` tool.
+ * - `agent/finished`: which agent and thread finished, the outcome, then the
+ *   output or the error.
+ * - `agent/answer`: the answer next to the question it answers (`questions`
+ *   maps a question's id to its text); `refused` and `timed_out` read as a
+ *   plain "no answer" line.
+ *
+ * Call it from your own `format` for the messages you don't change.
+ * @param event The message.
+ * @param questions The text of the questions the model has open, by id.
+ */
+export const formatEvent = (
+  event: AgentEvent,
+  questions?: ReadonlyMap<string, string>,
+): string => {
+  const data = (event.data ?? {}) as Record<string, unknown>;
+  const from = data.from as Sender | undefined;
+  const where = from?.key === undefined ? "" : ` (thread ${from.key})`;
+
+  if (event.name === "agent/message") {
+    const content = data.content ?? data.text;
+
+    if (content === undefined) {
+      return JSON.stringify({ event: event.name, data: event.data });
+    }
+
+    return from
+      ? `Message from ${whoOf(from)}${where}: ${textOfJson(content)}`
+      : textOfJson(content);
+  }
+
+  if (event.name === "agent/question") {
+    return `Question ${String(data.id)} from ${whoOf(from)}${where}: ${String(data.text)}\nAnswer it with the reply tool, giving the question id ${String(data.id)}.`;
+  }
+
+  if (event.name === "agent/finished") {
+    const who = `${whoOf(from)}${where}`;
+
+    if (data.outcome === "completed") {
+      return data.output === undefined
+        ? `${who} finished: completed.`
+        : `${who} finished: completed. Output: ${textOfJson(data.output)}`;
+    }
+
+    if (data.outcome === "failed") {
+      return `${who} finished: failed. Error: ${String(data.error)}`;
+    }
+
+    return `${who} finished: stopped.`;
+  }
+
+  if (event.name === "agent/answer") {
+    const id = String(data.re);
+    const asked = questions?.get(id);
+    const about = asked === undefined ? `question ${id}` : `"${asked}"`;
+
+    if (data.outcome === "refused") {
+      return `No answer to ${about}: ${whoOf(from)} refused.`;
+    }
+
+    if (data.outcome === "timed_out") {
+      return `No answer to ${about}: ${whoOf(from)} did not answer in time.`;
+    }
+
+    return `Answer to ${about} from ${whoOf(from)}: ${textOfJson(data.text)}`;
   }
 
   return JSON.stringify({ event: event.name, data: event.data });
@@ -284,9 +367,15 @@ export interface AgentModelResponse {
  * 409 and 429), and you can throw a
  * `NonRetriableError` yourself for anything else a retry can't help.
  */
-export type AgentModel = (
-  request: AgentModelRequest,
-) => Promise<AgentModelResponse>;
+export interface AgentModel {
+  (request: AgentModelRequest): Promise<AgentModelResponse>;
+
+  /**
+   * The model's context size in tokens, if it knows it. A loop that remembers
+   * summarises the conversation once it fills 70% of it.
+   */
+  contextWindow?: number;
+}
 
 /**
  * One finished model call, as `onTurn` receives it.
@@ -686,6 +775,25 @@ export interface AgentLoopWiring {
   observeTurn?: (turn: AgentTurn, recorded: unknown) => Promise<void>;
 
   /**
+   * Whether the loop saves the model's history in thread KV after each batch
+   * and picks it up when the thread's next run starts. The agent's `remember`
+   * field, `true` unless it says `false`.
+   */
+  remember?: boolean;
+
+  /**
+   * Whether a question already has a reply, so the model spends no turn on it.
+   * Filled by the messaging work.
+   */
+  answered?: (id: string) => boolean | Promise<boolean>;
+
+  /**
+   * The text of the questions the model has open, by id, to show an answer next
+   * to its question. Filled by the messaging work.
+   */
+  questions?: () => ReadonlyMap<string, string>;
+
+  /**
    * Called with the IDs of the messages folded into a model call.
    */
   folded?: (call: { turn: number; ids: string[] }) => void;
@@ -929,6 +1037,14 @@ export const addTools = <TTools extends SandboxTools>(
   return { ...own, ...extra };
 };
 
+// The thread KV key the model's history is kept under.
+const historyKey = kv.key<Remembered>("__history");
+
+interface Remembered {
+  history: ModelMessage[];
+  compaction?: AgentCompaction;
+}
+
 /**
  * Runs the loop once on a batch, with options already resolved.
  */
@@ -949,7 +1065,11 @@ const runLoop = async <TTools extends SandboxTools>(
   // The key of an MCP server in `tools` names its tools; its list is a step.
   const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
   const definitions = toolDefinitions(tools);
-  const format = options.format ?? formatEvent;
+  const format =
+    options.format ??
+    ((event: AgentEvent) => {
+      return formatEvent(event, wiring?.questions?.());
+    });
   const contentOf = (input: AgentInput): AgentUserContent => {
     return typeof input === "string" || Array.isArray(input)
       ? input
@@ -978,8 +1098,15 @@ const runLoop = async <TTools extends SandboxTools>(
         })
         .join("\n\n")
     : contentOf(batch as AgentInput);
+  // A loop in an agent picks up what the thread's earlier runs left, unless it
+  // was given a history of its own.
+  const remembering = wiring?.remember === true;
+  const stored =
+    remembering && options.history === undefined
+      ? ((await kv.thread.get(historyKey)) as Remembered | undefined)
+      : undefined;
   const messages: ModelMessage[] = [
-    ...(options.history ?? []),
+    ...(options.history ?? stored?.history ?? []),
     { role: "user", content: prompt },
   ];
   const usage: AgentUsage = { input: 0, output: 0 };
@@ -991,7 +1118,8 @@ const runLoop = async <TTools extends SandboxTools>(
   // Messages folded in since the last model call.
   let steered = 0;
   // The summary of the conversation's start, once there is one.
-  let compaction: AgentCompaction | undefined;
+  let compaction: AgentCompaction | undefined = stored?.compaction;
+  const compactWith = compactionFor(options.compaction, model.contextWindow);
 
   const finish = async (
     end: AgentLoopEnd,
@@ -999,6 +1127,13 @@ const runLoop = async <TTools extends SandboxTools>(
     reason?: string,
   ): Promise<AgentLoopResult<TTools>> => {
     await Promise.allSettled(hooks);
+
+    if (remembering) {
+      await kv.thread.set(historyKey, {
+        history: messages,
+        ...(compaction && { compaction }),
+      } as Remembered as never);
+    }
 
     return {
       text,
@@ -1025,7 +1160,25 @@ const runLoop = async <TTools extends SandboxTools>(
     }
 
     // Everything new in the inboxes lands in this model call.
-    const drained = (await wiring?.drain?.({ turn })) ?? [];
+    const taken = (await wiring?.drain?.({ turn })) ?? [];
+    const drained: AgentEvent[] = [];
+
+    // A question that already has a reply costs the model no turn.
+    for (const event of taken) {
+      const questionId =
+        event.name === "agent/question"
+          ? (event.data as { id?: unknown } | null)?.id
+          : undefined;
+
+      if (
+        typeof questionId === "string" &&
+        (await wiring?.answered?.(questionId))
+      ) {
+        continue;
+      }
+
+      drained.push(event);
+    }
 
     if (drained.length > 0) {
       const chosen = options.steer ? await options.steer(drained) : drained;
@@ -1067,11 +1220,11 @@ const runLoop = async <TTools extends SandboxTools>(
         // A 4xx no retry can fix (a rejected request, a bad key) ends the run
         // instead of retrying it, and a retry-after is honoured.
         try {
-          if (options.compaction) {
+          if (compactWith) {
             const compacted = await withCompaction({
               messages,
               held: compaction,
-              options: options.compaction,
+              options: compactWith,
               summarise: async (summaryPrompt, text) => {
                 const summary = await model({
                   system: summaryPrompt,
