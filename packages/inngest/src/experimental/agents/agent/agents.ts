@@ -333,6 +333,7 @@ export {
   agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
+export type { Sender } from "../inbox/sender.ts";
 export type {
   Kv,
   KvIndex,

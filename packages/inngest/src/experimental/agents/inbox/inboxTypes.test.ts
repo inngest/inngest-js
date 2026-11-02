@@ -161,3 +161,36 @@ describe("inbox: the four message types", () => {
     });
   });
 });
+
+describe("inbox: who sent a message", () => {
+  test("inbox: from is a handle for an agent and cannot be messaged for a function", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "inbox-from", triggers: [created] },
+        async ({ inbox }) => {
+          const message = await inbox.next();
+
+          if (message?.name === "agent/message" && message.from) {
+            const from = message.from;
+
+            if (from.kind === "agent") {
+              expectTypeOf(from.address).toBeString();
+              expectTypeOf(from.key).toBeString();
+              expectTypeOf(from.message).toBeFunction();
+              expectTypeOf(from.ask).toBeFunction();
+              expectTypeOf(from.stop).toBeFunction();
+              // The sender's output is not known here.
+              expectTypeOf(from.message("hi").result()).resolves.toBeUnknown();
+            } else {
+              expectTypeOf(from.id).toBeString();
+              expectTypeOf(from.key).toBeString();
+              expectTypeOf(from).not.toHaveProperty("message");
+              expectTypeOf(from).not.toHaveProperty("ask");
+              expectTypeOf(from).not.toHaveProperty("stop");
+            }
+          }
+        },
+      );
+    });
+  });
+});

@@ -1,20 +1,22 @@
 /**
  * @module
  * EXPERIMENTAL: how code starts an agent: `agent.start(input)`. It opens a new
- * thread with a generated key, starts a run on it through a `step.invoke` to
- * the agent's function and returns at once. `result()` waits for that run.
+ * thread with a generated key and sends the input to it as a message, then
+ * returns at once. `result()` waits for the run that takes it, through an
+ * inbox opened before the send.
  * The sender rides in `data.from` with the chain depth, the callee's thread
  * and the limits it inherits.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
-import { referenceFunction } from "../../../components/InngestFunctionReference.ts";
-import { step } from "../../../components/InngestStepTools.ts";
-import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SenderData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { type ThreadHandle, threadHandle } from "../threads/thread.ts";
+import {
+  sendMessage,
+  type ThreadHandle,
+  threadHandle,
+} from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -22,16 +24,7 @@ import {
   limitStateOf,
   readInheritedLimits,
 } from "./limits.ts";
-import {
-  AgentStoppedError,
-  AgentTimeoutError,
-  flush,
-  isRecord,
-  noop,
-  type ResultOptions,
-  stoppedRun,
-  timedOut,
-} from "./runResults.ts";
+import type { ResultOptions } from "./runResults.ts";
 import { currentSessions } from "./sessions.ts";
 
 /**
@@ -45,8 +38,8 @@ export const invokeDepthOf = (
    */
   event: { data?: Record<string, unknown> },
 ): number => {
-  const from = event.data?.from;
-  const depth = isRecord(from) ? from.depth : undefined;
+  const from = event.data?.from as { depth?: unknown } | undefined;
+  const depth = from?.depth;
 
   return typeof depth === "number" && depth > 0 ? depth : 0;
 };
@@ -92,11 +85,8 @@ export interface StartedThread<TOutput = unknown>
    * Waits for the run `start()` began and gives its output. It throws when the
    * run failed or was stopped. With a `timeout` it throws an
    * `AgentTimeoutError` when the run is not done in time, and the run keeps
-   * going; there is no default timeout. A timeout works only when `result()`
-   * is chained onto the start in the same tick (`await agent.start(x).result({
-   * timeout })`): a pending step holds back the code after it, so once
-   * `start()` has been awaited the timeout would never fire. Asking for one
-   * then throws an error that names the chained form.
+   * going; there is no default timeout. It works whenever it is called, and a
+   * later `result()` keeps waiting for the same run.
    */
   result(options?: ResultOptions): Promise<TOutput>;
 }
@@ -109,32 +99,6 @@ export type StartedThreadPromise<TOutput = unknown> = Promise<
   StartedThread<TOutput>
 > &
   Pick<StartedThread<TOutput>, "result" | "stop" | "message" | "ask">;
-
-/**
- * How a `start()` reaches the child: the one place that knows the mechanism
- * (a `step.invoke` whose answer is the run's output), so it can be swapped
- * without touching the callers. Returns the promise of the child's output.
- */
-const reachChild = (call: {
-  address: string;
-  id: string;
-  data: Record<string, unknown>;
-  sessions: Record<string, string>;
-}): Promise<unknown> => {
-  const slash = call.address.indexOf("/");
-
-  return step.invoke(
-    { id: call.id, name: `start ${call.address}` },
-    {
-      function: referenceFunction({
-        appId: call.address.slice(0, slash),
-        functionId: call.address.slice(slash + 1),
-      }),
-      data: call.data,
-      meta: { sessions: call.sessions },
-    },
-  );
-};
 
 /**
  * Starts the agent.
@@ -169,96 +133,33 @@ export function startThread<TOutput>(
     agent_session: currentSessions(ctx).agent_session ?? (ctx.runId as string),
     agent_thread: key,
   };
-  const parent = (ctx.event as { data?: { from?: { depth?: unknown } } }).data
-    ?.from;
-  const depth = typeof parent?.depth === "number" ? parent.depth : 0;
-  const self = execution.agent;
-  const from: SenderData & { thread: string; limits?: unknown } = self?.ref
-    ? {
-        kind: "agent",
-        address: self.ref,
-        key: self.thread,
-        depth: depth + 1,
+
+  // A start is a message to the new thread: the sender carries the key of the
+  // thread it opens and what it passes down, and the result comes back to a
+  // private inbox opened before the send, so no step waits for the child.
+  const call = sendMessage<TOutput>(
+    target.client,
+    target.address,
+    key,
+    input as Json,
+    {
+      sessions,
+      from: {
         thread: key,
+        ...(limits && { limits: childLimits(limits) }),
+        ...(target.typed && { typed: true }),
         ...(target.via && { via: target.via, target: target.address }),
-      }
-    : {
-        kind: "function",
-        id: ctx.runId as string,
-        key: ctx.runId as string,
-        depth: depth + 1,
-        thread: key,
-      };
-
-  if (limits) {
-    from.limits = childLimits(limits);
-  }
-
-  const data = target.typed
-    ? { ...(input as Record<string, unknown>), from }
-    : { agent: target.address, thread: key, content: input as Json, from };
-  const invoked = reachChild({
-    address: target.address,
-    id: `start:${target.address}:${n}`,
-    data,
-    sessions,
-  });
-
-  // An unread result must not become an unhandled rejection.
-  invoked.catch(() => {});
-
-  let waits = 0;
-
-  // Set once the start has been planned: from then on the code after it has
-  // waited for the run's step, so a timeout has nothing left to race.
-  let planned = false;
+      },
+    },
+  );
   const thread = threadHandle<TOutput>(target.client, target.address, key);
   const handle: StartedThread<TOutput> = {
     ...thread,
-    async result(options) {
-      if (planned && options?.timeout !== undefined) {
-        throw new Error(
-          "result({ timeout }) must be chained onto the start: write `await agent.start(input).result({ timeout })`. After `await agent.start(input)` the run is already planned, so a timeout would never fire.",
-        );
-      }
-
-      waits += 1;
-
-      const wait = waits;
-      const output =
-        options?.timeout === undefined
-          ? await invoked
-          : await Promise.race([
-              invoked,
-              step
-                .waitForEvent(`start:${target.address}:${n}:timeout:${wait}`, {
-                  event: "agent/result.timeout",
-                  timeout: options.timeout,
-                })
-                .then(() => {
-                  return timedOut;
-                }),
-            ]);
-
-      if (output === timedOut) {
-        throw new AgentTimeoutError(target.address);
-      }
-
-      const stopped = stoppedRun(output);
-
-      if (stopped) {
-        throw new AgentStoppedError(target.address, stopped.runId);
-      }
-
-      return output as TOutput;
+    result(options) {
+      return call.result(options);
     },
   };
-
-  // A replayed invoke is already answered, so the race ends without waiting
-  // for the macrotask, which the engine would take for work it must wait for.
-  const started = Promise.race([flush(), invoked.then(noop, noop)]).then(() => {
-    planned = true;
-
+  const started = call.then(() => {
     return handle;
   });
 

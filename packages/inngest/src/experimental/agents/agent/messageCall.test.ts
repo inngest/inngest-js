@@ -161,21 +161,21 @@ describe("thread.message().result()", () => {
     expect(output).toBe("AgentTimeoutError");
   });
 
-  test("a timeout asked for after the call was planned throws and names the chained form", async () => {
+  test("a timeout asked for after the call was awaited still times out", async () => {
     const { fn } = setup(async (thread) => {
       const call = await thread.message("y");
 
       try {
         await call.result({ timeout: "1s" });
       } catch (error) {
-        return (error as Error).message;
+        return (error as Error).name;
       }
 
       return "no throw";
     });
-    const { output } = await run(fn, options());
+    const { output } = await run(fn, options({ timeouts: 1 }));
 
-    expect(output).toContain("message(content).result({ timeout })");
+    expect(output).toBe("AgentTimeoutError");
   });
 
   test("costs 2 steps for the message and none for a result that already arrived", async () => {
