@@ -1,11 +1,12 @@
 /**
  * @module
- * EXPERIMENTAL: agent discovery. Every agent has a card that says what it does,
- * what it accepts, how to message it and who may use it. An app announces its
- * cards in an `agents/registered` event (when `agents.announce()` is called and
- * on a daily heartbeat), and the four discovery tools read the latest card of
- * each agent back from the events API, so agents find and call each other
- * across apps of one environment without naming each other in code.
+ * EXPERIMENTAL: agent discovery. Every agent has a card that says what it does
+ * and what it accepts. An app announces its cards in `agents/registered`
+ * events from a cron function every 6 hours, and `list_agents` and
+ * `describe_agent` read the newest card of each agent of the last 24 hours
+ * back, so agents find each other across apps of one environment without
+ * naming each other in code. The agents of the caller's own app are found at
+ * once, from their definitions.
  */
 
 import { z } from "zod/v4";
@@ -19,10 +20,9 @@ import {
   tool,
   triggerSchema,
 } from "../../../components/sandbox/tools.ts";
-import { EventType } from "../../../components/triggers/triggers.ts";
-import { internalEvents } from "../../../helpers/consts.ts";
-import { invokeAgent } from "../agent/invoke.ts";
-import { getThread } from "../threads/thread.ts";
+import type { Context } from "../../../types.ts";
+import type { Json, JsonSchema } from "../json.ts";
+import { type AppFunctions, readAppFunctions } from "./functions.ts";
 
 /**
  * The name of the event an app sends with its cards.
@@ -30,126 +30,97 @@ import { getThread } from "../threads/thread.ts";
 export const agentsRegisteredEvent = "agents/registered";
 
 /**
- * The name of the event that makes an app send its cards again.
+ * When an app announces its cards: every 6 hours, so a card stays inside the
+ * 24-hour window discovery reads.
  */
-export const agentsAnnounceEvent = "agents/announce";
+export const announceCron = "0 */6 * * *";
 
 /**
- * Who may find and use an agent. `"private"`: only agents of its own app.
- * `"team"`: any agent in the environment.
+ * Who may find an agent. `"private"`: only agents of its own app. `"team"`:
+ * any agent in the environment. Discovery is not access control: code that
+ * imports an agent or builds a reference to it does not read cards.
  */
 export type AgentShare = "private" | "team";
 
 /**
  * What a call to an agent does to the world, after MCP's tool hints.
  */
-export type AgentEffects = "read" | "write" | "needs-approval";
+export type AgentEffects = "read" | "write";
 
 /**
- * What an agent publishes about itself. The SDK writes every field from the
- * agent's definition, except the authored ones (`owner`, `effects`, `speed`), which the config sets.
- *
- * TODO: `describe_agent` may add live stats (success rate, duration, scores)
- * derived from runs. They are not part of the card.
+ * A skill of an agent, as its card lists it.
  */
-export interface AgentCard {
-  /**
-   * The agent's function ID within its app.
-   */
-  agentId: string;
-
-  /**
-   * The app that serves the agent.
-   */
-  app: string;
-
-  /**
-   * The qualified function ID, `"<app>-<agentId>"`, as `step.invoke` and the
-   * Inngest API know it.
-   */
-  functionId: string;
-
-  /**
-   * What the agent does, from its `description`.
-   */
-  does?: string;
-
-  /**
-   * How to call the agent with `call_agent`.
-   */
-  call: {
-    /**
-     * JSON Schema of the input, from the `invoke()` trigger. Without it a
-     * call takes `{ message }`.
-     */
-    input?: Record<string, unknown>;
-  };
-
-  /**
-   * What a call returns: its schema when known, else a short description.
-   */
-  output: Record<string, unknown> | string;
-
-  /**
-   * How to message the agent: send `event` with `data`, where `agent` is
-   * `"<app>/<agentId>"`, `thread` is a thread key the sender chooses (a
-   * thread keeps its conversation) and `text` is the message.
-   */
-  message: {
-    event: "agent/message";
-    data: { agent: string; thread: "<thread key>"; text: "<message>" };
-  };
-
-  /**
-   * What starts the agent: event names and cron expressions.
-   */
-  triggers: { event?: string; cron?: string }[];
-
-  /**
-   * Who may find and use the agent.
-   */
-  share: AgentShare;
-
-  /**
-   * A hash of the rest of the card, so a reader sees when it changed.
-   */
-  version: string;
-
-  /**
-   * How to use the agent: `"conversation"` (message a thread, which every
-   * agent supports) or `"both"` (it also has an `invoke()` trigger, so
-   * `call_agent` hands it typed input).
-   */
-  mode: "call" | "conversation" | "both";
-
-  /**
-   * The team or person who owns the agent. Authored.
-   */
-  owner?: string;
-
-  /**
-   * What a call does to the world. Authored; `"write"` when not set.
-   */
-  effects: AgentEffects;
-
-  /**
-   * How long a call takes. Authored.
-   */
-  speed?: "seconds" | "minutes";
+export interface AgentCardSkill {
+  name: string;
+  description: string;
 }
 
 /**
- * The authored part of a card, set in an agent's config.
+ * What an agent publishes about itself.
  */
-export interface AgentCardConfig {
+export interface AgentCard {
   /**
-   * What the agent does. Also the model-facing description when the agent is
-   * a tool.
+   * `"<app>/<agent>"`. It maps onto `referenceFunction({ appId, functionId })`;
+   * the platform's qualified ID is `"<app>-<agent>"`.
+   */
+  address: string;
+
+  /**
+   * What the agent does: its `card.description`, else the function's
+   * `description` option.
    */
   description?: string;
 
   /**
-   * Who may find and use the agent. Default `"private"`.
+   * JSON Schema of the input of the agent's `invoke()` trigger. An agent
+   * without one has no `input`.
+   */
+  input?: JsonSchema;
+
+  /**
+   * The agent's skills: each `SKILL.md`'s name and description.
+   */
+  skills?: AgentCardSkill[];
+
+  /**
+   * Who may find the agent. `"private"` unless the card says `"team"`.
+   */
+  share: AgentShare;
+
+  /**
+   * The team or person who owns the agent.
+   */
+  owner?: string;
+
+  /**
+   * What a call does. `"write"` unless the card says `"read"`.
+   */
+  effects: AgentEffects;
+
+  /**
+   * How long a call takes.
+   */
+  speed?: "seconds" | "minutes";
+
+  /**
+   * Set when a card is read, never announced: the agent's function is paused
+   * or archived.
+   */
+  paused?: boolean;
+}
+
+/**
+ * The `card` field of an agent's definition.
+ */
+export interface AgentCardConfig {
+  /**
+   * What the agent does. Without it the card uses the function's own
+   * `description` option.
+   */
+  description?: string;
+
+  /**
+   * Who may find the agent. Default `"private"`.
    */
   share?: AgentShare;
 
@@ -159,8 +130,7 @@ export interface AgentCardConfig {
   owner?: string;
 
   /**
-   * What a call does: `"read"`, `"write"` or `"needs-approval"`. Default
-   * `"write"`.
+   * What a call does: `"read"` or `"write"`. Default `"write"`.
    */
   effects?: AgentEffects;
 
@@ -169,6 +139,36 @@ export interface AgentCardConfig {
    */
   speed?: "seconds" | "minutes";
 }
+
+/**
+ * The `discovery` field of an agent's definition: `false` turns off
+ * `list_agents`, `describe_agent` and the tools that start or reach other
+ * agents (the agent's own card is still published), and `{ prepare }` fills
+ * part of the input of a call to another agent from the host.
+ */
+export type AgentDiscovery =
+  | false
+  | {
+      /**
+       * Runs in the run, before a call to another agent: gets the card, the
+       * input the model gave, the run's trigger event and its thread. Returns
+       * the input to use.
+       */
+      prepare?: (call: {
+        card: AgentCard;
+        input: Record<string, Json>;
+        event: Context.Any["event"];
+        thread: { key: string };
+      }) => Record<string, Json> | Promise<Record<string, Json>>;
+    };
+
+/**
+ * What `list_agents` returns for each agent.
+ */
+export type AgentSummary = Pick<
+  AgentCard,
+  "address" | "description" | "skills" | "effects" | "paused"
+>;
 
 /**
  * The data of `agents/registered`.
@@ -186,30 +186,41 @@ export interface AgentsRegisteredData {
 }
 
 /**
- * The cards of each client's agents, by agent ID.
+ * The cards of each app's own agents, by app ID then agent ID: what the
+ * running process defines.
  */
-const cardsByClient = new WeakMap<object, Map<string, AgentCard>>();
+const ownCardsByApp = new Map<string, Map<string, AgentCard>>();
 
 /**
- * The address of the agent of a card, `"<app>/<agentId>"`, what the tools
- * take as `id`.
+ * The cards of the agents `appId` defines in this process.
  */
-export const addressOf = (card: Pick<AgentCard, "app" | "agentId">): string => {
-  return `${card.app}/${card.agentId}`;
+export const cardsOf = (appId: string): AgentCard[] => {
+  return [...(ownCardsByApp.get(appId)?.values() ?? [])];
 };
 
 /**
- * A short hash of a string (FNV-1a), for `version`.
+ * Remembers the card of an agent of `appId`, for the announce function and for
+ * finding same-app agents at once.
  */
-const hashOf = (text: string): string => {
-  let hash = 0x811c9dc5;
+export const rememberCard = (appId: string, card: AgentCard): void => {
+  const cards = ownCardsByApp.get(appId) ?? new Map<string, AgentCard>();
 
-  for (let index = 0; index < text.length; index++) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
+  cards.set(card.address, card);
+  ownCardsByApp.set(appId, cards);
+};
 
-  return hash.toString(16).padStart(8, "0");
+/**
+ * The app of an address, `"<app>/<agent>"`.
+ */
+const appOf = (address: string): string => {
+  return address.slice(0, address.indexOf("/"));
+};
+
+/**
+ * The agent of an address, `"<app>/<agent>"`.
+ */
+const agentOf = (address: string): string => {
+  return address.slice(address.indexOf("/") + 1);
 };
 
 /**
@@ -227,116 +238,157 @@ export const cardOf = (
   agentId: string,
 
   /**
-   * The agent's function, which says what triggers it and what it accepts.
+   * The agent's function, which says what it accepts.
    */
   fn: InngestFunction.Any,
 
   /**
-   * The agent's config.
+   * What the card is made from.
    */
-  config: AgentCardConfig,
+  parts: {
+    /**
+     * The definition's `card` field.
+     */
+    card?: AgentCardConfig;
+
+    /**
+     * The function's own `description` option, for a card without one.
+     */
+    description?: string;
+
+    /**
+     * The agent's skills.
+     */
+    skills?: AgentCardSkill[];
+  },
 ): AgentCard => {
   const schema = triggerSchema(fn, true);
-  let input: Record<string, unknown> | undefined;
+  let input: JsonSchema | undefined;
 
   if (schema) {
     try {
-      input = toJsonSchema(agentId, schema);
+      input = toJsonSchema(agentId, schema) as JsonSchema;
     } catch {
       // A schema that cannot become JSON Schema (zod 3, say) still means the
-      // agent takes typed input, so a call must not fall back to `{ message }`.
+      // agent takes typed input, so the card must still say it has an input.
       input = { type: "object" };
     }
   }
 
-  const own = new Set<string>(["agent/message", "agent/steer"]);
-  const all: { event?: string; cron?: string }[] = (
-    (fn.opts.triggers ?? []) as { event?: unknown; cron?: string }[]
-  ).map((trigger) => {
-    if (trigger.cron) {
-      return { cron: trigger.cron };
-    }
+  const config = parts.card ?? {};
+  const description = config.description ?? parts.description;
 
-    return {
-      event:
-        trigger.event instanceof EventType
-          ? trigger.event.name
-          : String(trigger.event),
-    };
-  });
-
-  // The thread events every agent has are its inbox, in `message`.
-  const triggers = all.filter((trigger) => {
-    return !(trigger.event && own.has(trigger.event));
-  });
-  const invokable = triggers.some((trigger) => {
-    return trigger.event === internalEvents.FunctionInvoked;
-  });
-  const body: Omit<AgentCard, "version"> = {
-    agentId,
-    app,
-    functionId: `${app}-${agentId}`,
-    ...(config.description !== undefined && { does: config.description }),
-    call: { ...(input && { input }) },
-    output: "The agent's final result.",
-    message: {
-      event: "agent/message",
-      data: {
-        agent: `${app}/${agentId}`,
-        thread: "<thread key>",
-        text: "<message>",
-      },
-    },
-    triggers,
+  return {
+    address: `${app}/${agentId}`,
+    ...(description !== undefined && { description }),
+    ...(input && { input }),
+    ...(parts.skills && parts.skills.length > 0 && { skills: parts.skills }),
     share: config.share ?? "private",
-    mode: invokable ? "both" : "conversation",
     ...(config.owner !== undefined && { owner: config.owner }),
     effects: config.effects ?? "write",
     ...(config.speed && { speed: config.speed }),
   };
-
-  return { ...body, version: hashOf(JSON.stringify(body)) };
 };
 
 /**
- * Remembers the card of an agent of `client`, for `announce()`.
- */
-export const rememberCard = (client: object, card: AgentCard): void => {
-  const cards = cardsByClient.get(client) ?? new Map<string, AgentCard>();
-
-  cards.set(card.agentId, card);
-  cardsByClient.set(client, cards);
-};
-
-/**
- * The cards of the agents `client` serves.
- */
-export const cardsOf = (client: object): AgentCard[] => {
-  return [...(cardsByClient.get(client)?.values() ?? [])];
-};
-
-/**
- * The event of an app's announcement.
+ * The event of an app's announcement: its own agents' cards.
  */
 export const announcement = (
-  client: Inngest.Any,
+  client: Pick<Inngest.Any, "id">,
 ): { name: string; data: AgentsRegisteredData } => {
   return {
     name: agentsRegisteredEvent,
-    data: { app: client.id, cards: cardsOf(client) },
+    data: { app: client.id, cards: cardsOf(client.id) },
   };
 };
 
+/**
+ * The function that announces an app's cards every 6 hours. On the Dev Server
+ * it can be invoked by hand.
+ */
+export const announceFunction = (client: Inngest.Any): InngestFunction.Any => {
+  return client.createFunction(
+    { id: "agents-announce", triggers: [{ cron: announceCron }] },
+    async ({ step: announceStep }) => {
+      await announceStep.sendEvent("announce", announcement(client));
+    },
+  );
+};
+
+const windowMs = 24 * 60 * 60 * 1000;
+const insightsRows = 1000;
 const pageSize = 50;
 const maxPages = 20;
 
 /**
- * Reads the latest card of every agent announced in the environment, newest
- * announcement first. Needs the events API (the Dev Server and Cloud serve it).
+ * The cards in `agents/registered` data, each kept only when its address names
+ * the app that announced it.
+ */
+const ownCardsOf = (data: unknown): AgentCard[] => {
+  const announced = data as Partial<AgentsRegisteredData> | undefined;
+
+  if (!announced?.app || !Array.isArray(announced.cards)) {
+    return [];
+  }
+
+  const app = announced.app;
+
+  return announced.cards.filter((card) => {
+    return (
+      typeof card?.address === "string" &&
+      card.address.includes("/") &&
+      appOf(card.address) === app &&
+      agentOf(card.address).length > 0
+    );
+  });
+};
+
+const is501 = (error: unknown): boolean => {
+  return error instanceof Error && /\b501\b/.test(error.message);
+};
+
+/**
+ * Reads the newest card of each agent announced in the last 24 hours, not the
+ * newest announcement of each app: a later announcement that lists fewer
+ * agents does not hide the others. Cloud answers an Insights query; the Dev
+ * Server answers 501 to it, so the read falls back to listing the events.
+ * A failed or oversized read throws; it never gives an empty list.
  */
 export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
   const latest = new Map<string, AgentCard>();
-  const announced = new Set<string>();
+  const cutoff = Date.now() - windowMs;
+
+  try {
+    const result = await client.queryInsights(
+      `SELECT data FROM events WHERE name = '${agentsRegisteredEvent}' AND ts > ${cutoff} ORDER BY ts DESC LIMIT ${insightsRows}`,
+    );
+
+    if (result.rows.length >= insightsRows) {
+      throw new Error(
+        `Discovery found ${insightsRows} announcements in the last 24 hours, which is the most one read can see, so some agents may be missing. Try again later or announce less often.`,
+      );
+    }
+
+    const column = Math.max(result.columns.indexOf("data"), 0);
+
+    for (const row of result.rows) {
+      const raw = row[column];
+      const data = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+
+      for (const card of ownCardsOf(data)) {
+        if (!latest.has(card.address)) {
+          latest.set(card.address, card);
+        }
+      }
+    }
+
+    return [...latest.values()];
+  } catch (error) {
+    if (!is501(error)) {
+      throw error;
+    }
+  }
+
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
@@ -345,34 +397,22 @@ export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
       limit: pageSize,
       cursor,
     });
+    let reachedEnd = events.length < pageSize;
 
     for (const event of events) {
-      const data = event.data as Partial<AgentsRegisteredData> | undefined;
-
-      // The newest announcement of an app is all of its cards: an agent it
-      // no longer lists, or lists as private now, drops out.
-      if (!data?.app || announced.has(data.app)) {
-        continue;
+      if (event.ts !== undefined && event.ts < cutoff) {
+        reachedEnd = true;
+        break;
       }
 
-      announced.add(data.app);
-
-      for (const card of data.cards ?? []) {
-        // A card is its app's own: one that names another app, or a function
-        // ID that is not its app and agent, is ignored.
-        if (
-          !card?.agentId ||
-          card.app !== data.app ||
-          card.functionId !== `${card.app}-${card.agentId}`
-        ) {
-          continue;
+      for (const card of ownCardsOf(event.data)) {
+        if (!latest.has(card.address)) {
+          latest.set(card.address, card);
         }
-
-        latest.set(addressOf(card), card);
       }
     }
 
-    if (events.length < pageSize) {
+    if (reachedEnd) {
       break;
     }
 
@@ -383,10 +423,68 @@ export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
 };
 
 /**
- * Whether `caller` may find and use the agent of `card`.
+ * Where discovery reads the status of the functions of an app. A test seam;
+ * the default reads the platform.
+ */
+export type ReadFunctions = (app: string) => Promise<AppFunctions>;
+
+/**
+ * The current cards: the caller's own agents from their definitions, merged
+ * with the newest announced cards of other apps. A card of another app whose
+ * function is paused or archived is marked `paused`; one whose function is not
+ * in the app's function list is dropped.
+ */
+export const currentCards = async (
+  client: Inngest.Any,
+  options: { functions?: ReadFunctions } = {},
+): Promise<AgentCard[]> => {
+  const announced = (await readCards(client)).filter((card) => {
+    return appOf(card.address) !== client.id;
+  });
+  const apps = [
+    ...new Set(
+      announced.map((card) => {
+        return appOf(card.address);
+      }),
+    ),
+  ];
+  const read = options.functions ?? ((app) => readAppFunctions(client, app));
+  const functions = new Map(
+    await Promise.all(
+      apps.map(async (app) => {
+        return [app, await read(app)] as const;
+      }),
+    ),
+  );
+  const others = announced.flatMap((card) => {
+    const status = functions
+      .get(appOf(card.address))
+      ?.get(agentOf(card.address));
+
+    if (!status) {
+      return [];
+    }
+
+    return [
+      status.paused || status.archived ? { ...card, paused: true } : card,
+    ];
+  });
+
+  return [...cardsOf(client.id), ...others];
+};
+
+/**
+ * Whether `caller` may find the agent of `card`.
  */
 export const mayUse = (card: AgentCard, caller: string): boolean => {
-  return card.share === "team" || card.app === caller;
+  return card.share === "team" || appOf(card.address) === caller;
+};
+
+/**
+ * The address of a card: what the tools take as `address`.
+ */
+export const addressOf = (card: Pick<AgentCard, "address">): string => {
+  return card.address;
 };
 
 const words = (text: string): string[] => {
@@ -400,8 +498,8 @@ const words = (text: string): string[] => {
 
 /**
  * The cards that match a free-text query: those that contain any of its words
- * in their ID, description or triggers, best matches first. No query matches
- * every card.
+ * in their address, description or skills, best matches first. No query
+ * matches every card.
  */
 export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
   const wanted = words(query ?? "");
@@ -413,10 +511,10 @@ export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
   return cards
     .map((card) => {
       const text = [
-        addressOf(card),
-        card.does ?? "",
-        ...card.triggers.map((trigger) => {
-          return trigger.event ?? trigger.cron ?? "";
+        card.address,
+        card.description ?? "",
+        ...(card.skills ?? []).map((skill) => {
+          return `${skill.name} ${skill.description}`;
         }),
       ].join(" ");
       const have = new Set(words(text));
@@ -437,6 +535,19 @@ export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
     });
 };
 
+/**
+ * What a card shows in `list_agents`.
+ */
+export const summaryOf = (card: AgentCard): AgentSummary => {
+  return {
+    address: card.address,
+    ...(card.description !== undefined && { description: card.description }),
+    ...(card.skills && { skills: card.skills }),
+    effects: card.effects,
+    ...(card.paused && { paused: true }),
+  };
+};
+
 const callerOf = (): { client: Inngest.Any; appId: string } => {
   const client = getAsyncCtxSync()?.app as unknown as Inngest.Any | undefined;
 
@@ -450,167 +561,146 @@ const callerOf = (): { client: Inngest.Any; appId: string } => {
 };
 
 /**
- * The card of `id` if the caller may use it, else an error that says why.
+ * What a run has read so far: the first discovery call reads, the rest reuse
+ * it, and `refresh` reads again. Keyed by the run's execution, so a replay
+ * starts fresh and finds each read memoized as a step.
  */
-const visibleCard = async (
-  client: Inngest.Any,
-  appId: string,
-  id: string,
-): Promise<AgentCard> => {
-  const cards = await readCards(client);
-  const card = cards.find((candidate) => {
-    return addressOf(candidate) === id;
-  });
-
-  if (!card || !mayUse(card, appId)) {
-    throw new Error(
-      `No agent "${id}" is shared with you. Use list_agents to see the ones that are.`,
-    );
-  }
-
-  return card;
-};
-
-const summary = (card: AgentCard) => {
-  return {
-    id: addressOf(card),
-    description: card.does,
-    mode: card.mode,
-    effects: card.effects,
-    share: card.share,
-    typedInput: card.call.input !== undefined,
-  };
-};
+const readsByRun = new WeakMap<
+  object,
+  { cards?: Promise<AgentCard[]>; reads: number }
+>();
 
 /**
- * Starts the agent of `card` with `input` and waits for its result. An agent
- * without a typed input reads `input.message` as a message to a thread.
+ * Options of the discovery tools.
  */
-const startCall = (
-  card: AgentCard,
-  input: Record<string, unknown>,
-  options: { id?: string } = {},
-): Promise<unknown> => {
-  const text = typeof input.message === "string" ? input.message : "";
-
-  if (!card.call.input && !text) {
-    throw new Error(
-      `${addressOf(card)} takes no typed input: pass { "message": "<text>" }.`,
-    );
-  }
-
-  return invokeAgent(
-    { ref: addressOf(card) },
-    card.call.input
-      ? input
-      : (thread) => {
-          return { agent: addressOf(card), thread, text };
-        },
-    options.id ? { id: options.id } : {},
-  );
-};
-
-/**
- * EXPERIMENTAL: The agents shared with the caller that match `query` (all of
- * them without one), as cards. Call it inside a function: it is the code
- * version of `list_agents`, for a function that is not a model loop. The read
- * is a step, so a replay sees the same agents.
- */
-export const findAgents = async (query?: string): Promise<AgentCard[]> => {
-  const { client, appId } = callerOf();
-  const cards = (await step.run(`discover:find:${query ?? ""}`, async () => {
-    return readCards(client);
-  })) as AgentCard[];
-
-  return matchCards(
-    cards.filter((card) => {
-      return mayUse(card, appId);
-    }),
-    query,
-  );
-};
-
-/**
- * EXPERIMENTAL: Starts the agent `id` (its `"<app>/<agentId>"`, from a card)
- * with `input` and waits for its result. Call it inside a function: it is the
- * code version of `call_agent`, with the same sharing check. An agent without
- * a typed input takes `{ message }`.
- */
-export const callAgent = async (
-  id: string,
-  input: Record<string, unknown>,
-  options: { id?: string } = {},
-): Promise<unknown> => {
-  const { client, appId } = callerOf();
-  const card = (await step.run(`discover:${id}`, async () => {
-    return visibleCard(client, appId, id);
-  })) as AgentCard;
-
-  return startCall(card, input, options);
-};
-
-/**
- * Options of `discoveryTools()`.
- */
-export interface DiscoveryToolsOptions {
+export interface DiscoveryToolSetOptions {
   /**
-   * Handles a call the model made with `background: true`: the tool answers
-   * `{ started: true }` at once and the agent keeps running, so a thread can
-   * go on while an agent that takes hours works. `result` settles with the
-   * agent's result, or rejects when it fails or is cancelled. Without a
-   * handler, `background` is refused.
+   * Reads the functions of an app. For tests; defaults to the platform.
    */
-  onBackground?: (call: { id: string; result: Promise<unknown> }) => void;
-
-  /**
-   * Fills in what the caller knows and the model must not make up, such as who
-   * is asking, before `call_agent` hands `input` to the agent. It gets the
-   * card, so it can act on what the agent asks for. Return the input to use.
-   */
-  prepare?: (call: {
-    card: AgentCard;
-    input: Record<string, unknown>;
-  }) => Record<string, unknown>;
+  functions?: ReadFunctions;
 }
 
 /**
- * The four discovery tools, by tool name.
+ * The current cards, read once per run as a durable step. `refresh` reads
+ * again.
  */
-export type DiscoveryTools = {
-  list_agents: AgentTool;
-  describe_agent: AgentTool;
-  call_agent: AgentTool;
-  message_agent: AgentTool;
+export const discoverCards = async (
+  refresh = false,
+  options: DiscoveryToolSetOptions = {},
+): Promise<AgentCard[]> => {
+  const { client } = callerOf();
+  const key = getAsyncCtxSync()?.execution ?? client;
+  const state = readsByRun.get(key) ?? { reads: 0 };
+
+  readsByRun.set(key, state);
+
+  if (state.cards && !refresh) {
+    return state.cards;
+  }
+
+  const id = `discover:cards:${state.reads++}`;
+
+  state.cards = step.run(id, async () => {
+    return currentCards(client, { functions: options.functions });
+  }) as Promise<AgentCard[]>;
+
+  return state.cards;
 };
 
 /**
- * EXPERIMENTAL: The tools that let an agent find, call and message other
- * agents without naming them in code. Pass them to `agent.loop()` as `tools`,
- * or to `sandbox.tools.code({ tools })`.
- *
- * - `list_agents({ query? })`: the agents shared with the caller that match.
- * - `describe_agent({ id })`: the full card of one.
- * - `call_agent({ id, input })`: starts the agent and returns its result.
- * - `message_agent({ id, thread, text })`: sends `agent/message` to its inbox.
- *
- * An agent is visible to its own app, and to any app when its `share` is
- * `"team"`. The call tools check this again, so an ID the model made up or
- * remembered does not get around it.
+ * The card of `address` if the caller may find it, else an error that tells
+ * the model to list again. An address that is unknown and one that is not
+ * shared with the caller read the same.
  */
-export const discoveryTools = (
-  options: DiscoveryToolsOptions = {},
-): DiscoveryTools => {
+export const findCard = async (
+  address: string,
+  options: DiscoveryToolSetOptions = {},
+): Promise<AgentCard> => {
+  const { appId } = callerOf();
+  const cards = await discoverCards(false, options);
+  const found = cards.find((card) => {
+    return card.address === address;
+  });
+
+  if (!found || !mayUse(found, appId)) {
+    throw new Error(
+      `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
+    );
+  }
+
+  return found;
+};
+
+/**
+ * Runs the definition's `discovery.prepare` over the input of a call to
+ * another agent, with the run's trigger event and thread. Without one the
+ * input is the model's own.
+ */
+export const prepareInput = async (
+  discovery: AgentDiscovery | undefined,
+  call: { card: AgentCard; input: Record<string, Json> },
+): Promise<Record<string, Json>> => {
+  if (!discovery || !discovery.prepare) {
+    return call.input;
+  }
+
+  const execution = getAsyncCtxSync()?.execution;
+
+  if (!execution) {
+    throw new Error("discovery.prepare must run inside an Inngest function");
+  }
+
+  const agent = (execution as { agent?: { thread?: string } }).agent;
+
+  return discovery.prepare({
+    ...call,
+    event: execution.ctx.event,
+    thread: { key: agent?.thread ?? "" },
+  });
+};
+
+/**
+ * `list_agents` and `describe_agent`.
+ */
+export type DiscoveryToolSet = {
+  list_agents: AgentTool;
+  describe_agent: AgentTool;
+};
+
+/**
+ * The two tools that let an agent find other agents without naming them in
+ * code.
+ *
+ * - `list_agents({ query?, refresh? })`: the visible agents that match.
+ * - `describe_agent({ address })`: the whole card of one.
+ *
+ * An agent is visible to its own app, and to any app when its card says
+ * `share: "team"`.
+ */
+export const discoveryToolSet = (
+  options: DiscoveryToolSetOptions = {},
+): DiscoveryToolSet => {
   return {
     list_agents: tool({
       id: "list_agents",
       description:
-        "Lists the agents you can call or message, with what each does. Pass a few words in `query` to narrow the list.",
+        "Lists the agents you can start or message, with what each does. Pass a few words in `query` to narrow the list. `refresh` reads again instead of reusing this run's list.",
       input: z.object({
         query: z.string().optional().describe("Words to look for."),
+        refresh: z
+          .boolean()
+          .optional()
+          .describe("Read the agents again instead of reusing the list."),
       }),
-      run: async ({ query }: { query?: string }) => {
-        const { client, appId } = callerOf();
-        const cards = await readCards(client);
+      run: async ({
+        query,
+        refresh,
+      }: {
+        query?: string;
+        refresh?: boolean;
+      }) => {
+        const { appId } = callerOf();
+        const cards = await discoverCards(refresh === true, options);
 
         return {
           agents: matchCards(
@@ -618,103 +708,30 @@ export const discoveryTools = (
               return mayUse(card, appId);
             }),
             query,
-          ).map(summary),
+          ).map(summaryOf),
         };
       },
     }),
     describe_agent: tool({
       id: "describe_agent",
       description:
-        "The full card of one agent: what it does, the input a call takes, how to message it and what starts it.",
-      input: z.object({ id: z.string().describe("The agent's id.") }),
-      run: async ({ id }: { id: string }) => {
-        const { client, appId } = callerOf();
-
-        return visibleCard(client, appId, id);
-      },
-    }),
-    call_agent: tool({
-      id: "call_agent",
-      group: true,
-      description:
-        "Starts an agent and returns what it answers. `input` is what describe_agent says the agent accepts; an agent without a typed input takes `{ message: string }`.",
+        "The whole card of one agent: what it does, its skills and the input a call takes.",
       input: z.object({
-        id: z.string().describe("The agent's id."),
-        input: z
-          .record(z.string(), z.unknown())
-          .describe("What to hand the agent."),
-        background: z
-          .boolean()
-          .optional()
-          .describe(
-            "Answer at once and carry on while the agent works; its result reaches you later. For agents that take minutes or more.",
-          ),
+        address: z.string().describe("The agent's address, `app/agent`."),
       }),
-      run: async ({
-        id,
-        input,
-        background,
-      }: {
-        id: string;
-        input: Record<string, unknown>;
-        background?: boolean;
-      }) => {
-        const { client, appId } = callerOf();
-        const card = (await step.run(`discover:${id}`, async () => {
-          return visibleCard(client, appId, id);
-        })) as AgentCard;
-
-        if (background && !options.onBackground) {
-          throw new Error("This caller does not take background calls.");
-        }
-
-        const call = startCall(
-          card,
-          options.prepare ? options.prepare({ card, input }) : input,
-        );
-
-        if (!background || !options.onBackground) {
-          return call;
-        }
-
-        // The invoke is a step of the run like any other; the run goes on
-        // while it is in flight, and the handler gets what it settles with.
-        call.catch(() => {
-          // The handler owns the outcome.
-        });
-        options.onBackground({ id: addressOf(card), result: call });
-
-        return { started: true, agent: addressOf(card) };
-      },
-    }),
-    message_agent: tool({
-      id: "message_agent",
-      group: true,
-      description:
-        "Sends a message to an agent's thread without waiting for an answer. A thread you reuse keeps its conversation.",
-      input: z.object({
-        id: z.string().describe("The agent's id."),
-        thread: z.string().describe("The thread key to message."),
-        text: z.string().describe("The message."),
-      }),
-      run: async ({
-        id,
-        thread,
-        text,
-      }: {
-        id: string;
-        thread: string;
-        text: string;
-      }) => {
-        const { client, appId } = callerOf();
-        const card = (await step.run(`discover:${id}`, async () => {
-          return visibleCard(client, appId, id);
-        })) as AgentCard;
-
-        await getThread(client, addressOf(card), thread).send(text);
-
-        return { sent: true, agent: addressOf(card), thread };
+      run: async ({ address }: { address: string }) => {
+        return findCard(address, options);
       },
     }),
   };
+};
+
+/**
+ * The discovery tools an agent gets, from its definition's `discovery` field:
+ * none for `false`.
+ */
+export const discoveryToolsFor = (
+  discovery: AgentDiscovery | undefined,
+): Partial<DiscoveryToolSet> => {
+  return discovery === false ? {} : discoveryToolSet();
 };
