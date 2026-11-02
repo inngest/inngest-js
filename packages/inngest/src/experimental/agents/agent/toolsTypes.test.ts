@@ -4,11 +4,20 @@
  * loop result shows, and the surface of `tool.mcp()`.
  */
 
+import { z } from "zod/v4";
 import { disconnect } from "../../../components/sandbox/mcp.ts";
 import { secret } from "../../../components/sandbox/secret.ts";
-import { type SandboxTools, tool } from "../../../components/sandbox/tools.ts";
+import {
+  type SandboxTool,
+  type SandboxToolContext,
+  type SandboxTools,
+  type ToolErrorResult,
+  tool,
+  toolDefinitions,
+} from "../../../components/sandbox/tools.ts";
 import { agent } from "../loop/loop.ts";
 import { model, runLoop } from "../loop/loopKit.ts";
+import { toolNamespaceSeparator } from "../sandboxes/defs.ts";
 import { typesOnly } from "./typeFixtures.ts";
 
 describe("tools types", () => {
@@ -101,5 +110,214 @@ describe("tools types", () => {
         },
       });
     });
+  });
+
+  test("tools: tool() types input and output from the schemas", () => {
+    typesOnly(() => {
+      const found = tool({
+        id: "found",
+        input: z.object({ id: z.string() }),
+        output: z.object({ name: z.string() }),
+        run: ({ id }) => {
+          expectTypeOf(id).toBeString();
+
+          return { name: id };
+        },
+      });
+
+      expectTypeOf(found).toExtend<
+        SandboxTool<{ id: string }, { name: string }>
+      >();
+    });
+  });
+
+  test("tools: a tool with no output schema takes its output from run's return", () => {
+    typesOnly(() => {
+      const count = tool.step({
+        input: z.object({ values: z.array(z.number()) }),
+        run: async ({ values }) => {
+          return { total: values.length, at: new Date(0) };
+        },
+      });
+
+      // The output is the JSON the return comes back as: a Date is a string.
+      expectTypeOf(count).toEqualTypeOf<
+        SandboxTool<{ values: number[] }, { total: number; at: string }>
+      >();
+    });
+  });
+
+  test("tools: a run that does not match the output schema is an error", () => {
+    typesOnly(() => {
+      tool.step({
+        input: z.object({ id: z.string() }),
+        output: z.object({ name: z.string() }),
+        // @ts-expect-error the return has no name
+        run: () => {
+          return { nope: 1 };
+        },
+      });
+    });
+  });
+
+  test("tools: a toolError result is not part of the output type", () => {
+    typesOnly(() => {
+      const maybe = tool.step({
+        input: z.object({ id: z.string() }),
+        run: ({ id }) => {
+          return id === "" ? agent.toolError("empty") : { id };
+        },
+      });
+
+      expectTypeOf(maybe).toEqualTypeOf<
+        SandboxTool<{ id: string }, { id: string }>
+      >();
+      expectTypeOf<ToolErrorResult>().not.toExtend<{ id: string }>();
+    });
+  });
+
+  test("tools: a wrapped tool calls the original's run with typed arguments", () => {
+    typesOnly(() => {
+      const original = tool.step({
+        input: z.object({ id: z.string() }),
+        run: ({ id }) => {
+          return { id, secret: "x" };
+        },
+      });
+      const wrapped = tool.step({
+        input: z.object({ id: z.string() }),
+        run: async (input, ctx) => {
+          const result = await (
+            original.run as (
+              input: { id: string },
+              ctx: SandboxToolContext,
+            ) => Promise<{ id: string; secret: string }>
+          )(input, ctx);
+
+          return { id: result.id };
+        },
+      });
+
+      expectTypeOf(wrapped).toEqualTypeOf<
+        SandboxTool<{ id: string }, { id: string }>
+      >();
+    });
+  });
+
+  test("tools: a tool's output is the JSON it comes back as", () => {
+    typesOnly(() => {
+      const dated = tool.step({
+        run: () => {
+          return { when: new Date(0), skip: undefined, n: 1 };
+        },
+      });
+
+      expectTypeOf(dated).toEqualTypeOf<
+        SandboxTool<Record<string, never>, { when: string; n: number }>
+      >();
+    });
+  });
+
+  test("tools: the tool context has a signal, an idempotency key, a run id and score", () => {
+    expectTypeOf<SandboxToolContext["signal"]>().toEqualTypeOf<AbortSignal>();
+    expectTypeOf<SandboxToolContext["idempotencyKey"]>().toBeString();
+    expectTypeOf<SandboxToolContext["runId"]>().toBeString();
+    expectTypeOf<SandboxToolContext["score"]>().toEqualTypeOf<
+      (name: string, value: number | boolean) => Promise<void>
+    >();
+  });
+
+  test("tools: untrusted is true or a function of the input that gives a label", () => {
+    typesOnly(() => {
+      tool.step({ untrusted: true, run: () => "x" });
+      tool.step({
+        input: z.object({ id: z.string() }),
+        untrusted: ({ id }) => {
+          expectTypeOf(id).toBeString();
+
+          return `ticket ${id}`;
+        },
+        run: () => "x",
+      });
+      // @ts-expect-error false is not an option
+      tool.step({ untrusted: false, run: () => "x" });
+      tool.step({
+        // @ts-expect-error the label is a string
+        untrusted: () => 1,
+        run: () => "x",
+      });
+    });
+  });
+
+  test("tools: waits needs a group", () => {
+    typesOnly(() => {
+      tool.group({ waits: true, run: () => "x" });
+      // tool.step has no waits option
+      // @ts-expect-error waits belongs to groups
+      tool.step({ waits: true, run: () => "x" });
+    });
+  });
+
+  test("tools: a tools record accepts every kind", () => {
+    typesOnly(() => {
+      const fn = async (input: { name: string }) => {
+        return input.name.length;
+      };
+      const tools = {
+        a: tool({ id: "a", run: () => "x" }),
+        b: tool.step({ run: () => "x" }),
+        c: tool.group({ run: () => "x" }),
+        d: fn,
+        e: tool.mcp({ id: "e", url: "https://mcp.example.com/mcp" }),
+      } satisfies SandboxTools;
+
+      expectTypeOf(tools).toExtend<SandboxTools>();
+    });
+  });
+
+  test("tools: a plain function's input is its first parameter and its output its return", () => {
+    typesOnly(async () => {
+      const fn = async (input: { name: string }) => {
+        return input.name.length;
+      };
+      const result = await runLoop({
+        model: model(async () => {
+          return {
+            message: { role: "assistant", content: "" },
+            toolCalls: [],
+          };
+        }),
+        prompt: "go",
+        tools: { fn },
+      });
+      type Run = Extract<(typeof result.toolCalls)[number], { isError: false }>;
+
+      expectTypeOf<Run["call"]["input"]>().toEqualTypeOf<{ name: string }>();
+      expectTypeOf<Run["output"]>().toEqualTypeOf<number>();
+    });
+  });
+
+  test("tools: secret() is accepted wherever a token goes", () => {
+    typesOnly(() => {
+      tool.mcp({
+        id: "hex",
+        url: "https://mcp.example.com/mcp",
+        auth: { bearer: secret("HEX_TOKEN") },
+      });
+
+      const auth: import("../sandboxes/repo.ts").RepoAuth = {
+        read: secret("READ"),
+        write: secret("WRITE"),
+      };
+      const one: import("../sandboxes/repo.ts").RepoAuth = secret("ONE");
+
+      expectTypeOf(auth).not.toBeAny();
+      expectTypeOf(one).not.toBeAny();
+    });
+  });
+
+  test("tools: toolDefinitions and toolNamespaceSeparator stay", () => {
+    expectTypeOf(toolDefinitions).toBeFunction();
+    expectTypeOf(toolNamespaceSeparator).toBeString();
   });
 });

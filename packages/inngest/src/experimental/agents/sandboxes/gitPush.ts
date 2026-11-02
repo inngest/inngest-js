@@ -27,6 +27,7 @@ import {
   type PushedRef,
   pushBundle,
 } from "../../../components/sandbox/gitPush.ts";
+import { isSecret, type Secret } from "../../../components/sandbox/secret.ts";
 import {
   type SandboxHandle,
   SandboxValidationError,
@@ -60,7 +61,7 @@ export interface HostPushOptions {
    * Makes the token for one push. Called inside the push step on the host,
    * and never sent to the sandbox.
    */
-  token: () => string | Promise<string>;
+  token: Secret | (() => string | Promise<string>);
 
   /**
    * The user name that goes with the token. Defaults to `x-access-token`.
@@ -110,6 +111,12 @@ export interface HostPushOptions {
   fetch?: typeof fetch;
 }
 
+const tokenText = (
+  token: HostPushOptions["token"],
+): string | Promise<string> => {
+  return isSecret(token) ? token.value() : token();
+};
+
 const validate = (options: HostPushOptions): void => {
   let url: URL | undefined;
 
@@ -128,8 +135,10 @@ const validate = (options: HostPushOptions): void => {
     );
   }
 
-  if (typeof options.token !== "function") {
-    throw new SandboxValidationError("git_push needs a token function");
+  if (typeof options.token !== "function" && !isSecret(options.token)) {
+    throw new SandboxValidationError(
+      "git_push needs a token function or a secret()",
+    );
   }
 
   if (options.policy !== undefined && typeof options.policy !== "function") {
@@ -352,7 +361,7 @@ export const pushBranch = async (
           return remoteState({
             remote,
             ref,
-            token: await options.token(),
+            token: await tokenText(options.token),
             api: options.api,
             fetch: options.fetch,
             signal,
@@ -482,7 +491,7 @@ if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
       if (remoteInfo) {
         return pushManifest({
           remote,
-          token: await options.token(),
+          token: await tokenText(options.token),
           api: options.api,
           fetch: options.fetch,
           manifest: new TextDecoder().decode(bundle),
@@ -496,7 +505,9 @@ if gzip -c "$3" > "$3.gz" 2>/dev/null; then wc -c < "$3.gz"; else echo 0; fi`,
 
       return pushBundle({
         remote,
-        auth: await gitAuth(options.token, options.username),
+        auth: await gitAuth(() => {
+          return tokenText(options.token);
+        }, options.username),
         bundle,
         targets: [{ src: ref, dst: ref }],
         policy: options.policy,

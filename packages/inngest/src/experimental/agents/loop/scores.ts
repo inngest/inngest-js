@@ -130,6 +130,30 @@ export interface AgentScore {
 }
 
 /**
+ * The `score` of a tool's context: the same function as the handler's. In an
+ * agent run it is the run's own, so the run waits for a score the tool did not
+ * await. Elsewhere it rides on the running step, or does nothing. It checks
+ * the name and value either way.
+ */
+export const toolScore: AgentScore["score"] = async (name, value) => {
+  const bridged = getAsyncCtxSync()?.execution?.agentBridge?.score;
+
+  if (bridged) {
+    return bridged(name, value);
+  }
+
+  validateStepScoreOptions({ name, value });
+
+  if (name.startsWith(frameworkPrefix)) {
+    throw new Error(
+      `score name "${name}" starts with "${frameworkPrefix}", which is kept for the scores the framework writes`,
+    );
+  }
+
+  addStepScore(name, value);
+};
+
+/**
  * Makes the `score` of one agent run. `client` writes the scores made outside
  * a step.
  */

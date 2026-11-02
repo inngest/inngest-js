@@ -40,8 +40,9 @@ import {
   withCompaction,
 } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
-import { sortModelError, untrusted } from "./modelErrors.ts";
+import { sortModelError } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
+import { untrustedText } from "./untrustedText.ts";
 
 /**
  * A content block of a user message, in the shape your model function sends
@@ -886,6 +887,13 @@ const shown = async (
  */
 const toolError = toolErrorOf;
 
+const wrapUntrusted = (
+  content: string,
+  untrusted: { source?: string } | undefined,
+): string => {
+  return untrusted ? untrustedText(content, untrusted) : content;
+};
+
 const runTool = async <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools> & {
     tools: TTools;
@@ -898,6 +906,7 @@ const runTool = async <TTools extends SandboxTools>(
   const started = Date.now();
   let output: unknown;
   let isError = false;
+  let untrusted: { source?: string } | undefined;
 
   try {
     const input = (call.input ?? {}) as Record<string, unknown>;
@@ -905,6 +914,7 @@ const runTool = async <TTools extends SandboxTools>(
       options.tools,
       { op: "call", id: 0, tool: call.name, args: [], kwargs: input },
       JSON.stringify(input),
+      { fromModel: true },
     );
 
     if (resolved.error !== undefined) {
@@ -943,13 +953,14 @@ const runTool = async <TTools extends SandboxTools>(
 
       isError = isToolError(value);
       output = isToolError(value) ? value["~error"] : value;
+      untrusted = resolved.untrusted;
     }
   } catch (error) {
     output = error instanceof Error ? error.message : String(error);
     isError = true;
   }
 
-  const content = typeof output === "string" ? output : JSON.stringify(output);
+  const text = typeof output === "string" ? output : JSON.stringify(output);
   // The model names the tool and the input at run time, so the compiler can't
   // connect them to `TTools`. The type promises the narrowing only for runs
   // that did not fail, and those ran a tool of that name with its input.
@@ -969,7 +980,12 @@ const runTool = async <TTools extends SandboxTools>(
       toolCallId: call.id,
       name: call.name,
       input: call.input,
-      content: await shown(options, stepId, call.name, content ?? ""),
+      // Only what the model reads is wrapped: `output` stays as the tool
+      // returned it, and sandbox code gets the plain result.
+      content: wrapUntrusted(
+        await shown(options, stepId, call.name, text ?? ""),
+        isError ? undefined : untrusted,
+      ),
       ...(isError && { isError }),
     },
   };
@@ -1502,5 +1518,4 @@ const loop = <TTools extends SandboxTools>(
 export const agent = {
   loop,
   toolError,
-  untrusted,
 };

@@ -23,6 +23,7 @@ import { checkExit, commandText } from "./commandError.ts";
 import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
 import { runManagedCommand } from "./managedCommand.ts";
+import { expandMcpTools } from "./mcp.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -777,13 +778,18 @@ export const createDurableSandboxFacade = (
     options,
   ) => {
     const {
-      tools: ownTools,
+      tools: givenTools,
       toolOptions,
       exitCodes,
       shims,
       "~shell": shell,
       ...commandOptions
     } = options ?? {};
+    // An MCP server in `tools` becomes its tools, named after its key; the
+    // list is a step of the command.
+    const ownTools =
+      givenTools &&
+      (await expandMcpTools(givenTools, getStepOptions(idOrOptions).id));
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 

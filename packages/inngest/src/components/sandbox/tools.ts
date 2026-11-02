@@ -15,8 +15,10 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import * as z4 from "zod/v4";
-
+import { toolScore } from "../../experimental/agents/loop/scores.ts";
 import { internalEvents } from "../../helpers/consts.ts";
+import type { Jsonify } from "../../helpers/jsonify.ts";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
@@ -67,7 +69,18 @@ export interface SandboxToolContext {
   /**
    * The ID of the run that is calling.
    */
-  runId?: string;
+  runId: string;
+
+  /**
+   * Records a score: a finite number or a boolean, under a name that doesn't
+   * start with `agent.`. It is the same function as the handler's `score`, so
+   * a tool needs no Inngest client. Inside a tool step it rides on the step's
+   * result, so it is written once however often the run replays. A tool made
+   * with `tool.group()` has no step of its own: in an agent run its score is
+   * a memoized step, also written once. Best effort: a score the server
+   * refuses logs a warning and the run goes on.
+   */
+  score(name: string, value: number | boolean): Promise<void>;
 
   /**
    * The sandbox the command runs in, for reading and writing its files and
@@ -110,26 +123,53 @@ type ToolResultOf<TOutput extends StandardSchemaV1 | undefined> =
     : unknown;
 
 /**
- * What a model passes to a tool: its input schema's output, or `unknown`
- * when it has none.
+ * What `run` returns, by whether the tool has an `output` schema: the schema's
+ * input type, or whatever `run` gives (`TReturn`, inferred from the body).
+ */
+type ToolRunReturn<
+  TOutput extends StandardSchemaV1 | undefined,
+  TReturn,
+> = TOutput extends StandardSchemaV1
+  ?
+      | (ToolResultOf<TOutput> | ToolErrorResult)
+      | Promise<ToolResultOf<TOutput> | ToolErrorResult>
+  : TReturn | Promise<TReturn>;
+
+/**
+ * What a model passes to a tool: its input schema's output, or an empty
+ * object when it has none.
  */
 export type ToolCallInput<TInput extends ToolInput | undefined> =
-  TInput extends ToolInput ? ToolInputOf<TInput> : unknown;
+  TInput extends ToolInput ? ToolInputOf<TInput> : Record<string, never>;
 
 /**
  * What a tool hands back after its output schema checked it, or `unknown`
  * when it has none.
  */
-export type ToolCallResult<TOutput extends StandardSchemaV1 | undefined> =
-  TOutput extends StandardSchemaV1
-    ? StandardSchemaV1.InferOutput<TOutput>
-    : unknown;
+export type ToolCallResult<
+  TOutput extends StandardSchemaV1 | undefined,
+  TReturn = unknown,
+> = TOutput extends StandardSchemaV1
+  ? StandardSchemaV1.InferOutput<TOutput>
+  : // Without a schema the output is the JSON `run`'s return comes back as: a
+    // tool error is not a value of the output.
+    unknown extends TReturn
+    ? unknown
+    : Jsonify<Exclude<Awaited<TReturn>, ToolErrorResult>>;
 
 /**
  * A tool declared with `tool.step()` or `tool.group()`. `TInput` and
  * `TOutput` are what the model passes and what the tool gives back, which
  * `agent.loop()` uses to type its tool runs.
  */
+export type ToolCallContext = Omit<SandboxToolContext, "runId" | "score"> & {
+  /**
+   * The ID of the run that is calling, when the caller knows it. Otherwise
+   * the running function's.
+   */
+  runId?: string;
+};
+
 export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly description?: string;
   readonly displayName?: string | ((input: never) => string);
@@ -185,18 +225,25 @@ export type ToolInputType<TEntry> = TEntry extends SandboxTool<
   unknown
 >
   ? TInput
-  : unknown;
+  : TEntry extends (...args: infer TArgs) => unknown
+    ? // A plain function takes the model's input object as its one argument.
+      TArgs extends [infer TFirst, ...unknown[]]
+      ? TFirst
+      : Record<string, never>
+    : unknown;
 
 /**
- * What the tool `TEntry` gives back; `unknown` for an entry that isn't a
- * typed tool.
+ * What the tool `TEntry` gives back: the output of a typed tool, or what a
+ * plain function returns, once awaited.
  */
 export type ToolOutputType<TEntry> = TEntry extends SandboxTool<
   unknown,
   infer TOutput
 >
   ? TOutput
-  : unknown;
+  : TEntry extends (...args: never[]) => infer TResult
+    ? Awaited<TResult>
+    : unknown;
 
 export interface SandboxToolOptions {
   /**
@@ -267,11 +314,20 @@ export type SandboxToolsRequest = SandboxToolsOptions & {
 export interface ToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
+  TReturn = unknown,
 > {
   /**
    * What the tool does, for the people reading the code.
    */
   description?: string;
+
+  /**
+   * Marks the tool's results as text from outside: when the model reads one,
+   * the SDK wraps it in `<untrusted>` tags, so the model treats it as data and
+   * not as instructions. Sandbox code calling the tool gets the plain result.
+   * `true`, or a function of the input that gives the source label.
+   */
+  untrusted?: true | ((input: ToolInputOf<TInput>) => string);
 
   /**
    * What the tool's step is called in a trace, such as `Look up: cus_1`. A
@@ -296,14 +352,11 @@ export interface ToolDefinition<
     ? (
         input: ToolInputOf<TInput>,
         ctx: SandboxToolContext,
-      ) =>
-        | (ToolResultOf<TOutput> | ToolErrorResult)
-        | Promise<ToolResultOf<TOutput> | ToolErrorResult>
+      ) => ToolRunReturn<TOutput, TReturn>
     : (
-        ...args: never[]
-      ) =>
-        | (ToolResultOf<TOutput> | ToolErrorResult)
-        | Promise<ToolResultOf<TOutput> | ToolErrorResult>;
+        input: Record<string, never>,
+        ctx: SandboxToolContext,
+      ) => ToolRunReturn<TOutput, TReturn>;
 }
 
 /**
@@ -312,7 +365,8 @@ export interface ToolDefinition<
 export interface WaitingToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
-> extends ToolDefinition<TInput, TOutput> {
+  TReturn = unknown,
+> extends ToolDefinition<TInput, TOutput, TReturn> {
   /**
    * The tool may wait for longer than a command may run (sleep, wait for an
    * event, wait for a person). A call to it suspends the code that made it:
@@ -351,9 +405,10 @@ const toolMethods = {
   step: <
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
+    TReturn = unknown,
   >(
-    definition: ToolDefinition<TInput, TOutput>,
-  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    definition: ToolDefinition<TInput, TOutput, TReturn>,
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return definition;
   },
 
@@ -429,9 +484,10 @@ const toolMethods = {
   group: <
     TInput extends ToolInput | undefined = undefined,
     TOutput extends StandardSchemaV1 | undefined = undefined,
+    TReturn = unknown,
   >(
-    definition: WaitingToolDefinition<TInput, TOutput>,
-  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+    definition: WaitingToolDefinition<TInput, TOutput, TReturn>,
+  ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return { ...definition, group: true };
   },
 };
@@ -453,7 +509,8 @@ export interface AgentTool<TInput = unknown, TOutput = unknown>
 export interface AgentToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
-> extends WaitingToolDefinition<TInput, TOutput> {
+  TReturn = unknown,
+> extends WaitingToolDefinition<TInput, TOutput, TReturn> {
   /**
    * The tool's name in the model's list. Letters, digits and underscores,
    * starting with a letter, up to 64 characters.
@@ -470,9 +527,10 @@ export interface AgentToolDefinition<
 const defineTool = <
   TInput extends ToolInput | undefined = undefined,
   TOutput extends StandardSchemaV1 | undefined = undefined,
+  TReturn = unknown,
 >(
-  definition: AgentToolDefinition<TInput, TOutput>,
-): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput>> => {
+  definition: AgentToolDefinition<TInput, TOutput, TReturn>,
+): AgentTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
   validateTools({ [definition.id]: definition });
 
   if (definition.waits && !definition.group) {
@@ -566,7 +624,7 @@ const functionTool = (
 const toTool = (entry: SandboxToolEntry): SandboxTool => {
   if (entry instanceof McpServer) {
     throw new SandboxValidationError(
-      "An MCP server goes in agent.loop({ tools }) as it is; anywhere else, spread its tools: { ...(await server.tools()) }",
+      "This tools record can't expand an MCP server here; spread its tools instead: { ...(await server.tools()) }",
     );
   }
 
@@ -674,6 +732,13 @@ export const resolveToolCall = async (
   tools: SandboxTools,
   request: ToolRequest,
   line: string,
+  options: {
+    /**
+     * The model is calling: its input object is the one positional argument
+     * of a plain function. Sandbox code keeps passing positional values.
+     */
+    fromModel?: boolean;
+  } = {},
 ) => {
   const { tool: name, args } = request;
   const entry = Object.hasOwn(tools, name) ? tools[name] : undefined;
@@ -713,11 +778,18 @@ export const resolveToolCall = async (
     } else {
       values = [named];
     }
+  } else if (options.fromModel) {
+    // The model's input object is the one argument, empty when it sent none.
+    values = [kwargs ?? {}];
   } else if (kwargs) {
     return { error: `${name} takes positional arguments only` };
+  } else if (args.length === 0 && typeof entry !== "function") {
+    // A tool with no input schema, called with nothing, gets an empty object.
+    values = [{}];
   }
 
   const { displayName } = definition;
+  const label = definition.untrusted;
 
   return {
     group: definition.group === true,
@@ -727,7 +799,26 @@ export const resolveToolCall = async (
         : displayName,
     memo:
       isInternalTool(entry) && definition.memo === "none" ? "none" : undefined,
-    invoke: async (ctx: SandboxToolContext) => {
+
+    /**
+     * Set when the tool's results are text from outside: the model reads them
+     * wrapped, with this source label if there is one.
+     */
+    untrusted:
+      label === undefined
+        ? undefined
+        : {
+            source:
+              typeof label === "function"
+                ? label(values[0] as never)
+                : undefined,
+          },
+    invoke: async (given: ToolCallContext) => {
+      const ctx: SandboxToolContext = {
+        ...given,
+        runId: given.runId ?? getAsyncCtxSync()?.execution?.ctx.runId ?? "",
+        score: toolScore,
+      };
       // A plain function takes positional values and no context.
       const value = await run(
         ...values,
