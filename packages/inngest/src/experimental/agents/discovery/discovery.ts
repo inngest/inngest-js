@@ -663,8 +663,11 @@ export const prepareInput = async (
  * `list_agents` and `describe_agent`.
  */
 export type DiscoveryToolSet = {
-  list_agents: AgentTool;
-  describe_agent: AgentTool;
+  list_agents: AgentTool<
+    { query?: string; refresh?: boolean },
+    { agents: AgentSummary[] }
+  >;
+  describe_agent: AgentTool<{ address: string }, AgentCard>;
 };
 
 /**

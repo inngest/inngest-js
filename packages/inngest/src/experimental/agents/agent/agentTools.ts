@@ -24,6 +24,7 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import {
   type AgentDiscovery,
+  type DiscoveryToolSet,
   type DiscoveryToolSetOptions,
   discoveryToolSet,
   findCard,
@@ -53,15 +54,21 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {
 }
 
 /**
- * The tools that start and stop agents.
+ * The tools that start, message and stop agents.
  */
-export type AgentToolSet = {
+type AgentActionToolSet = {
   start_agent: AgentTool<{ address: string; input?: Json }, { thread: string }>;
   message_agent: AgentTool<{ thread: string; content: Json }, { ok: true }>;
   ask_agent: AgentTool<{ thread: string; question: string }, { id: string }>;
   stop_agent: AgentTool<{ thread: string }, { ok: true }>;
   reply: AgentTool<{ to: string; text: string }, { ok: true }>;
 };
+
+/**
+ * Every tool a model agent gets by default: the discovery tools and the ones
+ * that start, message and stop agents.
+ */
+export type AgentToolSet = DiscoveryToolSet & AgentActionToolSet;
 
 const clientOf = (): Inngest.Any => {
   const client = getAsyncCtxSync()?.app as unknown as Inngest.Any | undefined;
@@ -294,7 +301,7 @@ const stopDescription = "Stops the run of an agent you started.";
  */
 export const agentToolSet = (
   options: AgentToolSetOptions = {},
-): AgentToolSet => {
+): AgentActionToolSet => {
   // The `input` of start_agent is `z.any()` so that it is any text or JSON; its
   // type is written out above.
   return {

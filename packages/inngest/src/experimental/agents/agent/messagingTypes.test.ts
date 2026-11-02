@@ -3,6 +3,8 @@
  * Type tests for the model's agent tools: in the result of a handler's loop,
  * a call narrows by the tool's name to its typed input and output.
  */
+
+import type { AgentCard, AgentSummary } from "../discovery/discovery.ts";
 import type { Json } from "../json.ts";
 import type { AgentModelResponse } from "../loop/loop.ts";
 import { agents, created, typesOnly } from "./typeFixtures.ts";
@@ -54,6 +56,23 @@ describe("messaging types", () => {
                 text: string;
               }>();
               expectTypeOf(call.output).toEqualTypeOf<{ ok: true }>();
+            }
+
+            if (call.name === "list_agents") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                query?: string;
+                refresh?: boolean;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<{
+                agents: AgentSummary[];
+              }>();
+            }
+
+            if (call.name === "describe_agent") {
+              expectTypeOf(call.call.input).toEqualTypeOf<{
+                address: string;
+              }>();
+              expectTypeOf(call.output).toEqualTypeOf<AgentCard>();
             }
 
             if (call.name === "stop_agent") {
