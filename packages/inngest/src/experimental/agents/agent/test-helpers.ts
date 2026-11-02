@@ -315,6 +315,13 @@ export const run = async (
         options.onStep?.(op);
       }
 
+      // A wait for an event ends unanswered, as it does when its timeout runs
+      // out.
+      if (op.op === StepOpCode.WaitForEvent) {
+        answer(op.id, null);
+        continue;
+      }
+
       if (op.op === StepOpCode.InvokeFunction && options.onInvoke) {
         ops.push({ id: op.userland?.id ?? op.id, op: "invoke", opts });
 

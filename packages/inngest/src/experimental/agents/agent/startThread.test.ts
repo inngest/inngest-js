@@ -243,10 +243,8 @@ describe("start().result({ timeout })", () => {
     const agents = makeAgents();
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
-      const started = await callee.start("slow");
-
       try {
-        await started.result({ timeout: "1s" });
+        await callee.start("slow").result({ timeout: "1s" });
       } catch (error) {
         return (error as Error).name;
       }
