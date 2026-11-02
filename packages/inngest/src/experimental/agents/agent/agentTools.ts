@@ -8,13 +8,20 @@
  *
  * - `start_agent({ address, input? })`: starts an agent on a new thread.
  * - `stop_agent({ thread })`: stops the run of a thread the model started.
+ *
+ * Sandbox code gets the same two plus `agent_result({ thread })`, which waits
+ * for the run's end: code waits, so nothing it started lands in an inbox.
  */
 
 import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
-import { type AgentTool, tool } from "../../../components/sandbox/tools.ts";
+import {
+  type AgentTool,
+  type SandboxTool,
+  tool,
+} from "../../../components/sandbox/tools.ts";
 import {
   type AgentDiscovery,
   type DiscoveryToolSetOptions,
@@ -23,6 +30,7 @@ import {
 } from "../discovery/discovery.ts";
 import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
+import { quote } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { getThread } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -71,8 +79,82 @@ const executionOf = () => {
   return execution;
 };
 
+const startInput = z.object({
+  address: z.string().describe("The agent's address, `app/agent`."),
+  input: z
+    .any()
+    .optional()
+    .describe(
+      "What to give the agent: the input its card describes, or the text or JSON to send it as a message.",
+    ),
+});
+
+const stopInput = z.object({
+  thread: z.string().describe("The thread key `start_agent` returned."),
+});
+
+const startAgent = (
+  options: AgentToolSetOptions,
+  via: "start_agent" | "sandbox",
+) => {
+  return async ({ address, input }: { address: string; input?: Json }) => {
+    const execution = executionOf();
+    const client = clientOf();
+    const card = await findCard(address, options);
+    const prepared = card.input
+      ? await prepareInput(options.discovery, {
+          card,
+          input: (input ?? {}) as Record<string, Json>,
+        })
+      : input;
+
+    if (card.input) {
+      const problem = checkAgainstSchema(card.input, prepared);
+
+      if (problem) {
+        throw new Error(
+          `${problem}. "${address}" takes ${JSON.stringify(card.input)}. Nothing was started.`,
+        );
+      }
+    }
+
+    const n = nextCount(execution.instance, "start_agent_status");
+    const status = (await step.run(`start_agent:status:${n}`, async () => {
+      return startability(client, address, options.functions);
+    })) as Awaited<ReturnType<typeof startability>>;
+
+    if (!status.ok) {
+      throw new Error(status.reason);
+    }
+
+    const slash = address.indexOf("/");
+    const started = await startThread(
+      {
+        client,
+        id: address.slice(slash + 1),
+        address,
+        typed: card.input !== undefined,
+        via,
+      },
+      card.input ? prepared : (prepared ?? ""),
+    );
+
+    return { thread: started.key };
+  };
+};
+
+const stopAgent = async ({ thread }: { thread: string }) => {
+  await getThread(clientOf(), executionOf().agent?.ref ?? "", thread).stop();
+
+  return { ok: true as const };
+};
+
+const startDescription =
+  "Starts another agent on a new thread and returns at once with the thread's key. It does not wait. Use describe_agent to see what input it takes.";
+const stopDescription = "Stops the run of an agent you started.";
+
 /**
- * `start_agent` and `stop_agent`.
+ * `start_agent` and `stop_agent` for a model.
  *
  * - `start_agent({ address, input? })`: checks the agent can be started (not
  *   paused, archived or gone) and that `input` fits the card's `input`, then
@@ -90,76 +172,58 @@ export const agentToolSet = (
   return {
     start_agent: tool({
       id: "start_agent",
-      description:
-        "Starts another agent on a new thread and returns at once with the thread's key. It does not wait: when the agent finishes you get its outcome as a message. Use describe_agent to see what input it takes.",
-      input: z.object({
-        address: z.string().describe("The agent's address, `app/agent`."),
-        input: z
-          .any()
-          .optional()
-          .describe(
-            "What to give the agent: the input its card describes, or the text or JSON to send it as a message.",
-          ),
-      }),
-      run: async ({ address, input }: { address: string; input?: Json }) => {
-        const execution = executionOf();
-        const client = clientOf();
-        const card = await findCard(address, options);
-        const prepared = card.input
-          ? await prepareInput(options.discovery, {
-              card,
-              input: (input ?? {}) as Record<string, Json>,
-            })
-          : input;
-
-        if (card.input) {
-          const problem = checkAgainstSchema(card.input, prepared);
-
-          if (problem) {
-            throw new Error(
-              `${problem}. "${address}" takes ${JSON.stringify(card.input)}. Nothing was started.`,
-            );
-          }
-        }
-
-        const n = nextCount(execution.instance, "start_agent_status");
-        const status = (await step.run(`start_agent:status:${n}`, async () => {
-          return startability(client, address, options.functions);
-        })) as Awaited<ReturnType<typeof startability>>;
-
-        if (!status.ok) {
-          throw new Error(status.reason);
-        }
-
-        const slash = address.indexOf("/");
-        const started = await startThread(
-          {
-            client,
-            id: address.slice(slash + 1),
-            address,
-            typed: card.input !== undefined,
-            via: "start_agent",
-          },
-          card.input ? prepared : (prepared ?? ""),
-        );
-
-        return { thread: started.key };
-      },
+      description: `${startDescription} When the agent finishes you get its outcome as a message.`,
+      group: true,
+      input: startInput,
+      run: startAgent(options, "start_agent"),
     }),
     stop_agent: tool({
       id: "stop_agent",
+      description: `${stopDescription} You get its outcome as a message.`,
+      group: true,
+      input: stopInput,
+      run: stopAgent,
+    }),
+  };
+};
+
+/**
+ * The tools sandbox code gets: `start_agent` and `stop_agent` as for a model,
+ * plus `agent_result({ thread })`, which waits for the run to end and gives
+ * `{ outcome, output | error }`. It waits (the script exits and runs again from
+ * its journal), up to 24 hours, then gives `{ outcome: "timed_out" }`.
+ */
+export const sandboxAgentTools = (
+  options: AgentToolSetOptions = {},
+): Record<"start_agent" | "stop_agent" | "agent_result", SandboxTool> => {
+  return {
+    start_agent: tool.group({
+      description: startDescription,
+      input: startInput,
+      run: startAgent(options, "sandbox"),
+    }),
+    stop_agent: tool.group({
+      description: stopDescription,
+      input: stopInput,
+      run: stopAgent,
+    }),
+    agent_result: tool.group({
       description:
-        "Stops the run of an agent you started. You get its outcome as a message.",
+        "Waits for an agent you started to finish and gives its outcome: `completed` with `output`, `failed` with `error`, or `stopped`.",
       input: z.object({
         thread: z.string().describe("The thread key `start_agent` returned."),
       }),
+      waits: true,
       run: async ({ thread }: { thread: string }) => {
-        const execution = executionOf();
-        const client = clientOf();
+        const event = await step.waitForEvent(`agent_result:${thread}`, {
+          event: "agent/result",
+          if: `async.data.thread == ${quote(thread)}`,
+          timeout: "24h",
+        });
 
-        await getThread(client, execution.agent?.ref ?? "", thread).stop();
-
-        return { ok: true as const };
+        return event
+          ? (event.data as Record<string, unknown>)
+          : { outcome: "timed_out" };
       },
     }),
   };

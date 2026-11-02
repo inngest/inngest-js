@@ -12,7 +12,11 @@
 
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { agentFinished, type SenderData } from "../inbox/events.ts";
+import {
+  agentFinished,
+  agentResult,
+  type SenderData,
+} from "../inbox/events.ts";
 import type { RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { threadSessions } from "../threads/thread.ts";
@@ -22,7 +26,7 @@ import { finishedOf } from "./recovery.ts";
  * Runs `start_agent` began, in the trigger event the executor reports.
  */
 const startedByTool = (path: string): string => {
-  return `${path}.data.from.via == 'start_agent'`;
+  return `(${path}.data.from.via == 'start_agent' || ${path}.data.from.via == 'sandbox')`;
 };
 
 /**
@@ -50,7 +54,7 @@ export const agentFinishedFunction = (
         data.event) as RawEvent | undefined;
       const from = (start?.data as { from?: SenderData } | undefined)?.from;
 
-      if (from?.kind !== "agent" || from.via !== "start_agent") {
+      if (from?.kind !== "agent" || from.via === undefined) {
         return;
       }
 
@@ -74,6 +78,21 @@ export const agentFinishedFunction = (
                   output: data.result as Json,
                 }),
               };
+
+      if (from.via === "sandbox") {
+        await step.sendEvent(
+          "agent-result",
+          agentResult.create(
+            { thread: child.key, ...outcome },
+            {
+              id: `result-${String(data.run_id)}`,
+              meta: { sessions: threadSessions(from.key) },
+            },
+          ),
+        );
+
+        return;
+      }
 
       await step.sendEvent(
         "agent-finished",

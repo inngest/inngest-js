@@ -116,10 +116,11 @@ export interface StartTarget {
   typed: boolean;
 
   /**
-   * Set for a run a model starts with `start_agent`: its end is reported to
-   * the starter as an `agent/finished` message.
+   * Set for a run a model starts with `start_agent` (its end reaches the
+   * model as an `agent/finished` message) or sandbox code starts (its end
+   * reaches `agent_result`).
    */
-  via?: "start_agent";
+  via?: "start_agent" | "sandbox";
 }
 
 /**

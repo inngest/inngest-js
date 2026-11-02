@@ -42,7 +42,9 @@ const callTools = async (
     functions: live,
   },
 ) => {
-  const tools = options.forSandbox ? sandboxAgentTools(options) : agentToolSet(options);
+  const tools = options.forSandbox
+    ? sandboxAgentTools(options)
+    : agentToolSet(options);
   const caller = agents.agent({ id: "caller" }, async () => {
     const out: unknown[] = [];
 

@@ -110,10 +110,10 @@ describe("the finished relay", () => {
   });
 
   test("a run sandbox code began is answered to agent_result, never to the inbox", async () => {
-    const sent = await finish(
-      { result: "ok" },
-      { ...starter, via: "sandbox" } as never,
-    );
+    const sent = await finish({ result: "ok" }, {
+      ...starter,
+      via: "sandbox",
+    } as never);
 
     expect(sent).toMatchObject([
       {
