@@ -7,9 +7,9 @@ import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
-import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
-import { createAgents } from "../agent/agents.ts";
+import { createFnRunner, testClientId } from "../../../test/helpers.ts";
 import * as agentsApi from "../agent/agents.ts";
+import { createAgents } from "../agent/agents.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import {
   type AgentCard,
@@ -350,9 +350,13 @@ describe("paused and gone agents", () => {
     });
 
     expect(
-      found.map((c) => {
-        return `${c.address}${c.paused ? ":paused" : ""}`;
-      }),
+      found
+        .filter((c) => {
+          return c.address.startsWith("other/");
+        })
+        .map((c) => {
+          return `${c.address}${c.paused ? ":paused" : ""}`;
+        }),
     ).toEqual(["other/live", "other/paused:paused", "other/archived:paused"]);
   });
 
@@ -426,20 +430,28 @@ describe("the tools", () => {
       },
     );
 
-    return runFnWithStack(
-      fn,
-      {},
-      { event: { name: "foo", data: {} } as never },
-    );
+    const run = createFnRunner(fn, {
+      event: { name: "foo", data: {} } as never,
+    });
+
+    for (let pass = 0; pass < 40; pass++) {
+      const result = await run();
+
+      if (result.result?.type === "function-resolved") {
+        return result.result;
+      }
+    }
+
+    throw new Error("the function did not finish");
   };
   const listed = (result: unknown, index = 0) => {
-    const outputs = (result as { data: { data: unknown }[] }).data;
+    const outputs = (result as { data: unknown[] }).data;
 
-    return (
-      outputs[index] as { data: { agents: { address: string }[] } }
-    ).data.agents.map((a) => {
-      return a.address;
-    });
+    return (outputs[index] as { agents: { address: string }[] }).agents.map(
+      (a) => {
+        return a.address;
+      },
+    );
   };
 
   beforeEach(() => {

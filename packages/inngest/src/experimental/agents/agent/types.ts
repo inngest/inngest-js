@@ -24,7 +24,11 @@ import type {
   ApplyAllMiddlewareGroupExtensions,
   ApplyAllMiddlewareStepExtensions,
 } from "../../../types.ts";
-import type { AgentCard, AgentCardConfig } from "../discovery/discovery.ts";
+import type {
+  AgentCard,
+  AgentCardConfig,
+  AgentDiscovery,
+} from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
@@ -177,26 +181,22 @@ export interface AgentFunctionConfig<
   id: string;
 
   /**
-   * Who may find and use the agent through discovery: `"private"` (default),
-   * only agents of its own app; `"team"`, any agent in the environment.
+   * What the agent publishes about itself for discovery: `description`,
+   * `share` (`"private"` by default, only agents of its own app; `"team"`, the
+   * whole environment), `owner`, `effects` (`"read"` or `"write"`, default
+   * `"write"`) and `speed`. An agent without a `card` still publishes its
+   * address, private.
    */
-  share?: AgentCardConfig["share"];
+  card?: AgentCardConfig;
 
   /**
-   * The team or person who owns the agent, for the card.
+   * Discovery for the agent's model: on by default (`list_agents`,
+   * `describe_agent` and the tools that start or reach other agents).
+   * `false` removes them, and the agent's own card is still published.
+   * `{ prepare }` fills part of the input of a call to another agent from the
+   * host, in the run.
    */
-  owner?: AgentCardConfig["owner"];
-
-  /**
-   * What a call does: `"read"`, `"write"` (default) or `"needs-approval"`,
-   * for the card.
-   */
-  effects?: AgentCardConfig["effects"];
-
-  /**
-   * How long a call takes, for the card.
-   */
-  speed?: AgentCardConfig["speed"];
+  discovery?: AgentDiscovery;
 
   /**
    * How long a run waits in quiet before it ends: a number of milliseconds, a
