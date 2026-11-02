@@ -8,11 +8,9 @@
 import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { createAgentFunction } from "./agentFunction.ts";
-import { defineChannel } from "./channels.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import {
   decide,
-  failureText,
   fingerprint,
   finishedOf,
   type LastRun,
@@ -121,32 +119,6 @@ describe("decide", () => {
     expect(decision.resuming).toBe(false);
     expect(decision.last.recovery).toBeUndefined();
   });
-
-  test("the text says what happens", () => {
-    const base = {
-      runId: "r",
-      thread: "t",
-      error: "boom",
-      fingerprint: "f",
-    };
-
-    expect(
-      failureText({
-        ...base,
-        resuming: true,
-        repeated: false,
-        superseded: false,
-      }),
-    ).toContain("Resuming");
-    expect(
-      failureText({
-        ...base,
-        resuming: false,
-        repeated: true,
-        superseded: false,
-      }),
-    ).toContain("again the same way");
-  });
 });
 
 describe("finishedOf", () => {
@@ -206,7 +178,6 @@ describe("the finished function", () => {
   ) => {
     const sent: { name: string; data: Record<string, unknown>; id?: string }[] =
       [];
-    const posts: string[] = [];
     const client = new Inngest({
       id: testClientId,
       eventKey: "key",
@@ -222,13 +193,6 @@ describe("the finished function", () => {
       {
         id: "bot",
         kv: store,
-        channels: {
-          main: defineChannel({
-            post: async (message) => {
-              posts.push(message.text);
-            },
-          }),
-        },
         ...config,
       },
       async () => {},
@@ -252,7 +216,7 @@ describe("the finished function", () => {
         });
     };
 
-    return { agent, sent, posts, lastRun, seed, store, client };
+    return { agent, sent, lastRun, seed, store, client };
   };
 
   test("is one function of the agent, listening for how its runs end", () => {
@@ -262,7 +226,7 @@ describe("the finished function", () => {
   });
 
   test("a completed run is recorded", async () => {
-    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+    const { agent, lastRun, sent } = setup({ recovery: true });
 
     await run(agent.finished, { event: finishedEvent("r1", "Completed") });
 
@@ -271,11 +235,10 @@ describe("the finished function", () => {
       status: "completed",
     });
     expect(sent).toEqual([]);
-    expect(posts).toEqual([]);
   });
 
   test("a cancelled run is recorded and never resumed", async () => {
-    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+    const { agent, lastRun, sent } = setup({ recovery: true });
 
     await run(agent.finished, { event: finishedEvent("r1", "Cancelled") });
 
@@ -284,11 +247,10 @@ describe("the finished function", () => {
       status: "cancelled",
     });
     expect(sent).toEqual([]);
-    expect(posts).toEqual([]);
   });
 
   test("a failed run without recovery is recorded with its error and nothing else happens", async () => {
-    const { agent, lastRun, sent, posts } = setup();
+    const { agent, lastRun, sent } = setup();
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
@@ -300,17 +262,15 @@ describe("the finished function", () => {
     });
     expect((await lastRun())?.recovery).toBeUndefined();
     expect(sent).toEqual([]);
-    expect(posts).toEqual([]);
   });
 
-  test("a failed run with recovery says so and resends the turn once", async () => {
-    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+  test("a failed run with recovery resends the turn once", async () => {
+    const { agent, lastRun, sent } = setup({ recovery: true });
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(posts).toEqual(["Hit an error: boom. Resuming in a fresh run."]);
     expect(await lastRun()).toMatchObject({
       status: "failed",
       recovery: "resumed",
@@ -324,8 +284,8 @@ describe("the finished function", () => {
     ]);
   });
 
-  test("a run that failed with a NonRetriableError is reported and never resent", async () => {
-    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+  test("a run that failed with a NonRetriableError is never resent", async () => {
+    const { agent, lastRun, sent } = setup({ recovery: true });
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", {
@@ -334,7 +294,6 @@ describe("the finished function", () => {
       }),
     });
 
-    expect(posts).toEqual(["Hit an error: bad input."]);
     expect(await lastRun()).toMatchObject({ status: "failed" });
     expect((await lastRun())?.recovery).toBeUndefined();
     expect(sent).toEqual([]);
@@ -362,8 +321,8 @@ describe("the finished function", () => {
     ).toBe(true);
   });
 
-  test("the same error failing the same turn again says so and resends nothing", async () => {
-    const { agent, lastRun, sent, posts } = setup({ recovery: true });
+  test("the same error failing the same turn again resends nothing", async () => {
+    const { agent, lastRun, sent } = setup({ recovery: true });
     const failure = { name: "Error", message: "boom" };
 
     await run(agent.finished, {
@@ -374,7 +333,6 @@ describe("the finished function", () => {
       event: finishedEvent("r2", "Failed", failure),
     });
 
-    expect(posts[1]).toContain("again the same way");
     expect(await lastRun()).toMatchObject({
       runId: "r2",
       recovery: "stuck",
@@ -382,66 +340,24 @@ describe("the finished function", () => {
     expect(sent).toEqual([]);
   });
 
-  test("the message and the resume are the agent's to change", async () => {
-    const { agent, sent, posts } = setup({
-      recovery: {
-        message: (failure) => {
-          return `oops ${failure.error}`;
-        },
-        resume: false,
-      },
-    });
+  test("resume: false resends nothing", async () => {
+    const { agent, sent } = setup({ recovery: { resume: false } });
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(posts).toEqual(["oops boom"]);
     expect(sent).toEqual([]);
   });
 
-  test("a message that throws does not keep the turn from being resent", async () => {
-    const { agent, sent } = setup({
-      recovery: {
-        message: () => {
-          throw new Error("bad template");
-        },
-      },
-    });
-
-    await run(agent.finished, {
-      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
-    });
-
-    expect(sent).toHaveLength(1);
-  });
-
-  test("a message that returns false posts nothing but still resumes", async () => {
-    const { agent, sent, posts } = setup({
-      recovery: {
-        message: () => {
-          return false;
-        },
-      },
-    });
-
-    await run(agent.finished, {
-      event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
-    });
-
-    expect(posts).toEqual([]);
-    expect(sent).toHaveLength(1);
-  });
-
   test("a run that had answered and was waiting when it failed resends nothing", async () => {
-    const { agent, sent, posts, seed, lastRun } = setup({ recovery: true });
+    const { agent, sent, seed, lastRun } = setup({ recovery: true });
 
     await seed({ status: "waiting", runId: "r1" });
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(posts).toEqual(["Hit an error: boom."]);
     expect(sent).toEqual([]);
     expect((await lastRun())?.recovery).toBeUndefined();
   });
@@ -461,8 +377,8 @@ describe("the finished function", () => {
     expect(sent).toMatchObject([{ data: { text: "second" } }]);
   });
 
-  test("a newer run owning the record is told about, not resumed", async () => {
-    const { agent, sent, posts, seed } = setup({ recovery: true });
+  test("a newer run owning the record is not resumed", async () => {
+    const { agent, sent, seed } = setup({ recovery: true });
     const newer = "01K00000000000000000000009";
     const older = "01J00000000000000000000001";
 
@@ -471,12 +387,11 @@ describe("the finished function", () => {
       event: finishedEvent(older, "Failed", { name: "Error", message: "boom" }),
     });
 
-    expect(posts).toHaveLength(1);
     expect(sent).toEqual([]);
   });
 
   test("a late report for an older run is still said after a newer run ended", async () => {
-    const { agent, sent, posts } = setup({ recovery: true });
+    const { agent, sent } = setup({ recovery: true });
     const newer = "01K00000000000000000000009";
     const older = "01J00000000000000000000001";
 
@@ -485,8 +400,6 @@ describe("the finished function", () => {
       event: finishedEvent(older, "Failed", { name: "Error", message: "late" }),
     });
 
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toContain("late");
     expect(sent).toEqual([]);
   });
 
@@ -546,7 +459,7 @@ describe("the finished function", () => {
   });
 
   test("a newer run on the thread is named in what is said", async () => {
-    const { agent, posts, seed } = setup({ recovery: true });
+    const { agent, seed } = setup({ recovery: true });
 
     await seed({ status: "running", runId: "01K00000000000000000000009" });
     await run(agent.finished, {
@@ -555,8 +468,6 @@ describe("the finished function", () => {
         message: "boom",
       }),
     });
-
-    expect(posts[0]).toContain("A newer run has the thread");
   });
 
   test("a run that ended before a newer one's record does not overwrite it", async () => {

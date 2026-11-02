@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: starting a thread from a trigger. An agent's `on` lists the
- * events that talk to it (a Slack message, a pull request comment). The agent
+ * events that talk to it (a chat message, a pull request comment). The agent
  * function triggers on them directly:
  *
  * - the thread key is an expression over the trigger event, supplied by the
@@ -92,11 +92,11 @@ export type ThreadTriggerData<T> = T extends EventType<string, infer TSchema>
 export interface ThreadTriggerFields {
   /**
    * The thread key, a CEL expression over `event` that gives a string, such
-   * as `event.data.channel + "/" + event.data.thread_ts`.
+   * as `event.data.room + "/" + event.data.thread_ts`.
    *
    * The key is the thread's address: a message sent through a thread handle
    * with the same string, or another `on` event whose key is the same string,
-   * reaches the same thread. Prefix the expression (`"slack:" + ...`) to keep
+   * reaches the same thread. Prefix the expression (`"chat:" + ...`) to keep
    * events apart.
    */
   thread?: string;

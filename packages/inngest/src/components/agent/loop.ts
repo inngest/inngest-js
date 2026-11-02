@@ -506,7 +506,7 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   /**
    * Called after each model call, for progress. It runs in your function on
    * every execution, so put side effects in steps (with IDs that include
-   * `turn`) to post to Slack or a database once. An error fails the run.
+   * `turn`) to write to a database once. An error fails the run.
    */
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
 

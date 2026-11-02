@@ -26,9 +26,7 @@ export type AgentScoreName =
   | "agent.cache_read_tokens"
   | "agent.cache_write_tokens"
   | "agent.tool_ms"
-  | "agent.tool_error"
-  | "agent.first_output_ms"
-  | "agent.output_gap_ms";
+  | "agent.tool_error";
 
 const frameworkPrefix = "agent.";
 

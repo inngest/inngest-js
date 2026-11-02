@@ -2,9 +2,9 @@
  * @module
  * No run of an agent ends silently. Every ending is kept on the thread
  * (`state().lastRun`) and the next run is told (`previousRun`). With `recovery`
- * on, a turn that throws is reported to the agent's channel and resent to a
- * fresh run; a turn that fails twice the same way is reported as stuck and
- * not resent a third time; a cancelled run is recorded and left alone.
+ * on, a turn that throws is resent to a fresh run; a turn that fails twice the
+ * same way is recorded as stuck and not resent a third time; a cancelled run
+ * is recorded and left alone.
  */
 import { appendFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +13,6 @@ import { Inngest } from "inngest";
 import {
   createAgents,
   createKv,
-  defineChannel,
   getThread,
   kv,
   kvKey,
@@ -51,13 +50,10 @@ export const agentRecovery = scenario({
   owner: "agents-recovery",
   needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, redisUrl }) => {
-    const postsFile = fileFor(redisUrl, "posts");
     const attemptsFile = fileFor(redisUrl, "attempts");
 
-    for (const file of [postsFile, attemptsFile]) {
-      if (existsSync(file)) {
-        unlinkSync(file);
-      }
+    if (existsSync(attemptsFile)) {
+      unlinkSync(attemptsFile);
     }
 
     const agents = createAgents(client);
@@ -67,13 +63,6 @@ export const agentRecovery = scenario({
         id: agentId,
         retries: 0,
         recovery: true,
-        channels: {
-          main: defineChannel({
-            post: async (message) => {
-              appendFileSync(postsFile, `${message.text}\n`);
-            },
-          }),
-        },
       },
       async ({ inbox, step, previousRun }) => {
         await kv.thread.update(
@@ -121,7 +110,6 @@ export const agentRecovery = scenario({
     return agents.functions();
   },
   run: async (ctx) => {
-    const postsFile = fileFor(ctx.redisUrl, "posts");
     const store = createKv({ adapter: redisKvAdapter(ctx.redisUrl) });
     const client = new Inngest({
       id: "agents-e2e",
@@ -141,7 +129,7 @@ export const agentRecovery = scenario({
       };
     };
 
-    // A turn that throws once: reported, resent, answered by a fresh run that
+    // A turn that throws once: resent, answered by a fresh run that
     // is told how the one before it ended.
     const flaky = handle("flaky");
     await flaky.send("flaky one");
@@ -165,16 +153,8 @@ export const agentRecovery = scenario({
       (await keys(flaky)).previous?.[1] === "failed",
       await keys(flaky),
     );
-    ctx.check(
-      "the thread was told, once",
-      lines(postsFile).filter((line) => {
-        return line.includes("flaky failure");
-      }).length === 1,
-      lines(postsFile),
-    );
 
     // A cancelled run is recorded and nothing is resumed.
-    const before = lines(postsFile).length;
     await flaky.stop();
     const cancelled = await ctx.eventually(
       "the cancelled run is recorded",
@@ -185,9 +165,9 @@ export const agentRecovery = scenario({
     );
     await sleep(2000);
     ctx.check(
-      "a cancelled run is not reported or resumed",
-      lines(postsFile).length === before && cancelled?.recovery === undefined,
-      { posts: lines(postsFile), cancelled },
+      "a cancelled run is not resumed",
+      cancelled?.recovery === undefined,
+      cancelled,
     );
 
     // A run that finishes is recorded as completed.
@@ -201,7 +181,7 @@ export const agentRecovery = scenario({
       },
     );
 
-    // A turn that fails the same way twice is stuck: told twice, resent once.
+    // A turn that fails the same way twice is stuck: resent once.
     const explode = handle("explode");
     await explode.send("explode now");
     const stuck = await ctx.eventually(
@@ -212,16 +192,6 @@ export const agentRecovery = scenario({
       },
     );
     await sleep(4000);
-    const told = lines(postsFile).filter((line) => {
-      return line.includes("exploded on");
-    });
-    ctx.check(
-      "the thread was told it resumed, then that it failed again",
-      told.length === 2 &&
-        told[0]?.includes("Resuming") === true &&
-        told[1]?.includes("again the same way") === true,
-      told,
-    );
     ctx.check(
       "no third run was started",
       (await keys(explode)).previous?.length === 2,

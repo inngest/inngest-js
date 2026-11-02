@@ -1,11 +1,8 @@
 /**
  * @module
- * EXPERIMENTAL: one in-process HTTP server that plays the fake Slack, the
- * fake GitHub and the recorder the fake sandbox reports to. Every call is
- * kept, so a test asserts on what the agents posted. The shapes follow the
- * Slack Web API (`chat.postMessage`, `chat.update`, `reactions.add`, Block Kit
- * actions for ask buttons) and the GitHub REST API (issue comments, PR
- * reviews).
+ * EXPERIMENTAL: one in-process HTTP server that plays the recorder the fake
+ * sandbox and the scripted model report to, and the commits API a repo sync
+ * reads. Every call is kept, so a test asserts on what the agents did.
  */
 import { createServer, type IncomingMessage } from "node:http";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
@@ -17,19 +14,12 @@ export interface Call {
   /**
    * Which fake received the call.
    */
-  channel: "slack" | "github" | "sandbox" | "model";
+  channel: "sandbox" | "model";
 
   /**
-   * What was called, such as `chat.postMessage`, `issues.createComment` or
-   * `sandbox.exec`.
+   * What was called, such as `sandbox.exec`.
    */
   method: string;
-
-  /**
-   * The conversation the call belongs to: the Slack thread timestamp, or
-   * `owner/repo#number` for GitHub.
-   */
-  thread?: string;
 
   /**
    * The request body, parsed as JSON or as a form.
@@ -50,11 +40,6 @@ export interface CallFilter {
    * Only calls of this method.
    */
   method?: string;
-
-  /**
-   * Only calls of this conversation.
-   */
-  thread?: string;
 }
 
 /**
@@ -119,14 +104,12 @@ const readBody = async (
 
 /**
  * Starts the fakes server on a free local port. Point the fake sandbox's
- * `recordUrl` and your Slack or GitHub channel's base URL at `url`, and read
+ * `recordUrl` at `url`, and read
  * what the agents did from `calls` or `posts()`. Close it when the test ends.
  */
 export const startFakes = async (): Promise<Fakes> => {
   const calls: Call[] = [];
   const commits = new Map<string, string>();
-  const streams = new Map<string, { ids: Set<string>; over: boolean }>();
-  let counter = 0;
 
   const server = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
@@ -137,122 +120,6 @@ export const startFakes = async (): Promise<Fakes> => {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(json));
     };
-
-    counter++;
-
-    const slack = path.match(/^\/slack\/api\/(.+)$/);
-
-    if (slack) {
-      const method = slack[1] as string;
-      const ts = `${1_700_000_000 + counter}.${String(counter).padStart(6, "0")}`;
-      const thread = String(body.thread_ts ?? body.timestamp ?? body.ts ?? ts);
-
-      // Streamed progress, with Slack's rules: a stream holds 50 unique task
-      // cards (a 51st is dropped and Slack answers ok with a warning), and a
-      // stream is over once it is stopped or a card named end-stream was
-      // written (the next write gets message_not_in_streaming_state).
-      if (method === "chat.startStream") {
-        const first = ((body.chunks ?? []) as { id?: string }[]).flatMap(
-          (c) => {
-            return c.id ? [c.id] : [];
-          },
-        );
-
-        streams.set(ts, { ids: new Set(first), over: false });
-        calls.push({
-          channel: "slack",
-          method,
-          thread: String(body.thread_ts ?? ts),
-          body: { ...body, ts, accepted: true, held: first.length },
-        });
-        reply(200, { ok: true, channel: body.channel, ts });
-
-        return;
-      }
-
-      if (method === "chat.stopStream") {
-        const stopped = streams.get(String(body.ts));
-
-        if (stopped) {
-          stopped.over = true;
-        }
-      }
-
-      if (method === "chat.appendStream") {
-        const stream = streams.get(String(body.ts));
-        const chunks = (body.chunks ?? []) as { id: string }[];
-
-        if (!stream || stream.over) {
-          calls.push({
-            channel: "slack",
-            method,
-            thread: String(body.ts),
-            body: { ...body, accepted: false },
-          });
-          reply(200, { ok: false, error: "message_not_in_streaming_state" });
-
-          return;
-        }
-
-        for (const chunk of chunks) {
-          stream.ids.add(chunk.id);
-
-          if (chunk.id === "end-stream") {
-            stream.over = true;
-          }
-        }
-
-        const dropped = stream.ids.size > 50;
-
-        calls.push({
-          channel: "slack",
-          method,
-          thread: String(body.ts),
-          body: { ...body, accepted: !dropped, held: stream.ids.size },
-        });
-        reply(200, {
-          ok: true,
-          ...(dropped
-            ? {
-                warning: "missing_charset",
-                response_metadata: {
-                  warnings: ["missing_charset"],
-                  messages: [
-                    "[WARN] Maximum unique tasks (50) reached; the update was dropped",
-                  ],
-                },
-              }
-            : {}),
-        });
-
-        return;
-      }
-
-      calls.push({ channel: "slack", method, thread, body });
-      reply(200, { ok: true, channel: body.channel, ts });
-
-      return;
-    }
-
-    const github = path.match(
-      /^\/github\/repos\/([^/]+)\/([^/]+)\/(?:issues|pulls)\/(\d+)\/(comments|reviews)$/,
-    );
-
-    if (github && req.method === "POST") {
-      const [, owner, repo, number, kind] = github;
-      const method =
-        kind === "reviews" ? "pulls.createReview" : "issues.createComment";
-
-      calls.push({
-        channel: "github",
-        method,
-        thread: `${owner}/${repo}#${number}`,
-        body,
-      });
-      reply(201, { id: counter, body: body.body });
-
-      return;
-    }
 
     // The commit a ref points at, for scenarios that resolve a ref to a sha:
     // GET answers like the GitHub commits API; PUT sets it, body { sha }.
@@ -334,8 +201,7 @@ export const startFakes = async (): Promise<Fakes> => {
       return calls.filter((call) => {
         return (
           (!filter.channel || call.channel === filter.channel) &&
-          (!filter.method || call.method === filter.method) &&
-          (!filter.thread || call.thread === filter.thread)
+          (!filter.method || call.method === filter.method)
         );
       });
     },

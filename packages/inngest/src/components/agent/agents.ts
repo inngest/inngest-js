@@ -477,28 +477,6 @@ export type {
 } from "./agentFunction.ts";
 export type { AgentMessageInput, AgentToolInput } from "./agentTool.ts";
 export type {
-  Channel,
-  ChannelAsk,
-  ChannelCard,
-  ChannelMessage,
-  ChannelStatus,
-  ChannelStream,
-  ChannelStreamFinal,
-  ChannelStreamLimits,
-  ChannelStreamStart,
-  ChannelTrigger,
-  ReportConfig,
-  ReportConfigValue,
-  Reporter,
-  ReportStreamOptions,
-  ReportTarget,
-} from "./channels.ts";
-export {
-  askThrough,
-  ChannelStreamEnded,
-  defineChannel,
-} from "./channels.ts";
-export type {
   AgentCard,
   AgentShare,
   AgentsRegisteredData,
@@ -523,13 +501,6 @@ export {
   agentRequest,
   agentSteer,
 } from "./events.ts";
-export type {
-  GithubChannelOptions,
-  GithubCommentData,
-  GithubTarget,
-  GithubThreadOptions,
-} from "./github.ts";
-export { github, githubCommentEvent } from "./github.ts";
 export type {
   Kv,
   KvAdapter,
@@ -566,19 +537,11 @@ export { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 export type {
   AgentRecovery,
   LastRun,
-  RunFailure,
   RunOutcome,
 } from "./recovery.ts";
 export type { AgentScoreName, AgentScores } from "./scores.ts";
 export type { SkillsGitOptions, SkillsSource } from "./skills.ts";
 export { skills, skillsBake } from "./skills.ts";
-export type {
-  SlackChannelOptions,
-  SlackMessageData,
-  SlackTarget,
-  SlackThreadOptions,
-} from "./slack.ts";
-export { slack, slackMessageEvent } from "./slack.ts";
 export type {
   RequestOptions,
   ThreadHandle,

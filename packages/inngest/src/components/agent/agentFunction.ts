@@ -56,12 +56,6 @@ import {
 } from "../triggers/triggers.ts";
 import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { toAsync } from "./cel.ts";
-import {
-  type Channel,
-  createReporter,
-  type ReportConfigValue,
-  type Reporter,
-} from "./channels.ts";
 import type { AgentPrice } from "./cost.ts";
 import {
   type ConfigValue,
@@ -102,12 +96,8 @@ import {
 import type { AgentEvent, AgentTurn } from "./loop.ts";
 import {
   type AgentRecovery,
-  failureText,
-  fingerprint,
   finishedOf,
   type LastRun,
-  type RunFailure,
-  summarize,
   turnInFlight,
 } from "./recovery.ts";
 import { type AgentScores, createAgentScores } from "./scores.ts";
@@ -595,21 +585,6 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * The destinations of progress and asks, by name: channels made with
-   * `defineChannel()` or a helper such as `slack.channel(event)`. The object
-   * may be a function of `{ event }`, so a channel can be chosen from the
-   * trigger; it re-runs on every replay, so it must be pure.
-   */
-  channels?: ConfigValue<Record<string, Channel>, AgentConfigContext>;
-
-  /**
-   * Where `report()` posts when it is not told: a channel name, a channel,
-   * or a list of them. Default: the channel named `main`, if there is one.
-   * May be a function of `{ event }`.
-   */
-  report?: ReportConfigValue<AgentConfigContext>;
-
-  /**
    * What this agent may start and spend: `depth` (default 1, so it may start
    * sub-agents and they may not), `spawn`, `mayCall` and `budget`. Sub-agents
    * inherit the limits narrowed. `agent.invoke()` refuses a call the limits
@@ -621,8 +596,7 @@ export interface AgentFunctionConfig<
 
   /**
    * Whether the agent scores itself. Default: `true`. The loop scores each
-   * model and tool step (see `agent.loop()`), `report()` scores how long
-   * the first post and each gap between posts took. Every score rides on a
+   * model and tool step (see `agent.loop()`). Every score rides on a
    * step that already runs, so none adds a step. `false` turns those off;
    * `scores.score()` in the body still works.
    */
@@ -630,10 +604,9 @@ export interface AgentFunctionConfig<
 
   /**
    * What the agent does about a run that fails unexpectedly. Off by default.
-   * `true` or an object posts the failure to the agent's channels (`report`)
-   * and resends the turn that was in flight, so a fresh run takes it up; a
-   * turn that fails twice with the same error is not resent, and the failure
-   * is reported as stuck. Only the message `inbox.next()` delivered last is
+   * `true` or an object resends the turn that was in flight, so a fresh run
+   * takes it up; a turn that fails twice with the same error is not resent.
+   * Only the message `inbox.next()` delivered last is
    * resent: messages that arrived during the failed turn and were not read
    * stay with the failed run. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
@@ -772,16 +745,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * without it.
    */
   inboxTools: InboxToolsOf<AgentTypesOf<TTypes>["inboxTools"]>;
-
-  /**
-   * The agent's channels, by name, as the config resolved them for this run.
-   */
-  channels: Record<string, Channel>;
-
-  /**
-   * Posts progress to the agent's channels. See `Reporter`.
-   */
-  report: Reporter;
 
   /**
    * Your own scores, next to the ones the framework writes. See
@@ -1800,56 +1763,11 @@ export function createAgentFunction(
         return last;
       }
 
-      // A late report for an older run, after a newer one has ended, is still
-      // said; it is not resumed.
+      // Only a run that `recordEnd` marked as resumed is resumed: a late report
+      // for an older run, after a newer one has ended, is not.
       const mine = last?.runId === runId ? last : undefined;
-      const reason = ended.error?.message ?? "unknown error";
-      const failure: RunFailure = {
-        runId,
-        thread: message.thread,
-        error: mine?.error ?? summarize(reason),
-        fingerprint:
-          mine?.fingerprint ?? fingerprint(ended.error?.name, reason),
-        resuming: mine?.recovery === "resumed",
-        repeated: mine?.recovery === "stuck" && recovery.resume !== false,
-        superseded:
-          record.runId !== undefined &&
-          record.runId !== runId &&
-          runScore(record.runId) > runScore(runId),
-      };
-      // A post that fails for good, or a `message` that throws, must not keep
-      // the turn from being taken up again.
-      try {
-        const text = (recovery.message ?? failureText)(failure);
 
-        if (text !== false) {
-          const context = {
-            event: start as unknown as AgentConfigContext["event"],
-          };
-          const channels = await resolveConfigValue(
-            config.channels ?? {},
-            context,
-          );
-          const report = createReporter(
-            channels,
-            config.report === undefined
-              ? undefined
-              : await resolveConfigValue(config.report, context),
-            (id, run) => {
-              return step.run(id, run);
-            },
-          );
-
-          await report(text);
-        }
-      } catch (error) {
-        logger.warn(
-          { runId, error: String(error).slice(0, 160) },
-          "The failure of a run could not be reported",
-        );
-      }
-
-      if (!failure.resuming) {
+      if (mine?.recovery !== "resumed") {
         return last;
       }
 
@@ -2145,42 +2063,6 @@ export function createAgentFunction(
               )
             : {};
 
-        const configContext = {
-          event: event as unknown as AgentConfigContext["event"],
-        };
-        const channels = await resolveConfigValue(
-          config.channels ?? {},
-          configContext,
-        );
-        const report = createReporter(
-          channels,
-          config.report === undefined
-            ? undefined
-            : await resolveConfigValue(config.report, configContext),
-          (id, run) => {
-            return step.run(id, run);
-          },
-          scoring ? { since: event.ts } : undefined,
-          {
-            restarts: () => {
-              return recorder.restarts;
-            },
-            warn: (data, message) => {
-              logger.warn(data, message);
-            },
-            inStep: () => {
-              return Boolean(getAsyncCtxSync()?.execution?.executingStep);
-            },
-            state: {
-              get: async (key) => {
-                return store.thread.get(key as never) as never;
-              },
-              set: async (key, value) => {
-                await store.thread.set(key as never, value as never);
-              },
-            },
-          },
-        );
         const agentScores = createAgentScores(client);
 
         const { inbox, view, steering } = threadInbox(
@@ -2363,8 +2245,6 @@ export function createAgentFunction(
                   config.inboxTools,
                 )
               : {},
-            channels,
-            report,
             scores: agentScores,
             inbox,
             previousRun,
@@ -2374,14 +2254,10 @@ export function createAgentFunction(
             control,
           });
 
-          // Progress writes nobody waited for finish before the run ends.
-          await report.settled();
-
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
         } catch (error) {
-          await report.settled();
           await closeAll();
 
           throw error;

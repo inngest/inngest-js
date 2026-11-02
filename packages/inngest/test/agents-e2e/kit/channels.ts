@@ -1,6 +1,6 @@
 /**
  * @module
- * The fake Slack, GitHub and recorder server, from the SDK source.
+ * The fakes server (the recorder and the commits API), from the SDK source.
  */
 export {
   type Call,

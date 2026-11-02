@@ -33,7 +33,7 @@ import type { Call, CallFilter, Fakes } from "./fakes.ts";
 export interface FakeSandboxOptions {
   /**
    * The fakes server (`startFakes()`) of this process that the operations are
-   * recorded on, next to its Slack and GitHub calls. Every operation is also
+   * recorded on. Every operation is also
    * on the `calls` of the sandbox itself.
    */
   fakes?: Fakes;
@@ -190,7 +190,7 @@ export interface FakeSandbox {
   /**
    * The operations that match every field of `filter`, oldest first.
    */
-  posts: (filter?: Pick<CallFilter, "method" | "thread">) => Call[];
+  posts: (filter?: Pick<CallFilter, "method">) => Call[];
 
   /**
    * Kills the processes the agent started and removes the directory the tools
@@ -1194,10 +1194,7 @@ export const fakeSandbox = (options: FakeSandboxOptions = {}): FakeSandbox => {
     calls,
     posts: (filter: CallFilter = {}) => {
       return calls.filter((call) => {
-        return (
-          (!filter.method || call.method === filter.method) &&
-          (!filter.thread || call.thread === filter.thread)
-        );
+        return !filter.method || call.method === filter.method;
       });
     },
     close,

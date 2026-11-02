@@ -10,7 +10,6 @@ import { Inngest } from "../Inngest.ts";
 import { staticSchema } from "../triggers/triggers.ts";
 import type { ThreadInboxMessage } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import type { ChannelMessage, ChannelStreamFinal } from "./channels.ts";
 import { getThread, type ThreadRequests } from "./thread.ts";
 
 const client = new Inngest({ id: testClientId });
@@ -186,16 +185,5 @@ describe("requests", () => {
     };
 
     expect(types).toBeTypeOf("function");
-  });
-});
-
-describe("channel message blocks", () => {
-  test("a message and a stream final carry blocks as unknown[]", () => {
-    expectTypeOf<ChannelMessage["blocks"]>().toEqualTypeOf<
-      unknown[] | undefined
-    >();
-    expectTypeOf<ChannelStreamFinal["blocks"]>().toEqualTypeOf<
-      unknown[] | undefined
-    >();
   });
 });

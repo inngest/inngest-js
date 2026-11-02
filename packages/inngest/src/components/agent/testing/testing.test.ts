@@ -90,7 +90,6 @@ describe("the entry", () => {
       "script",
       "startFakes",
       "startGitRemote",
-      "testReporter",
       "withKeys",
     ]);
   });
@@ -153,10 +152,10 @@ describe("startFakes", () => {
   test("keeps the calls it is sent and filters them", async () => {
     await using fakes = await startFakes();
 
-    await fetch(`${fakes.url}/slack/api/chat.postMessage`, {
+    await fetch(`${fakes.url}/record`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ channel: "C1", text: "hi", thread_ts: "1.0" }),
+      body: JSON.stringify({ method: "sandbox.create" }),
     });
     await fetch(`${fakes.url}/record`, {
       method: "POST",
@@ -164,9 +163,9 @@ describe("startFakes", () => {
       body: JSON.stringify({ method: "sandbox.destroy" }),
     });
 
-    expect(fakes.posts({ channel: "slack" })).toMatchObject([
-      { method: "chat.postMessage", thread: "1.0", body: { text: "hi" } },
-    ]);
+    expect(
+      fakes.posts({ channel: "sandbox", method: "sandbox.create" }),
+    ).toHaveLength(1);
     expect(fakes.posts({ method: "sandbox.destroy" })).toHaveLength(1);
     expect(fakes.calls).toHaveLength(2);
   });

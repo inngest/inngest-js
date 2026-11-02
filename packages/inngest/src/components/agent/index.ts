@@ -59,17 +59,6 @@ export {
   sandboxTools,
   toolNamespaceSeparator,
 } from "./defs.ts";
-export type {
-  GithubApp,
-  GithubAppOptions,
-  GithubAppTarget,
-  GithubAppTokenOptions,
-} from "./githubApp.ts";
-export {
-  GithubAppError,
-  GithubAppNotInstalledError,
-  githubApp,
-} from "./githubApp.ts";
 export type { GitPushToolOptions, PushBranchResult } from "./gitPush.ts";
 export { gitPushTool, pushBranch } from "./gitPush.ts";
 export type {

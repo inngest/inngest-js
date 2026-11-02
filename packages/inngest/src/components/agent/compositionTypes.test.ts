@@ -1,9 +1,8 @@
 /**
  * @module
  * Composition type tests: the agent pieces used together infer end to end
- * with no annotations. An agent triggered by an event type invokes a typed
- * agent, subscribes to typed events, reports to a channel and runs a sandbox
- * tool. The assertions are types; the bodies of agents are never executed.
+ * with no annotations. An agent triggered by an event type reads typed
+ * events from its inbox and runs a sandbox tool. The assertions are types; the bodies of agents are never executed.
  * Each `check` closure holds type-only code that must not run (it would call
  * into a function context), so `expect(check).toBeTypeOf("function")` only
  * gives vitest a runtime assertion and keeps the closure used.
@@ -13,32 +12,16 @@ import { testClientId } from "../../test/helpers.ts";
 import { Inngest } from "../Inngest.ts";
 import { step } from "../InngestStepTools.ts";
 import { tool } from "../sandbox/tools.ts";
-import { eventType, invoke } from "../triggers/triggers.ts";
+import { eventType } from "../triggers/triggers.ts";
 import { createAgents } from "./agents.ts";
-import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
 import { agent } from "./loop.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
 });
-const asked = invoke(z.object({ question: z.string() }));
 
 const agents = createAgents(new Inngest({ id: testClientId }));
-
-const researcher = agents.agent(
-  { id: "researcher", on: asked },
-  async ({ event }) => {
-    return { answer: event.data.event?.data.question ?? "" };
-  },
-);
-
-const notes: string[] = [];
-const notesChannel = defineChannel({
-  post: async (message) => {
-    notes.push(message.text);
-  },
-});
 
 const workbench = sandbox({
   id: "workbench",
@@ -56,25 +39,17 @@ const lookup = tool.step({
 });
 
 describe("composition", () => {
-  test("an agent on an event type uses typed agents, channels and sandboxes", () => {
+  test("an agent on an event type uses typed events, an inbox and sandboxes", () => {
     agents.agent(
       {
         id: "lead",
         on: { event: order, thread: "event.data.id" },
-        channels: { main: notesChannel },
         sandboxes: { work: workbench },
       },
-      async ({ event, inbox, report, sandboxTools }) => {
+      async ({ event, inbox, sandboxTools }) => {
         expectTypeOf(event.data.event?.data.total).toEqualTypeOf<
           number | undefined
         >();
-
-        const found = await agent.invoke(researcher, { question: "why" });
-
-        expectTypeOf(found).toEqualTypeOf<{ answer: string }>();
-
-        await report("found it");
-        await report({ text: "done", kind: "result" });
 
         const next = await inbox.next();
 
@@ -138,11 +113,8 @@ describe("pointed errors", () => {
     expect(check).toBeTypeOf("function");
   });
 
-  test("a channel needs post, and a loop tool must be a tool", () => {
+  test("a loop tool must be a tool", () => {
     const check = () => {
-      // @ts-expect-error a channel without post
-      defineChannel({});
-
       agent.loop({
         model: async () => {
           return {
@@ -154,18 +126,6 @@ describe("pointed errors", () => {
         // @ts-expect-error a number is not a tool
         tools: { a: 5 },
       });
-    };
-
-    expect(check).toBeTypeOf("function");
-  });
-
-  test("invoking an agent checks the input against its invoke trigger", () => {
-    const check = async () => {
-      // @ts-expect-error question is a string
-      await agent.invoke(researcher, { question: 5 });
-
-      // @ts-expect-error nope is not a field of the input
-      await agent.invoke(researcher, { nope: "x" });
     };
 
     expect(check).toBeTypeOf("function");

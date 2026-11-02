@@ -13,11 +13,10 @@
  * `lastRun` as `previousRun`, and `thread.state()` shows it.
  *
  * Recovery is opt-in (`recovery` in the agent's config). For a run that failed
- * it says so on the agent's channels and resends the turn that was in flight,
- * so a fresh run takes it up. The guard against a loop is the error's
- * fingerprint, not a count: a turn that fails with the same error twice is
- * not resent, and the failure is reported as stuck. A run that failed with a
- * `NonRetriableError` is reported but never resent: its failure was declared
+ * it resends the turn that was in flight, so a fresh run takes it up. The
+ * guard against a loop is the error's fingerprint, not a count: a turn that
+ * fails with the same error twice is not resent. A run that failed with a
+ * `NonRetriableError` is never resent: its failure was declared
  * final, and a fresh run would only repeat it.
  */
 import hashjs from "hash.js";
@@ -75,49 +74,6 @@ export interface LastRun {
 }
 
 /**
- * A run that failed unexpectedly, as `recovery.message` receives it.
- */
-export interface RunFailure {
-  /**
-   * The run that failed.
-   */
-  runId: string;
-
-  /**
-   * The thread key.
-   */
-  thread: string;
-
-  /**
-   * One line of the error.
-   */
-  error: string;
-
-  /**
-   * The same failure has the same fingerprint.
-   */
-  fingerprint: string;
-
-  /**
-   * Whether the turn is resent to a fresh run. It is not when the same error
-   * had already failed that turn, when `resume` is off, or when the run failed
-   * with a `NonRetriableError`.
-   */
-  resuming: boolean;
-
-  /**
-   * Whether the same error had already failed this turn.
-   */
-  repeated: boolean;
-
-  /**
-   * Whether a newer run has taken the thread over, so the failed turn is not
-   * resent.
-   */
-  superseded: boolean;
-}
-
-/**
  * What an agent does about a run that failed unexpectedly.
  */
 export interface AgentRecovery {
@@ -127,13 +83,6 @@ export interface AgentRecovery {
    * one whose run failed with a `NonRetriableError`. Default `true`.
    */
   resume?: boolean;
-
-  /**
-   * The text posted to the agent's channels (the `report` config) about the
-   * failure. Return `false` to post nothing. Default: one line with the error,
-   * saying whether a fresh run takes the turn up.
-   */
-  message?: (failure: RunFailure) => string | false;
 }
 
 /**
@@ -413,21 +362,4 @@ export const decide = (
       guard: { turn: failed.turn, fingerprints },
     },
   };
-};
-
-/**
- * The text posted about a failure when `recovery.message` is not given.
- */
-export const failureText = (failure: RunFailure): string => {
-  if (failure.resuming) {
-    return `Hit an error: ${failure.error}. Resuming in a fresh run.`;
-  }
-
-  if (failure.superseded) {
-    return `Hit an error: ${failure.error}. A newer run has the thread, so this turn is not retried.`;
-  }
-
-  return failure.repeated
-    ? `Failed again the same way: ${failure.error}. Not retrying on its own.`
-    : `Hit an error: ${failure.error}.`;
 };

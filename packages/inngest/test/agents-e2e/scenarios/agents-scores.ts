@@ -1,16 +1,12 @@
 /**
  * @module
- * Scores: an agent scores its own model, tool and post steps with no extra
+ * Scores: an agent scores its own model and tool steps with no extra
  * steps, a tool adds its own with `scores.score()`, and an
  * agent with `scores: false` writes none of the framework's. The scores are
  * read back from the Dev Server's trace.
  */
 import { tool } from "inngest/experimental";
-import {
-  agent,
-  createAgents,
-  defineChannel,
-} from "inngest/experimental/agents";
+import { agent, createAgents } from "inngest/experimental/agents";
 import { z } from "zod/v4";
 import { scenario, script } from "../kit/driver.ts";
 import { textOf } from "../kit/text.ts";
@@ -24,9 +20,6 @@ export const agentsScores = scenario({
   needs: { oss: "jack/step-subscribe-clean" },
   functions: ({ client, event }) => {
     const agents = createAgents(client);
-    const posts = defineChannel({
-      post: async () => {},
-    });
 
     for (const [id, scores] of [
       [scored, true],
@@ -37,9 +30,8 @@ export const agentsScores = scenario({
           id,
           scores,
           on: { event: event(id), thread: "event.data.thread" },
-          channels: { main: posts },
         },
-        async ({ inbox, report, control, scores: own }) => {
+        async ({ inbox, control, scores: own }) => {
           const first = await inbox.next();
           const note = tool.step({
             description: "Notes a number",
@@ -51,8 +43,6 @@ export const agentsScores = scenario({
             },
           });
 
-          await report("starting");
-
           const result = await agent.loop({
             model: script([
               { call: { name: "note", input: {} } },
@@ -62,8 +52,6 @@ export const agentsScores = scenario({
             tools: { note },
             ...control,
           });
-
-          await report("finished");
 
           return { text: result.text };
         },
@@ -87,9 +75,7 @@ export const agentsScores = scenario({
       const scores = await ctx.scores(run.id);
       const model = scores.step("agent:model:1");
       const tool = scores.step("agent:1.0:note");
-      const first = scores.step("report:1:0:main");
-      const second = scores.step("report:2:0:main");
-      const framework = [model, tool, first, second].flatMap((own) => {
+      const framework = [model, tool].flatMap((own) => {
         return Object.keys(own).filter((name) => {
           return name.startsWith("agent.");
         });
@@ -126,14 +112,6 @@ export const agentsScores = scenario({
         typeof tool["agent.tool_ms"] === "number" &&
           tool["agent.tool_error"] === 0,
         tool,
-      );
-
-      ctx.check(
-        `${id}: the first post is scored from the trigger, the second from the first`,
-        typeof first["agent.first_output_ms"] === "number" &&
-          typeof second["agent.output_gap_ms"] === "number" &&
-          second["agent.first_output_ms"] === undefined,
-        [first, second],
       );
     }
   },

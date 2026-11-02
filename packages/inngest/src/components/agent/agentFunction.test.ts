@@ -14,7 +14,6 @@ import {
   createAgentFunction,
 } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { defineChannel } from "./channels.ts";
 import { sandbox } from "./defs.ts";
 import { agentMessage } from "./events.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
@@ -1856,65 +1855,5 @@ describe("eager sandboxes", () => {
 
     expect(output).toBe("no capacity");
     expect(warnings).toEqual([]);
-  });
-});
-
-describe("scores", () => {
-  const postScores = async (config: { scores?: boolean }) => {
-    const seen: Record<string, Record<string, number>> = {};
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        kv: createKv({ adapter: memoryKvAdapter() }),
-        channels: { main: defineChannel({ post: async () => {} }) },
-        ...config,
-      },
-      async ({ inbox, report }) => {
-        await inbox.next();
-        await report("one");
-        await report("two");
-      },
-    );
-
-    await run(fn, {
-      event: { ...trigger("go"), ts: Date.now() - 50 } as ReturnType<
-        typeof trigger
-      >,
-      onStep: (op) => {
-        for (const update of op.metadata ?? []) {
-          if (update.kind.startsWith("inngest.score.")) {
-            seen[op.userland?.id ?? op.id] = {
-              ...seen[op.userland?.id ?? op.id],
-              [update.kind.slice("inngest.score.".length)]: (
-                update.values as { value: number }
-              ).value,
-            };
-          }
-        }
-      },
-    });
-
-    return seen;
-  };
-
-  test("the first post is scored from the trigger and the next from the first", async () => {
-    const seen = await postScores({});
-
-    expect(seen["report:1:0:main"]?.["agent.first_output_ms"]).toBeGreaterThan(
-      49,
-    );
-    expect(seen["report:1:0:main"]?.["agent.output_gap_ms"]).toBeUndefined();
-    expect(
-      seen["report:2:0:main"]?.["agent.output_gap_ms"],
-    ).toBeGreaterThanOrEqual(0);
-    expect(seen["report:2:0:main"]?.["agent.first_output_ms"]).toBeUndefined();
-  });
-
-  test("scores: false writes no post scores", async () => {
-    const seen = await postScores({ scores: false });
-
-    expect(seen["report:1:0:main"]).toBeUndefined();
-    expect(seen["report:2:0:main"]).toBeUndefined();
   });
 });

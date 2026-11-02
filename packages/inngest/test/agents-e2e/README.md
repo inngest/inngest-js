@@ -2,7 +2,7 @@
 
 One way to verify a piece of the agent primitives before it is squash-merged into `jack/agent-primitives`. Every piece agent follows this file.
 
-The kit fakes everything that is not under test: the model is scripted, Slack, GitHub and the Sandboxes API are fakes that record every call. Redis and the Dev Server are real. There is no live rung: no model key, no real Sandboxes.
+The kit fakes everything that is not under test: the model is scripted, the Sandboxes API is a fake that records every call. Redis and the Dev Server are real. There is no live rung: no model key, no real Sandboxes.
 
 This machine is NixOS: a missing binary runs one-off with `, <cmd>` (for example `, sqlite3`, `, python3`, `, flyctl`). Never hunt in `/nix/store` and never skip a check because a tool is missing.
 
@@ -21,7 +21,7 @@ pnpm agents:verify <scenario>                    # 3. your scenario(s), 30-60s e
 pnpm agents:verify --all                         # 4. the whole suite, required before squash
 ```
 
-A piece that changes run behaviour, KV, inbox, subscribe, channels or sandboxes needs a scenario. A types or docs only piece says "no scenario needed" in its PR.
+A piece that changes run behaviour, KV, inbox, subscribe or sandboxes needs a scenario. A types or docs only piece says "no scenario needed" in its PR.
 
 Scenarios share one stack per `agents:verify` call (Dev Server, Redis, the kit app). The stack is named from the branch and scenarios plus a random suffix (`verify-<branch>-<scenarios>-<hash>-<random>`), so no two runs collide, even on one branch. With devstack, everything runs inside `devstack with --timeout`, so a crash cannot leak a stack (not with `--keep`, which leaves the stack up on purpose). The direct stack has its own time cap and stops its processes on SIGINT and SIGTERM. Flags: `--bin local@<sha>` to pick the Dev Server build, `--keep` to leave the devstack stack up for debugging (then `devstack stop <name>`; the fakes stop with the CLI, so only runs and the Dev Server UI are useful; not available with the direct stack).
 
@@ -68,13 +68,13 @@ The driver (`kit/driver.ts`, the `ctx` your `run` gets):
 - `ctx.send(name, data, { startsRun })` sends the scenario's event `agents-e2e/<id>/<name>` (use `event(name)` in `functions`) and returns the event ID; pass `startsRun: true` for an event whose run you wait for with `finished`, so it is resent once if no run starts. `ctx.finished(eventId)` waits for its run to end.
 - `ctx.expect.run(run)`: `toComplete()`, `toHaveSteps(...ids)` (the IDs your function gave them, such as `agent:model:1`), `toOutput(value)`.
 - `ctx.expect.kv(key).toEqual(value)` reads a Redis key (JSON) of the real Redis.
-- `ctx.expect.posts({ channel, method, thread }).toHaveCount(n)` (exactly n, after a 1s settle) and `.toInclude({ field: value })` assert on the calls the fake channels got since your scenario began. Slack posts to `${fakes.url}/slack/api/<method>` (`chat.postMessage`, `chat.update`, `reactions.add`, thread in `thread_ts`); GitHub to `${fakes.url}/github/repos/<o>/<r>/issues/<n>/comments` or `.../pulls/<n>/reviews`. The thread of a GitHub call is `owner/repo#n`.
+- `ctx.expect.posts({ channel, method }).toHaveCount(n)` (exactly n, after a 1s settle) and `.toInclude({ field: value })` assert on the calls the fakes recorded since your scenario began (`channel` is `"sandbox"` or `"model"`).
 - `ctx.restartApp()` kills the app process and starts it again (Dev Server and Redis stay), returning once it has synced; requests in flight are lost, as in a worker crash or deploy.
 - `ctx.eventually(name, read, ok)`, `ctx.until(read, ok)`, `ctx.check(name, ok, detail)` for anything else. Poll with `until`; never `sleep` over 3s and never assert on wall-clock time.
 - `script([...])` is the scripted model: steps answer by turn (`{ say }` or `{ call: { name, input } }`), a step with `when(request)` answers the first request it matches, and the model echoes after the script.
 - `sandbox: "fake"` serves the Sandboxes API from memory (see `scenarios/sandbox-fake.ts`); `sandboxCommands` cans command output. Operations show up as `channel: "sandbox"` calls (`sandbox.create`, `sandbox.exec`, `sandbox.upload`, `sandbox.destroy`).
 
-Limits: the fake Slack and GitHub answer only the write methods listed (everything else is a 404 or a minimal `{ ok: true }`); `sandboxCommands` of all scenarios in one run are merged, so keep command keys specific.
+Limits: `sandboxCommands` of all scenarios in one run are merged, so keep command keys specific.
 
 Rules: a scenario uses its own event names and thread IDs (the driver gives you the event prefix); one retry is not allowed, a flaky scenario is a bug and blocks merges; 2 minute cap, aim for 30-60s.
 

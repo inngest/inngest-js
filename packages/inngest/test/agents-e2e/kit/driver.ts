@@ -3,8 +3,8 @@
  * The scenario contract and the driver API. A scenario file declares the
  * functions the kit app serves (`functions`, run inside the app) and the
  * checks to make (`run`, run by the CLI). The driver sends events, waits for
- * runs, and asserts on runs, steps, Redis keys and what the fake channels
- * received. Every assertion prints a PASS or FAIL line.
+ * runs, and asserts on runs, steps, Redis keys and what the fakes
+ * recorded. Every assertion prints a PASS or FAIL line.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";

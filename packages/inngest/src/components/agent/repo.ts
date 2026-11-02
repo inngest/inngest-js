@@ -60,8 +60,7 @@ export interface RepoOptions {
    * Used to clone and fetch over HTTPS, and to push too unless `push` is
    * set. Without it only public repositories can be cloned. When `push` is
    * set this can be read-only: a token for this repository with
-   * `contents: "read"` (such as `githubApp().token(repo, { permissions: {
-   * contents: "read" } })`) is all the sandbox ever holds.
+   * `contents: "read"` is all the sandbox ever holds.
    */
   token?: string | (() => string | Promise<string>);
 
