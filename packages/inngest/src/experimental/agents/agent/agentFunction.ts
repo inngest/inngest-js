@@ -63,6 +63,7 @@ import type {
 import { agent, defaultFormat } from "../loop/loop.ts";
 import { createAgentScores } from "../loop/scores.ts";
 import {
+  agentSandbox,
   openSandboxes,
   resolveSandboxes,
   sandboxTools,
@@ -551,8 +552,11 @@ export function createAgentFunction(
             me: { key: data.thread },
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
-            sandboxes: opened,
-            sandboxTools: sandboxTools(opened),
+            sandboxes: Object.fromEntries(
+              Object.entries(opened).map(([name, lazy]) => {
+                return [name, agentSandbox(lazy)];
+              }),
+            ) as unknown as AgentBodyContext["sandboxes"],
 
             // Slot: inbox. The thread's messages and how the run before this
             // one ended.
@@ -573,7 +577,11 @@ export function createAgentFunction(
               return agent.loop({
                 ...loopOptions,
                 prompt: promptOf(prompt, loopOptions.format),
-                tools: { ...listenTools, ...loopOptions.tools },
+                tools: {
+                  ...sandboxTools(opened),
+                  ...listenTools,
+                  ...loopOptions.tools,
+                },
               });
             },
 

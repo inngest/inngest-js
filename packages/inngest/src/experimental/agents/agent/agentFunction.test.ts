@@ -1485,7 +1485,7 @@ describe("eager sandboxes", () => {
         }
 
         try {
-          await sandboxes.work?.get();
+          await sandboxes.work?.commands.run("use", ["true"]);
         } catch (error) {
           return (error as Error).message;
         }

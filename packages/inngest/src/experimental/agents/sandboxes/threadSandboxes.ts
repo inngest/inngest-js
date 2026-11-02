@@ -63,9 +63,11 @@ import {
   type PausedSandbox,
   recordSandboxGeneration,
   runScore,
+  type ShellPlace,
   sandboxGenerations,
   sandboxPausedKey,
   sandboxReadyKey,
+  sandboxShellKey,
 } from "../threads/threadState.ts";
 
 const { sha256 } = hashjs;
@@ -259,6 +261,32 @@ export interface ThreadSandboxOwner {
      * The sandbox's name in the agent's `sandboxes`.
      */
     name: string,
+  ): Promise<void>;
+
+  /**
+   * The place the thread's last run left the shell of the sandbox `name` in.
+   * Undefined when it left none.
+   */
+  loadShell(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+  ): Promise<ShellPlace | undefined>;
+
+  /**
+   * Keeps the shell's place for the thread's next run.
+   */
+  saveShell(
+    /**
+     * The sandbox's name in the agent's `sandboxes`.
+     */
+    name: string,
+
+    /**
+     * Where the shell is now.
+     */
+    place: ShellPlace,
   ): Promise<void>;
 
   /**
@@ -583,6 +611,14 @@ export const threadSandboxOwner = (
 
     release: async (name) => {
       await forget(scope, sandboxReadyKey(ref, name, runId));
+    },
+
+    loadShell: async (name) => {
+      return scope.get(typedKey<ShellPlace>(sandboxShellKey(ref, name)));
+    },
+
+    saveShell: async (name, place) => {
+      await scope.set(typedKey<ShellPlace>(sandboxShellKey(ref, name)), place);
     },
 
     ready: async (name) => {

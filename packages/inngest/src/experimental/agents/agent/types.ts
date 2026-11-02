@@ -39,12 +39,11 @@ import type {
   AgentTurn,
 } from "../loop/loop.ts";
 import type { AgentScores } from "../loop/scores.ts";
-import {
-  type LazySandbox,
-  type SandboxesConfig,
-  type SandboxToolNames,
-  type SandboxToolsOf,
-  sandboxTools,
+import type {
+  AgentSandbox,
+  AgentSandboxWithRepo,
+  SandboxesConfig,
+  SandboxToolNames,
 } from "../sandboxes/defs.ts";
 import type { ThreadHandle, TriggerEvent } from "../threads/thread.ts";
 import type {
@@ -359,14 +358,11 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * except `start: "eager"` ones, which are already being created.
    */
   sandboxes: {
-    [K in keyof AgentTypesOf<TTypes>["sandboxes"] & string]: LazySandbox;
+    [K in keyof AgentTypesOf<TTypes>["sandboxes"] &
+      string]: "~repo" extends AgentTypesOf<TTypes>["sandboxes"][K]
+      ? AgentSandboxWithRepo
+      : AgentSandbox;
   };
-
-  /**
-   * Every sandbox's tools, named `<sandbox>_<tool>` (`work_run`). Spread into
-   * the `tools` of `agent.loop()`.
-   */
-  sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
    * Runs the loop on a prompt with the agent's own wiring: steering, the

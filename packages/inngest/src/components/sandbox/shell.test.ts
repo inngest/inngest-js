@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { getCommandError } from "./commandError.ts";
 import { createFakeClient, groupFunction, runAll } from "./dollar-fixtures.ts";
+import { beginShellCommand, type ShellState } from "./shell.ts";
 import type { DurableSandbox } from "./types.ts";
 
 const root = realpathSync(mkdtempSync(path.join(tmpdir(), "ingest-shell-")));
@@ -355,5 +356,55 @@ describe("sandbox.tools.code() run", () => {
     expect(result).toMatchObject({
       data: [`exit 1\n\ncwd: ${app}`, `exit 0\n${app}\n`],
     });
+  });
+});
+
+describe("the shell's environment cap", () => {
+  const stateWith = (env: Record<string, string>): ShellState => {
+    return { cwd: "/work", env, unset: new Set() };
+  };
+
+  test("a command starts while the environment is well under the limits", () => {
+    const start = beginShellCommand(stateWith({ A: "1" }), "ls", "run");
+
+    expect(start.env).toEqual({ A: "1" });
+  });
+
+  test("fails early, naming the entry limit, when the entries near 256", () => {
+    const env = Object.fromEntries(
+      Array.from({ length: 250 }, (_, i) => {
+        return [`V${i}`, "x"];
+      }),
+    );
+
+    expect(() => {
+      return beginShellCommand(stateWith(env), "ls", "run");
+    }).toThrow(/limit of 256/);
+  });
+
+  test("fails early, naming the size limit, when the bytes near 64 KiB", () => {
+    const env = { BIG: "x".repeat(63 * 1_024) };
+
+    expect(() => {
+      return beginShellCommand(stateWith(env), "ls", "run");
+    }).toThrow(/64 KiB/);
+  });
+
+  test("counts what the call adds, and the error says how to recover", () => {
+    const env = Object.fromEntries(
+      Array.from({ length: 245 }, (_, i) => {
+        return [`V${i}`, "x"];
+      }),
+    );
+
+    expect(() => {
+      return beginShellCommand(stateWith(env), "ls", "run", {
+        env: Object.fromEntries(
+          Array.from({ length: 10 }, (_, i) => {
+            return [`W${i}`, "y"];
+          }),
+        ),
+      });
+    }).toThrow(/unset/);
   });
 });

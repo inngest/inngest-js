@@ -34,8 +34,8 @@ import type {
 } from "./types.ts";
 
 /**
- * What an agent without `sandboxes` has: none, so `sandboxes.anything` and
- * `sandboxTools.anything` fail to compile.
+ * What an agent without `sandboxes` has: none, so `sandboxes.anything` fails
+ * to compile.
  */
 type NoSandboxes = Record<never, never>;
 

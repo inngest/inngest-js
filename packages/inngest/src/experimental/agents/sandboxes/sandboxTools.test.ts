@@ -11,7 +11,6 @@ import {
   sandboxResource,
 } from "../../../components/sandbox/test-helpers.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
-import { repo } from "./repo.ts";
 
 type Exec = {
   command: string[];
@@ -97,7 +96,8 @@ describe("codeTools edit", () => {
       async (sandbox) => {
         try {
           result = await (
-            codeTools(sandbox, { cwd: "/repo" }).edit.run as Call
+            codeTools(sandbox, { cwd: "/repo", only: ["edit"] }).edit
+              .run as Call
           )(input);
         } catch (caught) {
           error = caught;
@@ -235,6 +235,27 @@ describe("codeTools", () => {
     expect(output).toBe("exit 2\nout\nstderr:\nerr");
   });
 
+  test("only adds read, search and edit, and there is no write", async () => {
+    await inSandbox(async (sandbox) => {
+      const tools = codeTools(sandbox, {
+        only: ["run", "read", "search", "edit"],
+      });
+
+      expect(Object.keys(tools)).toEqual(["run", "read", "search", "edit"]);
+      expect(Object.keys(codeTools(sandbox, { tools: {} }))).not.toContain(
+        "write",
+      );
+    });
+  });
+
+  test("only may leave out run", async () => {
+    await inSandbox(async (sandbox) => {
+      expect(Object.keys(codeTools(sandbox, { only: ["read"] }))).toEqual([
+        "read",
+      ]);
+    });
+  });
+
   test("only returns the tools asked for", async () => {
     await inSandbox(async (sandbox) => {
       expect(
@@ -244,72 +265,15 @@ describe("codeTools", () => {
   });
 });
 
-describe("repo", () => {
-  const token = "ghs_secret_token";
-
-  test("keeps the token in the command environment, out of steps and scripts", async () => {
-    let checkout: Awaited<ReturnType<typeof repo>> | undefined;
-
-    const { steps, execs } = await inSandbox(
-      async (sandbox) => {
-        checkout = await repo(sandbox, { repo: "acme/web", ref: "dev", token });
-        await (checkout.tools.push.run as (input: unknown) => unknown)({
-          branch: "fix",
-        });
-      },
-      { stdout: "noise\nrepo:cloned:abc123\n" },
-    );
-
-    expect(checkout).toMatchObject({ path: "/work", sha: "abc123" });
-    expect(Object.keys(checkout?.tools ?? {})).toEqual([
-      "read",
-      "write",
-      "edit",
-      "search",
-      "run",
-      "push",
-    ]);
-    expect(execs.map((exec) => exec.environment?.GIT_TOKEN)).toEqual([
-      token,
-      token,
-    ]);
-    expect(execs[0]?.environment).toMatchObject({
-      URL: "https://github.com/acme/web.git",
-      REF: "dev",
-    });
-    expect(execs[1]?.environment?.BRANCH).toBe("fix");
-    expect(JSON.stringify(steps)).not.toContain(token);
-    expect(JSON.stringify(execs.map((exec) => exec.command))).not.toContain(
-      token,
-    );
-  });
-
-  test("fails without retrying when git fails", async () => {
-    const { type } = await inSandbox(
-      async (sandbox) => {
-        await repo(sandbox, { repo: "acme/missing" });
-      },
-      { stderr: "not found", exitCode: 128 },
-    );
-
-    expect(type).toBe("function-rejected");
-  });
-});
-
 describe("codeTools run_code", () => {
   const sandbox = {} as DurableSandbox;
 
   test("is offered only when the script's tools are given", () => {
-    expect(Object.keys(codeTools(sandbox))).toEqual([
-      "read",
-      "write",
-      "edit",
-      "search",
+    expect(Object.keys(codeTools(sandbox))).toEqual(["run"]);
+    expect(Object.keys(codeTools(sandbox, { tools: {} }))).toEqual([
       "run",
-    ]);
-    expect(Object.keys(codeTools(sandbox, { tools: {} })).at(-1)).toBe(
       "run_code",
-    );
+    ]);
     expect(Object.keys(codeTools(sandbox, { only: ["run_code"] }))).toEqual([
       "run_code",
     ]);
@@ -335,5 +299,81 @@ describe("codeTools run_code options", () => {
     expect(() => {
       return codeTools(sandbox, { tools: {}, only: ["run"] });
     }).toThrow(/only leaves it out/);
+  });
+});
+
+describe("codeTools run keeps the thread's place", () => {
+  const fake = (saved: unknown) => {
+    const seen: { cwd?: string; environment?: Record<string, string> }[] = [];
+    let read: (() => unknown) | undefined;
+    const sandbox = {
+      commands: {
+        run: async (
+          _id: unknown,
+          _command: unknown,
+          options: { cwd?: string; environment?: Record<string, string> },
+        ) => {
+          seen.push(options);
+
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+      },
+      files: {},
+      "~shellPlace": {
+        load: async () => {
+          return saved;
+        },
+        track: (fn: () => unknown) => {
+          read = fn;
+        },
+      },
+    } as unknown as DurableSandbox;
+
+    return { sandbox, seen, place: () => read?.() };
+  };
+
+  const call = (tools: ReturnType<typeof codeTools>, command: string) => {
+    return (tools.run.run as (input: unknown, ctx: unknown) => unknown)(
+      { command },
+      { signal: new AbortController().signal, idempotencyKey: "k" },
+    );
+  };
+
+  test("a first command starts in the saved directory with the saved environment", async () => {
+    const { sandbox, seen } = fake({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: [],
+    });
+
+    await call(codeTools(sandbox), "ls");
+
+    expect(seen[0]?.cwd).toBe("/work/app");
+    expect(seen[0]?.environment).toEqual({ MODE: "test" });
+  });
+
+  test("with nothing saved the shell starts at cwd with an empty environment", async () => {
+    const { sandbox, seen } = fake(undefined);
+
+    await call(codeTools(sandbox, { cwd: "/src" }), "ls");
+
+    expect(seen[0]?.cwd).toBe("/src");
+    expect(seen[0]?.environment).toEqual({});
+  });
+
+  test("the shell hands its place over to be kept", async () => {
+    const { sandbox, place } = fake({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: ["OLD"],
+    });
+
+    await call(codeTools(sandbox), "ls");
+
+    expect(place()).toEqual({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: ["OLD"],
+    });
   });
 });

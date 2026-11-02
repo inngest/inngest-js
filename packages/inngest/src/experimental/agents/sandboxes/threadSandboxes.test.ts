@@ -20,6 +20,7 @@ import {
   runScore,
   sandboxPausedKey,
   sandboxReadyKey,
+  sandboxShellKey,
 } from "../threads/threadState.ts";
 import { openSandboxes, sandbox } from "./defs.ts";
 import {
@@ -1755,5 +1756,127 @@ describe("recycling a lazy sandbox", () => {
     expect(await newest(s.scope)).toBe("01A.000001");
     expect(w.rows).toHaveLength(2);
     expect([...w.live]).toEqual([]);
+  });
+});
+
+describe("the shell's place across a thread's runs", () => {
+  const box = sandbox({ id: "box", secrets: ["TOKEN"] });
+  const where = {
+    cwd: "/work/app",
+    env: { MODE: "test", TOKEN: "s3cret" },
+    unset: ["OLD"],
+  };
+
+  const run = (
+    w: ReturnType<typeof world>,
+    s: ReturnType<typeof setup>,
+    id: string,
+    scope?: KvScopeInstance,
+  ) => {
+    return openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable(id);
+        }),
+        get: vi.fn(async (_id: string, found: string) => {
+          return w.live.has(found) ? w.durable(found) : null;
+        }),
+      } as unknown as DurableSandboxTools,
+      undefined,
+      s.owner(scope),
+    );
+  };
+
+  test("the next run of the thread starts where the last one left off", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = run(w, first, "sb-1");
+
+    await one.work?.get();
+    one.work?.place.track(() => {
+      return where;
+    });
+    await one.work?.close();
+
+    const next = run(w, setup(w, "01B"), "sb-2", first.scope);
+
+    await next.work?.get();
+
+    expect(await next.work?.place.load()).toEqual({
+      cwd: "/work/app",
+      env: { MODE: "test" },
+      unset: ["OLD"],
+    });
+  });
+
+  test("a variable named in the sandbox's secrets is never saved", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = run(w, first, "sb-1");
+
+    await one.work?.get();
+    one.work?.place.track(() => {
+      return where;
+    });
+    await one.work?.close();
+
+    const stored = await first.scope.get(
+      typedKey<unknown>(sandboxShellKey(ref, "work")),
+    );
+
+    expect(JSON.stringify(stored)).not.toContain("s3cret");
+    expect(JSON.stringify(stored)).not.toContain("TOKEN");
+  });
+
+  test("another thread starts at the default place", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = run(w, first, "sb-1");
+
+    await one.work?.get();
+    one.work?.place.track(() => {
+      return where;
+    });
+    await one.work?.close();
+
+    const other = setup(w, "01B", "other-thread");
+    const next = run(w, other, "sb-2");
+
+    await next.work?.get();
+
+    expect(await next.work?.place.load()).toBeUndefined();
+  });
+
+  test("a recreated sandbox starts at the default place", async () => {
+    const w = world();
+
+    w.platform.pausable = true;
+
+    const first = setup(w, "01A");
+    const one = run(w, first, "sb-1");
+
+    await one.work?.get();
+    one.work?.place.track(() => {
+      return where;
+    });
+    await one.work?.close();
+    w.live.delete("sb-1");
+    w.paused.delete("sb-1");
+
+    const next = run(w, setup(w, "01B"), "sb-2", first.scope);
+
+    await next.work?.get();
+
+    expect(await next.work?.place.load()).toBeUndefined();
   });
 });
