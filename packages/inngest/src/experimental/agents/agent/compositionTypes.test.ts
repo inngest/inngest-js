@@ -7,6 +7,7 @@
  * into a function context), so `expect(check).toBeTypeOf("function")` only
  * gives vitest a runtime assertion and keeps the closure used.
  */
+
 import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -14,6 +15,7 @@ import { tool } from "../../../components/sandbox/tools.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { agent } from "../loop/loop.ts";
+import { model, runLoop } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgents } from "./agents.ts";
 
@@ -55,7 +57,7 @@ describe("composition", () => {
           "shop/order.created" | "agent/message" | "agent/steer" | undefined
         >();
 
-        return agent.loop({
+        return runLoop({
           model: async () => {
             return {
               message: { role: "assistant", content: "ok" },
@@ -109,7 +111,7 @@ describe("pointed errors", () => {
 
   test("a loop tool must be a tool", () => {
     const check = () => {
-      agent.loop({
+      runLoop({
         model: async () => {
           return {
             message: { role: "assistant", content: "ok" },

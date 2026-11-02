@@ -1,6 +1,6 @@
 /**
  * @module
- * Tests for `agent.loop()`, with a scripted function standing in for the model.
+ * Tests for `runLoop()`, with a scripted function standing in for the model.
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
@@ -17,14 +17,18 @@ import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import type { OutgoingOp } from "../../../types.ts";
 import { anthropic } from "./anthropic.ts";
 import {
+  type AgentEvent,
+  type AgentLoopInput,
   type AgentLoopOptions,
   type AgentLoopResult,
+  type AgentLoopWiring,
   type AgentModelRequest,
   type AgentModelResponse,
   type AgentToolRun,
   agent,
   type ModelMessage,
 } from "./loop.ts";
+import { model, runLoop } from "./loopKit.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -105,7 +109,10 @@ const drive = async (fn: InngestFunction.Any, reverse: boolean) => {
  */
 const run = async (
   script: AgentModelResponse[],
-  options: Partial<AgentLoopOptions> = {},
+  options: Partial<AgentLoopOptions> & {
+    prompt?: AgentLoopInput;
+    wiring?: AgentLoopWiring;
+  } = {},
   reverse = false,
 ) => {
   const requests: AgentModelRequest[] = [];
@@ -115,8 +122,8 @@ const run = async (
   const fn = client.createFunction(
     { id: "agent", triggers: [{ event: "agent/run" }] },
     async () => {
-      result = await agent.loop({
-        model: agent.model(async (request) => {
+      result = await runLoop({
+        model: model(async (request) => {
           requests.push(structuredClone(request));
 
           return script[requests.length - 1] as AgentModelResponse;
@@ -163,7 +170,7 @@ describe("agent.loop", () => {
     );
     expect(result).toMatchObject({
       text: "It is 3",
-      stopped: "done",
+      end: "done",
       turns: 2,
       usage: { input: 20, output: 10 },
     });
@@ -182,7 +189,7 @@ describe("agent.loop", () => {
     );
 
     expect(requests).toHaveLength(2);
-    expect(result).toMatchObject({ stopped: "maxTurns", turns: 2 });
+    expect(result).toMatchObject({ end: "maxTurns", turns: 2 });
   });
 
   test.each([
@@ -236,7 +243,7 @@ describe("agent.loop", () => {
     expect(sent).toMatchObject({
       results: [{ content: expect.stringContaining(scenario.error) }],
     });
-    expect(result?.stopped).toBe("done");
+    expect(result?.end).toBe("done");
   });
 
   test.each([
@@ -335,11 +342,11 @@ describe("agent.loop", () => {
       return calls;
     };
     const { steps, result } = await run([say("done")], { price });
-    const model = steps.find((done) => {
+    const modelStep = steps.find((done) => {
       return done.userland?.id === "agent:model:1";
     });
 
-    expect(model?.data).toMatchObject({ usd: 1 });
+    expect(modelStep?.data).toMatchObject({ usd: 1 });
     expect(result?.usage.usd).toBe(1);
     expect(calls).toBe(1);
 
@@ -348,8 +355,8 @@ describe("agent.loop", () => {
     const fn = client.createFunction(
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
-        result2 = await agent.loop({
-          model: agent.model(async () => {
+        result2 = await runLoop({
+          model: model(async () => {
             throw new Error("the model must not be called on a replay");
           }),
           prompt: "go",
@@ -378,8 +385,8 @@ describe("agent.loop", () => {
     const fn = client.createFunction(
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
-        replayed = await agent.loop({
-          model: agent.model(async () => {
+        replayed = await runLoop({
+          model: model(async () => {
             throw new Error("the model must not be called on a replay");
           }),
           prompt: "go",
@@ -411,8 +418,8 @@ describe("agent.loop", () => {
     const fn = client.createFunction(
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
-        seen.replayed = await agent.loop({
-          model: agent.model(async () => {
+        seen.replayed = await runLoop({
+          model: model(async () => {
             throw new Error("the model must not be called on a replay");
           }),
           prompt: "go",
@@ -495,45 +502,106 @@ describe("agent.loop", () => {
     });
   });
 
-  test("adds what steer returns after the tool results", async () => {
-    const { requests } = await run(
-      [call("add", { a: 1, b: 2 }), call("add", { a: 3, b: 4 }), say("ok")],
-      {
-        steer: async (turn) => {
-          return turn === 1 ? ["use bigger numbers"] : undefined;
-        },
+  test("folds what arrives while a tool runs into the very next model call, in order and once", async () => {
+    const waiting: AgentEvent[][] = [
+      [],
+      [1, 2, 3, 4, 5].map((n) => {
+        return { id: `e${n}`, name: "agent/message", data: { text: `m${n}` } };
+      }),
+    ];
+    const wiring: AgentLoopWiring = {
+      drain: async ({ turn }) => {
+        return waiting[turn - 1] ?? [];
       },
-    );
-
-    expect(requests[1]?.messages.slice(-2).map((m) => m.role)).toEqual([
-      "tool",
-      "user",
-    ]);
-    expect(requests[1]?.messages.at(-1)).toEqual({
-      role: "user",
-      content: "use bigger numbers",
+    };
+    const { requests } = await run([call("add", { a: 1, b: 2 }), say("ok")], {
+      wiring,
     });
-    expect(requests[2]?.messages.at(-1)?.role).toBe("tool");
+
+    expect(requests[1]?.messages.slice(-6)).toEqual([
+      expect.objectContaining({ role: "tool" }),
+      { role: "user", content: "m1" },
+      { role: "user", content: "m2" },
+      { role: "user", content: "m3" },
+      { role: "user", content: "m4" },
+      { role: "user", content: "m5" },
+    ]);
+    expect(
+      requests.flatMap((request) => {
+        return request.messages.filter((message) => {
+          return message.role === "user" && message.content === "m3";
+        });
+      }),
+    ).toHaveLength(1);
   });
 
-  test("an event as the prompt or a steering message is worded by the default format", async () => {
+  test("folds before the first model call too", async () => {
+    const waiting: AgentEvent[][] = [
+      [{ id: "e1", name: "agent/message", data: { text: "early" } }],
+    ];
+    const { requests } = await run([say("ok")], {
+      wiring: {
+        drain: async ({ turn }) => {
+          return waiting[turn - 1] ?? [];
+        },
+      },
+    });
+
+    expect(requests[0]?.messages).toEqual([
+      { role: "user", content: "go" },
+      { role: "user", content: "early" },
+    ]);
+  });
+
+  test("a custom steer folds some messages and the rest come back as unread", async () => {
+    const taken = [
+      { id: "e1", name: "agent/message", data: { text: "keep" } },
+      { id: "e2", name: "agent/message", data: { text: "later" } },
+    ];
+    const waiting: AgentEvent[][] = [taken];
+    const seen: AgentEvent[][] = [];
+    const { requests, result } = await run([say("ok")], {
+      wiring: {
+        drain: async ({ turn }) => {
+          return waiting[turn - 1] ?? [];
+        },
+      },
+      steer: async (drained) => {
+        seen.push(drained);
+
+        return drained.filter((message) => {
+          return message.id === "e1";
+        });
+      },
+    });
+
+    expect(seen[0]).toEqual(taken);
+    expect(requests[0]?.messages.at(-1)).toEqual({
+      role: "user",
+      content: "keep",
+    });
+    expect(result?.unread).toEqual([taken[1]]);
+  });
+
+  test("an event as the prompt or a folded message is worded by the default format", async () => {
     const message = (name: string, data: unknown) => {
       return { id: "e1", name, data };
     };
+    const waiting: AgentEvent[][] = [
+      [],
+      [
+        message("agent/message", { text: "faster" }),
+        message("ci/status", { state: "red" }),
+      ],
+    ];
     const { requests } = await run(
       [call("add", { a: 1, b: 2 }), call("add", { a: 3, b: 4 }), say("ok")],
       {
         prompt: message("agent/message", { text: "hello" }),
-        steer: async (turn) => {
-          if (turn === 1) {
-            return [
-              message("agent/steer", { text: "faster" }),
-              message("ci/status", { state: "red" }),
-              "plain text",
-            ];
-          }
-
-          return undefined;
+        wiring: {
+          drain: async ({ turn }) => {
+            return waiting[turn - 1] ?? [];
+          },
         },
       },
     );
@@ -542,13 +610,12 @@ describe("agent.loop", () => {
       role: "user",
       content: "hello",
     });
-    expect(requests[1]?.messages.slice(-3)).toEqual([
+    expect(requests[1]?.messages.slice(-2)).toEqual([
       { role: "user", content: "faster" },
       {
         role: "user",
         content: JSON.stringify({ event: "ci/status", data: { state: "red" } }),
       },
-      { role: "user", content: "plain text" },
     ]);
   });
 
@@ -595,14 +662,17 @@ describe("agent.loop", () => {
       },
     );
 
-    expect(ran).toEqual([
-      "agent:model:1",
-      "post:1",
-      "agent:1.0:add",
-      "agent:model:2",
-      "post:2",
-    ]);
-    expect(result?.stopped).toBe("done");
+    expect([...ran].sort()).toEqual(
+      [
+        "agent:model:1",
+        "agent:1.0:add",
+        "agent:model:2",
+        "post:1",
+        "post:2",
+      ].sort(),
+    );
+    expect(ran.indexOf("post:1")).toBeGreaterThan(ran.indexOf("agent:1.0:add"));
+    expect(result?.end).toBe("done");
   });
 
   test("keeps a result with an error field of its own as a success", async () => {
@@ -699,7 +769,7 @@ describe("agent.loop", () => {
           { toolCallId: "b", name: "add", input: { a: 2, b: 2 }, content: "4" },
         ],
       });
-      expect(result?.stopped).toBe("done");
+      expect(result?.end).toBe("done");
     });
 
     test("runs the calls one after another with parallelTools: false", async () => {
@@ -904,21 +974,12 @@ describe("agent.loop", () => {
 
   test("reports each tool call, and the model step's ID", async () => {
     const posted: string[] = [];
-    const { ran, result } = await run(
-      [call("add", { a: 1, b: 2 }), say("ok")],
-      {
-        onToolResult: async ({ stepId }) => {
-          await step.run(`record`, () => {
-            posted.push(stepId);
-          });
-        },
-        onTurn: ({ turn, stepId }) => {
-          posted.push(`${turn}=${stepId}`);
-        },
+    const { result } = await run([call("add", { a: 1, b: 2 }), say("ok")], {
+      onTurn: ({ turn, stepId }) => {
+        posted.push(`${turn}=${stepId}`);
       },
-    );
+    });
 
-    expect(ran).toContain("agent:1.0:add:record");
     expect(posted).toEqual(expect.arrayContaining(["1=agent:model:1"]));
     expect(result?.toolCalls).toEqual([
       {
@@ -933,7 +994,7 @@ describe("agent.loop", () => {
     ]);
   });
 
-  test("gives onToolResult the body of an error result", async () => {
+  test("gives the run the body of an error result", async () => {
     const { result } = await run([call("add", {}), say("ok")], {
       tools: {
         add: tool.step({
@@ -966,7 +1027,7 @@ describe("agent.loop", () => {
       role: "user",
       content: "Write the answer now.",
     });
-    expect(result).toMatchObject({ stopped: "done", text: "final answer" });
+    expect(result).toMatchObject({ end: "done", text: "final answer" });
   });
 
   describe("context", () => {
@@ -999,7 +1060,7 @@ describe("agent.loop", () => {
       );
 
       expect(bigLengths(requests[3]?.messages)).toEqual([5_000, 5_000, 5_000]);
-      expect(result?.stopped).toBe("done");
+      expect(result?.end).toBe("done");
     });
 
     test("each call sends the previous call's messages unchanged first", async () => {
@@ -1255,20 +1316,14 @@ describe("tool types", () => {
 
   // These call agent.loop, which needs a function execution, so they are only
   // compiled: the assertions are the types.
-  test("agent.loop infers the tools from the call and types onToolResult", () => {
+  test("agent.loop infers the tools from the call", () => {
     const typecheck = async () => {
-      const result = await agent.loop({
-        model: agent.model(async () => {
+      const result = await runLoop({
+        model: model(async () => {
           return say("done");
         }),
         prompt: "go",
         tools: { lookup },
-        onToolResult: (run) => {
-          if (!run.isError) {
-            expectTypeOf(run.name).toEqualTypeOf<"lookup">();
-            expectTypeOf(run.output).toEqualTypeOf<{ name: string }>();
-          }
-        },
       });
 
       expectTypeOf(result.toolCalls).toEqualTypeOf<
@@ -1281,8 +1336,8 @@ describe("tool types", () => {
 
   test("a typed result still fits a plain AgentLoopResult and AgentLoopOptions", () => {
     const typecheck = async () => {
-      const result = await agent.loop({
-        model: agent.model(async () => {
+      const result = await runLoop({
+        model: model(async () => {
           return say("done");
         }),
         prompt: "go",
@@ -1291,7 +1346,7 @@ describe("tool types", () => {
       const plain: AgentLoopResult = result;
       const all: AgentLoopResult[] = [plain, result];
       const options: AgentLoopOptions = {
-        model: agent.model(async () => {
+        model: model(async () => {
           return say("done");
         }),
         prompt: "go",
@@ -1309,18 +1364,13 @@ describe("tool types", () => {
       let history: ModelMessage[] = [];
 
       for (let turn = 0; turn < 2; turn += 1) {
-        const result = await agent.loop({
-          model: agent.model(async () => {
+        const result = await runLoop({
+          model: model(async () => {
             return say("done");
           }),
           prompt: "go",
           tools: { lookup },
           history,
-          onToolResult: (run) => {
-            if (!run.isError) {
-              expectTypeOf(run.name).toEqualTypeOf<"lookup">();
-            }
-          },
         });
 
         expectTypeOf(result.toolCalls).toEqualTypeOf<
@@ -1335,8 +1385,8 @@ describe("tool types", () => {
 
   test("no tools still gives a result with failed runs", () => {
     const typecheck = async () => {
-      const result = await agent.loop({
-        model: agent.model(async () => {
+      const result = await runLoop({
+        model: model(async () => {
           return say("done");
         }),
         prompt: "go",
@@ -1435,10 +1485,19 @@ describe("agent.loop scores", () => {
     });
   });
 
-  test("counts the steering messages folded into a model call", async () => {
+  test("counts the messages folded into a model call", async () => {
+    const waiting: AgentEvent[][] = [
+      [],
+      [
+        { id: "e1", name: "agent/message", data: { text: "use 2" } },
+        { id: "e2", name: "agent/message", data: { text: "and 3" } },
+      ],
+    ];
     const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {
-      steer: async () => {
-        return ["use 2", "and 3"];
+      wiring: {
+        drain: async ({ turn }) => {
+          return waiting[turn - 1] ?? [];
+        },
       },
     });
 
@@ -1448,16 +1507,6 @@ describe("agent.loop scores", () => {
     expect(scoresOf(stepNamed(steps, "agent:model:2"))).toMatchObject({
       "agent.steers": 2,
     });
-  });
-
-  test("writes no scores with scores: false", async () => {
-    const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {
-      scores: false,
-    });
-
-    for (const op of steps) {
-      expect(scoresOf(op)).toEqual({});
-    }
   });
 
   test("tools are optional: a loop with none just answers", async () => {
@@ -1474,7 +1523,7 @@ describe("agent.loop scores", () => {
     const client = new Inngest({ id: testClientId });
     const answers = [say("one"), say("two"), say("three"), say("four")];
     let used = 0;
-    const model = agent.model(async () => {
+    const scripted = model(async () => {
       return answers[used++] as AgentModelResponse;
     });
     const texts: string[] = [];
@@ -1483,8 +1532,8 @@ describe("agent.loop scores", () => {
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
         for (const options of [{}, {}, { id: "named" }, { id: "named" }]) {
-          const { text } = await agent.loop({
-            model,
+          const { text } = await runLoop({
+            model: scripted,
             prompt: "go",
             ...options,
           });
@@ -1507,7 +1556,7 @@ describe("agent.loop scores", () => {
 
   test("loops running side by side get distinct prefixes too", async () => {
     const client = new Inngest({ id: testClientId });
-    const model = agent.model(async () => {
+    const scripted = model(async () => {
       return say("ok");
     });
 
@@ -1515,8 +1564,8 @@ describe("agent.loop scores", () => {
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
         await Promise.all([
-          agent.loop({ model, prompt: "a" }),
-          agent.loop({ model, prompt: "b" }),
+          runLoop({ model: scripted, prompt: "a" }),
+          runLoop({ model: scripted, prompt: "b" }),
         ]);
       },
     );

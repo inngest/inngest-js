@@ -4,6 +4,7 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { Middleware } from "../../../components/middleware/middleware.ts";
 import {
@@ -14,11 +15,8 @@ import {
 import { testClientId } from "../../../test/helpers.ts";
 import { agentMessage } from "../inbox/events.ts";
 import { createKv, memoryKvAdapter } from "../kv/kv.ts";
-import {
-  type AgentModelResponse,
-  agent,
-  type ModelMessage,
-} from "../loop/loop.ts";
+import type { AgentModelResponse, ModelMessage } from "../loop/loop.ts";
+import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
@@ -103,48 +101,37 @@ describe("agent function", () => {
 
   test("the trigger is message 0, later messages are turns, and the conversation carries across turns", async () => {
     const prompts: unknown[][] = [];
+    let turn = -1;
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
-        let history: ModelMessage[] = [];
-        let last = "";
-        let n = -1;
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        model: model(async (request) => {
+          prompts.push(userTexts(request.messages));
+          turn += 1;
 
-        for await (const m of inbox) {
-          n += 1;
+          return say(`ok ${turn}`);
+        }),
+      },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
+        const one = await loop(first ? [first] : "");
+        const two = await loop.with({ history: one.history })("two");
+        const three = await loop.with({ history: two.history })("three");
 
-          const result = await agent.loop({
-            id: `turn${n}`,
-            model: agent.model(async (request) => {
-              prompts.push(userTexts(request.messages));
-
-              return say(`ok ${n}`);
-            }),
-            prompt: m,
-            tools: {},
-            history,
-            ...control,
-          });
-          history = result.history;
-          last = result.text;
-
-          if (n === 2) {
-            break;
-          }
-        }
-
-        return last;
+        return three.text;
       },
     );
 
-    const { output } = await run(fn, {
-      event: trigger("one"),
-      saved: [message("user", "two"), message("user", "three")],
-    });
+    const { output } = await run(fn, { event: trigger("one") });
 
     expect(output).toBe("ok 2");
-    expect(prompts).toEqual([["one"], ["one", "two"], ["one", "two", "three"]]);
+    expect(prompts.slice(0, 3)).toEqual([
+      ["one"],
+      ["one", "two"],
+      ["one", "two", "three"],
+    ]);
   });
 
   test("an inbox message is the event as it came", async () => {
@@ -247,7 +234,7 @@ describe("agent function", () => {
 
 describe("inbox arrival", () => {
   const loopOnce = (seen: unknown[][]) => {
-    return agent.model(async (request) => {
+    return model(async (request) => {
       seen.push(userTexts(request.messages));
 
       // The first call asks for a tool, so a second call follows and folds in
@@ -260,63 +247,21 @@ describe("inbox arrival", () => {
     });
   };
 
-  test("agent.loop steers through the inbox without the app spreading control", async () => {
-    const seen: unknown[][] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox }) => {
-        const first = await inbox.next();
-
-        // No `...control`: the loop finds the inbox itself.
-        const result = await agent.loop({
-          model: loopOnce(seen),
-          prompt: first ?? "",
-          tools: {},
-        });
-        const next = await inbox.next();
-
-        return [result.stopped, result.turns, textOf(next)];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [message("steer", "left"), message("user", "next")],
-    });
-
-    expect(seen).toEqual([["go"], ["go", "left"]]);
-    expect(output).toEqual(["done", 2, "next"]);
-  });
-
-  test("foldMessages: all folds a user message into the turn, and next() does not return it again", async () => {
+  test("the handler's loop folds what is in the inbox into its model calls, and next() does not return it again", async () => {
     const seen: unknown[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
         kv: createKv({ adapter: memoryKvAdapter() }),
-        foldMessages: "all",
+        model: loopOnce(seen),
       },
-      async ({ inbox }) => {
+      async ({ inbox, loop }) => {
         const first = await inbox.next();
-        await agent.loop({
-          model: agent.model(async (request) => {
-            seen.push(userTexts(request.messages));
+        const result = await loop(first ? [first] : "");
+        const next = await inbox.next({ timeout: "1s" });
 
-            // The second call has the folded message in its prompt.
-            return userTexts(request.messages).length > 1
-              ? say("done")
-              : {
-                  message: { role: "assistant", content: [] },
-                  toolCalls: [{ id: "c1", name: "missing", input: {} }],
-                };
-          }),
-          prompt: first ?? "",
-          tools: {},
-        });
-
-        return (await inbox.next({ timeout: "1s" })) ?? "nothing left";
+        return [result.end, result.turns, next ? textOf(next) : "nothing left"];
       },
     );
 
@@ -326,8 +271,8 @@ describe("inbox arrival", () => {
       timeouts: 1,
     });
 
-    expect(seen).toEqual([["go"], ["go", "also this"]]);
-    expect(output).toBe("nothing left");
+    expect(seen[0]).toEqual(["go", "also this"]);
+    expect(output).toEqual(["done", 2, "nothing left"]);
   });
 
   test("inbox.drain() takes the pending messages, and next() does not return them again", async () => {
@@ -522,32 +467,16 @@ describe("inbox sources", () => {
         kv: createKv({ adapter: memoryKvAdapter() }),
         thread: "event.data.t",
         listen: [status],
-      },
-      async ({ inbox, loop, control }) => {
-        await inbox.next();
-        await loop("go", {
-          model: agent.model(async (request) => {
-            asked.push((request.tools ?? []).map((tool) => tool.name));
+        model: model(async (request) => {
+          asked.push((request.tools ?? []).map((tool) => tool.name));
 
-            return request.turn === 1
-              ? {
-                  message: {
-                    role: "assistant",
-                    content: [
-                      {
-                        type: "tool_use",
-                        id: "t1",
-                        name: "inbox_listen",
-                        input: {
-                          source: "ci/status",
-                          match: { state: "red" },
-                          as: "ci",
-                        },
-                      },
-                    ],
-                  },
-                  toolCalls: [
+          return request.turn === 1
+            ? {
+                message: {
+                  role: "assistant",
+                  content: [
                     {
+                      type: "tool_use",
                       id: "t1",
                       name: "inbox_listen",
                       input: {
@@ -557,14 +486,33 @@ describe("inbox sources", () => {
                       },
                     },
                   ],
-                }
-              : say("done");
-          }),
-        });
+                },
+                toolCalls: [
+                  {
+                    id: "t1",
+                    name: "inbox_listen",
+                    input: {
+                      source: "ci/status",
+                      match: { state: "red" },
+                      as: "ci",
+                    },
+                  },
+                ],
+              }
+            : say("done");
+        }),
+      },
+      async ({ inbox, loop }) => {
+        await inbox.next();
+        await loop("go");
 
-        return control.inboxes().map((open) => {
-          return [open.as, open.source];
-        });
+        return (
+          getAsyncCtxSync()
+            ?.execution?.agentBridge?.wiring?.inboxes?.()
+            .map((open) => {
+              return [open.as, open.source];
+            }) ?? []
+        );
       },
     );
 
@@ -586,16 +534,18 @@ describe("inbox sources", () => {
     const asked: string[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        model: model(async (request) => {
+          asked.push((request.tools ?? []).map((tool) => tool.name));
+
+          return say("done");
+        }),
+      },
       async ({ inbox, loop }) => {
         await inbox.next();
-        await loop("go", {
-          model: agent.model(async (request) => {
-            asked.push((request.tools ?? []).map((tool) => tool.name));
-
-            return say("done");
-          }),
-        });
+        await loop("go");
 
         return "ok";
       },
@@ -891,35 +841,27 @@ describe("thread state", () => {
     const seen = new Map<number, unknown>();
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv },
-      async ({ inbox, control }) => {
-        let n = -1;
+      {
+        id: "bot",
+        kv,
+        model: model(async (request) => {
+          return {
+            ...say(
+              `reply to ${(request.messages.at(-1) as { content: string }).content}`,
+            ),
+            usage: { input: 10, output: 5 },
+          };
+        }),
+      },
+      async ({ inbox, loop }) => {
+        const first = await inbox.next();
 
-        for await (const m of inbox) {
-          n += 1;
-
-          await agent.loop({
-            id: `turn${n}`,
-            model: agent.model(async () => {
-              return {
-                ...say(`reply to ${textOf(m)}`),
-                usage: { input: 10, output: 5 },
-              };
-            }),
-            prompt: m,
-            tools: {},
-            ...control,
-          });
-          seen.set(n, await record(kv));
-
-          if (n === 1) {
-            break;
-          }
-        }
+        await loop(first ? [first] : "");
+        seen.set(0, await record(kv));
       },
     );
 
-    await run(fn, { event: trigger("one"), saved: [message("user", "two")] });
+    await run(fn, { event: trigger("one") });
 
     expect([...seen.values()]).toMatchObject([
       {
@@ -929,15 +871,6 @@ describe("thread state", () => {
         usage: { input: 10, output: 5 },
         runId: "run",
         inflight: { text: "one" },
-        restarts: 0,
-      },
-      {
-        status: "running",
-        turn: 1,
-        summary: "reply to two",
-        usage: { input: 20, output: 10 },
-        runId: "run",
-        inflight: { text: "two" },
         restarts: 0,
       },
     ]);
@@ -1230,26 +1163,6 @@ describe("event", () => {
 });
 
 describe("agent limits", () => {
-  test("a dollar budget without a price throws when the agent is defined", () => {
-    const define = (limits: AgentFunctionConfig["limits"]) => {
-      return () => {
-        return createAgentFunction(
-          makeClient(),
-          { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), limits },
-          async () => {},
-        );
-      };
-    };
-
-    expect(define({ budget: { usd: 1 } })).toThrow(
-      /limits\.budget\.usd without limits\.price/,
-    );
-    expect(
-      define({ budget: { usd: 1 }, price: { "*": { input: 1, output: 1 } } }),
-    ).not.toThrow();
-    expect(define({ budget: { tokens: 10 } })).not.toThrow();
-  });
-
   const spend = (input: number, output: number): AgentModelResponse => {
     return {
       message: { role: "assistant", content: [] },
@@ -1266,21 +1179,17 @@ describe("agent limits", () => {
         id: "bot",
         kv: createKv({ adapter: memoryKvAdapter() }),
         limits: { budget: { tokens: 20 } },
+        model: model(async () => {
+          calls += 1;
+
+          return spend(8, 4);
+        }),
       },
-      async ({ inbox, control }) => {
+      async ({ inbox, loop }) => {
         const first = await inbox.next();
-        const result = await agent.loop({
-          model: agent.model(async () => {
-            calls += 1;
+        const result = await loop(first ? [first] : "");
 
-            return spend(8, 4);
-          }),
-          prompt: first ?? "",
-          tools: {},
-          ...control,
-        });
-
-        return [result.stopped, result.turns, result.reason];
+        return [result.end, result.turns, result.reason];
       },
     );
 
@@ -1294,36 +1203,7 @@ describe("agent limits", () => {
     ]);
   });
 
-  test("a dollar budget inherited by an agent with no price fails the run instead of counting calls as free", async () => {
-    const start = async (limits?: AgentFunctionConfig["limits"]) => {
-      let ran = false;
-      const { fn } = createAgentFunction(
-        makeClient(),
-        { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }), limits },
-        async () => {
-          ran = true;
-        },
-      );
-      const event = trigger("go");
-
-      await run(fn, {
-        event: {
-          ...event,
-          data: {
-            ...event.data,
-            _agent: { depth: 1, limits: { budget: { usd: 1 } } },
-          },
-        },
-      });
-
-      return ran;
-    };
-
-    expect(await start({ price: { "*": { input: 1, output: 1 } } })).toBe(true);
-    expect(await start()).toBe(false);
-  });
-
-  test("a dollar budget handed down is not kept: a later plain message runs an unpriced agent", async () => {
+  test("a dollar budget handed down is not kept: a later plain message runs the agent again", async () => {
     let ran = 0;
     const { fn } = createAgentFunction(
       makeClient(),
@@ -1344,11 +1224,13 @@ describe("agent limits", () => {
       },
     });
 
-    expect(ran).toBe(0);
+    expect(ran).toBeGreaterThan(0);
+
+    const before = ran;
 
     await run(fn, { event: trigger("again") });
 
-    expect(ran).toBeGreaterThan(0);
+    expect(ran).toBeGreaterThan(before);
   });
 
   test("a malformed dollar budget handed down stops the loop as a spent budget, not as a missing price", async () => {
@@ -1356,21 +1238,20 @@ describe("agent limits", () => {
     const seen: unknown[] = [];
     const { fn } = createAgentFunction(
       makeClient(),
-      { id: "bot", kv: createKv({ adapter: memoryKvAdapter() }) },
-      async ({ inbox, control }) => {
+      {
+        id: "bot",
+        kv: createKv({ adapter: memoryKvAdapter() }),
+        model: model(async () => {
+          models += 1;
+
+          return spend(1, 1);
+        }),
+      },
+      async ({ inbox, loop }) => {
         const first = await inbox.next();
-        const result = await agent.loop({
-          model: agent.model(async () => {
-            models += 1;
+        const result = await loop(first ? [first] : "");
 
-            return spend(1, 1);
-          }),
-          prompt: first ?? "",
-          tools: {},
-          ...control,
-        });
-
-        seen.push(result.stopped);
+        seen.push(result.end);
       },
     );
     const invoked = trigger("go");

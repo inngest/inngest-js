@@ -1,3 +1,4 @@
+import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
@@ -8,12 +9,10 @@ import type { InboxRead } from "./inboxState.ts";
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
 /**
- * What `agent.loop()` reads to steer through the agent's inbox.
+ * What `agent.loop()` reads to wire itself to the agent's inbox, budget and turn record.
  */
 export interface AgentBridge {
-  control?: {
-    steer: () => Promise<{ id?: string; name: string; data: unknown }[]>;
-  };
+  wiring?: AgentLoopWiring;
 }
 
 export interface AsyncContext {

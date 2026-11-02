@@ -12,13 +12,12 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
-import { RetryAfterError } from "../../../components/RetryAfterError.ts";
 import {
   issuesMessage,
   type ToolJsonDefinition,
   toJsonSchema,
 } from "../../../components/sandbox/tools.ts";
-import type { AgentPriceTable } from "./cost.ts";
+import { type AgentPriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
@@ -27,7 +26,7 @@ import type {
   AgentUsage,
   ModelMessage,
 } from "./loop.ts";
-import { classifyModelError } from "./modelErrors.ts";
+import { sortModelError } from "./modelErrors.ts";
 
 /**
  * The part of an Anthropic Messages response the adapter reads. The SDK's own
@@ -703,50 +702,15 @@ const parse = (options: AnthropicOptions, reply: AnthropicReply) => {
 };
 
 /**
- * Seconds-to-milliseconds of the `retry-after` header an API error carries, so
- * the step retries when the API asked rather than on Inngest's own schedule.
+ * The cost of a call from the built-in table, when the model is in it.
  */
-const retryAfterMs = (error: unknown): number | undefined => {
-  const headers = (error as { headers?: unknown } | null)?.headers as
-    | { get?: (name: string) => string | null }
-    | Record<string, string>
-    | undefined;
-  const read = (name: string): string | null | undefined => {
-    return typeof (headers as { get?: unknown })?.get === "function"
-      ? (headers as { get: (name: string) => string | null }).get(name)
-      : (headers as Record<string, string> | undefined)?.[name];
-  };
-  const ms = Number(read("retry-after-ms"));
-  const seconds = Number(read("retry-after"));
-
-  if (Number.isFinite(ms) && ms > 0) {
-    return ms;
-  }
-
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
-};
-
-/**
- * Sorts an error from the SDK: a final one becomes a `NonRetriableError`,
- * and a retryable one that names a wait (a 429's `retry-after`) a
- * `RetryAfterError`, so the step retries when the API said it could.
- */
-const sortError = (error: unknown): unknown => {
-  const sorted = classifyModelError(error);
-
-  if (sorted instanceof NonRetriableError) {
-    return sorted;
-  }
-
-  const wait = retryAfterMs(error);
-
-  return wait === undefined
-    ? sorted
-    : new RetryAfterError(
-        error instanceof Error ? error.message : String(error),
-        wait,
-        { cause: error },
-      );
+const costOf = (
+  model: string,
+  usage: AgentUsage,
+): { usd: number } | Record<never, never> => {
+  return Object.hasOwn(anthropicPrices, model)
+    ? { usd: priceOf(anthropicPrices, usage, model) }
+    : {};
 };
 
 type SdkConstructor = new (options: Record<string, unknown>) => AnthropicClient;
@@ -881,7 +845,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
           reply = await shared.client.messages.create(body, requestOptions);
         }
       } catch (error) {
-        throw sortError(error);
+        throw sortModelError(error);
       }
 
       const { blocks, toolCalls, text } = parse(current, reply);
@@ -891,6 +855,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
         toolCalls,
         usage: usageOf(reply),
         model: current.model,
+        ...costOf(current.model, usageOf(reply)),
       };
 
       if (!given.output) {

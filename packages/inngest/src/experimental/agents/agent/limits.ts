@@ -33,11 +33,10 @@ export interface AgentBudget {
   output?: number;
 
   /**
-   * Cost in US dollars, summed from the prices of `limits.price`. An agent
-   * that sets this needs a `limits.price`; `createAgentFunction()` throws
-   * without one, since its calls would count nothing toward the budget. A budget
-   * inherited from a parent needs the sub-agent's own `limits.price` too (a
-   * price is a function and does not travel): its run fails without one.
+   * Cost in US dollars, summed from what each model call cost. The model
+   * reports its own cost when it knows its prices (`anthropic()` does);
+   * `limits.price` overrides it, and a model that reports no cost counts
+   * nothing toward the budget until it has one.
    */
   usd?: number;
 }

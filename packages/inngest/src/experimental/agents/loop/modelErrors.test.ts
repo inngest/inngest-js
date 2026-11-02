@@ -2,12 +2,14 @@
  * @module
  * Tests for `classifyModelError`, `untrusted`, and the loop's use of the first.
  */
+
 import { describe, expect, test } from "vitest";
 import { Inngest } from "../../../components/Inngest.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { StepOpCode } from "../../../types.ts";
 import { agent } from "./loop.ts";
+import { model, runLoop } from "./loopKit.ts";
 import { classifyModelError, untrusted } from "./modelErrors.ts";
 
 const failure = (fields: Record<string, unknown>, message = "boom") => {
@@ -116,9 +118,8 @@ describe("untrusted", () => {
     expect(untrusted(undefined)).toBe("<untrusted>\n\n</untrusted>");
   });
 
-  test("is on the agent object next to classifyModelError", () => {
+  test("is on the agent object", () => {
     expect(agent.untrusted).toBe(untrusted);
-    expect(agent.classifyModelError).toBe(classifyModelError);
   });
 });
 
@@ -128,8 +129,8 @@ describe("agent.loop and model errors", () => {
     const fn = client.createFunction(
       { id: "agent", triggers: [{ event: "agent/run" }] },
       async () => {
-        await agent.loop({
-          model: agent.model(async () => {
+        await runLoop({
+          model: model(async () => {
             throw error;
           }),
           prompt: "go",
