@@ -1,6 +1,5 @@
 /**
  * @module
- * Helpers for scenarios that drive thread handles, from the published
- * testing entry.
+ * Helpers for scenarios that drive thread handles, from the SDK source.
  */
-export { withKeys } from "inngest/experimental/agents/testing";
+export { withKeys } from "sdk-testing/threads";

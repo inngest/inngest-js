@@ -11,11 +11,11 @@ This machine is NixOS: a missing binary runs one-off with `, <cmd>` (for example
 Run in order from the repo root; stop at the first failure. Merge the current `origin/jack/agent-primitives` into your branch first (merge, never rebase).
 
 ```sh
-pnpm install && pnpm build                       # once per worktree; builds dist, which the kit imports
+pnpm install && pnpm build                       # once per worktree; builds dist, which the examples use; the kit imports the SDK from source
 pnpm -C packages/inngest test agent              # 1. unit
 pnpm -C packages/inngest test:types              # 2. types (includes the kit)
 pnpm -C packages/inngest lint                    #    lint
-pnpm -C packages/inngest build                   #    build (the kit runs against dist, rebuild after SDK changes)
+pnpm -C packages/inngest build                   #    build (the kit itself runs against source)
 pnpm agents:examples                             #    biome and tsc for every examples/agents-* and coding-agent; installs each against the built dist, so build first
 pnpm agents:verify <scenario>                    # 3. your scenario(s), 30-60s each
 pnpm agents:verify --all                         # 4. the whole suite, required before squash

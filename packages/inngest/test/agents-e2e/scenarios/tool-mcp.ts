@@ -8,7 +8,7 @@
  */
 import { secret, tool } from "inngest/experimental";
 import { agent } from "inngest/experimental/agents";
-import { fakeMcpServer } from "inngest/experimental/agents/testing";
+import { fakeMcpServer } from "sdk-testing/mcp";
 import { scenario, script } from "../kit/driver.ts";
 
 const token = "e2e-mcp-token-0123456789";

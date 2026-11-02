@@ -15,7 +15,7 @@ import {
   waitForMcpAuthorization,
 } from "inngest/experimental";
 import { agent } from "inngest/experimental/agents";
-import { fakeMcpServer } from "inngest/experimental/agents/testing";
+import { fakeMcpServer } from "sdk-testing/mcp";
 import { scenario, script } from "../kit/driver.ts";
 
 process.env.E2E_MCP_OAUTH_KEY = "e2e-mcp-oauth-encryption-key";
