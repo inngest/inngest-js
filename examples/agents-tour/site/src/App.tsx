@@ -215,6 +215,19 @@ export const App = () => {
   const doneModule = index?.modules.find((module) => {
     return module.id === moduleDone;
   });
+  // The banner offers the same two buttons as the end of the module, whichever
+  // page the reader is on.
+  const doneEnd =
+    index && doneModule
+      ? moduleEnd(
+          index,
+          doneModule.pages
+            .filter((entry) => {
+              return entry.kind === "core";
+            })
+            .at(-1)?.id ?? "",
+        )
+      : null;
 
   const toggleRail = () => {
     setRail((value) => {
@@ -844,23 +857,27 @@ export const App = () => {
         <div className="module-done" role="status">
           <strong>{doneModule.title} is done.</strong>
           <span>The exercise passed.</span>
-          {end?.deeper ? (
+          {doneEnd?.deeper ? (
             <button
               type="button"
               onClick={() => {
-                handlers.goDeeper?.();
+                if (doneEnd?.deeper) {
+                  open(doneEnd.deeper.id);
+                }
               }}
               aria-keyshortcuts={shortcutsOf("goDeeper")}
             >
               Go deeper <Kbd action="goDeeper" />
             </button>
           ) : null}
-          {end?.nextModule ? (
+          {doneEnd?.nextModule ? (
             <button
               type="button"
               className="primary"
               onClick={() => {
-                handlers.nextModule?.();
+                if (doneEnd?.nextModule) {
+                  open(doneEnd.nextModule.id);
+                }
               }}
               aria-keyshortcuts={shortcutsOf("nextModule")}
             >
