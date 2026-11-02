@@ -79,7 +79,9 @@ const ipv6Groups = (host: string): number[] | undefined => {
 
   const missing = 8 - head.length - tail.length;
 
-  return missing < 1 ? undefined : [...head, ...Array(missing).fill(0), ...tail];
+  return missing < 1
+    ? undefined
+    : [...head, ...Array(missing).fill(0), ...tail];
 };
 
 const isPrivateIpv6 = (host: string): boolean => {
@@ -93,16 +95,13 @@ const isPrivateIpv6 = (host: string): boolean => {
   const [first = 0] = groups;
   const embedded =
     groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff
-      ? [groups[6] ?? 0, groups[7] ?? 0]
+      ? ([groups[6] ?? 0, groups[7] ?? 0] as const)
       : undefined;
 
   if (embedded) {
-    return isPrivateIpv4([
-      embedded[0] >> 8,
-      embedded[0] & 255,
-      embedded[1] >> 8,
-      embedded[1] & 255,
-    ]);
+    const [high, low] = embedded;
+
+    return isPrivateIpv4([high >> 8, high & 255, low >> 8, low & 255]);
   }
 
   const unspecifiedOrLoopback =

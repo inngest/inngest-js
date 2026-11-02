@@ -12,6 +12,7 @@
  * decides. Tools the server marks `readOnlyHint` or `idempotentHint` retry.
  */
 
+import { currentThreadKey } from "../../experimental/agents/kv/kv.ts";
 import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { durationToMs } from "../../helpers/duration.ts";
 import { version } from "../../version.ts";
@@ -25,13 +26,13 @@ import {
   McpProtocolError,
   type McpToolInfo,
 } from "./mcpClient.ts";
+import { assertMcpUrl } from "./mcpGuard.ts";
 import {
   McpAuthorizationRequired,
-  type McpNeedsAuthorization,
   McpOAuth,
   type McpOAuthOptions,
+  type McpOAuthUserContext,
 } from "./mcpOAuth.ts";
-import { assertMcpUrl } from "./mcpGuard.ts";
 import { isSecret, type Secret } from "./secret.ts";
 import { toolErrorOf } from "./toolError.ts";
 import type { SandboxTool, SandboxTools } from "./tools.ts";
@@ -62,10 +63,12 @@ export type McpAuth =
 
 export interface McpServerOptions {
   /**
-   * The name that prefixes the server's tools when you call `tools()`. In
-   * `agent.loop({ tools: { hex } })` the key (`hex`) is the name instead.
+   * Names the server. Its stored sign-in tokens are kept under this `id`, so
+   * keep it stable: a new `id` makes every user sign in again. It is also the
+   * prefix of the tools when you call `tools()`; in
+   * `agent.loop({ tools: { hex } })` the key (`hex`) prefixes them instead.
    */
-  id?: string;
+  id: string;
 
   /**
    * The server's Streamable HTTP endpoint. Must be `https:`, or `http:` for
@@ -248,8 +251,37 @@ const trimListing = (found: McpToolInfo[]): McpListing => {
   };
 };
 
-const currentRunId = (): string | undefined => {
-  return getAsyncCtxSync()?.execution?.ctx.runId;
+interface RunContext {
+  user: McpOAuthUserContext;
+  logger?: { warn: (message: string) => void };
+}
+
+/**
+ * What `auth.oauth.user` is told about the run that is calling. Read before
+ * the first await: the context does not follow every kind of await.
+ */
+const currentRunContext = (): RunContext => {
+  const execution = getAsyncCtxSync()?.execution;
+
+  if (!execution) {
+    return { user: {} };
+  }
+
+  const { event, runId } = execution.ctx;
+  // The run's own logger, so the warning shows with the run.
+  const { logger } = execution.ctx as { logger?: RunContext["logger"] };
+  const threadKey = currentThreadKey();
+
+  return {
+    logger,
+    user: {
+      runId,
+      ...(event && {
+        event: { name: event.name, data: event.data, id: event.id },
+      }),
+      ...(threadKey !== undefined && { thread: { key: threadKey } }),
+    },
+  };
 };
 
 const sanitise = (name: string): string => {
@@ -263,7 +295,7 @@ const sanitise = (name: string): string => {
  */
 export class McpServer {
   readonly url: string;
-  readonly id?: string;
+  readonly id: string;
   private readonly options: McpServerOptions;
   private readonly client: McpClient;
   private readonly timeoutMs: number;
@@ -287,6 +319,7 @@ export class McpServer {
       this.oauth = new McpOAuth(
         oauthOptions,
         options.url,
+        options.id,
         () => {
           return store;
         },
@@ -322,13 +355,7 @@ export class McpServer {
    * `sandbox.tools.code({ tools })` or to wrap single tools. The list is
    * read in a step. `name` is the prefix; default the `id` option.
    */
-  async tools(name: string | undefined = this.id): Promise<SandboxTools> {
-    if (name === undefined) {
-      throw new SandboxValidationError(
-        "tools() needs a name: pass one, or give tool.mcp() an id",
-      );
-    }
-
+  async tools(name: string = this.id): Promise<SandboxTools> {
     const listing = await step.run(
       { id: `mcp:${name}:list`, name: `List ${name} tools` },
       () => {
@@ -340,14 +367,29 @@ export class McpServer {
   }
 
   /**
+   * Forgets `user`'s sign-in for this server: their stored token is removed,
+   * and they sign in again on their next call.
+   */
+  async disconnect(user: string): Promise<void> {
+    if (!this.oauth) {
+      throw new SandboxValidationError(
+        `MCP server "${this.id}" has no auth.oauth, so there is no per-user sign-in to disconnect`,
+      );
+    }
+
+    await this.oauth.disconnect(user);
+  }
+
+  /**
    * @internal Reads the tool list from the server.
    */
   async "~list"(name?: string): Promise<McpListing> {
     const oauth = this.oauth;
+    const run = currentRunContext();
     let found: McpToolInfo[];
 
     if (oauth) {
-      const user = await oauth.userOf({ runId: currentRunId() });
+      const user = await oauth.userOf(run.user);
 
       try {
         found = await this.client.listTools({ timeoutMs: listTimeoutMs, user });
@@ -440,20 +482,38 @@ export class McpServer {
   }
 
   /**
-   * The result for a user who has not connected: a link to do it.
+   * The result for a user who has not connected. The sign-in link goes to the
+   * app's `onNeedsAuthorization` hook, never to the model, which is only told
+   * that a sign-in is needed.
    */
   private async needsAuthorization(
     name: string,
     user: string,
     signal: AbortSignal,
+    run: RunContext,
   ): Promise<unknown> {
     const oauth = this.oauth as McpOAuth;
     const options = (this.options.auth as { oauth: McpOAuthOptions }).oauth;
-    const info: McpNeedsAuthorization = await oauth.start(user, name, signal);
+    const started = await oauth.start(user, name, signal);
+    const { logger } = run;
+    const { thread } = run.user;
 
-    await options.onNeedsAuthorization?.(info);
+    if (!options.onNeedsAuthorization) {
+      logger?.warn(
+        `MCP server "${name}" needs ${user} to sign in, but tool.mcp() has no auth.oauth.onNeedsAuthorization to deliver the link, so nobody was given it.`,
+      );
 
-    return toolErrorOf(info);
+      return toolErrorOf(
+        `${name} needs the user to sign in, and no sign-in link could be sent. Tell the user that ${name} is not connected. Do not call ${name} tools again.`,
+      );
+    }
+
+    await options.onNeedsAuthorization({
+      ...started,
+      ...(thread && { thread }),
+    });
+
+    return `A sign-in link for ${name} was sent to the user. Tell the user to follow it, then try again once they say they are done. Do not call ${name} tools again before that.`;
   }
 
   private async connect(
@@ -461,13 +521,14 @@ export class McpServer {
     ctx: { signal: AbortSignal; runId?: string },
   ): Promise<unknown> {
     const oauth = this.oauth as McpOAuth;
-    const user = await oauth.userOf({ runId: ctx.runId });
+    const run = currentRunContext();
+    const user = await oauth.userOf(run.user);
 
     try {
       await oauth.resolve(user);
     } catch (error) {
       if (error instanceof McpAuthorizationRequired) {
-        return this.needsAuthorization(name, user, ctx.signal);
+        return this.needsAuthorization(name, user, ctx.signal, run);
       }
 
       throw error;
@@ -489,7 +550,8 @@ export class McpServer {
     ctx: { signal: AbortSignal; idempotencyKey: string; runId?: string },
   ): Promise<unknown> {
     const oauth = this.oauth;
-    const user = oauth ? await oauth.userOf({ runId: ctx.runId }) : undefined;
+    const run = currentRunContext();
+    const user = oauth ? await oauth.userOf(run.user) : undefined;
     const repeatable =
       info.annotations?.readOnlyHint === true ||
       info.annotations?.idempotentHint === true;
@@ -512,7 +574,7 @@ export class McpServer {
       }
     } catch (error) {
       if (error instanceof McpAuthorizationRequired && user !== undefined) {
-        return this.needsAuthorization(name, user, ctx.signal);
+        return this.needsAuthorization(name, user, ctx.signal, run);
       }
 
       if (error instanceof McpOutcomeUnknownError && !repeatable) {
@@ -535,6 +597,14 @@ export class McpServer {
  */
 export const mcp = (options: McpServerOptions): McpServer => {
   return new McpServer(options);
+};
+
+/**
+ * Removes `user`'s stored sign-in for `server`. Same as
+ * `server.disconnect(user)`.
+ */
+export const disconnect = (server: McpServer, user: string): Promise<void> => {
+  return server.disconnect(user);
 };
 
 /**

@@ -1184,6 +1184,13 @@ function currentIds(): KvScopeIds | undefined {
 }
 
 /**
+ * The key of the thread the current run belongs to, when there is one.
+ */
+export function currentThreadKey(): string | undefined {
+  return currentIds()?.thread;
+}
+
+/**
  * Reads and writes one scope instance directly.
  * @param adapter Where values live.
  * @param scope The scope.

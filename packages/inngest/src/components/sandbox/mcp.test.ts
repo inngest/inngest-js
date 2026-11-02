@@ -379,12 +379,6 @@ describe("tool.mcp", () => {
       prompt: "hi",
     });
   });
-
-  test("tools() needs a name", async () => {
-    const hex = tool.mcp({ url: "https://example.com/mcp" });
-
-    await expect(hex.tools()).rejects.toThrow("needs a name");
-  });
 });
 
 /**
