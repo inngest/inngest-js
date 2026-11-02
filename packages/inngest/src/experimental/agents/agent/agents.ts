@@ -307,7 +307,6 @@ export type {
   AgentQuestionData,
   AgentRecoverData,
   AgentRouting,
-  AgentSteerData,
 } from "../inbox/events.ts";
 export {
   agentAnswer,
@@ -315,7 +314,6 @@ export {
   agentMessage,
   agentQuestion,
   agentRecover,
-  agentSteer,
 } from "../inbox/events.ts";
 export type {
   Kv,
@@ -345,8 +343,6 @@ export type {
 export {
   agentMessageEvent,
   agentRecoverEvent,
-  agentSteerEvent,
-  getThread,
 } from "../threads/thread.ts";
 export type {
   ThreadCronEvent,

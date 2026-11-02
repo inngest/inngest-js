@@ -8,10 +8,10 @@ describe("thread message events", () => {
   // Never called: the test is the types.
   const types = (message: AgentMessage) => {
     switch (message.name) {
-      case "agent/steer":
-        expectTypeOf(message.data.text).toBeString();
+      case "agent/message":
+        expectTypeOf(message.data.thread).toBeString();
 
-        // @ts-expect-error only a stop has a when
+        // @ts-expect-error a message has no stop condition
         message.data.when;
         break;
       default:

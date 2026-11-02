@@ -14,7 +14,7 @@ import { step } from "../../../components/InngestStepTools.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SenderData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { getThread } from "../threads/thread.ts";
+import { threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -245,7 +245,7 @@ export function startThread<TOutput>(
       return output as TOutput;
     },
     async stop() {
-      await getThread(target.client, target.address, key).stop();
+      await threadHandle(target.client, target.address, key).stop();
     },
   };
 

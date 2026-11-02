@@ -30,7 +30,7 @@ import type {
   AgentCardConfig,
   AgentDiscovery,
 } from "../discovery/discovery.ts";
-import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
+import type { AgentMessageData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
@@ -530,7 +530,7 @@ export type StartInput<TEvent> = [
  *
  * - An event of `triggers` (a trigger, which also starts the run as message 1) has
  *   its own name and data, typed from `triggers`.
- * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
+ * - `agent/message` (`thread.send()`),
  *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
  *
@@ -540,8 +540,7 @@ export type StartInput<TEvent> = [
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
-  | MessageOf<AgentMessageData, "agent/message">
-  | MessageOf<AgentSteerData, "agent/steer">;
+  | MessageOf<AgentMessageData, "agent/message">;
 
 /**
  * An inbox the model opened with `inbox_listen`.

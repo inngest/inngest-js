@@ -85,9 +85,8 @@ import {
 import {
   agentMessageEvent,
   agentRecoverEvent,
-  agentSteerEvent,
-  getThread,
   type ThreadRecord,
+  threadHandle,
   threadSessions,
 } from "../threads/thread.ts";
 import {
@@ -267,11 +266,9 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...[agentMessageEvent, agentRecoverEvent, agentSteerEvent].map(
-          (name) => {
-            return { event: name, if: `event.data.agent == ${quote(ref)}` };
-          },
-        ),
+        ...[agentMessageEvent, agentRecoverEvent].map((name) => {
+          return { event: name, if: `event.data.agent == ${quote(ref)}` };
+        }),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
         }),
@@ -297,7 +294,7 @@ export function createAgentFunction(
         data: { runId, thread: data.thread },
       });
 
-      const thread = getThread(client, ref, data.thread);
+      const thread = threadHandle(client, ref, data.thread);
 
       // The KV scopes of the thread and session come from the trigger, which
       // for an event of `triggers` does not carry them: the whole run reads them
@@ -715,7 +712,7 @@ export function createAgentFunction(
       }),
     }),
     thread(key) {
-      return getThread(client, ref, key);
+      return threadHandle(client, ref, key);
     },
     id: config.id,
     address: ref,
