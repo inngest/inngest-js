@@ -15,6 +15,7 @@ import {
   tool,
   toolDefinitions,
 } from "../../../components/sandbox/tools.ts";
+import * as entry from "../index.ts";
 import { agent } from "../loop/loop.ts";
 import { model, runLoop } from "../loop/loopKit.ts";
 import { toolNamespaceSeparator } from "../sandboxes/defs.ts";
@@ -320,4 +321,17 @@ describe("tools types", () => {
     expectTypeOf(toolDefinitions).toBeFunction();
     expectTypeOf(toolNamespaceSeparator).toBeString();
   });
+});
+
+test("tools: the removed names are not exported", () => {
+  for (const name of [
+    "slack",
+    "github",
+    "githubApp",
+    "untrusted",
+    "defineChannel",
+    "askThrough",
+  ]) {
+    expect(Object.keys(entry)).not.toContain(name);
+  }
 });

@@ -50,6 +50,7 @@ import { untrustedText } from "./untrustedText.ts";
  */
 export interface AgentContentBlock {
   type: string;
+  // Deliberate unknown: the rest of a block is the provider's own shape.
   [key: string]: unknown;
 }
 
@@ -65,6 +66,7 @@ export type AgentUserContent = string | AgentContentBlock[];
 export interface AgentEvent {
   id?: string;
   name: string;
+  // Deliberate unknown: event data comes from outside; the reader checks it.
   data: unknown;
 }
 
@@ -177,6 +179,8 @@ export const formatEvent = (
  */
 export type ModelMessage =
   | { role: "user"; content: AgentUserContent }
+  // Deliberate unknown: the assistant's blocks are the provider's own shape
+  // and go back to the model untouched.
   | { role: "assistant"; content: unknown }
   | { role: "tool"; results: AgentToolResult[] };
 
@@ -199,6 +203,7 @@ export interface AgentToolResult {
   /**
    * The arguments of the call, as the model sent them.
    */
+  // Deliberate unknown: the default for a tool whose input type is not known.
   input: unknown;
 
   /**

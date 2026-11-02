@@ -16,7 +16,8 @@ import { type DurationInput, durationToMs } from "../../../helpers/duration.ts";
  */
 export interface RunFieldContext<TEvent = unknown> {
   /**
-   * The event that started the run.
+   * The event that started the run. Deliberate unknown as the default: a field
+   * written without a type gets an event only its reader can check.
    */
   event: TEvent;
 

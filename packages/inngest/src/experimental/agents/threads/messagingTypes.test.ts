@@ -8,6 +8,11 @@ import { invoke } from "../../../components/triggers/triggers.ts";
 import { agents, typesOnly } from "../agent/typeFixtures.ts";
 import type * as entry from "../index.ts";
 import type { RunHandle, StartedThread, ThreadHandle } from "../index.ts";
+import type { AgentModelResponse } from "../loop/loop.ts";
+
+const modelFn = async (): Promise<AgentModelResponse> => {
+  return { message: { role: "assistant", content: [] }, toolCalls: [] };
+};
 
 describe("messaging types", () => {
   test("messaging: the three handle types have the members of lead's call L66", () => {
@@ -68,6 +73,66 @@ describe("messaging types", () => {
       // result takes a timeout
       await started.result({ timeout: "5m" });
       await started.message("z").result({ timeout: 1000 });
+    });
+  });
+
+  test("messaging: result() of an agent with no handler is unknown, pinned until the output of a handler-less agent is typed (spec gap G3)", () => {
+    const chat = agents.agent({ id: "msg-chat", model: modelFn });
+    const quiet = agents.agent({ id: "msg-quiet" });
+
+    typesOnly(async () => {
+      // Deliberate unknown: the output type defaults to unknown when there is
+      // no handler. The note wants `string` for a model and `undefined` for
+      // neither; that is a type change the lead has not settled.
+      expectTypeOf(await chat.start("hi").result()).toBeUnknown();
+      expectTypeOf(await quiet.start("hi").result()).toBeUnknown();
+    });
+  });
+
+  test("messaging: ask, message, stop and result take and give the documented types", () => {
+    const coder = agents.agent(
+      { id: "msg-coder", triggers: invoke(z.object({ task: z.string() })) },
+      async (): Promise<{ branch: string; done: boolean }> => {
+        return { branch: "b", done: true };
+      },
+    );
+
+    typesOnly(async () => {
+      const handle = await coder.start({ task: "x" });
+
+      expectTypeOf(await handle.ask("tests pass?")).toEqualTypeOf<
+        string | null
+      >();
+      expectTypeOf(
+        await handle.ask("tests pass?", { timeout: "5m" }),
+      ).toEqualTypeOf<string | null>();
+      expectTypeOf(await handle.message("use the new client")).toHaveProperty(
+        "result",
+      );
+      expectTypeOf(await handle.message({ hint: "x" })).toHaveProperty(
+        "result",
+      );
+      expectTypeOf(await handle.stop()).toBeVoid();
+      expectTypeOf(await handle.result({ timeout: "1h" })).toEqualTypeOf<{
+        branch: string;
+        done: boolean;
+      }>();
+    });
+  });
+
+  test("messaging: the old ways to call an agent are gone", () => {
+    const coder = agents.agent({ id: "msg-old" });
+
+    typesOnly(async () => {
+      const handle = await coder.start("x");
+
+      expectTypeOf(handle).not.toHaveProperty("send");
+      expectTypeOf(handle).not.toHaveProperty("steer");
+      expectTypeOf(handle).not.toHaveProperty("request");
+      expectTypeOf(handle).not.toHaveProperty("state");
+
+      // @ts-expect-error agents are no longer tools by import
+      agents.agent({ id: "gone-2", model: modelFn, tools: { coder } });
     });
   });
 });

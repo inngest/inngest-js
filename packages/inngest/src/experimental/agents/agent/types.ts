@@ -82,11 +82,17 @@ import type { StartedThreadPromise } from "./startThread.ts";
 export interface AgentTypes {
   /**
    * The events of the agent's `triggers`.
+   *
+   * Deliberate unknown: this is the bag's "not named" slot; the bag an agent
+   * names narrows it, and `AgentTypeDefaults` says what an unnamed field is.
    */
   event?: unknown;
 
   /**
    * What the body returns.
+   *
+   * Deliberate unknown: the slot is open until the body's return type fills
+   * it.
    */
   output?: unknown;
 
@@ -127,7 +133,8 @@ export interface AgentTypeDefaults {
   event: TriggerEvent;
 
   /**
-   * Unknown.
+   * Deliberate unknown: an agent whose body is not typed returns something
+   * only the code that reads the result can check.
    */
   output: unknown;
 

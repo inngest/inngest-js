@@ -3,6 +3,7 @@
  * Type tests for the model's agent tools: in the result of a handler's loop,
  * a call narrows by the tool's name to its typed input and output.
  */
+
 import type { Json } from "../json.ts";
 import type { AgentModelResponse } from "../loop/loop.ts";
 import { agents, created, typesOnly } from "./typeFixtures.ts";

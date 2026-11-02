@@ -338,7 +338,7 @@ export const run = async (
 };
 
 /**
- * The `data.text` of an inbox message (an `agent/message` or `agent/steer`),
+ * The `data.text` of an inbox message (an `agent/message`),
  * or `undefined`.
  */
 export const textOf = (

@@ -72,13 +72,13 @@ export interface AnthropicReply {
  */
 export interface AnthropicClient {
   messages: {
-    // biome-ignore lint/suspicious/noExplicitAny: the SDK types its own params
-    create(params: any, options?: any): Promise<AnthropicReply>;
+    // Deliberate unknown: the SDK types its own params, and method syntax
+    // keeps the parameter bivariant, so a client that takes the SDK's params
+    // fits.
+    create(params: unknown, options?: unknown): Promise<AnthropicReply>;
     stream?(
-      // biome-ignore lint/suspicious/noExplicitAny: the SDK types its own params
-      params: any,
-      // biome-ignore lint/suspicious/noExplicitAny: the SDK types its own params
-      options?: any,
+      params: unknown,
+      options?: unknown,
     ): { finalMessage(): Promise<AnthropicReply> };
   };
 }

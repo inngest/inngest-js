@@ -300,3 +300,10 @@ test("agents: the model, system, tools, loop and remember fields take a value or
 
   expectTypeOf(check).toBeFunction();
 });
+
+test("loop: a budget end carries a reason and no other end does", () => {
+  // The result keeps one shape for every end: `reason` is optional, and the
+  // loop sets it only for the "budget" end (loop.md, "the result keeps reason").
+  expectTypeOf<AgentLoopResult["reason"]>().toEqualTypeOf<string | undefined>();
+  expectTypeOf<AgentLoopResult>().toHaveProperty("reason");
+});
