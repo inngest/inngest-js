@@ -30,7 +30,14 @@ import { store } from "./platform.ts";
 import { flyConcepts, moment } from "./progress-effects.ts";
 import { deeperWaiting, moduleEnd } from "./progress-model.ts";
 import { DoomBar, GameOver, SoundButton } from "./Sound.tsx";
-import { getState, peekNow, setMenu, startSound, swapTrack, toggleMuted } from "./sound/index.ts";
+import {
+  getState,
+  peekNow,
+  setMenu,
+  startSound,
+  swapTrack,
+  toggleMuted,
+} from "./sound/index.ts";
 import { momentsOf } from "./sound/moments.ts";
 import { justPosted } from "./sound/own.ts";
 import { routeStreamEvent } from "./stream.ts";
@@ -691,345 +698,390 @@ export const App = () => {
 
   return (
     <>
-    <div className="app">
-      <header className="topbar">
-        <span className="logo" aria-hidden="true" />
-        <h1>Agents Tour</h1>
-        <nav>
-          {waiting.length > 0 ? (
+      <div className="app">
+        <header className="topbar">
+          <span className="logo" aria-hidden="true" />
+          <h1>Agents Tour</h1>
+          <nav>
+            {waiting.length > 0 ? (
+              <button
+                type="button"
+                className="chip"
+                id="deeper-chip"
+                onClick={() => {
+                  setOverlay("deeper");
+                }}
+                aria-keyshortcuts={shortcutsOf("deeperList")}
+              >
+                {waiting.length} deeper{" "}
+                {waiting.length === 1 ? "page" : "pages"} waiting{" "}
+                <Kbd action="deeperList" />
+              </button>
+            ) : null}
             <button
               type="button"
               className="chip"
-              id="deeper-chip"
+              id="concepts-chip"
               onClick={() => {
-                setOverlay("deeper");
+                setOverlay("concepts");
               }}
-              aria-keyshortcuts={shortcutsOf("deeperList")}
+              aria-keyshortcuts={shortcutsOf("concepts")}
             >
-              {waiting.length} deeper {waiting.length === 1 ? "page" : "pages"}{" "}
-              waiting <Kbd action="deeperList" />
+              {Object.keys(progress.concepts).length} of{" "}
+              {progress.totalConcepts} concepts <Kbd action="concepts" />
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="chip"
-            id="concepts-chip"
-            onClick={() => {
-              setOverlay("concepts");
-            }}
-            aria-keyshortcuts={shortcutsOf("concepts")}
-          >
-            {Object.keys(progress.concepts).length} of {progress.totalConcepts}{" "}
-            concepts <Kbd action="concepts" />
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setOverlay("search");
-            }}
-            aria-keyshortcuts={shortcutsOf("search")}
-          >
-            Search <Kbd action="search" />
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setOverlay("cheat");
-            }}
-            aria-keyshortcuts={shortcutsOf("cheat")}
-          >
-            Keys <Kbd action="cheat" />
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={handlers.devserver}
-            title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
-            aria-keyshortcuts={shortcutsOf("devserver")}
-          >
-            Dev Server <Kbd action="devserver" />
-          </button>
-          <SoundButton />
-        </nav>
-      </header>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setOverlay("search");
+              }}
+              aria-keyshortcuts={shortcutsOf("search")}
+            >
+              Search <Kbd action="search" />
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setOverlay("cheat");
+              }}
+              aria-keyshortcuts={shortcutsOf("cheat")}
+            >
+              Keys <Kbd action="cheat" />
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={handlers.devserver}
+              title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
+              aria-keyshortcuts={shortcutsOf("devserver")}
+            >
+              Dev Server <Kbd action="devserver" />
+            </button>
+            <SoundButton />
+          </nav>
+        </header>
 
-      <div className="body" data-rail={showRail}>
-        <Nav
-          index={index}
-          progress={progress}
-          current={here}
-          rail={showRail}
-          confirming={confirming}
-          onPick={pick}
-          onToggle={toggleRail}
-          onReset={askReset}
-        />
-        {narrow && navOpen ? (
-          <div
-            className="nav-overlay"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) {
-                setNavOpen(false);
-              }
-            }}
-          >
-            <Nav
-              index={index}
-              progress={progress}
-              current={here}
-              rail={false}
-              confirming={confirming}
-              onPick={pick}
-              onToggle={toggleRail}
-              onReset={askReset}
-            />
-          </div>
-        ) : null}
-        <main
-          className={hasCode ? "grid" : "single"}
-          style={
-            hasCode
-              ? { gridTemplateColumns: `${cols}fr 6px ${100 - cols}fr` }
-              : undefined
-          }
-        >
-          <div
-            className="col"
+        <div className="body" data-rail={showRail}>
+          <Nav
+            index={index}
+            progress={progress}
+            current={here}
+            rail={showRail}
+            confirming={confirming}
+            onPick={pick}
+            onToggle={toggleRail}
+            onReset={askReset}
+          />
+          {narrow && navOpen ? (
+            <div
+              className="nav-overlay"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setNavOpen(false);
+                }
+              }}
+            >
+              <Nav
+                index={index}
+                progress={progress}
+                current={here}
+                rail={false}
+                confirming={confirming}
+                onPick={pick}
+                onToggle={toggleRail}
+                onReset={askReset}
+              />
+            </div>
+          ) : null}
+          <main
+            className={hasCode ? "grid" : "single"}
             style={
-              hasCode && tabs.length > 0
-                ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
+              hasCode
+                ? { gridTemplateColumns: `${cols}fr 6px ${100 - cols}fr` }
                 : undefined
             }
           >
-            <section
-              className="text"
-              ref={textPane}
-              tabIndex={-1}
-              aria-label="Lesson"
+            <div
+              className="col"
+              style={
+                hasCode && tabs.length > 0
+                  ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
+                  : undefined
+              }
             >
-              <p className="crumb">{page.moduleTitle}</p>
-              <h2>{page.title}</h2>
-              <div
-                className="prose"
-                dangerouslySetInnerHTML={{
-                  __html: renderMarkdown(page.markdown),
-                }}
-              />
-              {hasCode && page.manifest.start?.length ? (
-                <EventBlock starts={page.manifest.start} />
+              <section
+                className="text"
+                ref={textPane}
+                tabIndex={-1}
+                aria-label="Lesson"
+              >
+                <p className="crumb">{page.moduleTitle}</p>
+                <h2>{page.title}</h2>
+                <div
+                  className="prose"
+                  dangerouslySetInnerHTML={{
+                    __html: renderMarkdown(page.markdown),
+                  }}
+                />
+                {hasCode && page.manifest.start?.length ? (
+                  <EventBlock starts={page.manifest.start} />
+                ) : null}
+              </section>
+              {hasCode && tabs.length > 0 ? (
+                <>
+                  <Divider
+                    axis="horizontal"
+                    value={leftRow}
+                    label="Resize the lesson text and the message box"
+                    onChange={(value) =>
+                      saveSplit("tour:left", setLeftRow, value)
+                    }
+                  />
+                  <section className="play" aria-label="Play">
+                    <div className="tabs" role="tablist" onKeyDown={tabKeys}>
+                      {tabs.map((tab) => {
+                        return (
+                          <button
+                            type="button"
+                            role="tab"
+                            id={`play-tab-${tab.id}`}
+                            key={tab.id}
+                            aria-selected={play === tab.id}
+                            aria-controls="play-panel"
+                            tabIndex={play === tab.id ? 0 : -1}
+                            onClick={() => setPlay(tab.id)}
+                            aria-keyshortcuts={shortcutsOf(tab.id)}
+                          >
+                            {tab.label} <Kbd action={tab.id} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div
+                      className="panel"
+                      role="tabpanel"
+                      id="play-panel"
+                      aria-labelledby={`play-tab-${play}`}
+                    >
+                      {Panel && page ? (
+                        <Panel page={page} live={status.state === "live"} />
+                      ) : null}
+                    </div>
+                  </section>
+                </>
               ) : null}
-            </section>
-            {hasCode && tabs.length > 0 ? (
+            </div>
+
+            {hasCode ? (
               <>
                 <Divider
-                  axis="horizontal"
-                  value={leftRow}
-                  label="Resize the lesson text and the message box"
-                  onChange={(value) =>
-                    saveSplit("tour:left", setLeftRow, value)
-                  }
+                  axis="vertical"
+                  value={cols}
+                  label="Resize the lesson and the code"
+                  low={25}
+                  high={70}
+                  onChange={(value) => saveSplit("tour:cols", setCols, value)}
                 />
-                <section className="play" aria-label="Play">
-                  <div className="tabs" role="tablist" onKeyDown={tabKeys}>
-                    {tabs.map((tab) => {
-                      return (
+                <div
+                  className="col right"
+                  style={{
+                    gridTemplateRows: `${rightRow}fr 6px ${100 - rightRow}fr`,
+                  }}
+                >
+                  <section className="work" aria-label="Code">
+                    <div
+                      className="tabs files"
+                      role="tablist"
+                      onKeyDown={tabKeys}
+                    >
+                      {files.map((file) => {
+                        return (
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={active === file.name}
+                            tabIndex={active === file.name ? 0 : -1}
+                            key={file.name}
+                            onClick={() => setActive(file.name)}
+                          >
+                            {file.name}
+                            {file.editable ? "" : " (read-only)"}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="ghost files-key"
+                        onClick={nextFile}
+                        aria-keyshortcuts={shortcutsOf("file")}
+                      >
+                        Next file <Kbd action="file" />
+                      </button>
+                    </div>
+                    <Editor
+                      ref={editor}
+                      files={files}
+                      active={active}
+                      markers={markers}
+                      handlers={() => {
+                        return latest.current;
+                      }}
+                      onChange={(name, content) => {
+                        saveEdits(page, { [name]: content }, store);
+                      }}
+                    />
+                    <div className="controls">
+                      <button
+                        type="button"
+                        className="primary"
+                        ref={runButton}
+                        onClick={run}
+                        aria-keyshortcuts={shortcutsOf("run")}
+                      >
+                        Run <Kbd action="run" />
+                      </button>
+                      {live ? (
                         <button
                           type="button"
-                          role="tab"
-                          id={`play-tab-${tab.id}`}
-                          key={tab.id}
-                          aria-selected={play === tab.id}
-                          aria-controls="play-panel"
-                          tabIndex={play === tab.id ? 0 : -1}
-                          onClick={() => setPlay(tab.id)}
-                          aria-keyshortcuts={shortcutsOf(tab.id)}
+                          onClick={handlers.kill}
+                          aria-keyshortcuts={shortcutsOf("kill")}
                         >
-                          {tab.label} <Kbd action={tab.id} />
+                          Kill <Kbd action="kill" />
                         </button>
-                      );
-                    })}
-                  </div>
-                  <div
-                    className="panel"
-                    role="tabpanel"
-                    id="play-panel"
-                    aria-labelledby={`play-tab-${play}`}
-                  >
-                    {Panel && page ? (
-                      <Panel page={page} live={status.state === "live"} />
-                    ) : null}
-                  </div>
-                </section>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={handlers.format}
+                        aria-keyshortcuts={shortcutsOf("format")}
+                      >
+                        Format <Kbd action="format" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={reset}
+                        aria-keyshortcuts={shortcutsOf("reset")}
+                      >
+                        Reset <Kbd action="reset" />
+                      </button>
+                      {undo ? (
+                        <button
+                          type="button"
+                          className="toast"
+                          onClick={undoReset}
+                          aria-keyshortcuts={shortcutsOf("undo")}
+                        >
+                          Undo reset <Kbd action="undo" />
+                        </button>
+                      ) : null}
+                      <span
+                        className={`status-line ${status.state}`}
+                        role="status"
+                      >
+                        {status.text}
+                      </span>
+                    </div>
+                  </section>
+                  <Divider
+                    axis="horizontal"
+                    value={rightRow}
+                    label="Resize the code and the trace"
+                    onChange={(value) =>
+                      saveSplit("tour:right", setRightRow, value)
+                    }
+                  />
+                  <section className="tracepane" aria-label="Trace">
+                    <TracePanel
+                      runs={runs}
+                      lines={lines}
+                      everything={everything}
+                      onToggle={() => {
+                        handlers.everything?.();
+                      }}
+                    />
+                  </section>
+                </div>
               </>
             ) : null}
-          </div>
+          </main>
+        </div>
 
-          {hasCode ? (
-            <>
-              <Divider
-                axis="vertical"
-                value={cols}
-                label="Resize the lesson and the code"
-                low={25}
-                high={70}
-                onChange={(value) => saveSplit("tour:cols", setCols, value)}
-              />
-              <div
-                className="col right"
-                style={{
-                  gridTemplateRows: `${rightRow}fr 6px ${100 - rightRow}fr`,
-                }}
-              >
-                <section className="work" aria-label="Code">
-                  <div
-                    className="tabs files"
-                    role="tablist"
-                    onKeyDown={tabKeys}
-                  >
-                    {files.map((file) => {
-                      return (
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={active === file.name}
-                          tabIndex={active === file.name ? 0 : -1}
-                          key={file.name}
-                          onClick={() => setActive(file.name)}
-                        >
-                          {file.name}
-                          {file.editable ? "" : " (read-only)"}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      className="ghost files-key"
-                      onClick={nextFile}
-                      aria-keyshortcuts={shortcutsOf("file")}
-                    >
-                      Next file <Kbd action="file" />
-                    </button>
-                  </div>
-                  <Editor
-                    ref={editor}
-                    files={files}
-                    active={active}
-                    markers={markers}
-                    handlers={() => {
-                      return latest.current;
-                    }}
-                    onChange={(name, content) => {
-                      saveEdits(page, { [name]: content }, store);
-                    }}
-                  />
-                  <div className="controls">
-                    <button
-                      type="button"
-                      className="primary"
-                      ref={runButton}
-                      onClick={run}
-                      aria-keyshortcuts={shortcutsOf("run")}
-                    >
-                      Run <Kbd action="run" />
-                    </button>
-                    {live ? (
-                      <button
-                        type="button"
-                        onClick={handlers.kill}
-                        aria-keyshortcuts={shortcutsOf("kill")}
-                      >
-                        Kill <Kbd action="kill" />
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={handlers.format}
-                      aria-keyshortcuts={shortcutsOf("format")}
-                    >
-                      Format <Kbd action="format" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={reset}
-                      aria-keyshortcuts={shortcutsOf("reset")}
-                    >
-                      Reset <Kbd action="reset" />
-                    </button>
-                    {undo ? (
-                      <button
-                        type="button"
-                        className="toast"
-                        onClick={undoReset}
-                        aria-keyshortcuts={shortcutsOf("undo")}
-                      >
-                        Undo reset <Kbd action="undo" />
-                      </button>
-                    ) : null}
-                    <span
-                      className={`status-line ${status.state}`}
-                      role="status"
-                    >
-                      {status.text}
-                    </span>
-                  </div>
-                </section>
-                <Divider
-                  axis="horizontal"
-                  value={rightRow}
-                  label="Resize the code and the trace"
-                  onChange={(value) =>
-                    saveSplit("tour:right", setRightRow, value)
+        {doneModule ? (
+          <div className="module-done" role="status">
+            <strong>{doneModule.title} is done.</strong>
+            <span>
+              The exercise passed.
+              {deeperLeft > 0
+                ? ` ${deeperLeft} deeper ${deeperLeft === 1 ? "page" : "pages"} waiting.`
+                : ""}
+            </span>
+            {doneEnd?.deeper ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (doneEnd?.deeper) {
+                    open(doneEnd.deeper.id);
                   }
-                />
-                <section className="tracepane" aria-label="Trace">
-                  <TracePanel
-                    runs={runs}
-                    lines={lines}
-                    everything={everything}
-                    onToggle={() => {
-                      handlers.everything?.();
-                    }}
-                  />
-                </section>
-              </div>
-            </>
-          ) : null}
-        </main>
-      </div>
-
-      {doneModule ? (
-        <div className="module-done" role="status">
-          <strong>{doneModule.title} is done.</strong>
-          <span>
-            The exercise passed.
-            {deeperLeft > 0
-              ? ` ${deeperLeft} deeper ${deeperLeft === 1 ? "page" : "pages"} waiting.`
-              : ""}
-          </span>
-          {doneEnd?.deeper ? (
+                }}
+                aria-keyshortcuts={shortcutsOf("goDeeper")}
+              >
+                Go deeper <Kbd action="goDeeper" />
+              </button>
+            ) : null}
+            {doneEnd?.nextModule ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  if (doneEnd?.nextModule) {
+                    open(doneEnd.nextModule.id);
+                  }
+                }}
+                aria-keyshortcuts={shortcutsOf("nextModule")}
+              >
+                Next module <Kbd action="nextModule" />
+              </button>
+            ) : null}
             <button
               type="button"
+              className="ghost"
               onClick={() => {
-                if (doneEnd?.deeper) {
-                  open(doneEnd.deeper.id);
-                }
+                setModuleDone(null);
               }}
+            >
+              Dismiss <Kbd action="dismiss" />
+            </button>
+          </div>
+        ) : null}
+
+        <footer className="pager">
+          <button
+            type="button"
+            onClick={() => {
+              go(-1);
+            }}
+            disabled={position <= 0}
+            aria-keyshortcuts={shortcutsOf("prev")}
+          >
+            Previous <Kbd action="prev" />
+          </button>
+          <span className="counter">
+            {page.label} / {coreCount}
+          </span>
+          {end?.deeper ? (
+            <button
+              type="button"
+              onClick={handlers.goDeeper}
               aria-keyshortcuts={shortcutsOf("goDeeper")}
             >
               Go deeper <Kbd action="goDeeper" />
             </button>
           ) : null}
-          {doneEnd?.nextModule ? (
+          {end?.nextModule ? (
             <button
               type="button"
-              className="primary"
-              onClick={() => {
-                if (doneEnd?.nextModule) {
-                  open(doneEnd.nextModule.id);
-                }
-              }}
+              onClick={handlers.nextModule}
               aria-keyshortcuts={shortcutsOf("nextModule")}
             >
               Next module <Kbd action="nextModule" />
@@ -1037,100 +1089,56 @@ export const App = () => {
           ) : null}
           <button
             type="button"
-            className="ghost"
+            className="primary"
             onClick={() => {
-              setModuleDone(null);
+              go(1);
             }}
+            disabled={position >= flat.length - 1}
+            aria-keyshortcuts={shortcutsOf("next")}
           >
-            Dismiss <Kbd action="dismiss" />
+            Next <Kbd action="next" />
           </button>
-        </div>
-      ) : null}
+        </footer>
 
-      <footer className="pager">
-        <button
-          type="button"
-          onClick={() => {
-            go(-1);
-          }}
-          disabled={position <= 0}
-          aria-keyshortcuts={shortcutsOf("prev")}
-        >
-          Previous <Kbd action="prev" />
-        </button>
-        <span className="counter">
-          {page.label} / {coreCount}
-        </span>
-        {end?.deeper ? (
-          <button
-            type="button"
-            onClick={handlers.goDeeper}
-            aria-keyshortcuts={shortcutsOf("goDeeper")}
-          >
-            Go deeper <Kbd action="goDeeper" />
-          </button>
+        {overlay === "concepts" ? (
+          <Concepts
+            index={index}
+            progress={progress}
+            onPick={pick}
+            onClose={() => {
+              setOverlay(null);
+            }}
+          />
         ) : null}
-        {end?.nextModule ? (
-          <button
-            type="button"
-            onClick={handlers.nextModule}
-            aria-keyshortcuts={shortcutsOf("nextModule")}
-          >
-            Next module <Kbd action="nextModule" />
-          </button>
+        {overlay === "deeper" ? (
+          <Deeper
+            index={index}
+            waiting={waiting}
+            onPick={pick}
+            onClose={() => {
+              setOverlay(null);
+            }}
+          />
         ) : null}
-        <button
-          type="button"
-          className="primary"
-          onClick={() => {
-            go(1);
-          }}
-          disabled={position >= flat.length - 1}
-          aria-keyshortcuts={shortcutsOf("next")}
-        >
-          Next <Kbd action="next" />
-        </button>
-      </footer>
-
-      {overlay === "concepts" ? (
-        <Concepts
-          index={index}
-          progress={progress}
-          onPick={pick}
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay === "deeper" ? (
-        <Deeper
-          index={index}
-          waiting={waiting}
-          onPick={pick}
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay === "search" ? (
-        <Search
-          index={index}
-          onPick={pick}
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay === "cheat" ? (
-        <Cheat
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-    </div>
-    <DoomBar />
-    <GameOver />
+        {overlay === "search" ? (
+          <Search
+            index={index}
+            onPick={pick}
+            onClose={() => {
+              setOverlay(null);
+            }}
+          />
+        ) : null}
+        {overlay === "cheat" ? (
+          <Cheat
+            onClose={() => {
+              setOverlay(null);
+            }}
+          />
+        ) : null}
+      </div>
+      <DoomBar />
+      <GameOver />
     </>
   );
 };

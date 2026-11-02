@@ -13,7 +13,11 @@ export interface Rig {
   chains: Record<string, AudioNode>;
 }
 
-let live: Rig | null = null;
+export interface LiveRig extends Rig {
+  ctx: AudioContext;
+}
+
+let live: LiveRig | null = null;
 let current: Rig | null = null;
 
 export const midi = (note: number) => {
@@ -76,7 +80,11 @@ export const output = () => {
  * Runs `build` with another context and output in place of the live ones, so
  * a track can be scheduled into an offline context with the same voices.
  */
-export const within = <T>(ctx: BaseAudioContext, out: AudioNode, build: () => T) => {
+export const within = <T>(
+  ctx: BaseAudioContext,
+  out: AudioNode,
+  build: () => T,
+) => {
   const saved = current;
 
   current = { ctx, out, noise: makeNoise(ctx), chains: {} };

@@ -104,7 +104,10 @@ export const visual = (fx: Fx, failed: boolean) => {
     }
   } else if (fx === "shake") {
     shake();
-    flash("radial-gradient(circle, transparent 40%, rgb(255 107 120 / 25%))", 180);
+    flash(
+      "radial-gradient(circle, transparent 40%, rgb(255 107 120 / 25%))",
+      180,
+    );
   } else if (fx === "scan") {
     flash(
       "repeating-linear-gradient(0deg, rgb(62 207 142 / 10%) 0 2px, transparent 2px 4px)",

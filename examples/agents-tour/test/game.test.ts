@@ -75,7 +75,7 @@ describe("the Doom game", () => {
 
   it("ignores moments that are only sound", () => {
     assert.deepEqual(update(newGame(), "tool"), newGame());
-    assert.deepEqual(update(newGame(), "key"), newGame());
+    assert.deepEqual(update(newGame(), "enable"), newGame());
   });
 
   it("is game over at 0 health and takes 500 off the score", () => {

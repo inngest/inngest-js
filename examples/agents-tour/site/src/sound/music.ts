@@ -8,6 +8,7 @@
  * other.
  */
 import {
+  type AmpSpec,
   amp,
   audio,
   crash,
@@ -18,7 +19,6 @@ import {
   snare,
   sub,
   within,
-  type AmpSpec,
 } from "./engine.ts";
 
 export interface Track {

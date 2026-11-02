@@ -56,10 +56,9 @@ describe("moments from runs", () => {
   });
 
   it("says a message arrived when a new run starts from one", () => {
-    assert.deepEqual(
-      momentsOf([], [run("a", { trigger: message })]),
-      ["message"],
-    );
+    assert.deepEqual(momentsOf([], [run("a", { trigger: message })]), [
+      "message",
+    ]);
   });
 
   it("says a run is done when a run Run started completes", () => {
@@ -70,10 +69,9 @@ describe("moments from runs", () => {
   });
 
   it("says a run failed", () => {
-    assert.deepEqual(
-      momentsOf([run("a")], [run("a", { status: "FAILED" })]),
-      ["runFail"],
-    );
+    assert.deepEqual(momentsOf([run("a")], [run("a", { status: "FAILED" })]), [
+      "runFail",
+    ]);
   });
 
   it("says an agent finished when a message-started run completes", () => {

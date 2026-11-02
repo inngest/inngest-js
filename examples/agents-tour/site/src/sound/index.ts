@@ -10,12 +10,7 @@ import { store } from "../platform.ts";
 import { ensure, liveRig } from "./engine.ts";
 import { preloadFaces } from "./faces.ts";
 import { hurtFlash, visual } from "./fx.ts";
-import {
-  type Game,
-  newGame,
-  recover,
-  update,
-} from "./game.ts";
+import { type Game, newGame, recover, update } from "./game.ts";
 import { isMoment, type Moment } from "./moments.ts";
 import * as music from "./music.ts";
 import { plan, showPeek, startPeeking } from "./peek.ts";
@@ -195,7 +190,10 @@ export const sound = (moment: Moment) => {
 
   const hurts = moment === "runFail" || moment === "checkFail";
 
-  if (!(state.style === "doom" && hurts) && (weights[moment] === 1.2 || moment === "runFail")) {
+  if (
+    !(state.style === "doom" && hurts) &&
+    (weights[moment] === 1.2 || moment === "runFail")
+  ) {
     visual(style.fx, moment === "runFail");
   }
 };

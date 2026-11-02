@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Kbd, shortcutsOf } from "./keyboard.tsx";
-import { type Look, faceKey, faceUrl } from "./sound/faces.ts";
+import { faceKey, faceUrl, type Look } from "./sound/faces.ts";
 import {
   getState,
   pickStyle,
@@ -109,18 +109,16 @@ export const SoundButton = () => {
 
   const leave = () => {
     closeTimer.current = window.setTimeout(() => {
-      if (!document.getElementById("sound-menu")?.contains(document.activeElement)) {
+      if (
+        !document.getElementById("sound-menu")?.contains(document.activeElement)
+      ) {
         closeMenu(false);
       }
     }, 250);
   };
 
   return (
-    <span
-      className="sound"
-      onMouseEnter={openMenu}
-      onMouseLeave={leave}
-    >
+    <span className="sound" onMouseEnter={openMenu} onMouseLeave={leave}>
       <button
         type="button"
         ref={button}
@@ -215,7 +213,8 @@ export const DoomBar = () => {
       <div className="doom-credit">
         <span>
           {sound.track.name}
-          {sound.rendering ? " (preparing)" : ""} <Kbd action="soundTrack" short />
+          {sound.rendering ? " (preparing)" : ""}{" "}
+          <Kbd action="soundTrack" short />
         </span>
         <a href="/freedoom/LICENSE" target="_blank" rel="noopener">
           Music and art: Freedoom (BSD licence)

@@ -6,19 +6,19 @@
  * ordinary news, and quiet moments are quieter still.
  */
 import {
+  type AmpSpec,
   crash,
   drive,
   fm,
   gt,
   hiss,
   kick,
+  midi,
   nt,
   seq,
   snare,
   sub,
   tone,
-  midi,
-  type AmpSpec,
 } from "./engine.ts";
 import type { Moment } from "./moments.ts";
 
@@ -316,7 +316,14 @@ const root = 40;
 const guitar: AmpSpec = { k: 6, hp: 110, mf: 1400, mg: 3, lp: 3200, lv: 0.3 };
 
 const hit = (offset: number, at: number, dur: number, volume: number) => {
-  gt(root + offset, at, Math.max(0.04, dur), 0.18, drive("a2", guitar, volume), 0.8);
+  gt(
+    root + offset,
+    at,
+    Math.max(0.04, dur),
+    0.18,
+    drive("a2", guitar, volume),
+    0.8,
+  );
   sub(root + offset, at, dur, 0.1 * volume);
 };
 

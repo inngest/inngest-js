@@ -27,8 +27,9 @@ const typing = () => {
   const active = document.activeElement;
 
   return (
-    Boolean(active?.closest?.("input, textarea, [contenteditable], .monaco-editor")) ||
-    performance.now() - lastKey < 4000
+    Boolean(
+      active?.closest?.("input, textarea, [contenteditable], .monaco-editor"),
+    ) || performance.now() - lastKey < 4000
   );
 };
 
@@ -114,7 +115,9 @@ export const showPeek = () => {
       const y = Math.min(vh - 1, Math.max(0, area[1] + (b ?? 0) * area[3]));
 
       return !document.elementsFromPoint(x, y).some((el) => {
-        return el.matches("button, a, input, textarea, select, summary, [tabindex]");
+        return el.matches(
+          "button, a, input, textarea, select, summary, [tabindex]",
+        );
       });
     });
 
