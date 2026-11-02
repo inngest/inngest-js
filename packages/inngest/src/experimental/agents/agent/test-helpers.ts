@@ -63,7 +63,9 @@ export const run = async (
      * run ends: with its output, or with an error. Left out, an invoke is
      * answered with `undefined`.
      */
-    onInvoke?: (op: OutgoingOp) => { data?: unknown; error?: unknown };
+    onInvoke?: (
+      op: OutgoingOp,
+    ) => { data?: unknown; error?: unknown } | "pending";
   } = {},
 ) => {
   const root = hashedStepId(options.key ?? "inbox");
@@ -318,6 +320,10 @@ export const run = async (
 
         if (!(op.id in state)) {
           const answered = options.onInvoke(op);
+
+          if (answered === "pending") {
+            continue;
+          }
 
           state = {
             ...state,

@@ -237,3 +237,32 @@ describe("start() limits", () => {
     ]);
   });
 });
+
+describe("start().result({ timeout })", () => {
+  test("a result that is not there in time throws a timeout error and the run keeps going", async () => {
+    const agents = makeAgents();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      const started = await callee.start("slow");
+
+      try {
+        await started.result({ timeout: "1s" });
+      } catch (error) {
+        return (error as Error).name;
+      }
+
+      return "no throw";
+    });
+    const { output } = await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
+      },
+      onInvoke: () => {
+        return "pending";
+      },
+    });
+
+    expect(output).toBe("AgentTimeoutError");
+  });
+});
