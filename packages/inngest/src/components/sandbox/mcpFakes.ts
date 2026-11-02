@@ -9,6 +9,7 @@
  */
 import { createServer } from "node:http";
 import { asyncDispose } from "../../helpers/asyncDispose.ts";
+import type { McpOAuthStore } from "./mcpOAuth.ts";
 
 /**
  * A tool of the fake server.
@@ -73,6 +74,18 @@ export interface FakeMcpOptions {
      * A client the server already knows, for when `registration` is false.
      */
     client?: { id: string; secret?: string };
+
+    /**
+     * Where the metadata points instead of at the server itself, for tests of
+     * the network guard.
+     */
+    endpoints?: {
+      metadata?: string;
+      authorizationServer?: string;
+      authorize?: string;
+      token?: string;
+      register?: string;
+    };
   };
 }
 
@@ -284,7 +297,9 @@ const createFake = (options: FakeMcpOptions) => {
     if (path.startsWith("/.well-known/oauth-protected-resource")) {
       return json(200, {
         resource: `${origin}/mcp`,
-        authorization_servers: [origin],
+        authorization_servers: [
+          options.oauth?.endpoints?.authorizationServer ?? origin,
+        ],
         scopes_supported: ["read"],
       });
     }
@@ -292,10 +307,13 @@ const createFake = (options: FakeMcpOptions) => {
     if (path.startsWith("/.well-known/oauth-authorization-server")) {
       return json(200, {
         issuer: origin,
-        authorization_endpoint: `${origin}/oauth/authorize`,
-        token_endpoint: `${origin}/oauth/token`,
+        authorization_endpoint:
+          options.oauth?.endpoints?.authorize ?? `${origin}/oauth/authorize`,
+        token_endpoint:
+          options.oauth?.endpoints?.token ?? `${origin}/oauth/token`,
         ...(options.oauth?.registration !== false && {
-          registration_endpoint: `${origin}/oauth/register`,
+          registration_endpoint:
+            options.oauth?.endpoints?.register ?? `${origin}/oauth/register`,
         }),
         code_challenge_methods_supported: ["S256"],
         token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
@@ -439,7 +457,7 @@ const createFake = (options: FakeMcpOptions) => {
         return new Response("", {
           status: 401,
           headers: {
-            "www-authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"`,
+            "www-authenticate": `Bearer resource_metadata="${options.oauth.endpoints?.metadata ?? `${new URL(request.url).origin}/.well-known/oauth-protected-resource`}"`,
           },
         });
       }
@@ -695,5 +713,33 @@ export const fakeMcpFetch = (options: FakeMcpOptions): FakeMcp => {
     fetch: fetcher,
     close,
     [asyncDispose]: close,
+  };
+};
+
+/**
+ * An in-memory `McpOAuthStore` that exposes its values, for tests.
+ */
+export const memoryOAuthStore = (): McpOAuthStore & {
+  values: Map<string, string>;
+} => {
+  const values = new Map<string, string>();
+
+  return {
+    values,
+    get: async (key) => {
+      return values.get(key) ?? null;
+    },
+    compareAndSet: async (key, expected, next) => {
+      if ((values.get(key) ?? null) !== expected) {
+        return false;
+      }
+
+      values.set(key, next);
+
+      return true;
+    },
+    delete: async (key) => {
+      values.delete(key);
+    },
   };
 };

@@ -11,18 +11,21 @@
  * secret to redact, and error text from the authorization server is cut to its
  * `error` code and a short description with every known secret removed.
  *
- * A user with no token gets a `McpNeedsAuthorization` result holding the URL
- * to open. `completeMcpAuthorization()` finishes the flow from the app's
- * callback route and sends `agent/mcp.authorized`.
+ * A user with no token is given a sign-in link through the app's
+ * `onNeedsAuthorization` hook; the model never sees it. The link opens on the
+ * app's own route, `mcpCallback({ store })`, which ties it to the browser that
+ * first opened it with a short-lived cookie, sends that browser to the
+ * authorization server, and finishes the flow when the same browser comes
+ * back. Tokens are stored under the server's `id`.
  */
 import hashjs from "hash.js";
-import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { mcpProtocolVersion } from "./mcpClient.ts";
+import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
 import { redact, type Secret } from "./secret.ts";
 
 /**
- * The event `completeMcpAuthorization()` sends when a user finishes
+ * The event `mcpCallback()` sends when a user finishes
  * connecting a server. Its data is `McpAuthorizedData`.
  */
 export const mcpAuthorizedEvent = "agent/mcp.authorized";
@@ -76,9 +79,20 @@ export interface McpOAuthStore {
  */
 export interface McpOAuthUserContext {
   /**
-   * The ID of the run that is calling, when there is one.
+   * The ID of the run that is calling.
    */
   runId?: string;
+
+  /**
+   * The event that triggered the run. Its `data` came from outside the
+   * function and is `unknown`: check it before use.
+   */
+  event?: { name: string; data?: unknown; id?: string };
+
+  /**
+   * The thread the run belongs to, in an agent run.
+   */
+  thread?: { key: string };
 }
 
 /**
@@ -93,7 +107,7 @@ export interface McpOAuthOptions {
 
   /**
    * Your route that receives the redirect after the user approves. It calls
-   * `completeMcpAuthorization()`. Must be registered with the server if it
+   * `mcpCallback()`. Must be registered with the server if it
    * has no dynamic registration.
    */
   redirectUri: string;
@@ -128,63 +142,45 @@ export interface McpOAuthOptions {
   clientName?: string;
 
   /**
-   * Called when a user has no token, with the link to give them. Runs in the
-   * step that made the call; post the link where the user will see it.
+   * Called when a user has no token, with the sign-in link to give them. Runs
+   * in the step that made the call; show the link where the person will see it
+   * (a message, an email, a page). The model never sees the link: it is told
+   * only that a sign-in is needed. Without this hook the tool returns an error
+   * and the trace gets a warning.
    */
   onNeedsAuthorization?: (info: McpNeedsAuthorization) => void | Promise<void>;
 }
 
 /**
- * What a call returns (as an error result) for a user who has not connected
- * the server. The model reads it; an app can read it with
- * `isMcpNeedsAuthorization()`.
+ * What `onNeedsAuthorization` is called with for a user who has not connected
+ * the server.
  */
 export interface McpNeedsAuthorization {
-  type: "mcp_needs_authorization";
+  /**
+   * The sign-in link. It opens on your `mcpCallback` route and is valid for
+   * 10 minutes, for the browser that opens it first.
+   */
+  url: string;
 
   /**
-   * The server's name.
+   * The server's name: the key it has in `tools`.
    */
   server: string;
 
   /**
-   * The user who needs to connect.
+   * The thread of the run that needs the sign-in, in an agent run.
+   */
+  thread?: { key: string };
+
+  /**
+   * The person who needs to connect, as `auth.oauth.user` named them.
    */
   user: string;
-
-  /**
-   * Where the user approves access. Valid for 10 minutes.
-   */
-  authorizeUrl: string;
-
-  /**
-   * What the model should do.
-   */
-  message: string;
 }
 
 /**
- * Whether `value` is a needs-authorization result, or a tool error holding one.
- */
-export const isMcpNeedsAuthorization = (
-  value: unknown,
-): value is McpNeedsAuthorization => {
-  const inner =
-    typeof value === "object" && value !== null && "~error" in value
-      ? (value as { "~error": unknown })["~error"]
-      : value;
-
-  return (
-    typeof inner === "object" &&
-    inner !== null &&
-    (inner as { type?: unknown }).type === "mcp_needs_authorization" &&
-    typeof (inner as { authorizeUrl?: unknown }).authorizeUrl === "string"
-  );
-};
-
-/**
  * Thrown inside the client when the user has no usable token. Never leaves
- * `tool.mcp()`: it becomes a `McpNeedsAuthorization` result.
+ * `tool.mcp()`: it becomes a sign-in link for `onNeedsAuthorization`.
  */
 export class McpAuthorizationRequired extends Error {
   constructor() {
@@ -200,7 +196,7 @@ export class McpAuthorizationRequired extends Error {
 class GrantRejected extends Error {}
 
 /**
- * Thrown by `completeMcpAuthorization()` for a callback it can't finish. The
+ * Thrown inside `mcpCallback()` for a callback it can't finish. The
  * message is safe to show the user.
  */
 export class McpAuthorizationError extends NonRetriableError {
@@ -232,6 +228,12 @@ interface PendingRecord {
   server: string;
   user: string;
   url: string;
+  id: string;
+  /** Where the authorization server asks the user; the browser is sent here. */
+  authorizeUrl: string;
+  /** Tied to the browser that first opened the link: its cookie holds this. */
+  binding: string;
+  claimed: boolean;
   verifier: string;
   redirectUri: string;
   tokenEndpoint: string;
@@ -255,6 +257,8 @@ interface Discovery {
 }
 
 const pendingMs = 10 * 60_000;
+// The query parameter on the sign-in link that names the pending sign-in.
+const startParam = "mcp_start";
 const refreshMarginMs = 60_000;
 const leaseMs = 30_000;
 const leaseWaitMs = 250;
@@ -313,24 +317,16 @@ const sleep = (ms: number): Promise<void> => {
   });
 };
 
-const secureUrl = (value: string, what: string): URL => {
-  let url: URL;
-
+// An endpoint a remote server names may never point at loopback; a server in
+// dev or tests that is itself on loopback may.
+const secureUrl = (serverUrl: string, value: string, what: string): URL => {
   try {
-    url = new URL(value);
-  } catch {
-    throw new NonRetriableError(`The MCP server's ${what} is not a URL`);
+    return assertMcpUrl(value, `OAuth ${what}`, {
+      loopback: isLoopbackUrl(serverUrl),
+    });
+  } catch (error) {
+    throw new NonRetriableError((error as Error).message);
   }
-
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
-    throw new NonRetriableError(
-      `The MCP server's ${what} must be https: ${url.origin}`,
-    );
-  }
-
-  return url;
 };
 
 const parse = <T>(text: string | null): T | undefined => {
@@ -345,23 +341,17 @@ const parse = <T>(text: string | null): T | undefined => {
   }
 };
 
-/**
- * The stable part of a server's key in the store.
- */
-export const serverIdOf = (url: string): string => {
-  return sha256Hex(url).slice(0, 16);
-};
-
-const tokenKey = (url: string, user: string): string => {
-  return `token:${serverIdOf(url)}:${encodeURIComponent(user)}`;
+// Tokens are stored under the server's `id` from code.
+const tokenKey = (id: string, user: string): string => {
+  return `token:${id}:${encodeURIComponent(user)}`;
 };
 
 const pendingKey = (state: string): string => {
   return `pending:${state}`;
 };
 
-const toolsKey = (url: string): string => {
-  return `tools:${serverIdOf(url)}`;
+const toolsKey = (id: string): string => {
+  return `tools:${id}`;
 };
 
 /**
@@ -371,16 +361,18 @@ export class McpOAuth {
   readonly #options: McpOAuthOptions;
   readonly #store: () => McpOAuthStore;
   readonly #url: string;
+  readonly #id: string;
   readonly #fetch: typeof fetch;
 
   constructor(
     options: McpOAuthOptions,
-    url: string,
+    server: { url: string; id: string },
     store: () => McpOAuthStore,
     fetchFn?: typeof fetch,
   ) {
     this.#options = options;
-    this.#url = url;
+    this.#url = server.url;
+    this.#id = server.id;
     this.#store = store;
     this.#fetch = fetchFn ?? ((...args) => fetch(...args));
   }
@@ -421,7 +413,7 @@ export class McpOAuth {
    */
   async unauthorized(user: string, failed: string[]): Promise<boolean> {
     const store = this.#store();
-    const key = tokenKey(this.#url, user);
+    const key = tokenKey(this.#id, user);
     const raw = await store.get(key);
     const record = parse<TokenRecord>(raw);
 
@@ -443,30 +435,44 @@ export class McpOAuth {
   }
 
   /**
+   * Forgets `user`'s token for this server. They sign in again on their next
+   * call.
+   */
+  async disconnect(user: string): Promise<void> {
+    const store = this.#store();
+    const key = tokenKey(this.#id, user);
+
+    await store.delete(key);
+    await store.delete(`${key}:lease`);
+  }
+
+  /**
    * Remembers the server's tool list, which does not depend on the user, so a
    * user who has not connected still sees the tools.
    */
   async remember(listing: unknown): Promise<void> {
     const store = this.#store();
-    const key = toolsKey(this.#url);
+    const key = toolsKey(this.#id);
     const current = await store.get(key);
 
     await store.compareAndSet(key, current, JSON.stringify(listing));
   }
 
   async recall<T>(): Promise<T | undefined> {
-    return parse<T>(await this.#store().get(toolsKey(this.#url)));
+    return parse<T>(await this.#store().get(toolsKey(this.#id)));
   }
 
   /**
    * Begins an authorization: discovers the server, registers a client if
-   * needed, and returns the URL the user opens.
+   * needed, and returns the sign-in link for the app to show the user. The
+   * link opens on the app's callback route, which sends the browser on to the
+   * authorization server.
    */
   async start(
     user: string,
     server: string,
     signal?: AbortSignal,
-  ): Promise<McpNeedsAuthorization> {
+  ): Promise<Omit<McpNeedsAuthorization, "thread">> {
     const found = await this.#discover(signal);
     const client = await this.#client(found);
     const state = randomToken();
@@ -490,6 +496,10 @@ export class McpOAuth {
       server,
       user,
       url: this.#url,
+      id: this.#id,
+      authorizeUrl: url.toString(),
+      binding: randomToken(),
+      claimed: false,
       verifier,
       redirectUri: this.#options.redirectUri,
       tokenEndpoint: found.tokenEndpoint,
@@ -509,13 +519,11 @@ export class McpOAuth {
       JSON.stringify(pending),
     );
 
-    return {
-      type: "mcp_needs_authorization",
-      server,
-      user,
-      authorizeUrl: url.toString(),
-      message: `${server} needs the user's permission. Tell the user to open authorizeUrl to connect it (the link works for 10 minutes), then try again once they say they are done. Do not call ${server} tools again before that.`,
-    };
+    const link = new URL(this.#options.redirectUri);
+
+    link.searchParams.set(startParam, state);
+
+    return { url: link.toString(), server, user };
   }
 
   /**
@@ -525,7 +533,7 @@ export class McpOAuth {
    */
   async #fresh(user: string): Promise<TokenRecord> {
     const store = this.#store();
-    const key = tokenKey(this.#url, user);
+    const key = tokenKey(this.#id, user);
     const leaseKey = `${key}:lease`;
 
     for (let tries = 0; tries < leaseWaitTries; tries += 1) {
@@ -692,7 +700,8 @@ export class McpOAuth {
       ? "none"
       : "client_secret_post";
     const response = await this.#request(
-      secureUrl(found.registrationEndpoint, "registration endpoint").href,
+      secureUrl(this.#url, found.registrationEndpoint, "registration endpoint")
+        .href,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -810,7 +819,7 @@ export class McpOAuth {
       resource: pending.resource,
     };
     const store = this.#store();
-    const key = tokenKey(pending.url, pending.user);
+    const key = tokenKey(pending.id, pending.user);
 
     // Replace whatever was there; a fresh grant wins.
     for (let tries = 0; tries < 5; tries += 1) {
@@ -848,9 +857,12 @@ export class McpOAuth {
   }
 
   async #json(url: string): Promise<Record<string, unknown> | undefined> {
-    const response = await this.#request(secureUrl(url, "metadata URL").href, {
-      headers: { accept: "application/json" },
-    });
+    const response = await this.#request(
+      secureUrl(this.#url, url, "metadata URL").href,
+      {
+        headers: { accept: "application/json" },
+      },
+    );
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
@@ -919,7 +931,7 @@ export class McpOAuth {
       Array.isArray(servers) && typeof servers[0] === "string"
         ? servers[0]
         : mcp.origin;
-    const issuerUrl = secureUrl(issuer, "authorization server");
+    const issuerUrl = secureUrl(this.#url, issuer, "authorization server");
     const path = issuerUrl.pathname === "/" ? "" : issuerUrl.pathname;
     let meta: Record<string, unknown> | undefined;
 
@@ -954,8 +966,8 @@ export class McpOAuth {
       );
     }
 
-    secureUrl(authorizationEndpoint, "authorization endpoint");
-    secureUrl(tokenEndpoint, "token endpoint");
+    secureUrl(this.#url, authorizationEndpoint, "authorization endpoint");
+    secureUrl(this.#url, tokenEndpoint, "token endpoint");
 
     const offered = list(meta?.scopes_supported);
     // The resource's scopes, else everything the authorization server offers.
@@ -1041,113 +1053,93 @@ const readTokenResponse = async (
   };
 };
 
+const bindingCookieName = (state: string): string => {
+  return `mcp_oauth_${sha256Hex(state).slice(0, 16)}`;
+};
+
+// The binding cookie: HttpOnly so no script reads it, Lax so it comes back on
+// the redirect from the authorization server, Secure on https, and scoped to
+// the route.
+const bindingCookie = (
+  name: string,
+  value: string,
+  redirectUri: URL,
+  maxAgeSeconds: number,
+): string => {
+  return [
+    `${name}=${value}`,
+    `Max-Age=${maxAgeSeconds}`,
+    `Path=${redirectUri.pathname}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    ...(redirectUri.protocol === "https:" ? ["Secure"] : []),
+  ].join("; ");
+};
+
+const cookieOf = (request: Request, name: string): string | undefined => {
+  for (const part of (request.headers.get("cookie") ?? "").split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+
+    if (key === name) {
+      return rest.join("=");
+    }
+  }
+
+  return undefined;
+};
+
+// Compares without stopping at the first different character.
+const constantTimeEqual = (a: string, b: string): boolean => {
+  let diff = a.length ^ b.length;
+
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    diff |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+  }
+
+  return diff === 0;
+};
+
+const textResponse = (
+  status: number,
+  text: string,
+  headers: HeadersInit = {},
+): Response => {
+  return new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", ...headers },
+  });
+};
+
 /**
- * Finishes an authorization from your callback route: checks `state`,
- * exchanges the `code` (with PKCE), stores the token and, if you pass `send`,
- * sends `agent/mcp.authorized` so a waiting run can continue.
- *
- * @example
- * ```ts
- * app.get("/oauth/hex/callback", async (req, res) => {
- *   await completeMcpAuthorization({
- *     store,
- *     code: String(req.query.code),
- *     state: String(req.query.state),
- *     send: (event) => inngest.send(event),
- *   });
- *   res.send("Connected. You can close this tab.");
- * });
- * ```
+ * Finishes an authorization: checks `state`, exchanges the `code` (with
+ * PKCE), stores the token and, if `send` is set, sends `agent/mcp.authorized`.
+ * The caller has already checked the browser's cookie.
  */
-export const completeMcpAuthorization = async (options: {
-  /**
-   * The same store the server's `auth.oauth.store` uses.
-   */
+const finishAuthorization = async (options: {
   store: McpOAuthStore;
-
-  /**
-   * The `code` query parameter.
-   */
+  pending: PendingRecord;
+  raw: string;
+  key: string;
   code: string;
-
-  /**
-   * The `state` query parameter.
-   */
-  state: string;
-
-  /**
-   * The `error` query parameter, if the user denied access.
-   */
-  error?: string;
-
-  /**
-   * The user your app has signed in on this request. When set, the callback
-   * is refused unless the link was made for this user, so a link passed to
-   * someone else can't connect their account to the asker. Set it whenever
-   * your route knows who is calling.
-   */
-  expectUser?: string;
-
-  /**
-   * The client secret, when the server's `auth.oauth` has `clientSecret`.
-   */
   clientSecret?: string | Secret;
-
-  /**
-   * Sends the event, such as `(event) => inngest.send(event)`.
-   */
-  send?: (event: {
-    name: typeof mcpAuthorizedEvent;
-    data: McpAuthorizedData;
-  }) => Promise<unknown>;
-
-  /**
-   * A `fetch` to use instead of the global one, for tests.
-   */
+  send?: McpCallbackOptions["send"];
   fetch?: typeof fetch;
 }): Promise<McpAuthorizedData> => {
-  const key = pendingKey(options.state);
-  const raw = options.state ? await options.store.get(key) : null;
-  const pending = parse<PendingRecord>(raw);
+  const { store, pending, key } = options;
 
-  if (options.error) {
-    if (raw !== null) {
-      await options.store.delete(key);
-    }
-
-    throw new McpAuthorizationError("The user did not approve access");
-  }
-
-  if (
-    pending &&
-    options.expectUser !== undefined &&
-    pending.user !== options.expectUser
-  ) {
-    throw new McpAuthorizationError(
-      "This authorization link was made for another user",
-    );
-  }
-
-  if (pending && Date.now() - pending.createdAt > pendingMs) {
-    await options.store.delete(key);
-  }
-
-  // One use: take it before the exchange so a replayed link fails.
-  if (
-    !pending ||
-    Date.now() - pending.createdAt > pendingMs ||
-    !(await options.store.compareAndSet(key, raw, "{}"))
-  ) {
+  // One use: take it before the exchange so a replayed link fails. The age was
+  // checked when the request came in.
+  if (!(await store.compareAndSet(key, options.raw, "{}"))) {
     throw new McpAuthorizationError(
       "This authorization link has expired or was already used: ask for a new one",
     );
   }
 
-  await options.store.delete(key);
+  await store.delete(key);
 
   if (pending.secretConfigured && options.clientSecret === undefined) {
     throw new McpAuthorizationError(
-      "This server needs its client secret: pass clientSecret to completeMcpAuthorization()",
+      "This server needs its client secret: pass clientSecret to mcpCallback()",
     );
   }
 
@@ -1158,9 +1150,9 @@ export const completeMcpAuthorization = async (options: {
       : await options.clientSecret.value();
   const oauth = new McpOAuth(
     { user: pending.user, redirectUri: pending.redirectUri },
-    pending.url,
+    { url: pending.url, id: pending.id },
     () => {
-      return options.store;
+      return store;
     },
     options.fetch,
   );
@@ -1179,48 +1171,156 @@ export const completeMcpAuthorization = async (options: {
 };
 
 /**
- * Pauses the run until `user` finishes connecting a server (the
- * `agent/mcp.authorized` event that `completeMcpAuthorization()` sends).
- * Returns the event, or `null` if `timeout` passes first. Call it from the
- * agent function after a tool returned a needs-authorization result.
+ * What `mcpCallback()` takes.
  */
-export const waitForMcpAuthorization = async (options: {
+export interface McpCallbackOptions {
   /**
-   * The user, as `auth.oauth.user` named them.
+   * The same store the servers' `auth.oauth.store` use.
    */
-  user: string;
+  store: McpOAuthStore;
 
   /**
-   * Only this server (its name in `tools: { hex }`). Default: any.
+   * The client secret, when the server's `auth.oauth` has `clientSecret`.
    */
-  server?: string;
+  clientSecret?: string | Secret;
 
   /**
-   * How long to wait, such as `"10m"`.
+   * Sends the event, such as `(event) => inngest.send(event)`. What it
+   * resolves to is ignored, so it is `unknown`.
    */
-  timeout: string;
+  send?: (event: {
+    name: typeof mcpAuthorizedEvent;
+    data: McpAuthorizedData;
+  }) => Promise<unknown>;
 
   /**
-   * The step ID. Default `mcp:authorized:<server>:<user>`.
+   * A `fetch` to use instead of the global one, for tests.
    */
-  id?: string;
-}): Promise<{ name: string; data: McpAuthorizedData } | null> => {
-  const condition = [
-    `async.data.user == ${JSON.stringify(options.user)}`,
-    ...(options.server === undefined
-      ? []
-      : [`async.data.server == ${JSON.stringify(options.server)}`]),
-  ].join(" && ");
-  const found = await step.waitForEvent(
-    options.id ?? `mcp:authorized:${options.server ?? "any"}:${options.user}`,
-    {
-      event: mcpAuthorizedEvent,
-      timeout: options.timeout as "1m",
-      if: condition,
-    },
-  );
+  fetch?: typeof fetch;
+}
 
-  return found
-    ? { name: found.name, data: found.data as McpAuthorizedData }
-    : null;
+/**
+ * The route that handles the sign-in of `tool.mcp({ auth: { oauth } })`,
+ * as a Web `Request` to `Response` function. Mount it at the path of the
+ * server's `redirectUri`; it needs the whole request, because the sign-in is
+ * tied to the browser that opened the link.
+ *
+ * The link given to `onNeedsAuthorization` opens here first. The first browser
+ * to open it gets a short-lived cookie and is sent on to the authorization
+ * server; the redirect back to the same route finishes the sign-in only with
+ * that cookie, so a forwarded or leaked link can't be finished by someone
+ * else.
+ *
+ * @example
+ * ```ts
+ * const callback = mcpCallback({ store, send: (event) => inngest.send(event) });
+ *
+ * // A framework whose route handlers take a Web `Request` and return a
+ * // `Response` (Next.js, Hono, Remix, Cloudflare Workers) mounts it directly.
+ * export const GET = callback;
+ * ```
+ */
+export const mcpCallback = (
+  options: McpCallbackOptions,
+): ((request: Request) => Promise<Response>) => {
+  return async (request) => {
+    const url = new URL(request.url);
+    const started = url.searchParams.get(startParam);
+    const state = started ?? url.searchParams.get("state") ?? "";
+    const key = pendingKey(state);
+    const raw = state ? await options.store.get(key) : null;
+    const pending = parse<PendingRecord>(raw);
+
+    if (
+      raw === null ||
+      !pending ||
+      typeof pending.createdAt !== "number" ||
+      Date.now() - pending.createdAt > pendingMs
+    ) {
+      return textResponse(
+        400,
+        "This sign-in link has expired or was already used: ask for a new one.",
+      );
+    }
+
+    const redirect = new URL(pending.redirectUri);
+    const cookieName = bindingCookieName(state);
+    const cookie = cookieOf(request, cookieName);
+    const sameBrowser =
+      cookie !== undefined && constantTimeEqual(cookie, pending.binding);
+
+    if (started !== null) {
+      if (!pending.claimed) {
+        const claimed = JSON.stringify({ ...pending, claimed: true });
+
+        if (!(await options.store.compareAndSet(key, raw, claimed))) {
+          return textResponse(
+            409,
+            "This sign-in link is being opened: try again.",
+          );
+        }
+      } else if (!sameBrowser) {
+        return textResponse(
+          403,
+          "This sign-in link was already opened in another browser: ask for a new one.",
+        );
+      }
+
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: pending.authorizeUrl,
+          "cache-control": "no-store",
+          "set-cookie": bindingCookie(
+            cookieName,
+            pending.binding,
+            redirect,
+            pendingMs / 1000,
+          ),
+        },
+      });
+    }
+
+    if (!pending.claimed || !sameBrowser) {
+      return textResponse(
+        403,
+        "This sign-in must be finished in the browser that opened the link: ask for a new link.",
+      );
+    }
+
+    if (url.searchParams.get("error")) {
+      await options.store.delete(key);
+
+      return textResponse(400, "Access was not approved.");
+    }
+
+    try {
+      await finishAuthorization({
+        store: options.store,
+        pending,
+        raw,
+        key,
+        code: url.searchParams.get("code") ?? "",
+        clientSecret: options.clientSecret,
+        send: options.send,
+        fetch: options.fetch,
+      });
+    } catch (error) {
+      // These messages are written to be shown: the authorization server's
+      // text is cut and every secret is removed from it.
+      if (
+        error instanceof McpAuthorizationError ||
+        error instanceof NonRetriableError
+      ) {
+        return textResponse(400, error.message);
+      }
+
+      return textResponse(502, "Could not finish the sign-in: try again.");
+    }
+
+    return textResponse(200, "Connected. You can close this tab.", {
+      "cache-control": "no-store",
+      "set-cookie": bindingCookie(cookieName, "", redirect, 0),
+    });
+  };
 };

@@ -149,6 +149,13 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly waits?: boolean;
 
   /**
+   * Marks the tool's results as text from outside, so the model reads them
+   * as data. `true`, or a function of the input that gives the source label.
+   * Set on every tool of an MCP server.
+   */
+  readonly untrusted?: true | ((input: never) => string);
+
+  /**
    * Carries `TInput` and `TOutput` for the compiler. It is never set.
    */
   readonly "~types"?: { input: TInput; output: TOutput };
@@ -385,6 +392,7 @@ const toolMethods = {
    * @example
    * ```ts
    * const hex = tool.mcp({
+   *   id: "hex",
    *   url: "https://app.hex.tech/mcp",
    *   auth: { bearer: secret("HEX_TOKEN") },
    *   tools: ["create_thread", "get_thread"],

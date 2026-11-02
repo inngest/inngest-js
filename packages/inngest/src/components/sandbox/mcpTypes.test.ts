@@ -10,6 +10,7 @@ import { secret } from "./secret.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 
 const hex = tool.mcp({
+  id: "hex",
   url: "https://app.hex.tech/mcp",
   auth: { bearer: secret("HEX_TOKEN") },
   tools: ["create_thread"],

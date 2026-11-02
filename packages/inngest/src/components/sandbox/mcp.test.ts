@@ -13,7 +13,11 @@ import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { mapMcpResult } from "./mcp.ts";
-import { McpAuthError, McpUnavailableError } from "./mcpClient.ts";
+import {
+  forgetMcpSessions,
+  McpAuthError,
+  McpUnavailableError,
+} from "./mcpClient.ts";
 import { fakeMcpFetch } from "./mcpFakes.ts";
 import { script } from "./scriptedModel.ts";
 import { secret } from "./secret.ts";
@@ -83,6 +87,18 @@ describe("tool.mcp", () => {
       description: "Starts a thread",
       input: { type: "object", required: ["prompt"] },
     });
+  });
+
+  test("every tool built from a server is flagged untrusted", async () => {
+    const { hex } = connect();
+    const tools = await build(hex);
+
+    expect(Object.keys(tools).length).toBeGreaterThan(0);
+    expect(
+      Object.values(tools).every((entry) => {
+        return (entry as SandboxTool).untrusted === true;
+      }),
+    ).toBe(true);
   });
 
   test("sends the bearer on every request, and the idempotency key", async () => {
@@ -339,12 +355,34 @@ describe("tool.mcp", () => {
     expect(await call(tools.hex_get_thread, {})).toBe("running");
   });
 
+  test("a call on a fresh process reconnects with its own session", async () => {
+    const { hex, server } = connect();
+    const listing = await hex["~list"]();
+    const first = server.calls.find((item) => item.method === "initialize");
+
+    // The call lands on another machine, which holds none of the sessions the
+    // first one made.
+    forgetMcpSessions();
+
+    const tools = hex["~build"]("hex", listing);
+
+    expect(await call(tools.hex_get_thread, {})).toBe("running");
+    expect(
+      server.calls.filter((item) => item.method === "initialize"),
+    ).toHaveLength(2);
+    expect(first).toBeDefined();
+  });
+
   test("refuses plain http except for localhost, and credentials in the url", () => {
-    expect(() => tool.mcp({ url: "http://example.com/mcp" })).toThrow("https");
-    expect(() => tool.mcp({ url: "http://localhost:1/mcp" })).not.toThrow();
-    expect(() => tool.mcp({ url: "https://u:p@example.com/mcp" })).toThrow(
-      "credentials",
-    );
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://example.com/mcp" });
+    }).toThrow("https");
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://localhost:1/mcp" });
+    }).not.toThrow();
+    expect(() => {
+      return tool.mcp({ id: "x", url: "https://u:p@example.com/mcp" });
+    }).toThrow("credentials");
   });
 
   test("a server in a plain tools record fails with a pointer to tools()", async () => {
@@ -352,7 +390,9 @@ describe("tool.mcp", () => {
 
     const { toolDefinitions } = await import("./tools.ts");
 
-    expect(() => toolDefinitions({ hex })).toThrow("await server.tools()");
+    expect(() => {
+      return toolDefinitions({ hex });
+    }).toThrow("await server.tools()");
   });
 
   test("sandbox code calls the tools by name with named arguments, and a tool error is an error", async () => {
@@ -378,12 +418,6 @@ describe("tool.mcp", () => {
       id: "t-1",
       prompt: "hi",
     });
-  });
-
-  test("tools() needs a name", async () => {
-    const hex = tool.mcp({ url: "https://example.com/mcp" });
-
-    await expect(hex.tools()).rejects.toThrow("needs a name");
   });
 });
 

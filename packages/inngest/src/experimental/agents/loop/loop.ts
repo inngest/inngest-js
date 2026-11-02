@@ -15,7 +15,10 @@ import {
   withSpan,
   withStepIdPrefix,
 } from "../../../components/InngestStepTools.ts";
-import { expandMcpTools } from "../../../components/sandbox/mcp.ts";
+import {
+  expandMcpTools,
+  type McpServer,
+} from "../../../components/sandbox/mcp.ts";
 import {
   isToolError,
   resolveToolCall,
@@ -27,6 +30,7 @@ import {
   toolErrorOf,
 } from "../../../components/sandbox/tools.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
+import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import { anthropic } from "./anthropic.ts";
 import {
@@ -330,14 +334,31 @@ export interface AgentTurn {
  */
 export type AgentToolRun<TTools extends SandboxTools = AnyTools> =
   | {
-      [TName in keyof TTools & string]: AgentToolRunOf<
-        TName,
-        ToolInputType<TTools[TName]>,
-        false,
-        ToolOutputType<TTools[TName]>
-      >;
+      [TName in keyof TTools & string]: IsMcpServer<TTools[TName]> extends true
+        ? // An MCP server is many tools: the types cannot list their names,
+          // their input is JSON, and their output comes from the server, so
+          // `unknown` here is deliberate and pinned.
+          AgentToolRunOf<
+            `${TName}_${string}`,
+            Record<string, unknown>,
+            false,
+            unknown
+          >
+        : AgentToolRunOf<
+            TName,
+            ToolInputType<TTools[TName]>,
+            false,
+            ToolOutputType<TTools[TName]>
+          >;
     }[keyof TTools & string]
   | AgentToolRunOf<string, unknown, true, unknown>;
+
+// Whether a tool entry is an MCP server, which is many tools.
+type IsMcpServer<T> = IsAny<T> extends true
+  ? false
+  : T extends McpServer
+    ? true
+    : false;
 
 interface AgentToolRunOf<
   TName extends string,
