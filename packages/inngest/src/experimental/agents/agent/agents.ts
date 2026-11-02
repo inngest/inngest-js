@@ -304,7 +304,7 @@ export type {
   AgentFinishedData,
   AgentMessageData,
   AgentQuestionData,
-  AgentResendData,
+  AgentRecoverData,
   AgentRouting,
   AgentSteerData,
 } from "../inbox/events.ts";
@@ -313,6 +313,7 @@ export {
   agentFinished,
   agentMessage,
   agentQuestion,
+  agentRecover,
   agentSteer,
 } from "../inbox/events.ts";
 export type {
@@ -333,7 +334,7 @@ export {
 } from "../kv/kv.ts";
 export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "../kv/kvD1.ts";
 export { d1KvAdapter, d1KvSchema } from "../kv/kvD1.ts";
-export type { AgentScoreName, AgentScores } from "../loop/scores.ts";
+export type { AgentScoreName } from "../loop/scores.ts";
 export type {
   ThreadHandle,
   ThreadState,
@@ -342,6 +343,7 @@ export type {
 } from "../threads/thread.ts";
 export {
   agentMessageEvent,
+  agentRecoverEvent,
   agentSteerEvent,
   getThread,
 } from "../threads/thread.ts";
@@ -360,7 +362,6 @@ export type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 export type {
-  AgentRecovery,
   LastRun,
   RunOutcome,
 } from "./recovery.ts";

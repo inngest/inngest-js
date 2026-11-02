@@ -148,7 +148,6 @@ describe("function context in the body", () => {
       "inbox",
       "loop",
       "sandboxes",
-      "scores",
       "score",
     ]) {
       expect(seen).toHaveProperty(name);
