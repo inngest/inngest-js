@@ -309,3 +309,66 @@ describe("a trigger with nothing at its thread path", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe("a message after the run ended", () => {
+  test("starts a new run on the same thread, which reads the state the first run wrote; another thread does not see it", async () => {
+    const store = createKv({ adapter: memoryKvAdapter() });
+    const { fn } = createAgentFunction(
+      makeClient(),
+      {
+        id: "keeper",
+        kv: store,
+        triggers: { event: "shop/order", thread: "event.data.id" },
+      },
+      async ({ me }) => {
+        const before = (await store.thread.get("note")) ?? null;
+
+        await store.thread.set("note", `written by a run on ${me.key}`);
+
+        return before;
+      },
+    );
+    const send = async (id: string) => {
+      return (await run(fn, { event: { name: "shop/order", data: { id } } }))
+        .output;
+    };
+
+    expect(await send("o1")).toBeNull();
+    expect(await send("o1")).toBe("written by a run on o1");
+    expect(await send("o2")).toBeNull();
+  });
+});
+
+describe("recovery", () => {
+  test("a run that recovery resumed gets the event of the run that failed, and the inbox opens with it", async () => {
+    const agents = createAgents(makeClient(), { store: memoryKvAdapter() });
+    const { fn } = agents.agent(
+      {
+        id: "recovers",
+        triggers: [{ event: "shop/order", thread: "event.data.id" }],
+        recovery: true,
+      },
+      async ({ event, inbox }) => {
+        const first = await inbox.next();
+
+        return { event: [event.name, event.data], first: first?.name };
+      },
+    );
+
+    const { output } = await run(fn, {
+      event: {
+        name: "agent/message",
+        data: {
+          agent: `${testClientId}/recovers`,
+          thread: "o1",
+          event: { id: "evt-1", name: "shop/order", data: { id: "o1" } },
+        },
+      },
+    });
+
+    expect(output).toEqual({
+      event: ["shop/order", { id: "o1" }],
+      first: "shop/order",
+    });
+  });
+});

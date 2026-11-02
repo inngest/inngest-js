@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import * as entry from "../index.ts";
-import { agents, created, typesOnly } from "./typeFixtures.ts";
+import { agents, closed, created, typesOnly } from "./typeFixtures.ts";
 
 const deletedValues = [
   "listThreads",
@@ -117,5 +117,90 @@ test("agents: listen takes event types and inboxTools is gone", () => {
 
     // @ts-expect-error inboxTools became `listen`
     agents.agent({ id: "listen-3", triggers: [created], inboxTools: {} });
+  });
+});
+
+test("agents: event is the trigger event, narrowed per trigger by is()", () => {
+  typesOnly(() => {
+    agents.agent(
+      { id: "event-1", triggers: [created, closed] },
+      async ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<
+          "order/created" | "order/closed"
+        >();
+
+        if (event.is(created)) {
+          expectTypeOf(event.data).toEqualTypeOf<{
+            id: string;
+            total: number;
+          }>();
+        }
+
+        if (event.is(closed)) {
+          expectTypeOf(event.data).toEqualTypeOf<{ id: string }>();
+        }
+      },
+    );
+  });
+});
+
+test("agents: a trigger with no schema has data of Record<string, any>", () => {
+  typesOnly(() => {
+    agents.agent(
+      { id: "event-2", triggers: [{ event: "plain/event" }] },
+      async ({ event }) => {
+        // The one allowed `any`: the data comes from outside, and core types
+        // an event with no schema the same way.
+        expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
+        expectTypeOf(event.data.anything).toBeAny();
+      },
+    );
+  });
+});
+
+test("agents: the handler argument is event, inbox, me, loop, sandboxes and score", () => {
+  typesOnly(() => {
+    agents.agent(
+      { id: "arg-1", triggers: [created] },
+      async ({ event, inbox, me, loop, sandboxes, score }) => {
+        expectTypeOf(event).toHaveProperty("name");
+        expectTypeOf(inbox).toHaveProperty("next");
+        expectTypeOf(me).toHaveProperty("key");
+        expectTypeOf(loop).toBeFunction();
+        expectTypeOf(sandboxes).toBeObject();
+        expectTypeOf(score).toEqualTypeOf<
+          (name: string, value: number | boolean) => Promise<void>
+        >();
+      },
+    );
+  });
+});
+
+test("agents: the old handler fields are gone", () => {
+  typesOnly(() => {
+    agents.agent({ id: "gone-1", triggers: [created] }, async (context) => {
+      // @ts-expect-error trigger is the event
+      void context.trigger;
+
+      // @ts-expect-error thread is me
+      void context.thread;
+    });
+  });
+});
+
+test("agents: me has a key and no post", () => {
+  typesOnly(() => {
+    agents.agent({ id: "me-1", triggers: [created] }, async ({ me }) => {
+      expectTypeOf(me.key).toBeString();
+      expectTypeOf(me).not.toHaveProperty("post");
+    });
+  });
+});
+
+test("agents: createAgents takes a store", () => {
+  typesOnly(() => {
+    expectTypeOf<{ store: entry.KvStore }>().toExtend<
+      NonNullable<Parameters<typeof entry.createAgents>[1]>
+    >();
   });
 });
