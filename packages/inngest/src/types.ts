@@ -1961,15 +1961,16 @@ export type SupportedFrameworkName =
  */
 export interface StepOptions {
   /**
-   * The ID to use to memoize the result of this step, ensuring it is run only
-   * once. Changing this ID in an existing function will cause the step to be
-   * run again for in-progress runs; it is recommended to use a stable ID.
+   * The stable ID used to find this step's saved result within a run. Reuse
+   * the same ID across function runs. Changing it can cause completed work
+   * to run again for in-progress runs, so do not generate a random ID.
    */
   id: string;
 
   /**
-   * The display name to use for this step in the Inngest UI. This can be
-   * changed at any time without affecting the step's behaviour.
+   * The display name to use for this step in the Inngest UI. Defaults to `id`.
+   * Change `name` while keeping `id` stable to rename the step without
+   * affecting its saved state.
    */
   name?: string;
 
@@ -2042,6 +2043,20 @@ export interface StepSpan {
 
 /**
  * Either a step ID or a set of step options.
+ *
+ * A string is shorthand for `{ id: string }`: it is the stable ID used for
+ * memoization and, by default, the display name in the Inngest UI. To change
+ * only the display name, pass `{ id, name }` and keep `id` unchanged.
+ *
+ * For `step.sendEvent()`, this step ID is separate from the optional `id` in
+ * each event payload, which controls event deduplication.
+ *
+ * @example
+ * await step.run("load-user", () => loadUser());
+ *
+ * @example
+ * // To rename that step, keep its ID:
+ * await step.run({ id: "load-user", name: "Load user profile" }, () => loadUser());
  *
  * @public
  */
