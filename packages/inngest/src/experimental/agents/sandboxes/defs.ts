@@ -1440,11 +1440,18 @@ export const sandboxTools = (
 };
 
 /**
- * Agent tools by name, for `agent.loop()`. The name is the tool's `id`.
+ * Agent tools by name, for `agent.loop()`. The name is the tool's `id`, which a tool in
+ * this list must have.
  */
 export const agentTools = (tools: readonly AgentTool[]): SandboxTools => {
   return toolsByName(
     tools.map((entry) => {
+      if (entry.id === undefined) {
+        throw new SandboxValidationError(
+          "A tool in a list needs an id: it has no key to name it",
+        );
+      }
+
       return [entry.id, entry] as const;
     }),
   );
