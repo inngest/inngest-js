@@ -183,3 +183,27 @@ export type MessageOutcome =
 export const agentMessageResult = eventType("agent/message.result", {
   schema: staticSchema<AgentMessageResultData>(),
 });
+
+/**
+ * The data of `agent/ask.timeout`: a question a model asked with `ask_agent`,
+ * and the thread to tell when nobody answers it in time.
+ */
+export type AgentAskTimeoutData = AgentRouting & {
+  /**
+   * The question's ID.
+   */
+  id: string;
+
+  /**
+   * How long to wait for the answer, such as `"1h"`.
+   */
+  timeout: string;
+};
+
+/**
+ * Starts the clock on a question a model asked. Internal: the function that
+ * handles it sends the `timed_out` answer.
+ */
+export const agentAskTimeout = eventType("agent/ask.timeout", {
+  schema: staticSchema<AgentAskTimeoutData>(),
+});
