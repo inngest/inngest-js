@@ -59,9 +59,11 @@ const boot = async (
 
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
+
     const timer = setTimeout(() => {
       controller.abort();
     }, 3000);
+
     let text = "";
 
     await act();
