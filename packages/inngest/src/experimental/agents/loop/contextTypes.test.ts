@@ -45,10 +45,10 @@ describe("body context from the client's middleware", () => {
   test("the agent's fields are still there, and event is the agent's", () => {
     withSandboxes.agent(
       { id: "ctx-3", triggers: { cron: "0 * * * *" } },
-      async ({ event, inbox, thread, runId, logger }) => {
-        expectTypeOf(event.data.thread).toBeString();
+      async ({ event, inbox, me, runId, logger }) => {
+        expectTypeOf(event.data.cron).toBeString();
         expectTypeOf(inbox).toHaveProperty("next");
-        expectTypeOf(thread).toHaveProperty("send");
+        expectTypeOf(me).toHaveProperty("key");
         expectTypeOf(runId).toBeString();
         expectTypeOf(logger).toHaveProperty("info");
 

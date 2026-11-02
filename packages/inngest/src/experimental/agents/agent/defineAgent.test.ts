@@ -4,7 +4,9 @@
  * function fields and the run's end.
  */
 
+import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
+import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createKv, memoryKvAdapter } from "../kv/kv.ts";
 import { createAgentFunction } from "./agentFunction.ts";
@@ -179,5 +181,68 @@ describe("optimizeParallelism", () => {
     );
 
     expect(deprecations(warn)).toHaveLength(1);
+  });
+});
+
+describe("the handler's event, me and inbox", () => {
+  const order = eventType("shop/order", {
+    schema: z.object({ id: z.string(), total: z.number() }),
+  });
+  const refund = eventType("shop/refund", {
+    schema: z.object({ id: z.string() }),
+  });
+  const agents = createAgents(makeClient(), { store: memoryKvAdapter() });
+  const config = {
+    id: "shop",
+    triggers: [order, refund],
+    thread: "event.data.id",
+  } as const;
+
+  test("event is exactly the event sent, is() narrows it, the inbox opens with it and me.key is the thread key", async () => {
+    let seen: Record<string, unknown> = {};
+    const { fn } = agents.agent(config, async ({ event, inbox, me }) => {
+      const first = await inbox.next();
+
+      seen = {
+        event: { name: event.name, data: event.data },
+        isOrder: event.is(order),
+        isRefund: event.is(refund),
+        first: { name: first?.name, data: first?.data },
+        key: me.key,
+      };
+    });
+
+    await run(fn, {
+      event: { name: "shop/order", data: { id: "o1", total: 5 } },
+    });
+
+    expect(seen).toEqual({
+      event: { name: "shop/order", data: { id: "o1", total: 5 } },
+      isOrder: true,
+      isRefund: false,
+      first: { name: "shop/order", data: { id: "o1", total: 5 } },
+      key: "o1",
+    });
+  });
+
+  test("the handler gets no trigger, no thread handle and no wrapper around the event", async () => {
+    let seen: Record<string, unknown> = {};
+    const { fn } = agents.agent(
+      { ...config, id: "shop-plain" },
+      async (context) => {
+        seen = context as unknown as Record<string, unknown>;
+      },
+    );
+
+    await run(fn, {
+      event: { name: "shop/order", data: { id: "o1", total: 5 } },
+    });
+
+    expect(seen).not.toHaveProperty("trigger");
+    expect(seen).not.toHaveProperty("thread");
+    expect(
+      (seen.event as { data: Record<string, unknown> }).data,
+    ).not.toHaveProperty("agent");
+    expect(Object.keys(seen.me as object)).toEqual(["key"]);
   });
 });

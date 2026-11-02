@@ -9,12 +9,16 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import type { step } from "../../../components/InngestStepTools.ts";
 import type { Logger } from "../../../middleware/logger.ts";
 import type { Context } from "../../../types.ts";
-import type {
-  AgentConfigContext,
-  AgentFunctionConfig,
-} from "../agent/types.ts";
+import type { RunFieldContext } from "../agent/runField.ts";
+import type { AgentFunctionConfig } from "../agent/types.ts";
 import type { kvFrom } from "../kv/kv.ts";
-import { openSandboxes, resolveSandboxes, stepSandboxes } from "./defs.ts";
+import type { TriggerEvent } from "../threads/thread.ts";
+import {
+  openSandboxes,
+  resolveSandboxes,
+  type SandboxRuntime,
+  stepSandboxes,
+} from "./defs.ts";
 import { threadSandboxOwner } from "./threadSandboxes.ts";
 
 /**
@@ -25,7 +29,7 @@ export const openRunSandboxes = async (options: {
   config: AgentFunctionConfig;
   client: Inngest.Any;
   ref: string;
-  event: { name: string; data?: unknown };
+  context: RunFieldContext<TriggerEvent>;
   thread: string;
   runId: string;
   store: ReturnType<typeof kvFrom>;
@@ -36,19 +40,17 @@ export const openRunSandboxes = async (options: {
 }) => {
   const { config, client, ref, thread, runId, store, logger, defer, cleanup } =
     options;
-  const event = options.event;
+  const context = options.context;
   const step = options.step;
 
-  const bindings = await resolveSandboxes(config.sandboxes, {
-    event: event as unknown as AgentConfigContext["event"],
-  });
+  const bindings = await resolveSandboxes(config.sandboxes, context);
   const opened =
     Object.keys(bindings).length > 0
       ? openSandboxes(
           bindings,
           stepSandboxes(step),
           {
-            event: event as unknown as AgentConfigContext["event"],
+            event: context.event as SandboxRuntime["event"],
             run: (id, fn) => {
               return step.run(id, fn) as ReturnType<typeof fn>;
             },

@@ -99,7 +99,9 @@ describe("sandbox names and tool names", () => {
           work: {
             sandbox: workbench,
             start: ({ event }) => {
-              return event.name === "x" ? "eager" : "lazy";
+              return event.name === "inngest/scheduled.timer"
+                ? "eager"
+                : "lazy";
             },
           },
         },

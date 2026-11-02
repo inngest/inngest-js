@@ -57,6 +57,11 @@ export const resolveRunField = async <T, TContext>(
  * time the field is read, and every later read gets the same result.
  */
 export interface RunFields<TContext = RunFieldContext> {
+  /**
+   * What the fields' functions receive.
+   */
+  context: TContext;
+
   get: <T>(name: string, field: RunField<T, TContext>) => Promise<T>;
 }
 
@@ -70,6 +75,7 @@ export const createRunFields = <TContext>(
   const resolved = new Map<string, Promise<unknown>>();
 
   return {
+    context,
     get: <T>(name: string, field: RunField<T, TContext>) => {
       const known = resolved.get(name);
 

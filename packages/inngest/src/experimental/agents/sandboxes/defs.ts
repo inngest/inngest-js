@@ -39,7 +39,6 @@ import {
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
 import { type RunField, resolveRunField } from "../agent/runField.ts";
-import type { AgentConfigContext } from "../agent/types.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   defaultSandboxIdle,
@@ -128,7 +127,7 @@ export interface SandboxSetupContext {
   /**
    * The event that started the run, when the agent function passed it.
    */
-  event?: AgentConfigContext["event"];
+  event?: { name: string; data?: unknown };
 
   /**
    * The name the agent gives the sandbox, such as `work`.
@@ -156,7 +155,7 @@ export interface SandboxRuntime {
   /**
    * The event that started the run.
    */
-  event?: AgentConfigContext["event"];
+  event?: { name: string; data?: unknown };
 
   /**
    * Runs `fn` once per run, such as `(id, fn) => step.run(id, fn)`.

@@ -30,7 +30,7 @@ describe("typed events", () => {
     agents.agent(
       { id: "a1", triggers: { event: order, thread: "event.data.id" } },
       async ({ event, inbox }) => {
-        expectTypeOf(event.data.event).toEqualTypeOf<Order | undefined>();
+        expectTypeOf(event.data).toEqualTypeOf<Order["data"]>();
 
         const message = await inbox.next();
 
@@ -117,15 +117,12 @@ describe("typed events", () => {
     );
   });
 
-  test("trigger is the event of triggers, flat and typed, with no casts", () => {
+  test("event is the event of triggers, flat and typed, narrowed by name", () => {
     agents.agent(
       { id: "t1", triggers: { event: order, thread: "event.data.id" } },
-      async ({ trigger }) => {
-        expectTypeOf(trigger).toEqualTypeOf<Order | undefined>();
-
-        if (trigger) {
-          expectTypeOf(trigger.data.total).toBeNumber();
-        }
+      async ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<"shop/order.created">();
+        expectTypeOf(event.data.total).toBeNumber();
 
         return undefined;
       },
@@ -140,17 +137,17 @@ describe("typed events", () => {
           { cron: "0 * * * *", thread: '"x"' },
         ],
       },
-      async ({ trigger }) => {
-        if (trigger?.name === "shop/order.created") {
-          expectTypeOf(trigger.data.total).toBeNumber();
+      async ({ event }) => {
+        if (event.name === "shop/order.created") {
+          expectTypeOf(event.data.total).toBeNumber();
         }
 
-        if (trigger?.name === "shop/refund.created") {
-          expectTypeOf(trigger.data.amount).toBeNumber();
+        if (event.name === "shop/refund.created") {
+          expectTypeOf(event.data.amount).toBeNumber();
         }
 
-        if (trigger?.name === "inngest/scheduled.timer") {
-          expectTypeOf(trigger.data.cron).toBeString();
+        if (event.name === "inngest/scheduled.timer") {
+          expectTypeOf(event.data.cron).toBeString();
         }
 
         return undefined;
@@ -162,8 +159,8 @@ describe("typed events", () => {
         id: "t3",
         triggers: { event: "chat/message", thread: "event.data.ts" },
       },
-      async ({ trigger }) => {
-        expectTypeOf(trigger?.name).toEqualTypeOf<"chat/message" | undefined>();
+      async ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<"chat/message">();
 
         return undefined;
       },
@@ -245,7 +242,7 @@ describe("typed events", () => {
         id: "a5",
         triggers: { event: order, thread: "event.data.id" },
         sandboxes: ({ event }) => {
-          expectTypeOf(event.data.event).toEqualTypeOf<Order | undefined>();
+          expectTypeOf(event.data).toEqualTypeOf<Order["data"]>();
 
           return {};
         },

@@ -49,6 +49,7 @@ import {
   ownEvents,
   quote,
   type RawEvent,
+  resentAs,
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import { kvFrom } from "../kv/kv.ts";
@@ -109,12 +110,11 @@ import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import type {
   AgentBody,
   AgentBodyContext,
-  AgentConfigContext,
   AgentFunction,
   AgentFunctionConfig,
+  AgentMessage,
   InboxSource,
   OpenedInbox,
-  ThreadInboxMessage,
 } from "./types.ts";
 
 /**
@@ -392,19 +392,36 @@ export function createAgentFunction(
         // The event that started the run is the inbox's first message, made
         // from the run's own state: it costs no step. The inbox can receive it
         // too, when it was sent just before the inbox opened: it is read once.
+        // What the SDK told an invoked agent in `_agent` is not the caller's
+        // input.
+        const told = "_agent" in ((event.data ?? {}) as object);
         const startMessage = addEventIs({
           id: event.id ?? "",
           name: invokedAsMessage ? agentMessageEvent : event.name,
-          data: invokedAsMessage ? invokedData : event.data,
+          data: invokedAsMessage
+            ? invokedData
+            : told
+              ? invokedData
+              : event.data,
           ts: event.ts ?? 0,
           user: {},
         }) as unknown as UntypedInboxMessage;
+
+        // The event the handler gets is that message: exactly the event sent,
+        // or, for a run that recovery resumed, the event of the run that failed.
+        const runEvent = resentAs(startMessage);
+
+        // The run's time-varying fields are read once, here, at its start.
+        const fields = createRunFields({
+          event: runEvent as unknown as AgentBodyContext["event"],
+          thread: { key: data.thread },
+        });
 
         const { opened, closeAll } = await openRunSandboxes({
           config,
           client,
           ref,
-          event,
+          context: fields.context,
           thread: data.thread,
           runId,
           store,
@@ -416,11 +433,6 @@ export function createAgentFunction(
 
         const agentScores = createAgentScores(client);
 
-        // The run's time-varying fields are read once, here, at its start.
-        const fields = createRunFields({
-          event: event as unknown as AgentBodyContext["event"],
-          thread: { key: data.thread },
-        });
         const idle = await idleMs(fields, config.idle);
 
         const { inbox, view, steering } = threadInbox(
@@ -487,15 +499,14 @@ export function createAgentFunction(
             ...functionContext,
             logger,
 
-            // Slot: event. What started the run.
-            event: { ...event, data } as AgentBodyContext["event"],
-            trigger: triggerOf(data.event),
+            // Slot: event. What started the run, exactly as sent.
+            event: runEvent as unknown as AgentBodyContext["event"],
             depth: invokeDepthOf(
               event as unknown as { data?: Record<string, unknown> },
             ),
 
-            // Slot: thread. The handle of the thread the run belongs to.
-            thread,
+            // Slot: me. The handle to the run's own thread.
+            me: { key: data.thread },
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: opened,
@@ -511,6 +522,9 @@ export function createAgentFunction(
 
             // Slot: score. The agent's own scores.
             scores: agentScores,
+            score: (name: string, value: number | boolean) => {
+              return agentScores.score(name, value);
+            },
 
             // Slot: loop. `agent.loop()` with the model's inbox tools added.
             loop: (prompt, loopOptions) => {

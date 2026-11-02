@@ -101,9 +101,9 @@ describe("the AgentTypes bag", () => {
       const body: AgentBody<{
         event: ThreadCronEvent;
         output: string;
-      }> = async ({ event, trigger }) => {
-        expectTypeOf(trigger).toEqualTypeOf<ThreadCronEvent | undefined>();
-        expectTypeOf(event.data.thread).toBeString();
+      }> = async ({ event, me }) => {
+        expectTypeOf(event.data.cron).toBeString();
+        expectTypeOf(me.key).toBeString();
 
         return "done";
       };

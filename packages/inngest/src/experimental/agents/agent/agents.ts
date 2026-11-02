@@ -398,12 +398,10 @@ export type {
   AgentFunction,
   AgentFunctionConfig,
   AgentFunctionInput,
-  AgentStartData,
+  AgentMessage,
   AgentTypeDefaults,
   AgentTypes,
   AgentTypesOf,
   InboxSource,
   OpenedInbox,
-  ThreadInbox,
-  ThreadInboxMessage,
 } from "./types.ts";

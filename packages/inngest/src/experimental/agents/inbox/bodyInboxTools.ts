@@ -13,7 +13,6 @@ import type {
   AgentFunctionConfig,
   InboxSource,
   OpenedInbox,
-  ThreadInbox,
 } from "../agent/types.ts";
 import { createListenTools } from "./inboxTools.ts";
 import type { Reader } from "./threadInbox.ts";

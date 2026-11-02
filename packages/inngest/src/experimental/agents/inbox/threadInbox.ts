@@ -13,11 +13,7 @@ import type {
 } from "../../../components/inbox/Inbox.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
-import type {
-  InboxSource,
-  ThreadInbox,
-  ThreadInboxMessage,
-} from "../agent/types.ts";
+import type { AgentMessage, InboxSource } from "../agent/types.ts";
 import { toAsync } from "../cel.ts";
 import {
   agentMessageEvent,
@@ -63,6 +59,30 @@ export const inflightOf = (event: {
   }
 
   return { event: { id: event.id, name: event.name, data: event.data } };
+};
+
+/**
+ * A message as the agent sees it. The event stays as it came; an event that
+ * recovery sent again is the event it was made from, with its own name, id and
+ * data. It has `is()`.
+ * @param message The message as it was saved.
+ */
+export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
+  const resent =
+    message.name === agentMessageEvent
+      ? (message.data as Partial<AgentResendData>).event
+      : undefined;
+
+  return addEventIs({
+    ...message,
+    ...(resent
+      ? {
+          id: resent.id ?? message.id,
+          name: resent.name,
+          data: resent.data,
+        }
+      : {}),
+  });
 };
 
 /**
@@ -124,48 +144,31 @@ export function threadInbox(
   // wait for ever.
   idle?: number,
 ): {
-  inbox: ThreadInbox;
+  inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
   steering: {
-    take: () => Promise<ThreadInboxMessage[]>;
-    keep: (messages: ThreadInboxMessage[]) => void;
+    take: () => Promise<AgentMessage[]>;
+    keep: (messages: AgentMessage[]) => void;
   };
 } {
   // The event each message was made from, to leave it unread as it came.
   const raws = new WeakMap<object, UntypedInboxMessage>();
 
-  function unwrap(
-    message: UntypedInboxMessage | null,
-  ): ThreadInboxMessage | null {
+  function unwrap(message: UntypedInboxMessage | null): AgentMessage | null {
     if (!message) {
       return null;
     }
 
-    // The event stays as it came. An event that recovery sent again is the
-    // event it was made from: it keeps its name, id and data.
-    const resent =
-      message.name === agentMessageEvent
-        ? (message.data as Partial<AgentResendData>).event
-        : undefined;
-    const unwrapped = addEventIs({
-      ...message,
-      ...(resent
-        ? {
-            id: resent.id ?? message.id,
-            name: resent.name,
-            data: resent.data,
-          }
-        : {}),
-    });
+    const unwrapped = resentAs(message);
     raws.set(unwrapped, message);
 
-    // One cast: the spread above is a plain object, and `ThreadInboxMessage` is
+    // One cast: the spread above is a plain object, and `AgentMessage` is
     // a union that depends on the caller's `triggers`, which the runtime
     // cannot derive.
-    return unwrapped as unknown as ThreadInboxMessage;
+    return unwrapped as unknown as AgentMessage;
   }
 
-  function rawOf(message: ThreadInboxMessage): UntypedInboxMessage {
+  function rawOf(message: AgentMessage): UntypedInboxMessage {
     // A message that did not come from `unwrap` is already an event.
     return raws.get(message) ?? (message as unknown as UntypedInboxMessage);
   }
@@ -282,7 +285,7 @@ export function threadInbox(
           if (delivered > 1) {
             await recorder.running(
               undefined,
-              inflightOf(message as unknown as ThreadInboxMessage),
+              inflightOf(message as unknown as AgentMessage),
             );
           }
 
@@ -337,8 +340,7 @@ export function threadInbox(
 
             for (const message of batch) {
               inflight =
-                inflightOf(message as unknown as ThreadInboxMessage) ??
-                inflight;
+                inflightOf(message as unknown as AgentMessage) ?? inflight;
             }
 
             if (delivered > 1) {
@@ -434,13 +436,13 @@ export function threadInbox(
   const main = view(
     sources.inbox,
     (raw) => {
-      return unwrap(raw) as ThreadInboxMessage;
+      return unwrap(raw) as AgentMessage;
     },
     true,
   );
 
   return {
-    inbox: main as unknown as ThreadInbox,
+    inbox: main as unknown as Inbox<AgentMessage>,
     view: (source: Inbox<UntypedInboxMessage>) => {
       return view(source, plain, false);
     },
@@ -452,7 +454,7 @@ export function threadInbox(
         ]);
 
         return raws.map((raw) => {
-          return unwrap(raw) as ThreadInboxMessage;
+          return unwrap(raw) as AgentMessage;
         });
       },
       keep(messages) {

@@ -47,9 +47,7 @@ describe("composition", () => {
         sandboxes: { work: workbench },
       },
       async ({ event, inbox, sandboxTools }) => {
-        expectTypeOf(event.data.event?.data.total).toEqualTypeOf<
-          number | undefined
-        >();
+        expectTypeOf(event.data.total).toEqualTypeOf<number>();
 
         const next = await inbox.next();
 

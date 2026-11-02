@@ -24,7 +24,7 @@ import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { invokeAgent } from "./invoke.ts";
 import { run, textOf } from "./test-helpers.ts";
-import type { AgentFunctionConfig, ThreadInbox } from "./types.ts";
+import type { AgentFunctionConfig } from "./types.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -1092,7 +1092,7 @@ describe("thread state", () => {
   });
 });
 
-describe("trigger", () => {
+describe("event", () => {
   const make = (triggers: unknown) => {
     return createAgentFunction(
       makeClient(),
@@ -1101,13 +1101,13 @@ describe("trigger", () => {
         kv: createKv({ adapter: memoryKvAdapter() }),
         triggers,
       } as never,
-      async ({ trigger }) => {
-        return trigger ?? "none";
+      async ({ event }) => {
+        return { name: event.name, data: event.data };
       },
     );
   };
 
-  test("an event of on starts the run with the event itself on the body context", async () => {
+  test("an event of triggers is the event on the body context, as sent", async () => {
     const { fn } = make({ event: "shop/order", thread: "event.data.id" });
 
     const { output } = await run(fn, {
@@ -1120,7 +1120,7 @@ describe("trigger", () => {
     });
   });
 
-  test("a cron tick is the trigger of a cron run", async () => {
+  test("a cron tick is the event of a cron run", async () => {
     const { fn } = make({ cron: "0 * * * *" });
 
     const { output } = await run(fn, {
@@ -1157,8 +1157,8 @@ describe("trigger", () => {
         kv: createKv({ adapter: memoryKvAdapter() }),
         triggers: invoke(z.object({ question: z.string() })),
       } as never,
-      async ({ depth, trigger }) => {
-        return { depth, trigger };
+      async ({ depth, event }) => {
+        return { depth, trigger: { name: event.name, data: event.data } };
       },
     );
 
@@ -1208,12 +1208,15 @@ describe("trigger", () => {
     expect(await depthOf(keyed, message("user", "hi"))).toBe(0);
   });
 
-  test("a plain thread message has no trigger event", async () => {
+  test("a plain thread message is the event of its run", async () => {
     const { fn } = make({ event: "shop/order", thread: "event.data.id" });
 
     const { output } = await run(fn, { event: message("user", "hi") });
 
-    expect(output).toBe("none");
+    expect(output).toMatchObject({
+      name: "agent/message",
+      data: { text: "hi", thread: "t1" },
+    });
   });
 });
 

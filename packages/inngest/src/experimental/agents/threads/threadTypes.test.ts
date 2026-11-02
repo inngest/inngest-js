@@ -2,11 +2,11 @@
  * @module
  * Type tests: an inbox message is a union by event `name`.
  */
-import type { ThreadInboxMessage } from "../agent/types.ts";
+import type { AgentMessage } from "../agent/types.ts";
 
 describe("thread message events", () => {
   // Never called: the test is the types.
-  const types = (message: ThreadInboxMessage) => {
+  const types = (message: AgentMessage) => {
     switch (message.name) {
       case "agent/steer":
       case "agent/message":

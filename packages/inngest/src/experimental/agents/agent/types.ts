@@ -14,6 +14,10 @@ import type {
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
+import type {
+  EventIs,
+  EventShape,
+} from "../../../components/triggers/typeHelpers.ts";
 import type { DurationInput } from "../../../helpers/duration.ts";
 import type {
   ApplyAllMiddlewareCtxExtensions,
@@ -260,7 +264,7 @@ export interface AgentFunctionConfig<
    * destroyed. Only files survive between runs.
    */
   sandboxes?: SandboxesConfig<
-    AgentConfigContext<AgentTypesOf<TTypes>["event"]>,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>,
     AgentTypesOf<TTypes>["sandboxes"]
   >;
 
@@ -295,25 +299,6 @@ export interface AgentFunctionConfig<
 }
 
 /**
- * What a config function receives.
- */
-export interface AgentConfigContext<TEvent = TriggerEvent> {
-  event: { name: string; data: AgentStartData<TEvent> };
-}
-
-/**
- * What a run's start event carries in `data`: the agent, the thread, and for a
- * run a trigger event of `triggers` started (or that recovery resumed), that event
- * as `event`. A run an `agent/message` started has that event's own data
- * beside them.
- */
-export type AgentStartData<TEvent = TriggerEvent> = {
-  agent: string;
-  thread: string;
-  event?: TEvent;
-};
-
-/**
  * An event source for an agent's inbox. Its events reach the run of the thread
  * they map to while it is live, and never start one. `thread` is an expression
  * over `event` (the arriving event) that gives the thread key. `if` is written
@@ -329,29 +314,46 @@ export type InboxSource = {
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
 
 /**
+ * The handle to a run's own thread.
+ */
+export interface Me {
+  /**
+   * The thread's key.
+   */
+  readonly key: string;
+}
+
+/**
+ * The event that started a run, as the handler gets it: the received event
+ * with its own name and data, and `is()` to narrow it per trigger. One member
+ * for each trigger of the agent.
+ */
+export type AgentEventOf<TEvent> = TEvent extends {
+  name: infer TName extends string;
+  data: infer TData;
+}
+  ? Omit<EventShape<TName, Record<string, unknown>>, "data"> & {
+      data: TData;
+    } & EventIs
+  : never;
+
+/**
  * The fields the agent adds to the function context in its body. See
  * `AgentBodyContext`.
  */
 export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   /**
-   * The event that started the run. Its `data` has the agent and thread, and
-   * `data.event` is the trigger event, typed from `triggers`.
+   * The event that started the run, exactly as sent (an app event, the input
+   * of `start()`, a cron tick), narrowed per trigger with `event.is()`. It is
+   * also the inbox's first message. For `invoke()` the data is the caller's
+   * input. A run that recovery resumed has the event of the run that failed.
    */
-  event: {
-    name: string;
-    data: AgentStartData<AgentTypesOf<TTypes>["event"]>;
-  };
+  event: AgentEventOf<AgentTypesOf<TTypes>["event"]>;
 
   /**
-   * The event of `triggers` that started this run, as it came (`id`, `name`,
-   * `data`), typed from `triggers`: narrow it by `name`. It is `undefined` when a
-   * plain thread message started the run (`thread.send()`, a reply in a
-   * thread), because there is no trigger event then. A run that recovery
-   * resumed keeps the trigger event of the run that failed. For a cron it is
-   * the tick (`{ cron }`), for `invoke()` the invoke event with the caller's
-   * input as `data`, without what the SDK adds for the invoked agent.
+   * The handle to this run's own thread.
    */
-  trigger: AgentTypesOf<TTypes>["event"] | undefined;
+  me: Me;
 
   /**
    * How many agents deep this run is when another agent started it: 1 for
@@ -360,11 +362,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * message, including a later run of an invoked agent's thread).
    */
   depth: number;
-
-  /**
-   * The handle of the thread this run belongs to.
-   */
-  thread: ThreadHandle;
 
   /**
    * The agent's sandboxes, by name. Nothing is created until a call needs it,
@@ -398,12 +395,17 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   scores: AgentScores;
 
   /**
+   * Scores the run: `score("quality", 1)`. Written once wherever it is
+   * called. The value is a finite number or a boolean.
+   */
+  score: (name: string, value: number | boolean) => Promise<void>;
+
+  /**
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run.
    */
-  inbox: ThreadInbox<
-    AgentTypesOf<TTypes>["event"],
-    AgentTypesOf<TTypes>["sources"]
+  inbox: Inbox<
+    AgentMessage<AgentTypesOf<TTypes>["event"], AgentTypesOf<TTypes>["sources"]>
   >;
 
   /**
@@ -511,22 +513,11 @@ type TriggerMessage<TEvent> = TEvent extends {
  * A message from an inbox source is its event too, under the event's own
  * `name`; it is not in the type of `triggers`, so narrow it with `is(type)`.
  */
-export type ThreadInboxMessage<TEvent = TriggerEvent, TSources = undefined> =
+export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
   | MessageOf<AgentMessageData, "agent/message">
   | MessageOf<AgentSteerData, "agent/steer">;
-
-/**
- * The thread's inbox: an `Inbox` (`step.subscribe()`'s) whose first message is
- * the event that started the run. A message that
- * breaks its schema is dropped. It is opened for you with the run's triggers,
- * the config's `inbox` sources and the agent's own messages, and has one
- * reader, like any inbox.
- */
-export type ThreadInbox<TEvent = TriggerEvent, TSources = undefined> = Inbox<
-  ThreadInboxMessage<TEvent, TSources>
->;
 
 /**
  * An inbox the model opened with `inbox_listen`.

@@ -13,12 +13,13 @@ import { sandboxMiddleware } from "../../../components/sandbox/middleware.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import type {
   AgentBodyContext,
+  AgentMessage,
   AgentTypes,
   AgentTypesOf,
+  Inbox,
   InboxMessage,
   InboxSource,
   SandboxToolNames,
-  ThreadInbox,
   TriggerEvent,
 } from "../index.ts";
 
@@ -36,8 +37,8 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
   };
 
   const helper = (context: AgentBodyContext<Bag>) => {
-    expectTypeOf(context.inbox).toExtend<ThreadInbox>();
-    expectTypeOf(context.thread).toHaveProperty("key");
+    expectTypeOf(context.inbox).toExtend<Inbox<AgentMessage>>();
+    expectTypeOf(context.me).toHaveProperty("key");
   };
 
   expectTypeOf(helper).toBeFunction();
@@ -45,11 +46,11 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
 });
 
 test("the inbox of an agent is a core Inbox, and InboxMessage names its messages", () => {
-  const check = async (inbox: ThreadInbox) => {
+  const check = async (inbox: Inbox<AgentMessage>) => {
     const message: InboxMessage<typeof inbox> | undefined = await inbox.next();
 
     expectTypeOf(message).toEqualTypeOf<
-      InboxMessage<ThreadInbox> | undefined
+      InboxMessage<Inbox<AgentMessage>> | undefined
     >();
     expectTypeOf(inbox).toExtend<AsyncDisposable>();
 

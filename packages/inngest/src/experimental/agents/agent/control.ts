@@ -13,8 +13,8 @@ import { budgetReason, type LimitState } from "./limits.ts";
 import type {
   AgentBodyFields,
   AgentFunctionConfig,
+  AgentMessage,
   OpenedInbox,
-  ThreadInboxMessage,
 } from "./types.ts";
 
 /**
@@ -24,8 +24,8 @@ import type {
 export const createControl = (options: {
   config: AgentFunctionConfig;
   steering: {
-    take: () => Promise<ThreadInboxMessage[]>;
-    keep: (messages: ThreadInboxMessage[]) => void;
+    take: () => Promise<AgentMessage[]>;
+    keep: (messages: AgentMessage[]) => void;
   };
   named: Map<string, OpenedInbox>;
   limits: LimitState;
@@ -43,7 +43,7 @@ export const createControl = (options: {
       // Read everything that has arrived: steering messages and stops
       // apply to the turn that is running; messages for the next turn
       // stay unread in the inbox.
-      const waiting: ThreadInboxMessage[] = [];
+      const waiting: AgentMessage[] = [];
 
       for (const message of await steering.take()) {
         if (
