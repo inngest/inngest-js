@@ -84,6 +84,22 @@ export interface TourIndex {
   modules: Module[];
 }
 
+export type PageState = "opened" | "ran" | "passed";
+
+export interface ProgressSnapshot {
+  pages: Record<string, Partial<Record<PageState, true>>>;
+  // Collected concepts: the page that taught each, and its definition.
+  concepts: Record<string, { page: string; definition: string }>;
+  totalConcepts: number;
+}
+
+export interface ProgressMark {
+  // Concepts this mark collected for the first time.
+  collected: string[];
+  // The module whose exercise this mark passed.
+  moduleDone: string | null;
+}
+
 export interface TraceStep {
   id: string;
   name: string;
@@ -135,5 +151,6 @@ export type TourEvent =
     }
   | { type: "runs"; runs: TraceRun[] }
   | { type: "fakes"; topic: "slack" | "github" }
+  | { type: "progress"; mark: ProgressMark; page: string }
   // Any area's own topic: the site turns it into a `tour:area` window event.
   | { type: "area"; area: string; topic: string; data?: unknown };

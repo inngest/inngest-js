@@ -2,3 +2,4 @@ node_modules
 .tour
 .tour-test
 site/dist
+.tour-cache
