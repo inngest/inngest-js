@@ -36,9 +36,9 @@ If something is missing, `pnpm tour` and `pnpm tour:devserver` check the machine
 
 Agents use `step.subscribe`, which the published Inngest CLI does not have yet. `.devserver-pin` holds the inngest/inngest commit to use.
 
-- `pnpm tour:devserver` fetches that commit (shallow), builds the Dev Server's own UI (`pnpm install` and `pnpm build` in `ui/apps/dev-server-ui`), embeds it, builds the Dev Server with `go build` and caches the binary in `~/.cache/inngest-agents-tour/devserver/<commit>/`. Running it again does nothing. The tour's "Dev Server" button opens that dashboard.
+- `pnpm tour:devserver` fetches that commit (shallow), builds the Dev Server's own UI (`pnpm install` and `pnpm build` in `ui/apps/dev-server-ui`), embeds it, builds the Dev Server with `go build` and caches the binary in `~/.cache/inngest-agents-tour/devserver/<commit>/`. Running it again does nothing. The first run takes several minutes: it installs the packages of the Dev Server UI and the dashboard sources it imports (not the rest of the OSS repo's UI workspace), builds the UI, then compiles the Go binary. The tour's "Dev Server" button opens that dashboard.
 - `pnpm tour` starts that binary as `inngest dev` with the options below, on free ports.
-- The pin is a commit, never a branch tip: the branch moves, and a newer tip can reject what the SDK sends. Today it is `7fbcecf1c` (branch `jack/subscribe-pin-pre27`), which has the `subscribe` capability the SDK checks for. Bumping the pin is a one-line change; when `step.subscribe` ships in the published CLI the pin becomes a version.
+- The pin is a commit, never a branch tip: the branch moves, and a newer tip can reject what the SDK sends. Today it is `7fbcecf1c`, which has the `subscribe` capability the SDK checks for. Bumping the pin is a one-line change; when `step.subscribe` ships in the published CLI the pin becomes a version.
 
 ### Dev Server options
 
@@ -52,7 +52,7 @@ Every `inngest dev` option was considered. These are set (`server/devserver.ts`)
 | `--host` | `127.0.0.1` | Nothing outside the machine can reach it. |
 | `--port`, `--connect-gateway-port`, `--connect-gateway-grpc-port`, `--connect-executor-grpc-port` | free ports | The defaults (8288 and neighbours) belong to whatever else is running. |
 | `--tick` | `25` ms | How often the executor polls the queue; the default is 150 ms. A step starts sooner after the one before it, which adds up over a lesson's steps. |
-| `--retry-interval` | `1` s | A failed step retries after about a second (linear: 1s, then 2s, and so on). The default backoff left the reader waiting about 19 s on the first retry (`test/retry.test.ts`). |
+| `--retry-interval` | `1` s | A failed step retries after a fixed second on every retry (at the pinned commit the interval ignores the attempt number). The default is 15 s plus up to 30 s of jitter on the first retry, then longer; the reader waited about 19 s (`test/retry.test.ts`). |
 
 These keep their defaults:
 
