@@ -512,7 +512,11 @@ describe("agent.loop", () => {
     const waiting: AgentEvent[][] = [
       [],
       [1, 2, 3, 4, 5].map((n) => {
-        return { id: `e${n}`, name: "agent/message", data: { text: `m${n}` } };
+        return {
+          id: `e${n}`,
+          name: "agent/message",
+          data: { content: `m${n}` },
+        };
       }),
     ];
     const wiring: AgentLoopWiring = {
@@ -543,7 +547,7 @@ describe("agent.loop", () => {
 
   test("folds before the first model call too", async () => {
     const waiting: AgentEvent[][] = [
-      [{ id: "e1", name: "agent/message", data: { text: "early" } }],
+      [{ id: "e1", name: "agent/message", data: { content: "early" } }],
     ];
     const { requests } = await run([say("ok")], {
       wiring: {
@@ -561,8 +565,8 @@ describe("agent.loop", () => {
 
   test("a custom steer folds some messages and the rest come back as unread", async () => {
     const taken = [
-      { id: "e1", name: "agent/message", data: { text: "keep" } },
-      { id: "e2", name: "agent/message", data: { text: "later" } },
+      { id: "e1", name: "agent/message", data: { content: "keep" } },
+      { id: "e2", name: "agent/message", data: { content: "later" } },
     ];
     const waiting: AgentEvent[][] = [taken];
     const seen: AgentEvent[][] = [];
@@ -596,14 +600,14 @@ describe("agent.loop", () => {
     const waiting: AgentEvent[][] = [
       [],
       [
-        message("agent/message", { text: "faster" }),
+        message("agent/message", { content: "faster" }),
         message("ci/status", { state: "red" }),
       ],
     ];
     const { requests } = await run(
       [call("add", { a: 1, b: 2 }), call("add", { a: 3, b: 4 }), say("ok")],
       {
-        prompt: message("agent/message", { text: "hello" }),
+        prompt: message("agent/message", { content: "hello" }),
         wiring: {
           drain: async ({ turn }) => {
             return waiting[turn - 1] ?? [];
@@ -1494,8 +1498,8 @@ describe("agent.loop scores", () => {
     const waiting: AgentEvent[][] = [
       [],
       [
-        { id: "e1", name: "agent/message", data: { text: "use 2" } },
-        { id: "e2", name: "agent/message", data: { text: "and 3" } },
+        { id: "e1", name: "agent/message", data: { content: "use 2" } },
+        { id: "e2", name: "agent/message", data: { content: "and 3" } },
       ],
     ];
     const { steps } = await run([call("add", { a: 1, b: 2 }), say("done")], {

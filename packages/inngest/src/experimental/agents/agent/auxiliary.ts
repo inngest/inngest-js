@@ -150,7 +150,7 @@ export const createFinishedFunction = (
         },
       );
 
-      if (!inflight || (!inflight.event && inflight.text === undefined)) {
+      if (!inflight || (!inflight.event && inflight.content === undefined)) {
         return last;
       }
 
@@ -162,7 +162,7 @@ export const createFinishedFunction = (
             thread: message.thread,
             ...(inflight.event
               ? { event: inflight.event }
-              : { text: inflight.text }),
+              : { content: inflight.content }),
           },
           {
             id: `recover-${runId}`,

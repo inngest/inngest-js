@@ -55,7 +55,7 @@ export const inflightOf = (event: {
       return { event: data.event };
     }
 
-    return typeof data.text === "string" ? { text: data.text } : undefined;
+    return data.content === undefined ? undefined : { content: data.content };
   }
 
   return { event: { id: event.id, name: event.name, data: event.data } };

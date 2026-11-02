@@ -12,7 +12,7 @@ import { threadRecorder } from "../threads/threadState.ts";
 
 const event = {
   name: "agent/message",
-  data: { agent: "a/b", thread: "t1", text: "hi" },
+  data: { agent: "a/b", thread: "t1", content: "hi" },
 };
 
 const pause = () => {
