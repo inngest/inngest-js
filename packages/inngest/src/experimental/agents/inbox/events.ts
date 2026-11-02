@@ -6,8 +6,9 @@
  * that triggers on one gets its `event.data` typed.
  *
  * Everything a thread receives is a plain event. `agent/message` carries text
- * for the model; `agent/steer` and `agent/recover` are the agent's own
- * control events, and shows up in the thread's inbox like any other.
+ * for the model; `agent/question`, `agent/answer` and `agent/finished` carry
+ * the asks and the ends of started runs; `agent/recover` is the agent's own
+ * control event. All of them show up in the thread's inbox like any other.
  */
 import {
   eventType,

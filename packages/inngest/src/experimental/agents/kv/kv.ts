@@ -637,7 +637,7 @@ type KvJsonProp<V> = [undefined] extends [V]
   : KvJsonSafe<V>;
 
 /**
- * What `kvKey<T>(name)` returns: a `KvKey<T>` when `T` is JSON-safe, otherwise
+ * What `kv.key<T>(name)` returns: a `KvKey<T>` when `T` is JSON-safe, otherwise
  * a type that names the problem, so the first use of the key is refused.
  */
 export type KvKeyOf<T> = [T] extends [KvJsonSafe<T>]
@@ -711,7 +711,7 @@ export type KvRoundTrips<S extends StandardSchemaV1> = [
  * Marks a schema refused by `kv.key`.
  */
 export interface KvSchemaMustRoundTrip {
-  "kvKey schema: input and output types must match and be JSON (no transforms, defaults, coercion, Date or Map)": never;
+  "kv.key schema: input and output types must match and be JSON (no transforms, defaults, coercion, Date or Map)": never;
 }
 
 /**
