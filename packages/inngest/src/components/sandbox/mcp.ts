@@ -12,6 +12,7 @@
  * decides. Tools the server marks `readOnlyHint` or `idempotentHint` retry.
  */
 
+import { traceWarning } from "../../experimental/agents/agent/traceWarning.ts";
 import { currentThreadKey } from "../../experimental/agents/kv/kv.ts";
 import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { durationToMs } from "../../helpers/duration.ts";
@@ -504,7 +505,9 @@ export class McpServer {
     // Nobody would be given a link, so nothing is discovered, registered or
     // stored for one.
     if (!options.onNeedsAuthorization) {
-      logger?.warn(
+      traceWarning(
+        logger,
+        "mcp.no-sign-in-hook",
         `MCP server "${name}" needs ${user} to sign in, but tool.mcp() has no auth.oauth.onNeedsAuthorization to deliver the link, so nobody was given it.`,
       );
 

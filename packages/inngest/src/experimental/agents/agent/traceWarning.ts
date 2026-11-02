@@ -12,16 +12,16 @@ import { warningMetadataKind } from "../../../components/InngestMetadata.ts";
  * Warns on the run's trace. Returns whether the warning was attached to a
  * step; outside a step it is only logged. It never throws: a warning is never
  * worth failing a run.
- * @param logger Where the line is logged.
+ * @param logger Where the line is logged, if the run has one.
  * @param code What the warning is about, such as `thread.fresh`.
  * @param message What the person reading the trace sees.
  */
 export const traceWarning = (
-  logger: { warn: (message: string) => void },
+  logger: { warn: (message: string) => void } | undefined,
   code: string,
   message: string,
 ): boolean => {
-  logger.warn(message);
+  logger?.warn(message);
 
   const execution = getAsyncCtxSync()?.execution;
   const running = execution?.executingStep;
