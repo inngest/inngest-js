@@ -8,7 +8,7 @@ export const exerciseKeys = defineKeys([
   {
     id: "check",
     rank: 8,
-    label: "Check the exercise",
+    label: "Check",
     group: "Exercise",
     inField: ["Alt+Shift+D"],
     outside: ["c"],
@@ -16,7 +16,7 @@ export const exerciseKeys = defineKeys([
   {
     id: "hint",
     rank: 9,
-    label: "Show the hint",
+    label: "Hint",
     group: "Exercise",
     inField: ["Alt+Shift+X"],
     outside: ["t"],

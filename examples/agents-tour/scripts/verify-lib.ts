@@ -266,6 +266,10 @@ export const verifyPages = async (base: string, onlyModule?: string) => {
   }>(base, "/api/index");
   const problems: string[] = [];
 
+  if (onlyModule && !index.modules.some((module) => module.id === onlyModule)) {
+    return [`no module named ${onlyModule}`];
+  }
+
   for (const module of index.modules) {
     if (onlyModule && module.id !== onlyModule) {
       continue;

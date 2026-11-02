@@ -1160,3 +1160,11 @@ main.single .text {
 .exercise .fail {
   color: #f0883e;
 }
+
+.exercise .controls {
+  flex-wrap: wrap;
+}
+
+.exercise .controls button {
+  white-space: nowrap;
+}

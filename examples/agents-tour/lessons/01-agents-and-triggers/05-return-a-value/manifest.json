@@ -5,5 +5,14 @@
       "thread": "main",
       "text": "Hi"
     }
-  ]
+  ],
+  "verify": {
+    "runs": [
+      {
+        "fn": "blank",
+        "status": "COMPLETED",
+        "output": "I ran."
+      }
+    ]
+  }
 }

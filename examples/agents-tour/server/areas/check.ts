@@ -16,6 +16,15 @@ export const area: AreaFactory = (ctx) => {
   );
   let checking: Promise<unknown> = Promise.resolve();
 
+  // A passed exercise fills its row in the progress area, when one is loaded.
+  const markPassed = async (page: string) => {
+    await fetch(`${ctx.publicUrl}/api/progress/mark`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ page, state: "passed" }),
+    }).catch(() => {});
+  };
+
   const exerciseOf = (id: string) => {
     const page = exercises.get(id);
 
@@ -48,7 +57,13 @@ export const area: AreaFactory = (ctx) => {
               };
             }
 
-            return runCheck(ctx, files.check);
+            const verdict = await runCheck(ctx, files.check);
+
+            if (verdict.pass) {
+              await markPassed(page.id);
+            }
+
+            return verdict;
           });
 
           checking = task.catch(() => {});
