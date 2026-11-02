@@ -151,6 +151,7 @@ test("agents: a trigger with no schema has data of Record<string, any>", () => {
       async ({ event }) => {
         // The one allowed `any`: the data comes from outside, and core types
         // an event with no schema the same way.
+        // biome-ignore lint/suspicious/noExplicitAny: pins the one allowed any
         expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
         expectTypeOf(event.data.anything).toBeAny();
       },

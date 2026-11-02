@@ -115,6 +115,19 @@ describe("idle", () => {
     },
   );
 
+  test.each([["batches" as const], ["messages" as const]])(
+    "an idle of 0 ends the %s loop the moment it would wait, as a run opened through a handle does",
+    async (form) => {
+      const { fn } = defineLoop(form, 0);
+
+      const { output, waiting, ops } = await run(fn, { event: order });
+
+      expect(waiting).toBe(false);
+      expect(output).toBe(1);
+      expect(waitTimeouts(ops)).toEqual([]);
+    },
+  );
+
   test("without idle the default is 10 minutes", async () => {
     const { fn } = defineLoop("batches");
 

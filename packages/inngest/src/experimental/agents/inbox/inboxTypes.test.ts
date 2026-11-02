@@ -87,6 +87,7 @@ describe("inbox", () => {
 
           if (message?.is(eventType("plain/event"))) {
             // The one allowed `any`, as in core.
+            // biome-ignore lint/suspicious/noExplicitAny: pins the one allowed any
             expectTypeOf(message.data).toEqualTypeOf<Record<string, any>>();
           }
         },
