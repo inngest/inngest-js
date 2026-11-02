@@ -672,7 +672,7 @@ function setMuted(v){
 }
 /* picking a style while muted turns sound on: the "enabled" sound plays, and for Doom the music and bar start */
 function picked(id){
-  setStyle(id);
+  setStyle(id);closeMenu(true); // an open menu swallows the other keys (v, Shift+V, Shift+E), so close it on pick
   if(st.muted){setMuted(false);return;}
   if(id!=="doom")play("checkPass");
 }

@@ -13,7 +13,7 @@ ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id&&pend.has(m.id)){pend.get(m.
  else if(m.method==="Runtime.consoleAPICalled"&&["error","warning"].includes(m.params.type))errs.push(m.params.type+" "+m.params.args.map(a=>a.value||a.description).join(" "));};
 const send=(method,params={})=>new Promise(r=>{const i=++id;pend.set(i,r);ws.send(JSON.stringify({id:i,method,params}));});
 const ev=async x=>{const r=await send("Runtime.evaluate",{expression:x,awaitPromise:true,returnByValue:true});if(r.result?.exceptionDetails)errs.push("eval "+JSON.stringify(r.result.exceptionDetails).slice(0,400));return r.result?.result?.value;};
-const key=async(k,shift)=>{for(const t of ["keyDown","keyUp"])await send("Input.dispatchKeyEvent",{type:t,key:k,text:t==="keyDown"?k:undefined,modifiers:shift?8:0,code:k.length===1?"Key"+k.toUpperCase():k,windowsVirtualKeyCode:k.length===1?k.toUpperCase().charCodeAt(0):0});};
+const key=async(k,shift)=>{for(const t of ["keyDown","keyUp"])await send("Input.dispatchKeyEvent",{type:t,key:k,text:t==="keyDown"&&k.length===1?k:undefined,modifiers:shift?8:0,code:k.length===1?"Key"+k.toUpperCase():k,windowsVirtualKeyCode:k.length===1?k.toUpperCase().charCodeAt(0):0});};
 await send("Runtime.enable");await send("Page.enable");
 await send("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:"dark"}]});
 await send("Page.navigate",{url:"file://"+file});await sleep(1200);
