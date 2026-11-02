@@ -40,7 +40,8 @@ export type MainToWorkerMessage =
   | { type: "CONNECT"; attempt: number }
   | { type: "CLOSE" }
   | { type: "EXECUTION_RESPONSE"; requestId: string; response: Uint8Array }
-  | { type: "EXECUTION_ERROR"; requestId: string; error: string };
+  | { type: "EXECUTION_ERROR"; requestId: string; error: string }
+  | { type: "RESUME_EXECUTION"; requestId: string; request: Uint8Array };
 
 /**
  * Messages sent from the worker thread to the main thread.
@@ -50,6 +51,7 @@ export type WorkerToMainMessage =
   | { type: "CONNECTION_READY"; connectionId: string }
   | { type: "ERROR"; error: string; fatal: boolean }
   | { type: "EXECUTION_REQUEST"; requestId: string; request: Uint8Array }
+  | { type: "LEASE_EXTENDED"; requestId: string; leaseId: string }
   | { type: "CLOSED" }
   | { type: "DEBUG_STATE"; state: ConnectDebugState }
   | {
