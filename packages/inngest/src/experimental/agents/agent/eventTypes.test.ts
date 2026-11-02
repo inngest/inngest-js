@@ -204,12 +204,12 @@ describe("triggers", () => {
 
     expect(compiled[0]?.listen).toBe(false);
     expect(compiled[0]?.thread.source).toBe(
-      'has(event.data._agent) && has(event.data._agent.thread) ? event.data._agent.thread : ("worker")',
+      'has(event.data.from) && has(event.data.from.thread) ? event.data.from.thread : ("worker")',
     );
     expect(
       compiled[0]?.thread.key({
         name: "inngest/function.invoked",
-        data: { _agent: { depth: 1, thread: "t9" } },
+        data: { from: { depth: 1, thread: "t9" } },
       }),
     ).toBe("t9");
     expect(
@@ -218,7 +218,7 @@ describe("triggers", () => {
     expect(
       compiled[0]?.thread.key({
         name: "inngest/function.invoked",
-        data: { _agent: { depth: 1 } },
+        data: { from: { depth: 1 } },
       }),
     ).toBe("worker");
   });

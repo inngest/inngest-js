@@ -223,7 +223,7 @@ describe("agent function", () => {
           agent: `${testClientId}/bot`,
           thread: "t1",
           content: "go",
-          _agent: { depth: 1 },
+          from: { depth: 1 },
         },
       },
     });
@@ -1075,7 +1075,7 @@ describe("event", () => {
     const { output } = await run(fn, {
       event: {
         name: "inngest/function.invoked",
-        data: { question: "why", _agent: { thread: "t" } },
+        data: { question: "why", from: { thread: "t" } },
       },
     });
 
@@ -1100,7 +1100,7 @@ describe("event", () => {
     const invoked = await run(fn, {
       event: {
         name: "inngest/function.invoked",
-        data: { question: "why", _agent: { depth: 2, thread: "t" } },
+        data: { question: "why", from: { depth: 2, thread: "t" } },
       },
     });
 
@@ -1210,7 +1210,7 @@ describe("agent limits", () => {
         ...invoked,
         data: {
           ...invoked.data,
-          _agent: { depth: 1, limits: { budget: { usd: 1, tokens: 500 } } },
+          from: { depth: 1, limits: { budget: { usd: 1, tokens: 500 } } },
         },
       },
     });
@@ -1251,7 +1251,7 @@ describe("agent limits", () => {
         ...invoked,
         data: {
           ...invoked.data,
-          _agent: { depth: 1, limits: { budget: { usd: "lots" } } },
+          from: { depth: 1, limits: { budget: { usd: "lots" } } },
         },
       },
     });
@@ -1278,7 +1278,7 @@ describe("agent limits", () => {
     const { output } = await run(fn, {
       event: {
         ...event,
-        data: { ...event.data, _agent: { depth: 1, limits: { depth: 0 } } },
+        data: { ...event.data, from: { depth: 1, limits: { depth: 0 } } },
       },
     });
 
@@ -1306,7 +1306,7 @@ describe("inherited limits persist on the thread", () => {
     await run(fn, {
       event: {
         ...first,
-        data: { ...first.data, _agent: { depth: 1, limits: { depth: 0 } } },
+        data: { ...first.data, from: { depth: 1, limits: { depth: 0 } } },
       },
     });
 
