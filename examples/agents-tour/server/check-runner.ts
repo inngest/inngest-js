@@ -6,7 +6,13 @@
  * reported as a broken check, never as the reader's failure.
  */
 import { pathToFileURL } from "node:url";
-import type { Check, CheckApi, SeenPost, SeenRun } from "../shared/check.ts";
+import type {
+  Check,
+  CheckApi,
+  SeenPost,
+  SeenRun,
+  SeenThread,
+} from "../shared/check.ts";
 import type { CheckResult, TraceRun, TraceStep } from "../shared/types.ts";
 import type { TourContext } from "./area.ts";
 import { botUser } from "./fakes/settings.ts";
@@ -14,16 +20,32 @@ import { readOutput, readRuns, terminal } from "./runs.ts";
 
 class CheckFailed extends Error {}
 
-const settleTimeoutMs = 20_000;
-// Runs that wait for more messages never finish; they count as settled once
-// nothing has changed for this long.
-const quietMs = 1_500;
+export interface CheckTiming {
+  // How long to wait for the first run to appear.
+  firstRunTimeoutMs: number;
+  // Runs that wait for more messages never finish; they count as settled
+  // once nothing has changed for this long.
+  quietMs: number;
+  // How long the runs may keep changing before the check gives up.
+  settleTimeoutMs: number;
+}
+
+export const defaultTiming: CheckTiming = {
+  firstRunTimeoutMs: 10_000,
+  quietMs: 1_500,
+  settleTimeoutMs: 20_000,
+};
+
 const pollMs = 200;
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+const seconds = (ms: number) => {
+  return `${ms / 1000} seconds`;
 };
 
 const shape = (steps: TraceStep[]): unknown[] => {
@@ -52,7 +74,11 @@ const parse = (data: string | null) => {
   }
 };
 
-export const createCheckApi = (ctx: TourContext, since: string): CheckApi => {
+export const createCheckApi = (
+  ctx: TourContext,
+  since: string,
+  timing: CheckTiming = defaultTiming,
+): CheckApi => {
   const call = async (method: "GET" | "POST", path: string, body?: unknown) => {
     const res = await fetch(`${ctx.publicUrl}${path}`, {
       method,
@@ -90,6 +116,34 @@ export const createCheckApi = (ctx: TourContext, since: string): CheckApi => {
       });
   };
 
+  const seenRuns = async (fn?: string) => {
+    const all = await readRuns(ctx.devServer, since);
+    const wanted = fn
+      ? all.filter((run) => {
+          return run.fn === fn;
+        })
+      : all;
+
+    return Promise.all(
+      wanted.map(async (run): Promise<SeenRun> => {
+        const out =
+          run.output && terminal.has(run.status)
+            ? await readOutput(ctx.devServer, run.output)
+            : undefined;
+        const thread = run.trigger?.data.thread;
+
+        return {
+          id: run.id,
+          fn: run.fn,
+          status: run.status,
+          thread: typeof thread === "string" ? thread : null,
+          output: parse(out?.data ?? null),
+          error: out?.error?.message ?? null,
+        };
+      }),
+    );
+  };
+
   const api: CheckApi = {
     send: async (agent, thread, text) => {
       await ctx.worker.send(agent, thread, text);
@@ -104,52 +158,48 @@ export const createCheckApi = (ctx: TourContext, since: string): CheckApi => {
     fail: (reason) => {
       throw new CheckFailed(reason);
     },
-    runs: async (fn) => {
-      const seen = await readRuns(ctx.devServer, since);
-      const wanted = fn
-        ? seen.filter((run) => {
-            return run.fn === fn;
-          })
-        : seen;
+    runs: seenRuns,
+    threads: async () => {
+      const byKey = new Map<string, SeenRun[]>();
 
-      return Promise.all(
-        wanted.map(async (run): Promise<SeenRun> => {
-          const out =
-            run.output && terminal.has(run.status)
-              ? await readOutput(ctx.devServer, run.output)
-              : undefined;
+      for (const run of await seenRuns()) {
+        if (run.thread !== null) {
+          byKey.set(run.thread, [...(byKey.get(run.thread) ?? []), run]);
+        }
+      }
 
-          return {
-            id: run.id,
-            fn: run.fn,
-            status: run.status,
-            output: parse(out?.data ?? null),
-            error: out?.error?.message ?? null,
-          };
-        }),
-      );
+      return [...byKey].map(([key, runs]): SeenThread => {
+        return { key, runs };
+      });
     },
-    settle: async () => {
-      const end = Date.now() + settleTimeoutMs;
+    settle: async (options = {}) => {
+      const quietMs = options.quietMs ?? timing.quietMs;
+      const timeoutMs = options.timeoutMs ?? timing.settleTimeoutMs;
+      const firstRunBy = Date.now() + timing.firstRunTimeoutMs;
+
+      while ((await readRuns(ctx.devServer, since)).length === 0) {
+        if (Date.now() > firstRunBy) {
+          throw new CheckFailed(
+            `No run started within ${seconds(timing.firstRunTimeoutMs)}.`,
+          );
+        }
+
+        await sleep(pollMs);
+      }
+
+      const end = Date.now() + timeoutMs;
       let last = "";
       let changedAt = Date.now();
 
       while (Date.now() < end) {
-        const runs = await readRuns(ctx.devServer, since);
-        const now = `${signature(runs)}${(await posts()).length}`;
+        const now = signature(await readRuns(ctx.devServer, since));
 
         if (now !== last) {
           last = now;
           changedAt = Date.now();
         }
 
-        const finished =
-          runs.length > 0 &&
-          runs.every((run) => {
-            return terminal.has(run.status);
-          });
-
-        if (Date.now() - changedAt >= (finished ? pollMs : quietMs)) {
+        if (Date.now() - changedAt >= quietMs) {
           return;
         }
 
@@ -157,7 +207,7 @@ export const createCheckApi = (ctx: TourContext, since: string): CheckApi => {
       }
 
       throw new CheckFailed(
-        `The runs were still changing after ${settleTimeoutMs / 1000} seconds.`,
+        `The runs were still changing after ${seconds(timeoutMs)}.`,
       );
     },
   };
@@ -187,7 +237,7 @@ export const runCheck = async (
       };
     }
 
-    await module.check(createCheckApi(ctx, since));
+    await module.check(createCheckApi(ctx, since, ctx.checkTiming));
 
     return { pass: true };
   } catch (error) {

@@ -8,6 +8,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Start, TourEvent, TourIndex } from "../shared/types.ts";
+import type { CheckTiming } from "./check-runner.ts";
 import type { DevServer } from "./devserver.ts";
 import type { Hub } from "./hub.ts";
 import type { LoadedPage } from "./lessons.ts";
@@ -45,6 +46,8 @@ export interface Area {
 
 export interface TourContext {
   root: string;
+  // How long a check waits; tests shorten it.
+  checkTiming: CheckTiming;
   // True when `tour:verify` runs the tour: the app is told to use the
   // scripted model (see `runtime/scripted-model.ts`).
   scriptedModel: boolean;

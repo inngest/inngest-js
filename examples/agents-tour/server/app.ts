@@ -21,6 +21,7 @@ import {
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Area, AreaFactory, Route, TourContext } from "./area.ts";
+import { type CheckTiming, defaultTiming } from "./check-runner.ts";
 import { DevServer, type DevServerPorts } from "./devserver.ts";
 import { HttpError } from "./http-error.ts";
 import { Hub } from "./hub.ts";
@@ -40,6 +41,8 @@ export interface TourOptions {
   areas?: AreaFactory[];
   // Where the tour keeps what it writes. Default: `.tour` in the root.
   dataDir?: string;
+  // How long a check waits, in parts. Default: `defaultTiming`.
+  checkTiming?: Partial<CheckTiming>;
   // Tells the app to use the scripted model; `tour:verify` sets it.
   scriptedModel?: boolean;
 }
@@ -121,6 +124,7 @@ export const createTour = async (options: TourOptions) => {
   let areas: Area[] = [];
   const ctx: TourContext = {
     root,
+    checkTiming: { ...defaultTiming, ...options.checkTiming },
     scriptedModel: options.scriptedModel ?? false,
     publicUrl,
     dataDir,
