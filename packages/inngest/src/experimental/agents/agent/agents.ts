@@ -29,14 +29,14 @@ import type {
   ThreadTriggerList,
   ThreadTriggerListEvent,
 } from "../threads/threadTrigger.ts";
-import {
-  type AgentBody,
-  type AgentBodyContext,
-  type AgentFunction,
-  type AgentFunctionConfig,
-  createAgentFunction,
-  type InboxSource,
-} from "./agentFunction.ts";
+import { createAgentFunction } from "./agentFunction.ts";
+import type {
+  AgentBody,
+  AgentBodyContext,
+  AgentFunction,
+  AgentFunctionConfig,
+  InboxSource,
+} from "./types.ts";
 
 /**
  * What an agent without `sandboxes` has: none, so `sandboxes.anything` and
@@ -403,6 +403,11 @@ export type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 export type {
+  AgentRecovery,
+  LastRun,
+  RunOutcome,
+} from "./recovery.ts";
+export type {
   AgentBody,
   AgentBodyContext,
   AgentBodyFields,
@@ -417,9 +422,4 @@ export type {
   OpenedInbox,
   ThreadInbox,
   ThreadInboxMessage,
-} from "./agentFunction.ts";
-export type {
-  AgentRecovery,
-  LastRun,
-  RunOutcome,
-} from "./recovery.ts";
+} from "./types.ts";

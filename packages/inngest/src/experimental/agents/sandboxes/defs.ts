@@ -38,7 +38,7 @@ import {
   SandboxValidationError,
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
-import type { AgentConfigContext } from "../agent/agentFunction.ts";
+import type { AgentConfigContext } from "../agent/types.ts";
 import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
 import {
   defaultSandboxIdle,

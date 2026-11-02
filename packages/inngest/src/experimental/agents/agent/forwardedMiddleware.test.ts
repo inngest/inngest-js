@@ -12,13 +12,13 @@ import type { Middleware } from "../../../components/middleware/middleware.ts";
 import { sandboxMiddleware } from "../../../components/sandbox/middleware.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import type { ThreadCronEvent } from "../threads/threadTrigger.ts";
+import { createAgents } from "./agents.ts";
 import type {
   AgentBody,
   AgentBodyContext,
   AgentTypeDefaults,
   AgentTypesOf,
-} from "./agentFunction.ts";
-import { createAgents } from "./agents.ts";
+} from "./types.ts";
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);

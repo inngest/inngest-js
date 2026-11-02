@@ -9,12 +9,12 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { createAgents } from "./agents.ts";
 import {
   type AgentFunctionOptions,
   refusedOptions,
   takenOptions,
-} from "./agentFunction.ts";
-import { createAgents } from "./agents.ts";
+} from "./options.ts";
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string() }),

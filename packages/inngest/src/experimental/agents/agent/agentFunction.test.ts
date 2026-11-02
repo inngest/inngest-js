@@ -20,14 +20,11 @@ import {
   type ModelMessage,
 } from "../loop/loop.ts";
 import { sandbox } from "../sandboxes/defs.ts";
-import type { ThreadInbox } from "./agentFunction.ts";
-import {
-  type AgentFunctionConfig,
-  createAgentFunction,
-} from "./agentFunction.ts";
+import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { invokeAgent } from "./invoke.ts";
 import { run, textOf } from "./test-helpers.ts";
+import type { AgentFunctionConfig, ThreadInbox } from "./types.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
