@@ -11,10 +11,16 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import { Inngest, type InngestFunction } from "inngest";
 import type { sandboxMiddleware } from "inngest/experimental";
+import type { AgentModel } from "inngest/experimental/agents";
 import type { CallFilter, Fakes } from "./channels.ts";
+import { type ModelCall, type ScriptStep, script } from "./model.ts";
 import { redisCommand } from "./redis.ts";
 
-export { script } from "./model.ts";
+export const modelName = (id: string, name: string) => {
+  return `${id}/${name}`;
+};
+
+export { type ModelCall, type ScriptStep, script };
 
 /**
  * What a scenario's `functions` gets, inside the app.
@@ -33,6 +39,12 @@ export interface AppEnv {
    * The name of an event only this scenario listens to.
    */
   event: (name: string) => string;
+
+  /**
+   * A scripted model that records every request it is shown. The scenario
+   * reads them with `ctx.model(name)`.
+   */
+  script: (name: string, steps?: ScriptStep[]) => AgentModel;
 }
 
 export interface RunInfo {
@@ -81,6 +93,11 @@ export interface Ctx {
   redisUrl: string;
   fakes: Fakes;
   event: (name: string) => string;
+
+  /**
+   * The recordings of the scripted model `env.script` made under `name`.
+   */
+  model: (name: string) => { calls: () => Promise<ModelCall[]> };
 
   /**
    * Sends the scenario's event `name` and returns the event ID. Pass
@@ -501,6 +518,17 @@ export const createCtx = (
     },
     event: (name) => {
       return eventName(id, name);
+    },
+    model: (name) => {
+      return {
+        calls: async () => {
+          return scoped
+            .posts({ channel: "model", method: modelName(id, name) })
+            .map((call) => {
+              return call.body as unknown as ModelCall;
+            });
+        },
+      };
     },
     send: async (name, data = {}, options = {}) => {
       const event = { id: randomUUID(), name: eventName(id, name), data };

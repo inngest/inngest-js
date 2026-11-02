@@ -393,7 +393,7 @@
     "shx": "^0.3.4",
     "ts-proto": "^2.6.1",
     "tsdown": "^0.15.4",
-    "tsx": "^3.12.7",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.0.8",

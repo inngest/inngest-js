@@ -22,6 +22,7 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import { STEP_INDEXING_SUFFIX, step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { nextCount } from "./executionCounter.ts";
+import type { Json } from "./json.ts";
 import { redisConnection } from "./redis.ts";
 import { currentSessions } from "./sessions.ts";
 
@@ -602,13 +603,7 @@ export interface KvKey<T> {
  * Anything JSON can carry. It is the default value type of `KvWrite`; plain-name
  * writes are checked with `KvJsonSafe`, so interfaces pass.
  */
-export type KvJson =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly KvJson[]
-  | { [key: string]: KvJson | undefined };
+export type KvJson = Json;
 
 /**
  * Types JSON cannot carry: they come back changed, or fail to store.

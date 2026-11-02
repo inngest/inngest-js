@@ -3,8 +3,9 @@
   "compilerOptions": {
     "baseUrl": "../..",
     "paths": {
-      "inngest": ["./dist/index"],
-      "inngest/*": ["./dist/*"]
+      "inngest": ["./src/index.ts"],
+      "inngest/*": ["./src/*"],
+      "sdk-testing/*": ["./src/components/agent/testing/*"]
     }
   },
   "include": ["./**/*.ts"]

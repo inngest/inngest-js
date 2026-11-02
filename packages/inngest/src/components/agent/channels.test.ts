@@ -13,12 +13,12 @@ import {
   type ChannelMessage,
   createReporter,
   defineChannel,
-  truncate,
 } from "./channels.ts";
 import { github, githubCommentEvent } from "./github.ts";
 import { createKv, memoryKvAdapter } from "./kv.ts";
 import { slack, slackMessageEvent } from "./slack.ts";
 import { run } from "./test-helpers.ts";
+import { truncate } from "./text.ts";
 
 const recorder = () => {
   const posts: ChannelMessage[] = [];

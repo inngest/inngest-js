@@ -3,7 +3,7 @@
  * EXPERIMENTAL: the scripted model. It needs no API key and answers from a
  * list of steps, so a test asserts on the primitives and never on a model.
  */
-import { agent, type AgentModelRequest as Request } from "../loop.ts";
+import type { AgentModel, AgentModelRequest as Request } from "../loop.ts";
 
 /**
  * One step of a scripted model: say something, or call a tool.
@@ -35,8 +35,8 @@ const lastUser = (request: Request) => {
  * turn 2, and so on. After the script it echoes the last user message.
  * `{{last}}` in a `say` is replaced by that message.
  */
-export const script = (steps: ScriptStep[] = []) => {
-  return agent.model(async (request) => {
+export const script = (steps: ScriptStep[] = []): AgentModel => {
+  return async (request) => {
     const matched = steps.find((step) => {
       return step.when?.(request);
     });
@@ -73,5 +73,5 @@ export const script = (steps: ScriptStep[] = []) => {
       toolCalls: [],
       usage: { input: 10, output: 5 },
     };
-  });
+  };
 };

@@ -13,7 +13,7 @@ import { durationToMs } from "../../helpers/duration.ts";
 import type { SandboxTool } from "../sandbox/tools.ts";
 import { tool } from "../sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
-import { untrusted } from "./modelErrors.ts";
+import { untrustedText } from "./untrustedText.ts";
 
 /**
  * One event the model may listen for.
@@ -276,7 +276,7 @@ const render = (message: InboxToolMessage) => {
 
   return {
     source: message.name,
-    content: untrusted(clipped, { source: message.name }),
+    content: untrustedText(clipped, { source: message.name }),
   };
 };
 
@@ -300,8 +300,7 @@ const render = (message: InboxToolMessage) => {
  *   without waiting.
  * - `inbox_close({ as })` closes an inbox it opened.
  *
- * A message returns marked with `agent.untrusted()`, since it came from
- * outside.
+ * A message returns marked as untrusted text, since it came from outside.
  *
  * @example
  * ```ts
