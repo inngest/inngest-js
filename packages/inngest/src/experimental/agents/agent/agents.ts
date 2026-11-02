@@ -14,6 +14,7 @@ import type { Middleware } from "../../../components/middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
 import { announceFunction, rememberCard } from "../discovery/discovery.ts";
 import { type KvStore, setAppKvStore } from "../kv/kv.ts";
+import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
 import type {
   ThreadCronEvent,
@@ -52,6 +53,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
@@ -61,7 +63,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         middleware: TMiddleware;
         sources: TSources;
       }
-    >,
+    > & { model?: TModel },
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TType>;
@@ -69,6 +71,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<TOutput>;
@@ -78,6 +81,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
@@ -87,7 +91,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         middleware: TMiddleware;
         sources: TSources;
       }
-    >,
+    > & { model?: TModel },
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TTypes>;
@@ -95,6 +99,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<TOutput>;
@@ -104,6 +109,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
@@ -113,7 +119,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         middleware: TMiddleware;
         sources: TSources;
       }
-    >,
+    > & { model?: TModel },
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TOne>;
@@ -121,6 +127,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<TOutput>;
@@ -129,6 +136,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
@@ -138,7 +146,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         middleware: TMiddleware;
         sources: TSources;
       }
-    >,
+    > & { model?: TModel },
     body?: (
       context: AgentBodyContext<{
         event: ThreadCronEvent;
@@ -146,6 +154,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<TOutput>;
@@ -155,6 +164,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSource[] | undefined = undefined,
+    const TModel extends AgentModel | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
@@ -164,7 +174,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         middleware: TMiddleware;
         sources: TSources;
       }
-    >,
+    > & { model?: TModel },
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TMany>;
@@ -172,6 +182,7 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         client: TClient;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }>,
     ) => Promise<TOutput>,
   ): AgentFunction<TOutput>;

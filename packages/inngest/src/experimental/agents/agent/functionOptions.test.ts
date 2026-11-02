@@ -146,7 +146,7 @@ describe("function context in the body", () => {
       "attempt",
       "me",
       "inbox",
-      "control",
+      "loop",
       "sandboxes",
       "scores",
       "score",

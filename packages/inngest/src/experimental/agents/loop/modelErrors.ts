@@ -5,6 +5,7 @@
  * outside so a prompt can tell the model to treat it as data.
  */
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { RetryAfterError } from "../../../components/RetryAfterError.ts";
 import {
   type UntrustedOptions,
   untrustedTag,
@@ -138,6 +139,53 @@ export const classifyModelError = (error: unknown): unknown => {
     error instanceof Error ? error.message : String(record.message ?? error);
 
   return new NonRetriableError(message, { cause: error });
+};
+
+/**
+ * Seconds-to-milliseconds of the `retry-after` header an API error carries, so
+ * the step retries when the API asked rather than on Inngest's own schedule.
+ */
+const retryAfterMs = (error: unknown): number | undefined => {
+  const headers = (error as { headers?: unknown } | null)?.headers as
+    | { get?: (name: string) => string | null }
+    | Record<string, string>
+    | undefined;
+  const read = (name: string): string | null | undefined => {
+    return typeof (headers as { get?: unknown })?.get === "function"
+      ? (headers as { get: (name: string) => string | null }).get(name)
+      : (headers as Record<string, string> | undefined)?.[name];
+  };
+  const ms = Number(read("retry-after-ms"));
+  const seconds = Number(read("retry-after"));
+
+  if (Number.isFinite(ms) && ms > 0) {
+    return ms;
+  }
+
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
+};
+
+/**
+ * Sorts an error from a model call: a final one becomes a `NonRetriableError`,
+ * and a retryable one that names a wait (a 429's `retry-after`) a
+ * `RetryAfterError`, so the step retries when the API said it could.
+ */
+export const sortModelError = (error: unknown): unknown => {
+  const sorted = classifyModelError(error);
+
+  if (sorted instanceof NonRetriableError) {
+    return sorted;
+  }
+
+  const wait = retryAfterMs(error);
+
+  return wait === undefined
+    ? sorted
+    : new RetryAfterError(
+        error instanceof Error ? error.message : String(error),
+        wait,
+        { cause: error },
+      );
 };
 
 /**

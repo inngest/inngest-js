@@ -477,14 +477,13 @@ describe("tool.mcp in agent.loop", () => {
       { id: "mcp-loop", triggers: [{ event: "mcp/run" }] },
       async () => {
         const result = await agent.loop({
-          model: agent.model(async (request) => {
+          model: async (request) => {
             requests.push(structuredClone(request));
 
             return model(request);
-          }),
-          prompt: "go",
+          },
           tools: { hex },
-        });
+        })("go");
 
         text = result.text;
       },
@@ -527,14 +526,13 @@ describe("tool.mcp in agent.loop", () => {
       { id: "mcp-unknown", triggers: [{ event: "mcp/run" }] },
       async () => {
         await agent.loop({
-          model: agent.model(async (request) => {
+          model: async (request) => {
             requests.push(structuredClone(request));
 
             return model(request);
-          }),
-          prompt: "go",
+          },
           tools: { hex },
-        });
+        })("go");
       },
     );
 

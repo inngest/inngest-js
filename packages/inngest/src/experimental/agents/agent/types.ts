@@ -13,6 +13,7 @@ import type {
   UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
+import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
 import type {
   EventIs,
@@ -30,13 +31,11 @@ import type {
   AgentDiscovery,
 } from "../discovery/discovery.ts";
 import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
-import type { AgentPrice } from "../loop/cost.ts";
 import type {
-  AgentEvent,
-  AgentInput,
+  AgentHandlerLoop,
+  AgentLoop,
   AgentLoopOptions,
-  AgentLoopResult,
-  AgentTurn,
+  AgentModel,
 } from "../loop/loop.ts";
 import type { AgentScores } from "../loop/scores.ts";
 import type {
@@ -100,6 +99,12 @@ export interface AgentTypes {
    * The `inbox` sources of the agent's config.
    */
   sources?: readonly InboxSource[] | undefined;
+
+  /**
+   * The agent's `model`, if it has one: only an agent with a model gets a
+   * `loop` in its handler.
+   */
+  model?: AgentModel | undefined;
 }
 
 /**
@@ -135,6 +140,11 @@ export interface AgentTypeDefaults {
    * No typed sources.
    */
   sources: undefined;
+
+  /**
+   * No model, so a handler written without naming the bag has no `loop`.
+   */
+  model: undefined;
 }
 
 /**
@@ -160,6 +170,9 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
   }
     ? V
     : AgentTypeDefaults["sources"];
+  model: TTypes extends { model: infer V extends AgentModel | undefined }
+    ? V
+    : AgentTypeDefaults["model"];
 };
 
 /**
@@ -213,6 +226,48 @@ export interface AgentFunctionConfig<
   >;
 
   /**
+   * The model the agent's loop calls: an adapter such as
+   * `anthropic({ model })`, or any function of the model's shape. With a
+   * `model` and no handler, the agent runs one the SDK writes: each batch of
+   * messages goes to the model, the model's history carries on across batches
+   * and the final answer is the run's output.
+   */
+  model?: AgentModel;
+
+  /**
+   * The model's system prompt: a value, or a function of `{ event, thread }`
+   * read once at the start of each run.
+   */
+  system?: RunField<string, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
+
+  /**
+   * The tools the model can call, beside the ones the SDK adds (the inbox
+   * tools, and the sandboxes', discovery and agent tools as they arrive): a
+   * value, or a function of `{ event, thread }` read once at the start of each
+   * run.
+   */
+  tools?: RunField<
+    SandboxTools,
+    RunFieldContext<AgentTypesOf<TTypes>["event"]>
+  >;
+
+  /**
+   * Either options for the agent's own loop (`loop: { maxTurns: 10 }`, applied
+   * to the loop the agent builds), or a whole different loop to use in its
+   * place. The agent's triggers, inbox and thread stay as they are.
+   */
+  loop?:
+    | Omit<AgentLoopOptions, "id" | "model" | "system" | "tools" | "history">
+    | AgentLoop;
+
+  /**
+   * Whether the loop remembers the model's history across runs of a thread.
+   * Default `true`; `false` starts each run clean. A value, or a function of
+   * `{ event, thread }` read once at the start of each run.
+   */
+  remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
+
+  /**
    * Event sources that reach a live run of the thread they map to and never
    * start one, and read through the one `inbox`.
    * `triggers` still starts and wakes runs. Each source maps its own events to the
@@ -233,17 +288,6 @@ export interface AgentFunctionConfig<
   listen?: readonly EventTypeWithAnySchema<string>[];
 
   /**
-   * Which messages that arrive during a turn `control.steer()` (and so
-   * `agent.loop()` inside this agent) folds into the turn at the next model
-   * call. `"steer"` (default): only `agent/steer` events; the rest wait
-   * for their own turn. `"all"`: every event that would start a turn too (an
-   * `agent/message`, a trigger event, an inbox source's event), as steering
-   * messages. A folded message is consumed: `next()` does
-   * not return it again.
-   */
-  foldMessages?: "steer" | "all";
-
-  /**
    * The sandboxes this agent may use, by name: definitions made with
    * `sandbox()`, or `{ sandbox, start }`. A sandbox is created by the first
    * tool call that needs it (`start: "lazy"`, the default), or as soon as the
@@ -261,18 +305,9 @@ export interface AgentFunctionConfig<
   /**
    * What this agent may start and spend: `depth` (default 1, so it may start
    * sub-agents and they may not), `mayCall` and `budget`. Sub-agents
-   * inherit the limits narrowed. `budget` is not automatic:
-   * spread `control` into `agent.loop()`, or that loop runs unbudgeted.
+   * inherit the limits narrowed. The loop enforces `budget` on its own.
    */
   limits?: AgentLimits;
-
-  /**
-   * Whether the agent scores itself. Default: `true`. The loop scores each
-   * model and tool step (see `agent.loop()`). Every score rides on a
-   * step that already runs, so none adds a step. `false` turns those off;
-   * `scores.score()` in the body still works.
-   */
-  scores?: boolean;
 
   /**
    * What the agent does about a run that fails unexpectedly. Off by default.
@@ -365,15 +400,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-   * Runs the loop on a prompt with the agent's own wiring: steering, the
-   * budget and the turn record, and, when the agent has `listen`, the model's
-   * `inbox_listen` and `inbox_close`. It takes `agent.loop()`'s options except
-   * `prompt`; `tools` are added to the agent's.
-   */
-  loop: (
-    prompt: AgentInput | readonly AgentEvent[],
-    options: Omit<AgentLoopOptions, "prompt">,
-  ) => Promise<AgentLoopResult>;
 
   /**
    * Your own scores, next to the ones the framework writes. See
@@ -412,40 +438,6 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * Show a line when it grows: `if (restarts > shown) { ... }`.
    */
   readonly restarts: number;
-
-  /**
-   * Spread into `agent.loop()`: `steer` folds steering messages that arrived
-   * during a turn into the next model call. Messages that start the next turn stay in the inbox.
-   * `onTurn` records the turn, the usage and a summary for
-   * `thread.state()`: if you pass your own `onTurn`, put `...control` first
-   * and call `control.onTurn(turn)` from yours with the turn unchanged: the
-   * record of the turn is written inside the model call's step, and
-   * `control.onTurn` reads it back.
-   */
-  control: {
-    steer: () => Promise<AgentEvent[]>;
-
-    /**
-     * The inboxes the model has open, with the source each was opened on, for
-     * a loop that reads them with the thread's own.
-     */
-    inboxes: () => OpenedInbox[];
-    onTurn: (turn: AgentTurn) => Promise<void>;
-
-    /**
-     * Records the turn inside the model call's step, so it costs no step of
-     * its own. `onTurn` then reads what it recorded.
-     */
-    recordTurn: (turn: AgentTurn) => Promise<unknown>;
-    budget: () => string | undefined;
-    scores: boolean;
-
-    /**
-     * The agent's `limits.price`, if it has one, so that the loop prices each
-     * model call for `limits.budget.usd`.
-     */
-    price?: AgentPrice;
-  };
 }
 
 /**
@@ -554,7 +546,21 @@ export type AgentFunctionInput<TTypes extends AgentTypes = AgentTypes> = Omit<
  * batch.
  */
 export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
-  AgentFunctionInput<TTypes> & AgentBodyFields<TTypes>;
+  AgentFunctionInput<TTypes> &
+    AgentBodyFields<TTypes> &
+    (AgentTypesOf<TTypes>["model"] extends AgentModel
+      ? {
+          /**
+           * The agent's own loop, made from its definition: `model`, `system`
+           * and `tools`, plus the model's `inbox_listen` and `inbox_close`
+           * when the agent has `listen`. `loop(batch)` folds the messages that
+           * arrive meanwhile into the very next model call and posts nothing.
+           * `loop.with(options)` derives another from it. Only an agent with a
+           * `model` has one.
+           */
+          loop: AgentHandlerLoop;
+        }
+      : Record<never, never>);
 
 /**
  * The body of an agent. `TTypes` is the `AgentTypes` bag: the events of its

@@ -4,6 +4,8 @@
  * `kv.scope`, indexes and the store contract.
  */
 import { z } from "zod";
+// @ts-expect-error the old name for the store contract is gone
+import type { KvAdapter } from "../index.ts";
 import * as api from "../index.ts";
 import {
   d1KvAdapter,
@@ -12,8 +14,6 @@ import {
   memoryKvAdapter,
   redisKvAdapter,
 } from "../index.ts";
-// @ts-expect-error the old name for the store contract is gone
-import type { KvAdapter } from "../index.ts";
 import { inngest, typesOnly } from "./typeFixtures.ts";
 
 const plan = kv.key<{ steps: string[] }>("plan");

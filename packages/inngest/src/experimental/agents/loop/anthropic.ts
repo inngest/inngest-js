@@ -12,13 +12,12 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
-import { RetryAfterError } from "../../../components/RetryAfterError.ts";
 import {
   issuesMessage,
   type ToolJsonDefinition,
   toJsonSchema,
 } from "../../../components/sandbox/tools.ts";
-import type { AgentPriceTable } from "./cost.ts";
+import { type AgentPriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
@@ -27,7 +26,7 @@ import type {
   AgentUsage,
   ModelMessage,
 } from "./loop.ts";
-import { classifyModelError } from "./modelErrors.ts";
+import { sortModelError } from "./modelErrors.ts";
 
 /**
  * The part of an Anthropic Messages response the adapter reads. The SDK's own
@@ -101,6 +100,12 @@ export interface AnthropicOptions {
    * installed.
    */
   client?: AnthropicClient;
+
+  /**
+   * The model's context size in tokens, which a loop that remembers uses to
+   * decide when to summarise. Default 200,000.
+   */
+  contextWindow?: number;
 
   /**
    * The API key of the client the adapter makes. Ignored with `client`.
@@ -197,6 +202,7 @@ export type AnthropicOverrides = Partial<
     AnthropicOptions,
     | "model"
     | "maxTokens"
+    | "contextWindow"
     | "effort"
     | "thinking"
     | "cache"
@@ -294,7 +300,14 @@ export interface AnthropicModel {
    * @param overrides The options to change.
    */
   with(overrides: AnthropicOverrides): AnthropicModel;
+
+  /**
+   * The model's context size in tokens.
+   */
+  readonly contextWindow: number;
 }
+
+const defaultContextWindow = 200_000;
 
 type Block = { type: string } & Record<string, unknown>;
 type Param = { role: "user" | "assistant"; content: Block[] };
@@ -703,50 +716,15 @@ const parse = (options: AnthropicOptions, reply: AnthropicReply) => {
 };
 
 /**
- * Seconds-to-milliseconds of the `retry-after` header an API error carries, so
- * the step retries when the API asked rather than on Inngest's own schedule.
+ * The cost of a call from the built-in table, when the model is in it.
  */
-const retryAfterMs = (error: unknown): number | undefined => {
-  const headers = (error as { headers?: unknown } | null)?.headers as
-    | { get?: (name: string) => string | null }
-    | Record<string, string>
-    | undefined;
-  const read = (name: string): string | null | undefined => {
-    return typeof (headers as { get?: unknown })?.get === "function"
-      ? (headers as { get: (name: string) => string | null }).get(name)
-      : (headers as Record<string, string> | undefined)?.[name];
-  };
-  const ms = Number(read("retry-after-ms"));
-  const seconds = Number(read("retry-after"));
-
-  if (Number.isFinite(ms) && ms > 0) {
-    return ms;
-  }
-
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
-};
-
-/**
- * Sorts an error from the SDK: a final one becomes a `NonRetriableError`,
- * and a retryable one that names a wait (a 429's `retry-after`) a
- * `RetryAfterError`, so the step retries when the API said it could.
- */
-const sortError = (error: unknown): unknown => {
-  const sorted = classifyModelError(error);
-
-  if (sorted instanceof NonRetriableError) {
-    return sorted;
-  }
-
-  const wait = retryAfterMs(error);
-
-  return wait === undefined
-    ? sorted
-    : new RetryAfterError(
-        error instanceof Error ? error.message : String(error),
-        wait,
-        { cause: error },
-      );
+const costOf = (
+  model: string,
+  usage: AgentUsage,
+): { usd: number } | Record<never, never> => {
+  return Object.hasOwn(anthropicPrices, model)
+    ? { usd: priceOf(anthropicPrices, usage, model) }
+    : {};
 };
 
 type SdkConstructor = new (options: Record<string, unknown>) => AnthropicClient;
@@ -783,10 +761,19 @@ const importClient = async (
 };
 
 /**
- * EXPERIMENTAL: A model for `agent.loop()` that calls the Anthropic Messages
- * API. The loop runs it inside one step per call, and a loop of your own can
- * call the returned function inside a plain `step.run`. It never uses
- * `step.ai`.
+ * EXPERIMENTAL: A model for the Anthropic Messages API, with three uses:
+ *
+ * 1. The loop's model: `model: anthropic({ model })` on an agent or in
+ *    `agent.loop()`. The loop runs it inside one step per call.
+ * 2. A one-shot call: `claude({ prompt, output })` inside a plain `step.run`
+ *    makes a single reply, with `output` (a schema) for a typed one. It is not
+ *    a step by itself. It never uses `step.ai`.
+ * 3. A variant: `claude.with({ effort, maxTokens, ... })` is the same model
+ *    with other options for one loop or one call. `client`, `apiKey` and
+ *    `baseURL` cannot change.
+ *
+ * It reports each call's cost from a built-in price table, so a dollar budget
+ * works with no price.
  *
  * - Prompt caching is on: breakpoints on the system prompt (with the tools)
  *   and on the end of the conversation. `usage` reports `cacheRead` and
@@ -820,9 +807,9 @@ const importClient = async (
  * @example
  * ```ts
  * import Anthropic from "@anthropic-ai/sdk";
- * import { agent, anthropicPrices } from "inngest/experimental/agents";
+ * import { agent, anthropic } from "inngest/experimental/agents";
  *
- * const claude = agent.anthropic({
+ * const claude = anthropic({
  *   model: "claude-sonnet-5-5",
  *   client: new Anthropic(),
  *   cache: { ttl: "1h" },
@@ -830,10 +817,8 @@ const importClient = async (
  *
  * const { text, usage } = await agent.loop({
  *   model: claude,
- *   prompt: "Fix the failing test",
  *   tools: sandbox.tools.code(),
- *   price: anthropicPrices,
- * });
+ * })("Fix the failing test");
  *
  * // One structured reply, outside any loop.
  * const { output } = await step.run("triage", async () => {
@@ -881,7 +866,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
           reply = await shared.client.messages.create(body, requestOptions);
         }
       } catch (error) {
-        throw sortError(error);
+        throw sortModelError(error);
       }
 
       const { blocks, toolCalls, text } = parse(current, reply);
@@ -891,6 +876,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
         toolCalls,
         usage: usageOf(reply),
         model: current.model,
+        ...costOf(current.model, usageOf(reply)),
       };
 
       if (!given.output) {
@@ -919,6 +905,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
     };
 
     return Object.assign(call, {
+      contextWindow: current.contextWindow ?? defaultContextWindow,
       with: (overrides: AnthropicOverrides) => {
         return make({
           ...current,

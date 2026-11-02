@@ -3,10 +3,12 @@
  * Type tests for MCP servers as tools: the record `tools()` gives, the names a
  * loop result shows, and the surface of `tool.mcp()`.
  */
+
 import { disconnect } from "../../../components/sandbox/mcp.ts";
 import { secret } from "../../../components/sandbox/secret.ts";
 import { type SandboxTools, tool } from "../../../components/sandbox/tools.ts";
 import { agent } from "../loop/loop.ts";
+import { model, runLoop } from "../loop/loopKit.ts";
 import { typesOnly } from "./typeFixtures.ts";
 
 describe("tools types", () => {
@@ -33,7 +35,7 @@ describe("tools types", () => {
 
   test("tools: an MCP server's calls are named key_tool in a loop result", () => {
     typesOnly(async () => {
-      const result = await agent.loop({
+      const result = await runLoop({
         model: async () => {
           return {
             message: { role: "assistant", content: "" },

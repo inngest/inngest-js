@@ -47,7 +47,12 @@ export type {
 export type {
   AgentContentBlock,
   AgentEvent,
+  AgentHandlerLoop,
   AgentInput,
+  AgentLoop,
+  AgentLoopCallOptions,
+  AgentLoopEnd,
+  AgentLoopInput,
   AgentLoopOptions,
   AgentLoopResult,
   AgentModel,
@@ -61,13 +66,9 @@ export type {
   AgentUserContent,
   ModelMessage,
 } from "./loop/loop.ts";
-export { agent } from "./loop/loop.ts";
+export { agent, formatEvent } from "./loop/loop.ts";
 export type { UntrustedOptions } from "./loop/modelErrors.ts";
-export {
-  classifyModelError,
-  untrusted,
-  untrustedTag,
-} from "./loop/modelErrors.ts";
+export { untrusted, untrustedTag } from "./loop/modelErrors.ts";
 export type {
   AgentSandbox,
   AgentSandboxWithRepo,

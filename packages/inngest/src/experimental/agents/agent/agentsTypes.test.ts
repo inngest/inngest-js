@@ -2,9 +2,11 @@
  * @module
  * Type tests for the public entry `inngest/experimental/agents`.
  */
+
 import { z } from "zod";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import * as entry from "../index.ts";
+import type { AgentModelResponse } from "../loop/loop.ts";
 import { agents, closed, created, typesOnly } from "./typeFixtures.ts";
 
 const deletedValues = [
@@ -159,15 +161,14 @@ test("agents: a trigger with no schema has data of Record<string, any>", () => {
   });
 });
 
-test("agents: the handler argument is event, inbox, me, loop, sandboxes and score", () => {
+test("agents: the handler argument is event, inbox, me, sandboxes and score", () => {
   typesOnly(() => {
     agents.agent(
       { id: "arg-1", triggers: [created] },
-      async ({ event, inbox, me, loop, sandboxes, score }) => {
+      async ({ event, inbox, me, sandboxes, score }) => {
         expectTypeOf(event).toHaveProperty("name");
         expectTypeOf(inbox).toHaveProperty("next");
         expectTypeOf(me).toHaveProperty("key");
-        expectTypeOf(loop).toBeFunction();
         expectTypeOf(sandboxes).toBeObject();
         expectTypeOf(score).toEqualTypeOf<
           (name: string, value: number | boolean) => Promise<void>
@@ -203,5 +204,26 @@ test("agents: createAgents takes a store", () => {
     expectTypeOf<{ store: entry.KvStore }>().toExtend<
       NonNullable<Parameters<typeof entry.createAgents>[1]>
     >();
+  });
+});
+
+test("agents: loop is in the handler argument only for an agent with a model", () => {
+  typesOnly(() => {
+    agents.agent(
+      {
+        id: "with-model",
+        triggers: [created],
+        model: async (): Promise<AgentModelResponse> => {
+          return { message: { role: "assistant", content: [] }, toolCalls: [] };
+        },
+      },
+      async ({ loop }) => {
+        expectTypeOf(loop).toBeFunction();
+        expectTypeOf(loop.with).toBeFunction();
+      },
+    );
+    agents.agent({ id: "no-model", triggers: [created] }, async (context) => {
+      expectTypeOf(context).not.toHaveProperty("loop");
+    });
   });
 });

@@ -198,3 +198,29 @@ export const withCompaction = async (input: {
     ...(usage && { usage }),
   };
 };
+
+/**
+ * The share of the model's context window a conversation may fill before it
+ * is summarised.
+ */
+export const compactionShare = 0.7;
+
+/**
+ * The compaction a loop uses: the one it was given, else one that starts at
+ * `compactionShare` of the model's context window, else none (the model
+ * reports no window).
+ * @param given The loop's `compaction` option.
+ * @param contextWindow The model's context size in tokens, if it reports one.
+ */
+export const compactionFor = (
+  given: AgentCompactionOptions | undefined,
+  contextWindow: number | undefined,
+): AgentCompactionOptions | undefined => {
+  if (given) {
+    return given;
+  }
+
+  return contextWindow === undefined
+    ? undefined
+    : { maxTokens: Math.floor(contextWindow * compactionShare) };
+};

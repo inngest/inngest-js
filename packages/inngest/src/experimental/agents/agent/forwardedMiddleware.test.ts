@@ -88,6 +88,7 @@ describe("the AgentTypes bag", () => {
       client: AgentTypeDefaults["client"];
       middleware: undefined;
       sources: undefined;
+      model: undefined;
     }>();
     expectTypeOf<AgentTypesOf<{ output: number }>["output"]>().toBeNumber();
     expectTypeOf<AgentTypesOf<{ output: number }>["event"]>().toEqualTypeOf<

@@ -7,8 +7,8 @@
  * - a singleton per thread, so there is never more than one live run per thread;
  * - `inbox`, a `step.subscribe()` inbox of the thread's messages, whose first message
  *   is the event that started the run;
- * - `control`, which spreads into `agent.loop()` so a running turn takes
- *   steering messages.
+ * - `loop`, the model-and-tools loop wired to the thread's inbox and budget, so
+ *   a running turn takes the messages that arrive meanwhile.
  *
  * The inbox closes when the body returns. Messages it saved but the body never
  * read are discarded, and a message that arrives after that, while the thread's
@@ -35,7 +35,7 @@ import {
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
-import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { compileKey, toAsync } from "../cel.ts";
@@ -54,13 +54,13 @@ import {
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import { kv } from "../kv/kv.ts";
-import type {
-  AgentContentBlock,
-  AgentEvent,
-  AgentInput,
-  AgentTurn,
+import {
+  type AgentHandlerLoop,
+  type AgentLoop,
+  type AgentModel,
+  addTools,
+  buildHandlerLoop,
 } from "../loop/loop.ts";
-import { agent, defaultFormat } from "../loop/loop.ts";
 import { createAgentScores } from "../loop/scores.ts";
 import {
   agentSandbox,
@@ -96,7 +96,6 @@ import {
   singletonKey,
 } from "../threads/threadTrigger.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
-import { createControl } from "./control.ts";
 import { invokeDepthOf } from "./invoke.ts";
 import {
   budgetReason,
@@ -105,9 +104,16 @@ import {
   readInheritedLimits,
   registerLimits,
 } from "./limits.ts";
+import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { type AgentRecovery, finishedOf, turnInFlight } from "./recovery.ts";
-import { createRunFields, idleMs } from "./runField.ts";
+import {
+  createRunFields,
+  idleMs,
+  type RunField,
+  type RunFieldContext,
+  type RunFields,
+} from "./runField.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import { traceWarning } from "./traceWarning.ts";
 import type {
@@ -121,36 +127,72 @@ import type {
 } from "./types.ts";
 
 /**
- * The prompt of a loop call: an input as it is, or a batch of events formatted
- * and joined.
+ * The handler of an agent with a `model` and no handler of its own: each batch
+ * goes to the model through the loop, and the final answer is the run's
+ * output.
  */
-const promptOf = (
-  prompt: AgentInput | readonly AgentEvent[],
-  format: ((event: AgentEvent) => string | AgentContentBlock[]) | undefined,
-): AgentInput => {
-  if (
-    typeof prompt === "string" ||
-    !Array.isArray(prompt) ||
-    !prompt.every((item) => {
-      return (
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as unknown as AgentEvent).name === "string"
-      );
-    })
-  ) {
-    return prompt as AgentInput;
+const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
+  inbox,
+  loop,
+}) => {
+  let answer: unknown;
+
+  for await (const batch of inbox.batches()) {
+    const result = await loop(batch);
+
+    answer = result.text;
   }
 
-  return (prompt as unknown as readonly AgentEvent[])
-    .map((event) => {
-      const formatted = (format ?? defaultFormat)(event);
+  return answer;
+};
 
-      return typeof formatted === "string"
-        ? formatted
-        : JSON.stringify(formatted);
-    })
-    .join("\n\n");
+/**
+ * The loop of one run, made from the agent's definition: its `model`, `system`
+ * and `tools` (read once, at the start of the run) and the options of its
+ * `loop` field. A `loop` field that is a whole loop replaces it.
+ */
+const createHandlerLoop = async (options: {
+  config: AgentFunctionConfig;
+  fields: RunFields<RunFieldContext>;
+  listenTools: Record<string, unknown>;
+}): Promise<AgentHandlerLoop> => {
+  const { config, fields, listenTools } = options;
+
+  if (typeof config.loop === "function") {
+    const swapped = config.loop as AgentLoop;
+
+    return Object.assign(swapped, {
+      with() {
+        throw new Error(
+          "`loop.with()` is not available when the agent's `loop` is a whole loop of its own",
+        );
+      },
+    }) as unknown as AgentHandlerLoop;
+  }
+
+  const system = await fields.get(
+    "system",
+    config.system as RunField<string | undefined>,
+  );
+  const tools = await fields.get(
+    "tools",
+    config.tools as RunField<SandboxTools | undefined>,
+  );
+
+  if (!config.model) {
+    return (() => {
+      throw new Error(
+        `Agent "${config.id}" has no \`model\`, so it has no loop: set \`model\` in its definition`,
+      );
+    }) as unknown as AgentHandlerLoop;
+  }
+
+  return buildHandlerLoop({
+    ...config.loop,
+    model: config.model,
+    ...(system !== undefined && { system }),
+    tools: addTools(listenTools as SandboxTools, tools),
+  }) as unknown as AgentHandlerLoop;
 };
 
 // The SDK's own marker for the option: no deprecation warning for agents.
@@ -171,26 +213,19 @@ export function createAgentFunction(
   config: AgentFunctionConfig,
 
   /**
-   * Your loop. Read `inbox`, call `agent.loop()` with `control`. Without one
-   * the run takes its trigger, posts nothing and ends with output `undefined`.
+   * Your handler. Read `inbox` and call `loop`. Without one, an agent with a
+   * `model` runs each batch through the loop and its final answer is the run's
+   * output; an agent without a `model` ends with output `undefined`.
    */
-  body: AgentBody = async () => {
-    return undefined;
-  },
+  bodyOrDefault?: AgentBody<{ model: AgentModel }>,
 ): AgentFunction {
+  const body: AgentBody<{ model: AgentModel }> =
+    bodyOrDefault ?? (config.model ? defaultModelBody : async () => undefined);
   const ref = `${client.id}/${config.id}`;
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
   const store = kv;
-  const scoring = config.scores ?? true;
-
-  // A dollar budget with no price would count every call as free and never stop.
-  if (config.limits?.budget?.usd !== undefined && !config.limits.price) {
-    throw new Error(
-      `Agent "${config.id}" sets limits.budget.usd without limits.price: add the price of a model call, or the budget would never be spent.`,
-    );
-  }
 
   const cleanup = createCleanupFunction(client, config, ref, store);
   const finished = createFinishedFunction(client, config, ref, store, triggers);
@@ -315,17 +350,6 @@ export function createAgentFunction(
           ),
           { ...started.usage },
         );
-
-        // A dollar budget handed down by a parent can't carry the parent's
-        // price (a function), so an agent without its own would count every
-        // call as free and never stop.
-        // A budget that is already 0 (a malformed one is read as 0) stops the
-        // run before a call, so only a budget with dollars left needs it.
-        if ((limits.limits.budget?.usd ?? 0) > 0 && !config.limits?.price) {
-          throw new NonRetriableError(
-            `Agent "${config.id}" has a dollar budget (limits.budget.usd, set by its own limits or inherited from the agent that started it) but no limits.price: give it a limits.price.`,
-          );
-        }
 
         // What each inbox source's events are checked against, by the name of
         // the source's event.
@@ -470,7 +494,7 @@ export function createAgentFunction(
 
         const idle = await idleMs(fields, config.idle);
 
-        const { inbox, view, steering } = threadInbox(
+        const { inbox, view } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
@@ -512,19 +536,22 @@ export function createAgentFunction(
           idle,
         );
 
-        const control = createControl({
+        // The loop reads this when it runs, inside the agent, whichever way
+        // the app made it.
+        bridge.wiring = createLoopWiring({
           config,
-          steering,
+          inbox,
+          view,
           named,
           limits,
-          scoring,
           recorder,
           threadKey: thread.key,
+          remember:
+            (await fields.get(
+              "remember",
+              config.remember as RunField<boolean | undefined>,
+            )) !== false,
         });
-
-        // `agent.loop()` steers through the inbox unless it is given
-        // its own.
-        bridge.control = control;
 
         const listenTools = createBodyInboxTools({
           config,
@@ -533,6 +560,12 @@ export function createAgentFunction(
           noteSource,
           step,
           thread: data.thread,
+        });
+
+        const handlerLoop = await createHandlerLoop({
+          config,
+          fields,
+          listenTools: { ...sandboxTools(opened), ...listenTools },
         });
 
         let result: unknown;
@@ -572,22 +605,9 @@ export function createAgentFunction(
               return agentScores.score(name, value);
             },
 
-            // Slot: loop. `agent.loop()` with the model's inbox tools added.
-            loop: (prompt, loopOptions) => {
-              return agent.loop({
-                ...loopOptions,
-                prompt: promptOf(prompt, loopOptions.format),
-                tools: {
-                  ...sandboxTools(opened),
-                  ...listenTools,
-                  ...loopOptions.tools,
-                },
-              });
-            },
-
-            // Slot: control. What `agent.loop()` takes: steering, budget,
-            // turns. Replaced by `loop` as the loops are rebuilt.
-            control,
+            // Slot: loop. The agent's own loop: its model, system and tools,
+            // with the model's `inbox_listen` and `inbox_close` among them.
+            loop: handlerLoop,
           });
 
           // The last thread work is done: end the subscription before the

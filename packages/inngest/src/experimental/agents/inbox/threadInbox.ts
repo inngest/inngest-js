@@ -2,7 +2,7 @@
  * @module
  * EXPERIMENTAL: the thread's view of its inbox: the reader with the agent's
  * rules over a `step.subscribe()` inbox (schema drops, the status the thread
- * records, steering), and the filters that tie a source to the thread.
+ * records), and the filters that tie a source to the thread.
  */
 
 import type {
@@ -146,31 +146,18 @@ export function threadInbox(
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
-  steering: {
-    take: () => Promise<AgentMessage[]>;
-    keep: (messages: AgentMessage[]) => void;
-  };
 } {
-  // The event each message was made from, to leave it unread as it came.
-  const raws = new WeakMap<object, UntypedInboxMessage>();
-
   function unwrap(message: UntypedInboxMessage | null): AgentMessage | null {
     if (!message) {
       return null;
     }
 
     const unwrapped = resentAs(message);
-    raws.set(unwrapped, message);
 
     // One cast: the spread above is a plain object, and `AgentMessage` is
     // a union that depends on the caller's `triggers`, which the runtime
     // cannot derive.
     return unwrapped as unknown as AgentMessage;
-  }
-
-  function rawOf(message: AgentMessage): UntypedInboxMessage {
-    // A message that did not come from `unwrap` is already an event.
-    return raws.get(message) ?? (message as unknown as UntypedInboxMessage);
   }
 
   let delivered = 0;
@@ -210,9 +197,7 @@ export function threadInbox(
     );
   }
 
-  // Messages to return before the source's: the event that started the run,
-  // and the ones steering took and left for the next turn. They are rebuilt on
-  // every replay, which takes and keeps the same messages.
+  // Messages to return before the source's: the event that started the run.
   const lead: UntypedInboxMessage[] = started ? [started] : [];
 
   // What is left of messages the source handed over once the ones that break
@@ -445,21 +430,6 @@ export function threadInbox(
     inbox: main as unknown as Inbox<AgentMessage>,
     view: (source: Inbox<UntypedInboxMessage>) => {
       return view(source, plain, false);
-    },
-    steering: {
-      async take() {
-        const raws = await keep([
-          ...lead.splice(0),
-          ...(await sources.inbox.drain()),
-        ]);
-
-        return raws.map((raw) => {
-          return unwrap(raw) as AgentMessage;
-        });
-      },
-      keep(messages) {
-        lead.unshift(...messages.map(rawOf));
-      },
     },
   };
 }
