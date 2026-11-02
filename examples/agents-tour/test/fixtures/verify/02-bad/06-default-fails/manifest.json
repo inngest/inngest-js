@@ -1,0 +1,4 @@
+{
+  "start": [{ "agent": "boom", "thread": "t", "text": "hi" }],
+  "verify": { "runs": [{ "fn": "boom" }] }
+}

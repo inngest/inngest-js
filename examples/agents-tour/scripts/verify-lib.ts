@@ -15,7 +15,13 @@ import type {
   Start,
   TourEvent,
   TraceRun,
+  TraceStep,
 } from "../shared/types.ts";
+
+export interface VerifyOptions {
+  // How long a promised run may take to show up. Default: 30 seconds.
+  waitMs?: number;
+}
 
 const sleep = (ms: number) => {
   return new Promise<void>((resolve) => {
@@ -23,8 +29,10 @@ const sleep = (ms: number) => {
   });
 };
 
-const waitMs = 30_000;
-const settleMs = 1500;
+const defaultWaitMs = 30_000;
+const pollMs = 200;
+// A run that has not changed for this long, with nothing running, is waiting.
+const stillMs = 800;
 
 const api = async <T>(base: string, path: string, body?: unknown) => {
   const res = await fetch(base + path, {
@@ -40,19 +48,21 @@ const api = async <T>(base: string, path: string, body?: unknown) => {
   return (await res.json()) as T;
 };
 
+interface Seen {
+  state: string;
+  runs: TraceRun[];
+  errors: string[];
+}
+
 /**
- * What the event stream last said: the status and the runs.
+ * What the event stream last said: the status, the runs and the app's errors.
  */
 const watch = async (base: string) => {
   const controller = new AbortController();
   const res = await fetch(`${base}/api/stream`, { signal: controller.signal });
   const reader = res.body?.getReader();
   const decoder = new TextDecoder();
-  const seen = {
-    state: "idle",
-    runs: [] as TraceRun[],
-    errors: [] as string[],
-  };
+  const seen: Seen = { state: "idle", runs: [], errors: [] };
 
   void (async () => {
     let buffer = "";
@@ -96,7 +106,12 @@ const watch = async (base: string) => {
     }
   })();
 
-  return { seen, stop: () => controller.abort() };
+  return {
+    seen,
+    stop: () => {
+      controller.abort();
+    },
+  };
 };
 
 const filesOf = (files: PageFile[]) => {
@@ -125,7 +140,125 @@ const perform = async (base: string, start: Start) => {
   }
 };
 
-const verifyPage = async (base: string, id: string) => {
+const stepsOf = (steps: TraceStep[]): TraceStep[] => {
+  return steps.flatMap((step) => {
+    return [step, ...stepsOf(step.children)];
+  });
+};
+
+const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
+
+/**
+ * The runs have nothing left to do for now: each has ended, or is waiting.
+ * A run waits when the Dev Server shows a step waiting, or when it is running
+ * with no step running and nothing has changed for `stillMs`. Call it often
+ * with the same `memory`.
+ */
+const idle = (
+  runs: TraceRun[],
+  memory: { signature: string; since: number },
+) => {
+  const signature = JSON.stringify(
+    runs.map((run) => {
+      return [
+        run.id,
+        run.status,
+        stepsOf(run.steps).map((step) => {
+          return [step.id, step.status];
+        }),
+      ];
+    }),
+  );
+
+  if (signature !== memory.signature) {
+    memory.signature = signature;
+    memory.since = Date.now();
+  }
+
+  const settled = Date.now() - memory.since >= stillMs;
+
+  return (
+    runs.length > 0 &&
+    runs.every((run) => {
+      const steps = stepsOf(run.steps);
+
+      return (
+        terminal.has(run.status) ||
+        steps.some((step) => {
+          return step.status === "WAITING";
+        }) ||
+        (settled &&
+          !steps.some((step) => {
+            return step.status === "RUNNING";
+          }))
+      );
+    })
+  );
+};
+
+const untilIdle = async (seen: Seen, waitMs: number) => {
+  const memory = { signature: "", since: Date.now() };
+  const end = Date.now() + waitMs;
+
+  while (Date.now() < end) {
+    if (idle(seen.runs, memory)) {
+      return true;
+    }
+
+    await sleep(pollMs);
+  }
+
+  return false;
+};
+
+const outputOf = async (base: string, run: TraceRun) => {
+  const out = run.output
+    ? await api<{ data: string | null }>(
+        base,
+        `/api/output?id=${encodeURIComponent(run.output)}`,
+      )
+    : { data: null };
+
+  return out.data === null ? null : (JSON.parse(out.data) as unknown);
+};
+
+// What is wrong with the runs of `want.fn` right now; empty when it holds.
+const mismatch = async (
+  base: string,
+  seen: Seen,
+  want: { fn: string; status?: string; output?: unknown },
+) => {
+  const runs = seen.runs.filter((run) => {
+    return run.fn === want.fn;
+  });
+  const run = runs.find((candidate) => {
+    return want.status
+      ? candidate.status === want.status
+      : !["FAILED", "CANCELLED"].includes(candidate.status);
+  });
+
+  if (!run) {
+    return runs.length
+      ? `${want.fn} ran but its status is ${runs
+          .map((other) => {
+            return other.status;
+          })
+          .join(", ")}, not ${want.status ?? "a good one"}`
+      : `no run of ${want.fn}`;
+  }
+
+  if ("output" in want) {
+    const got = await outputOf(base, run);
+
+    if (!isDeepStrictEqual(got, want.output)) {
+      return `${want.fn} returned ${JSON.stringify(got)}, not ${JSON.stringify(want.output)}`;
+    }
+  }
+
+  return "";
+};
+
+const verifyPage = async (base: string, id: string, waitMs: number) => {
   const page = await api<Page>(base, `/api/page?id=${encodeURIComponent(id)}`);
 
   await api(base, "/api/open", { id });
@@ -157,16 +290,20 @@ const verifyPage = async (base: string, id: string) => {
     }
 
     for (const start of page.manifest.verify?.then ?? []) {
-      // A reader acts after the first run has reached its wait.
-      await sleep(settleMs);
+      // A reader acts once the run is waiting for the next message.
+      if (!(await untilIdle(seen, waitMs))) {
+        return ["the run never waited for the next message"];
+      }
+
       await perform(base, start);
     }
 
     const expected = page.manifest.verify?.runs ?? [];
 
-    if (expected.length === 0) {
-      await sleep(2500);
+    // Judge the runs once they have ended or are waiting, not mid-way.
+    await untilIdle(seen, waitMs);
 
+    if (expected.length === 0) {
       for (const run of seen.runs) {
         if (run.status === "FAILED") {
           problems.push(`the run of ${run.fn} failed`);
@@ -176,43 +313,11 @@ const verifyPage = async (base: string, id: string) => {
 
     for (const want of expected) {
       const deadline = Date.now() + waitMs;
-      let why = "";
+      let why = await mismatch(base, seen, want);
 
-      for (;;) {
-        why = "";
-
-        const runs = seen.runs.filter((run) => {
-          return run.fn === want.fn;
-        });
-        const run = runs.find((candidate) => {
-          return want.status
-            ? candidate.status === want.status
-            : !["FAILED", "CANCELLED"].includes(candidate.status);
-        });
-
-        if (!run) {
-          why = runs.length
-            ? `${want.fn} ran but its status is ${runs.map((r) => r.status).join(", ")}, not ${want.status ?? "a good one"}`
-            : `no run of ${want.fn}`;
-        } else if ("output" in want) {
-          const out = run.output
-            ? await api<{ data: string | null }>(
-                base,
-                `/api/output?id=${encodeURIComponent(run.output)}`,
-              )
-            : { data: null };
-          const got = out.data === null ? null : JSON.parse(out.data);
-
-          if (!isDeepStrictEqual(got, want.output)) {
-            why = `${want.fn} returned ${JSON.stringify(got)}, not ${JSON.stringify(want.output)}`;
-          }
-        }
-
-        if (!why || Date.now() > deadline) {
-          break;
-        }
-
+      while (why && Date.now() < deadline) {
         await sleep(300);
+        why = await mismatch(base, seen, want);
       }
 
       if (why) {
@@ -260,13 +365,22 @@ const verifyPage = async (base: string, id: string) => {
  * Verifies every page, or the pages of one module. Returns `<page>: <what
  * is wrong>`, one line each; empty when every page holds.
  */
-export const verifyPages = async (base: string, onlyModule?: string) => {
+export const verifyPages = async (
+  base: string,
+  onlyModule?: string,
+  options: VerifyOptions = {},
+) => {
   const index = await api<{
     modules: { id: string; pages: { id: string }[] }[];
   }>(base, "/api/index");
   const problems: string[] = [];
 
-  if (onlyModule && !index.modules.some((module) => module.id === onlyModule)) {
+  if (
+    onlyModule &&
+    !index.modules.some((module) => {
+      return module.id === onlyModule;
+    })
+  ) {
     return [`no module named ${onlyModule}`];
   }
 
@@ -279,7 +393,11 @@ export const verifyPages = async (base: string, onlyModule?: string) => {
       let found: string[];
 
       try {
-        found = await verifyPage(base, page.id);
+        found = await verifyPage(
+          base,
+          page.id,
+          options.waitMs ?? defaultWaitMs,
+        );
       } catch (error) {
         found = [String(error)];
       }

@@ -43,19 +43,37 @@ describe("verifying pages", { skip: binary === undefined }, () => {
   });
 
   it("passes pages that keep their promise and exercises that behave", async () => {
-    assert.deepEqual(await verifyPages(base, "good"), []);
+    assert.deepEqual(await verifyPages(base, "good", { waitMs: 15_000 }), []);
   });
 
-  it("names a page that does not start, one whose promise fails, and exercises whose stub passes or solution fails", async () => {
-    const problems = await verifyPages(base, "bad");
+  it("names every kind of broken page, and only those", async () => {
+    const problems = await verifyPages(base, "bad", { waitMs: 3000 });
+    const about = (page: string) => {
+      return problems.filter((problem) => {
+        return problem.startsWith(`bad/${page}: `);
+      });
+    };
 
-    assert.equal(problems.length, 4, problems.join("\n"));
-    assert.match(problems[0] as string, /^bad\/broken: .*did not start/);
-    assert.match(problems[1] as string, /^bad\/wrong: .*echo/);
-    assert.match(problems[2] as string, /^bad\/stub-passes: the stub passes/);
+    assert.equal(problems.length, 8, problems.join("\n"));
+    assert.match(about("broken")[0] ?? "", /did not start/);
+    assert.match(about("wrong")[0] ?? "", /echo returned "HI", not "NOPE"/);
+    assert.match(about("stub-passes")[0] ?? "", /the stub passes its check/);
     assert.match(
-      problems[3] as string,
-      /^bad\/solution-fails: the solution fails/,
+      about("solution-fails")[0] ?? "",
+      /the solution fails its check/,
     );
+    assert.match(about("fails")[0] ?? "", /the run of boom failed/);
+    assert.match(
+      about("default-fails")[0] ?? "",
+      /boom ran but its status is FAILED, not a good one/,
+    );
+    assert.match(
+      about("check-broken")[0] ?? "",
+      /the check is broken: .*the check is wrong/,
+    );
+  });
+
+  it("says so when the module is not there, instead of passing", async () => {
+    assert.deepEqual(await verifyPages(base, "nope"), ["no module named nope"]);
   });
 });

@@ -1,0 +1,11 @@
+{
+  "start": [
+    { "event": { "name": "tour/pair", "data": { "name": "x", "n": 1 } } }
+  ],
+  "verify": {
+    "then": [
+      { "event": { "name": "tour/pair", "data": { "name": "x", "n": 2 } } }
+    ],
+    "runs": [{ "fn": "pair", "status": "COMPLETED", "output": "1+2" }]
+  }
+}
