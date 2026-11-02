@@ -7,8 +7,8 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { answerQuestion } from "../inbox/answer.ts";
-import { threadHandle } from "../threads/thread.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
+import { threadHandle } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
@@ -198,7 +198,11 @@ describe("msg.reply()", () => {
 
     expect(output).toBe("agent/question");
     expect(bodies).toMatchObject([
-      { id: "answer:q9", name: "agent/answer", data: { re: "q9", text: "because" } },
+      {
+        id: "answer:q9",
+        name: "agent/answer",
+        data: { re: "q9", text: "because" },
+      },
     ]);
   });
 });

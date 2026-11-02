@@ -95,3 +95,69 @@ describe("inbox", () => {
     });
   });
 });
+
+describe("inbox: the four message types", () => {
+  test("inbox: agent/question has an id, a text and a reply that takes text", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "inbox-q", triggers: [created] },
+        async ({ inbox }) => {
+          const message = await inbox.next();
+
+          if (message?.name === "agent/question") {
+            expectTypeOf(message.data.id).toBeString();
+            expectTypeOf(message.data.text).toBeString();
+            expectTypeOf<string>().toExtend<
+              Parameters<typeof message.reply>[0]
+            >();
+            expectTypeOf(message.reply("answer")).resolves.toBeVoid();
+          }
+        },
+      );
+    });
+  });
+
+  test("inbox: agent/answer narrows by outcome", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "inbox-a", triggers: [created] },
+        async ({ inbox }) => {
+          const message = await inbox.next();
+
+          if (message?.name === "agent/answer") {
+            expectTypeOf(message.data.re).toBeString();
+
+            if (message.data.outcome === "answered") {
+              expectTypeOf(message.data.text).toBeString();
+            } else {
+              expectTypeOf(message.data.outcome).toEqualTypeOf<
+                "refused" | "timed_out"
+              >();
+            }
+          }
+        },
+      );
+    });
+  });
+
+  test("inbox: agent/finished narrows by outcome", () => {
+    typesOnly(() => {
+      agents.agent(
+        { id: "inbox-f", triggers: [created] },
+        async ({ inbox }) => {
+          const message = await inbox.next();
+
+          if (message?.name === "agent/finished") {
+            if (message.data.outcome === "failed") {
+              expectTypeOf(message.data.error).toBeString();
+            }
+
+            if (message.data.outcome === "completed") {
+              expectTypeOf(message.data).toHaveProperty("output");
+            }
+          }
+        },
+      );
+    });
+  });
+});

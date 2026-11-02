@@ -24,7 +24,13 @@ import {
   type Inflight,
 } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
-import type { AgentMessageData, AgentRecoverData } from "./events.ts";
+import type { Answer } from "./answer.ts";
+import type {
+  AgentMessageData,
+  AgentQuestionData,
+  AgentRecoverData,
+  SenderData,
+} from "./events.ts";
 
 /**
  * The messages whose drop was already logged, so a replay does not log it
@@ -150,6 +156,12 @@ export function threadInbox(
   // would have to wait, as in a run opened through a handle. Left out, they
   // wait for ever.
   idle?: number,
+
+  // Answers a question that reached the inbox.
+  answer?: (
+    question: { data: { id: string; text?: string; from?: SenderData } },
+    answer: Answer,
+  ) => Promise<void>,
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -160,6 +172,19 @@ export function threadInbox(
     }
 
     const unwrapped = resentAs(message);
+
+    if (unwrapped.name === agentQuestionEvent && answer) {
+      const data = unwrapped.data as AgentQuestionData;
+
+      Object.assign(unwrapped, {
+        reply: (given: string | { outcome: "refused" }) => {
+          return answer(
+            { data },
+            typeof given === "string" ? { text: given } : given,
+          );
+        },
+      });
+    }
 
     // One cast: the spread above is a plain object, and `AgentMessage` is
     // a union that depends on the caller's `triggers`, which the runtime
