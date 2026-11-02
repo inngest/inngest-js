@@ -5,7 +5,7 @@
  * Dev Server.
  */
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -52,11 +52,16 @@ const boot = async (
   // listens for it.
   const nextEvent = async (type: string, act: () => Promise<unknown>) => {
     const controller = new AbortController();
+
     const res = await fetch(`${tour.url}/api/stream`, {
       signal: controller.signal,
     });
+
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, 3000);
     let text = "";
 
     await act();
@@ -77,7 +82,14 @@ const boot = async (
           }
         }
       }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(`No ${type} event arrived within 3 s`);
+      }
+
+      throw error;
     } finally {
+      clearTimeout(timer);
       controller.abort();
     }
 
@@ -178,8 +190,23 @@ describe("progress", () => {
     assert.equal(event.page, "first/exercise");
   });
 
+  it("tells the site on the event stream when progress is reset", async () => {
+    await current.post("/api/progress/mark", {
+      page: "first/hello",
+      state: "opened",
+    });
+
+    const event = await current.nextEvent("progress", () => {
+      return current.post("/api/progress/reset", {});
+    });
+
+    assert.deepEqual(event.mark, { collected: [], moduleDone: null });
+    assert.deepEqual((await current.progress()).pages, {});
+  });
+
   it("does not collect a page's concepts when it only ran", async () => {
     await current.post("/api/progress/reset", {});
+
     await current.post("/api/progress/mark", {
       page: "first/hello",
       state: "ran",
@@ -217,10 +244,15 @@ describe("progress", () => {
 
     const before = await current.progress();
 
-    await current.tour.stop();
-    current = await boot(cacheDir, current.dataDir);
+    assert.ok(existsSync(join(cacheDir, "progress.json")));
+    assert.ok(!existsSync(join(current.dataDir, "progress.json")));
 
-    assert.deepEqual(await current.progress(), before);
+    for (let restart = 0; restart < 2; restart += 1) {
+      await current.tour.stop();
+      current = await boot(cacheDir, current.dataDir);
+
+      assert.deepEqual(await current.progress(), before);
+    }
   });
 
   it("clears everything on Reset progress, and stays cleared after a restart", async () => {
