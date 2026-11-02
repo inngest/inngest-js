@@ -10,7 +10,7 @@ import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
-import { agentToolSet } from "./agentTools.ts";
+import { agentToolSet, sandboxAgentTools } from "./agentTools.ts";
 import { run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });
@@ -38,9 +38,11 @@ const live = async () => {
  */
 const callTools = async (
   calls: { tool: string; input: Record<string, unknown> }[],
-  options: Parameters<typeof agentToolSet>[0] = { functions: live },
+  options: Parameters<typeof agentToolSet>[0] & { forSandbox?: boolean } = {
+    functions: live,
+  },
 ) => {
-  const tools = agentToolSet(options);
+  const tools = options.forSandbox ? sandboxAgentTools(options) : agentToolSet(options);
   const caller = agents.agent({ id: "caller" }, async () => {
     const out: unknown[] = [];
 
@@ -166,5 +168,32 @@ describe("start_agent", () => {
 
     expect(invokes).toEqual([]);
     expect(JSON.stringify(results[0])).toMatch(/list_agents/);
+  });
+});
+
+describe("the tools sandbox code gets", () => {
+  test("hold start_agent and stop_agent plus the waiting agent_result", () => {
+    const tools = sandboxAgentTools();
+
+    expect(Object.keys(tools).sort()).toEqual([
+      "agent_result",
+      "start_agent",
+      "stop_agent",
+    ]);
+    expect(tools.agent_result).toMatchObject({ group: true, waits: true });
+  });
+
+  test("the model's set leaves agent_result out", () => {
+    expect("agent_result" in agentToolSet()).toBe(false);
+  });
+
+  test("start_agent marks the run as started by code, so its end goes to agent_result", async () => {
+    const { results, invokes } = await callTools(
+      [{ tool: "start_agent", input: { address: plain.card.address } }],
+      { functions: live, forSandbox: true },
+    );
+
+    expect(results).toEqual([{ thread: expect.any(String) }]);
+    expect(invokes).toMatchObject([{ data: { from: { via: "sandbox" } } }]);
   });
 });

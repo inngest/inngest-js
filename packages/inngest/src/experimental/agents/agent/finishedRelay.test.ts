@@ -109,6 +109,25 @@ describe("the finished relay", () => {
     ]);
   });
 
+  test("a run sandbox code began is answered to agent_result, never to the inbox", async () => {
+    const sent = await finish(
+      { result: "ok" },
+      { ...starter, via: "sandbox" } as never,
+    );
+
+    expect(sent).toMatchObject([
+      {
+        name: "agent/result",
+        data: { thread: "c1", outcome: "completed", output: "ok" },
+      },
+    ]);
+    expect(
+      sent.filter((event) => {
+        return event.name === "agent/finished";
+      }),
+    ).toEqual([]);
+  });
+
   test("a run start_agent did not begin sends nothing", async () => {
     expect(
       await finish({ result: 1 }, { ...starter, via: undefined } as never),
