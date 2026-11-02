@@ -11,7 +11,6 @@ import {
   sandboxResource,
 } from "../../../components/sandbox/test-helpers.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
-import { repo } from "./repo.ts";
 
 type Exec = {
   command: string[];
@@ -263,51 +262,6 @@ describe("codeTools", () => {
         Object.keys(codeTools(sandbox, { only: ["read", "run"] })),
       ).toEqual(["read", "run"]);
     });
-  });
-});
-
-describe("repo", () => {
-  const token = "ghs_secret_token";
-
-  test("keeps the token in the command environment, out of steps and scripts", async () => {
-    let checkout: Awaited<ReturnType<typeof repo>> | undefined;
-
-    const { steps, execs } = await inSandbox(
-      async (sandbox) => {
-        checkout = await repo(sandbox, { repo: "acme/web", ref: "dev", token });
-        await (checkout.tools.push.run as (input: unknown) => unknown)({
-          branch: "fix",
-        });
-      },
-      { stdout: "noise\nrepo:cloned:abc123\n" },
-    );
-
-    expect(checkout).toMatchObject({ path: "/work", sha: "abc123" });
-    expect(Object.keys(checkout?.tools ?? {})).toEqual(["run", "push"]);
-    expect(execs.map((exec) => exec.environment?.GIT_TOKEN)).toEqual([
-      token,
-      token,
-    ]);
-    expect(execs[0]?.environment).toMatchObject({
-      URL: "https://github.com/acme/web.git",
-      REF: "dev",
-    });
-    expect(execs[1]?.environment?.BRANCH).toBe("fix");
-    expect(JSON.stringify(steps)).not.toContain(token);
-    expect(JSON.stringify(execs.map((exec) => exec.command))).not.toContain(
-      token,
-    );
-  });
-
-  test("fails without retrying when git fails", async () => {
-    const { type } = await inSandbox(
-      async (sandbox) => {
-        await repo(sandbox, { repo: "acme/missing" });
-      },
-      { stderr: "not found", exitCode: 128 },
-    );
-
-    expect(type).toBe("function-rejected");
   });
 });
 

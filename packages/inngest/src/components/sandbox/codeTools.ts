@@ -122,7 +122,6 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
   options: CodeToolsOptions<TName> = {},
 ): Record<TName, SandboxTool> => {
   const { cwd = "/work", timeout = "5m", session: persist = true } = options;
-  let shell: ReturnType<typeof createShell> | undefined;
   let starting: Promise<ReturnType<typeof createShell>> | undefined;
 
   // The thread's sandbox keeps where the shell was left: the first command of
@@ -155,7 +154,6 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         unset: saved?.unset,
       });
 
-      shell = made;
       place?.track(() => {
         return { cwd: made.cwd, env: made.env, unset: [...made.unset] };
       });
@@ -190,8 +188,10 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
     command: string[],
     environment: Record<string, string> = {},
   ): Promise<string> => {
+    // The shell may start in the thread's saved place or the checkout.
+    const current = await session();
     const result = await sandbox.commands.run({ id, name }, command, {
-      cwd: shell?.cwd ?? cwd,
+      cwd: current?.cwd ?? cwd,
       environment,
       timeout,
     });
@@ -233,7 +233,7 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
       run: async ({ path, ...edit }) => {
         const file = path.startsWith("/")
           ? path
-          : `${shell?.cwd ?? cwd}/${path}`;
+          : `${(await session())?.cwd ?? cwd}/${path}`;
         const bytes = await sandbox.files
           .read({ id: "edit:read", name: `read ${path}` }, file)
           .catch((error: unknown) => {

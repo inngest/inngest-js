@@ -9,8 +9,6 @@ export type {
   CodeToolName,
   CodeToolsOptions,
 } from "../../components/sandbox/codeTools.ts";
-export type { CommitFilesOptions } from "../../components/sandbox/gitApi.ts";
-export { commitFiles } from "../../components/sandbox/gitApi.ts";
 export type {
   GitPolicy,
   GitPolicyResult,
@@ -72,6 +70,7 @@ export {
 } from "./loop/modelErrors.ts";
 export type {
   AgentSandbox,
+  AgentSandboxWithRepo,
   SandboxBinding,
   SandboxDefinition,
   SandboxDefinitionOptions,
@@ -89,9 +88,11 @@ export {
   toolNamespaceSeparator,
 } from "./sandboxes/defs.ts";
 export type {
-  GitPushToolOptions,
-  PushBranchResult,
-} from "./sandboxes/gitPush.ts";
-export { gitPushTool, pushBranch } from "./sandboxes/gitPush.ts";
-export type { Repo, RepoOptions } from "./sandboxes/repo.ts";
-export { repo } from "./sandboxes/repo.ts";
+  PushResult,
+  Repo,
+  RepoAuth,
+  RepoConfig,
+  RepoToken,
+  RepoValue,
+} from "./sandboxes/repo.ts";
+export { PushRefusedError } from "./sandboxes/repo.ts";

@@ -37,6 +37,7 @@ import type {
 import type { AgentScores } from "../loop/scores.ts";
 import type {
   AgentSandbox,
+  AgentSandboxWithRepo,
   SandboxesConfig,
   SandboxToolNames,
 } from "../sandboxes/defs.ts";
@@ -357,7 +358,10 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * except `start: "eager"` ones, which are already being created.
    */
   sandboxes: {
-    [K in keyof AgentTypesOf<TTypes>["sandboxes"] & string]: AgentSandbox;
+    [K in keyof AgentTypesOf<TTypes>["sandboxes"] &
+      string]: "~repo" extends AgentTypesOf<TTypes>["sandboxes"][K]
+      ? AgentSandboxWithRepo
+      : AgentSandbox;
   };
 
   /**

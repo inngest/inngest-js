@@ -9,7 +9,9 @@
  * sandbox is created, in one durable step, by the first thing that needs it.
  */
 
+import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { StepError } from "../../../components/StepError.ts";
 import {
   type CodeToolName,
@@ -27,6 +29,7 @@ import {
   type AgentTool,
   type SandboxToolEntry,
   type SandboxTools,
+  tool,
   validateTools,
 } from "../../../components/sandbox/tools.ts";
 import {
@@ -39,8 +42,18 @@ import {
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
 import { type RunField, resolveRunField } from "../agent/runField.ts";
+import { agent } from "../loop/loop.ts";
 import type { ShellPlace } from "../threads/threadState.ts";
-import { type GitPushToolOptions, gitPushTool } from "./gitPush.ts";
+import {
+  checkoutRepo,
+  createRepo,
+  mintRepoToken,
+  PushRefusedError,
+  type Repo,
+  type RepoConfig,
+  type RepoValue,
+  type ResolvedRepo,
+} from "./repo.ts";
 import {
   defaultSandboxIdle,
   type SandboxIdle,
@@ -106,6 +119,15 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
    * sandbox.
    */
   setup?: SandboxSetup;
+
+  /**
+   * A git repository the sandbox starts with: checked out first (before skill
+   * files and `setup`), with one push made by the host. A value, or a function
+   * of `{ event, thread }` that is pure and may be async, evaluated once per
+   * run at its start (a reviewer agent checks out the pull request it was
+   * triggered by). One repo per sandbox; a second repo gets a second sandbox.
+   */
+  repo?: RepoValue;
 }
 
 /**
@@ -191,6 +213,11 @@ export interface SandboxBinding<
   TTool extends string = string,
 > {
   /**
+   * The definition's `repo` as this run resolved it. Set by the SDK.
+   */
+  resolvedRepo?: RepoConfig;
+
+  /**
    * The sandbox to use, made with `sandbox()`.
    */
   sandbox: SandboxDefinition<TTool>;
@@ -260,16 +287,28 @@ export type SandboxRecord<
  * The tools of an agent's sandboxes, keyed `<sandbox>_<tool>` (`work_run`).
  */
 export type SandboxToolsOf<TSandboxes extends SandboxToolNames> = {
-  [K in keyof TSandboxes & string as `${K}_${TSandboxes[K]}`]: SandboxToolEntry;
+  [K in keyof TSandboxes &
+    string as `${K}_${Exclude<TSandboxes[K], "~repo">}`]: SandboxToolEntry;
 };
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
-const defineSandbox = <TTool extends string = never>(
-  options: SandboxDefinitionOptions<TTool>,
-): SandboxDefinition<TTool> => {
+/**
+ * The names a `repo` adds to a definition's tool names: a marker that the
+ * sandbox has a repo (`"~repo"`, never a model tool), and `"push"` unless the
+ * repo is written with `push: false`.
+ */
+export type RepoMarker<TRepo> = [TRepo] extends [undefined]
+  ? never
+  : TRepo extends { push: false }
+    ? "~repo"
+    : "~repo" | "push";
+
+const defineSandbox = (
+  options: SandboxDefinitionOptions,
+): SandboxDefinition => {
   if (!idPattern.test(options.id)) {
     throw new SandboxValidationError(
       `Invalid sandbox id "${options.id}": use letters, digits, underscores and hyphens, starting with a letter, up to 64 characters`,
@@ -293,36 +332,37 @@ const defineSandbox = <TTool extends string = never>(
  * });
  * ```
  */
-export const sandbox = Object.assign(defineSandbox, {
-  image,
-  tools: {
-    /**
-     * `run` in the sandbox (a shell that keeps its place), plus `read`,
-     * `search` and `edit` when named in `only`.
-     */
-    code: ((options?: CodeToolsOptions) => {
-      return (handle: SandboxHandle) => {
-        return codeTools(handle, options);
-      };
-    }) as {
-      <const TName extends CodeToolName = "run">(
-        options?: CodeToolsOptions<TName> & { tools?: undefined },
-      ): SandboxToolsFactory<TName>;
-      <const TName extends CodeToolName = "run" | "run_code">(
-        options: CodeToolsOptions<TName> & { tools: SandboxTools },
-      ): SandboxToolsFactory<TName>;
-    },
-    /**
-     * `git_push`: the model pushes a branch, checked by your policy and sent
-     * with a token only your app holds. See `gitPushTool()`.
-     */
-    git: (options: GitPushToolOptions): SandboxToolsFactory<"git_push"> => {
-      return (handle) => {
-        return { git_push: gitPushTool(handle, options) };
-      };
+export const sandbox = Object.assign(
+  defineSandbox as {
+    <TTool extends string = never>(
+      options: SandboxDefinitionOptions<TTool> & { repo?: undefined },
+    ): SandboxDefinition<TTool>;
+    <TTool extends string = never, const TRepo extends RepoValue = RepoValue>(
+      options: SandboxDefinitionOptions<TTool> & { repo: TRepo },
+    ): SandboxDefinition<TTool | RepoMarker<TRepo>>;
+  },
+  {
+    image,
+    tools: {
+      /**
+       * `run` in the sandbox (a shell that keeps its place), plus `read`,
+       * `search` and `edit` when named in `only`.
+       */
+      code: ((options?: CodeToolsOptions) => {
+        return (handle: SandboxHandle) => {
+          return codeTools(handle, options);
+        };
+      }) as {
+        <const TName extends CodeToolName = "run">(
+          options?: CodeToolsOptions<TName> & { tools?: undefined },
+        ): SandboxToolsFactory<TName>;
+        <const TName extends CodeToolName = "run" | "run_code">(
+          options: CodeToolsOptions<TName> & { tools: SandboxTools },
+        ): SandboxToolsFactory<TName>;
+      },
     },
   },
-});
+);
 
 /**
  * The shell's place in a thread's sandbox: read when the shell starts, and
@@ -386,6 +426,11 @@ export interface LazySandbox {
    * Where the thread's shell was left, for the code tools' shell.
    */
   readonly place: SandboxShellPlace;
+
+  /**
+   * The repository, when the definition has one.
+   */
+  readonly repo?: Repo;
 
   /**
    * Runs commands in the sandbox, opening it on first use.
@@ -466,11 +511,22 @@ export interface AgentSandbox {
 }
 
 /**
+ * A listed sandbox whose definition has a `repo`.
+ */
+export interface AgentSandboxWithRepo extends AgentSandbox {
+  /**
+   * The checked-out repository, and the one push made by the host.
+   */
+  readonly repo: Repo;
+}
+
+/**
  * What the handler gets from an opened sandbox: the handle, and nothing of the
  * SDK's own bookkeeping.
  */
 export const agentSandbox = (lazy: LazySandbox): AgentSandbox => {
   return {
+    ...(lazy.repo && { repo: lazy.repo }),
     commands: lazy.commands,
     files: lazy.files,
     recycle: () => {
@@ -596,6 +652,21 @@ const lazySandbox = (
     idle = defaultSandboxIdle,
     model = true,
   } = toBinding(name, binding);
+
+  const repoValue =
+    toBinding(name, binding).resolvedRepo ??
+    (typeof definition.repo === "function" ? undefined : definition.repo);
+
+  if (typeof definition.repo === "function" && !repoValue) {
+    throw new SandboxValidationError(
+      `Sandbox "${name}" has a repo that is a function, which needs the run's event and thread: open it through an agent's sandboxes`,
+    );
+  }
+
+  const resolvedRepo: ResolvedRepo | undefined = repoValue && {
+    ...repoValue,
+    path: repoValue.path ?? "/work",
+  };
 
   let raw: Promise<DurableSandbox> | undefined;
   let created: Promise<DurableSandbox> | undefined;
@@ -744,10 +815,10 @@ const lazySandbox = (
       return created;
     }
 
-    if (definition.setup && !runtime) {
+    if ((definition.setup || resolvedRepo) && !runtime) {
       return Promise.reject(
         new SandboxValidationError(
-          `Sandbox "${name}" has a setup, which needs the agent's run: open it through an agent's sandboxes`,
+          `Sandbox "${name}" has a setup or a repo, which needs the agent's run: open it through an agent's sandboxes`,
         ),
       );
     }
@@ -759,6 +830,23 @@ const lazySandbox = (
     // Setup runs after the sandbox exists. `raw` stays the bare sandbox, so close() destroys it even when setup
     // failed.
     created = raw.then(async (sandbox) => {
+      // The checkout comes first, so skill files and setup can use it.
+      if (resolvedRepo) {
+        const run = (runtime as SandboxRuntime).run;
+
+        await checkoutRepo(
+          sandbox,
+          resolvedRepo,
+          async () => {
+            // Minted inside a step, short-lived and read-only.
+            return run(`${name}:repo:token`, async () => {
+              return (await mintRepoToken(resolvedRepo.auth, "read")) ?? null;
+            });
+          },
+          `${name}:repo:checkout`,
+        );
+      }
+
       if (setup) {
         await setup(
           setupContext(name, sandbox, runtime as SandboxRuntime, restored),
@@ -848,7 +936,15 @@ const lazySandbox = (
     load: async () => {
       await get();
 
-      return restored && owner ? owner.loadShell(name) : undefined;
+      const saved = restored && owner ? await owner.loadShell(name) : undefined;
+
+      // A new thread's shell starts at the checkout.
+      return (
+        saved ??
+        (resolvedRepo
+          ? { cwd: resolvedRepo.path, env: {}, unset: [] }
+          : undefined)
+      );
     },
     track: (read) => {
       readPlace = read;
@@ -859,6 +955,35 @@ const lazySandbox = (
 
   for (const [key, entry] of Object.entries(definition.tools?.(handle) ?? {})) {
     tools[`${name}${toolNamespaceSeparator}${key}`] = entry;
+  }
+
+  const repo = resolvedRepo && createRepo(handle, resolvedRepo);
+
+  // The one push, made by the host: the model's `<sandbox>_push`.
+  if (repo && resolvedRepo?.push !== false) {
+    tools[`${name}${toolNamespaceSeparator}push`] = tool.group({
+      description:
+        "Push a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+      input: z.object({
+        branch: z
+          .string()
+          .describe("The local branch to push, such as agent/fix-typo"),
+      }),
+      run: async ({ branch }) => {
+        try {
+          return await repo.push(branch);
+        } catch (error) {
+          if (
+            error instanceof PushRefusedError ||
+            error instanceof NonRetriableError
+          ) {
+            return agent.toolError(error.message);
+          }
+
+          throw error;
+        }
+      },
+    });
   }
 
   validateTools(tools);
@@ -875,6 +1000,7 @@ const lazySandbox = (
     commands: handle.commands,
     files: handle.files,
     place,
+    ...(repo && { repo }),
     tools,
     get,
     recycle: () => {
@@ -1113,10 +1239,29 @@ export const resolveSandboxes = async <Ctx>(
     );
   }
 
+  // A definition's repo, evaluated once for the run.
+  const repoOf = async (
+    definition: SandboxDefinition,
+  ): Promise<RepoConfig | undefined> => {
+    return typeof definition.repo === "function"
+      ? await (definition.repo as (context: Ctx) => Promise<RepoConfig>)(ctx)
+      : undefined;
+  };
+
   const entries = await Promise.all(
     Object.entries(bindings).map(async ([name, binding]) => {
       if (typeof binding !== "object" || !binding || !("sandbox" in binding)) {
-        return [name, binding as SandboxDefinition] as const;
+        const resolvedRepo = await repoOf(binding as SandboxDefinition);
+
+        return [
+          name,
+          resolvedRepo
+            ? ({
+                sandbox: binding as SandboxDefinition,
+                resolvedRepo,
+              } as SandboxBinding)
+            : (binding as SandboxDefinition),
+        ] as const;
       }
 
       const start = await resolveRunField(
@@ -1124,7 +1269,16 @@ export const resolveSandboxes = async <Ctx>(
         ctx,
       );
 
-      return [name, { ...binding, start } as SandboxBinding] as const;
+      return [
+        name,
+        {
+          ...binding,
+          start,
+          resolvedRepo: await repoOf(
+            (binding as SandboxBinding).sandbox as SandboxDefinition,
+          ),
+        } as SandboxBinding,
+      ] as const;
     }),
   );
 
