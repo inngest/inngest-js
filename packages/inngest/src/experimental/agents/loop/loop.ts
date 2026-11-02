@@ -119,7 +119,7 @@ export const formatEvent = (
   const where = from?.key === undefined ? "" : ` (thread ${from.key})`;
 
   if (event.name === "agent/message") {
-    const content = data.content ?? data.text;
+    const content = data.content;
 
     if (content === undefined) {
       return JSON.stringify({ event: event.name, data: event.data });

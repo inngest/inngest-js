@@ -24,6 +24,7 @@ import {
   agentMessage,
   agentSteer,
 } from "../inbox/events.ts";
+import type { Json } from "../json.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
 /**
@@ -150,7 +151,7 @@ export interface ThreadRecord {
  * `agent/message`, or any other event as it came.
  */
 export type Inflight =
-  | { text: string; event?: undefined }
+  | { content: Json; event?: undefined }
   | { event: { id?: string; name: string; data: unknown }; text?: undefined };
 
 export const threadRecordKey = "__state";
@@ -281,7 +282,7 @@ export function getThread(
       await sendEvent(
         `thread:${key}:message`,
         agentMessage.create(
-          { agent, thread: key, text: message } satisfies AgentMessageData,
+          { agent, thread: key, content: message } satisfies AgentMessageData,
           { meta },
         ),
       );

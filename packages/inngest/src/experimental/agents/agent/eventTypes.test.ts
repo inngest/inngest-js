@@ -85,9 +85,12 @@ describe("types", () => {
     expectTypeOf(agentSteer.create)
       .parameter(0)
       .toExtend<{ agent: string; thread: string; text: string }>();
+    expectTypeOf<
+      Extract<Parameters<typeof agentMessage.create>[0], { content: unknown }>
+    >().toHaveProperty("content");
 
     // @ts-expect-error a message needs its thread
-    agentMessage.create({ agent: "app/bot", text: "hi" });
+    agentMessage.create({ agent: "app/bot", content: "hi" });
   });
 });
 
@@ -100,7 +103,7 @@ describe("events", () => {
     const message = agentMessage.create({
       agent: "app/bot",
       thread: "t1",
-      text: "hi",
+      content: "hi",
     });
 
     await expect(message.validate()).resolves.toBeUndefined();

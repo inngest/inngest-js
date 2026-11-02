@@ -49,6 +49,8 @@ describe("typed events", () => {
             expectTypeOf(message.data.total).toBeNumber();
             break;
           case "agent/message":
+            expectTypeOf(message.data.thread).toBeString();
+            break;
           case "agent/steer":
             expectTypeOf(message.data.text).toBeString();
             expectTypeOf(message.data.thread).toBeString();

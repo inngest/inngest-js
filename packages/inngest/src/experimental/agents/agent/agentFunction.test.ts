@@ -60,7 +60,7 @@ const message = (
       return {
         name: "agent/message",
         ...carried,
-        data: { ...routing, text: content, ...data },
+        data: { ...routing, content, ...data },
       };
   }
 };
@@ -205,7 +205,7 @@ describe("agent function", () => {
     expect(output).toEqual(["chat/message", "evt9", { text: "hi" }]);
   });
 
-  test("an invoke of a plain agent with { agent, thread, text } is message 1, an agent/message", async () => {
+  test("an invoke of a plain agent with { agent, thread, content } is message 1, an agent/message", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -222,7 +222,7 @@ describe("agent function", () => {
         data: {
           agent: `${testClientId}/bot`,
           thread: "t1",
-          text: "go",
+          content: "go",
           _agent: { depth: 1 },
         },
       },
@@ -230,7 +230,7 @@ describe("agent function", () => {
 
     expect(output).toEqual([
       "agent/message",
-      { agent: `${testClientId}/bot`, thread: "t1", text: "go" },
+      { agent: `${testClientId}/bot`, thread: "t1", content: "go" },
     ]);
   });
 });
@@ -865,7 +865,7 @@ describe("thread state", () => {
         summary: "reply to one",
         usage: { input: 10, output: 5 },
         runId: "run",
-        inflight: { text: "one" },
+        inflight: { content: "one" },
         restarts: 0,
       },
     ]);
@@ -927,7 +927,7 @@ describe("thread state", () => {
 
     expect(seen.at(-1)).toMatchObject({
       status: "running",
-      inflight: { text: "two" },
+      inflight: { content: "two" },
     });
   });
 
@@ -1149,7 +1149,7 @@ describe("event", () => {
 
     expect(output).toMatchObject({
       name: "agent/message",
-      data: { text: "hi", thread: "t1" },
+      data: { content: "hi", thread: "t1" },
     });
   });
 });

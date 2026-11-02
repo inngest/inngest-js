@@ -300,13 +300,19 @@ export type {
 } from "../discovery/discovery.ts";
 export { addressOf } from "../discovery/discovery.ts";
 export type {
+  AgentAnswerData,
+  AgentFinishedData,
   AgentMessageData,
+  AgentQuestionData,
   AgentResendData,
   AgentRouting,
   AgentSteerData,
 } from "../inbox/events.ts";
 export {
+  agentAnswer,
+  agentFinished,
   agentMessage,
+  agentQuestion,
   agentSteer,
 } from "../inbox/events.ts";
 export type {

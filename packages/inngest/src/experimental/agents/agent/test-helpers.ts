@@ -328,7 +328,10 @@ export const run = async (
 export const textOf = (
   message: { data: unknown } | null | undefined,
 ): string | undefined => {
-  const text = (message?.data as { text?: unknown } | undefined)?.text;
+  const data = message?.data as
+    | { content?: unknown; text?: unknown }
+    | undefined;
+  const text = data?.content ?? data?.text;
 
   return typeof text === "string" ? text : undefined;
 };

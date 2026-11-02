@@ -9,7 +9,6 @@ describe("thread message events", () => {
   const types = (message: AgentMessage) => {
     switch (message.name) {
       case "agent/steer":
-      case "agent/message":
         expectTypeOf(message.data.text).toBeString();
 
         // @ts-expect-error only a stop has a when

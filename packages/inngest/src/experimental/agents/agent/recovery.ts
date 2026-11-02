@@ -161,7 +161,9 @@ export const turnOf = (
     .update(
       inflight?.event
         ? JSON.stringify([inflight.event.name, inflight.event.data])
-        : (inflight?.text ?? ""),
+        : inflight?.content === undefined
+          ? ""
+          : JSON.stringify(inflight.content),
     )
     .digest("hex")
     .slice(0, 12);

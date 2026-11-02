@@ -147,7 +147,7 @@ describe("thread key from a trigger", () => {
     const { output } = await run(agent.fn, {
       event: {
         name: "agent/message",
-        data: { agent: `${testClientId}/bot`, thread: "T9", text: "hi" },
+        data: { agent: `${testClientId}/bot`, thread: "T9", content: "hi" },
       },
     });
 
