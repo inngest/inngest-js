@@ -132,6 +132,21 @@ describe("tools types", () => {
     });
   });
 
+  test("tools: tool() takes no id, the key in the tools record names it", () => {
+    typesOnly(() => {
+      const found = tool({
+        description: "Find a thing",
+        input: z.object({ slug: z.string() }),
+        run: ({ slug }) => {
+          return slug;
+        },
+      });
+      const tools = { found } satisfies SandboxTools;
+
+      expectTypeOf(tools).toExtend<SandboxTools>();
+    });
+  });
+
   test("tools: a tool with no output schema takes its output from run's return", () => {
     typesOnly(() => {
       const count = tool.step({
