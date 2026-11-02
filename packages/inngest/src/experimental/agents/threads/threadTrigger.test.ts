@@ -33,7 +33,7 @@ const options = (fn: { opts?: unknown }) => {
 };
 
 describe("thread key from a trigger", () => {
-  test("with no on, the function is as before", () => {
+  test("with no triggers, the function is as before", () => {
     const agent = createAgentFunction(
       makeClient(),
       { id: "bot", kv },
@@ -55,7 +55,7 @@ describe("thread key from a trigger", () => {
       {
         id: "bot",
         kv,
-        on: [
+        triggers: [
           {
             event: "chat/message",
             if: "event.data.bot != true",
@@ -91,7 +91,7 @@ describe("thread key from a trigger", () => {
       {
         id: "bot",
         kv,
-        on: {
+        triggers: {
           event: "chat/message",
           if: "event.data.bot != true",
           thread: chatThread,
@@ -138,7 +138,7 @@ describe("thread key from a trigger", () => {
   test("a message to the thread still starts it by its own thread", async () => {
     const agent = createAgentFunction(
       makeClient(),
-      { id: "bot", kv, on: { event: "chat/message", thread: chatThread } },
+      { id: "bot", kv, triggers: { event: "chat/message", thread: chatThread } },
       async ({ inbox }) => {
         return (await inbox.next())?.data.thread;
       },
@@ -156,7 +156,7 @@ describe("thread key from a trigger", () => {
 
   test("the agent's thread option wins over the trigger's", () => {
     const [trigger] = compileTriggers("bot", {
-      on: { event: "e", thread: '"ignored"' },
+      triggers: { event: "e", thread: '"ignored"' },
       thread: '"box:" + event.data.room',
     });
 
@@ -175,22 +175,22 @@ describe("thread key from a trigger", () => {
       };
     };
 
-    expect(define({ on: { event: "e" } })).toThrow(/supplies no thread key/);
-    expect(define({ on: { event: "a/*", thread: '"t"' } })).toThrow(
+    expect(define({ triggers: { event: "e" } })).toThrow(/supplies no thread key/);
+    expect(define({ triggers: { event: "a/*", thread: '"t"' } })).toThrow(
       /(is a wildcard|owns)/,
     );
-    expect(define({ on: { event: "agent/message", thread: '"t"' } })).toThrow(
+    expect(define({ triggers: { event: "agent/message", thread: '"t"' } })).toThrow(
       /(is a wildcard|owns)/,
     );
     expect(
       define({
-        on: [
+        triggers: [
           { event: "a", thread: '"t"' },
           { event: "a", thread: '"u"' },
         ],
       }),
     ).toThrow(/two triggers/);
-    expect(define({ on: { event: "a", thread: "event.data.x[0]" } })).toThrow(
+    expect(define({ triggers: { event: "a", thread: "event.data.x[0]" } })).toThrow(
       /trigger "a"/,
     );
   });

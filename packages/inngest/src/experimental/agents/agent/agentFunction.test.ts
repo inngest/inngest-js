@@ -1047,13 +1047,13 @@ describe("thread state", () => {
 });
 
 describe("trigger", () => {
-  const make = (on: unknown) => {
+  const make = (triggers: unknown) => {
     return createAgentFunction(
       makeClient(),
       {
         id: "bot",
         kv: createKv({ adapter: memoryKvAdapter() }),
-        on,
+        triggers,
       } as never,
       async ({ trigger }) => {
         return trigger ?? "none";
@@ -1109,7 +1109,7 @@ describe("trigger", () => {
       {
         id: "bot",
         kv: createKv({ adapter: memoryKvAdapter() }),
-        on: invoke(z.object({ question: z.string() })),
+        triggers: invoke(z.object({ question: z.string() })),
       } as never,
       async ({ depth, trigger }) => {
         return { depth, trigger };
@@ -1131,7 +1131,7 @@ describe("trigger", () => {
 
   test("depth is 0 for an event, a cron tick and a thread message", async () => {
     const depthOf = async (
-      on: unknown,
+      triggers: unknown,
       event: { name: string; data: Record<string, unknown> },
     ) => {
       const { fn } = createAgentFunction(
@@ -1139,7 +1139,7 @@ describe("trigger", () => {
         {
           id: "bot",
           kv: createKv({ adapter: memoryKvAdapter() }),
-          on,
+          triggers,
         } as never,
         async ({ depth }) => {
           return depth;

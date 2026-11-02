@@ -407,7 +407,7 @@ describe("the finished function", () => {
   test("the resent turn keeps the event that started the run", async () => {
     const { agent, sent } = setup({
       recovery: true,
-      on: {
+      triggers: {
         event: "shop/order",
         thread: "event.data.id",
         message: () => {

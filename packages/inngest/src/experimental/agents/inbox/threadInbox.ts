@@ -154,7 +154,7 @@ export function threadInbox(
     raws.set(unwrapped, message);
 
     // One cast: the spread above is a plain object, and `ThreadInboxMessage` is
-    // a union that depends on the caller's `on` triggers, which the runtime
+    // a union that depends on the caller's `triggers`, which the runtime
     // cannot derive.
     return unwrapped as unknown as ThreadInboxMessage;
   }

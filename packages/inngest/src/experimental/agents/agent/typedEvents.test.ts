@@ -28,7 +28,7 @@ type Order = {
 describe("typed events", () => {
   test("a single event type types the inbox and the handler event", () => {
     agents.agent(
-      { id: "a1", on: { event: order, thread: "event.data.id" } },
+      { id: "a1", triggers: { event: order, thread: "event.data.id" } },
       async ({ event, inbox }) => {
         expectTypeOf(event.data.event).toEqualTypeOf<Order | undefined>();
 
@@ -66,7 +66,7 @@ describe("typed events", () => {
     agents.agent(
       {
         id: "a2",
-        on: [
+        triggers: [
           { event: order, thread: "event.data.id" },
           { event: refund, thread: "event.data.order" },
           { cron: "0 * * * *", thread: '"x"' },
@@ -95,7 +95,7 @@ describe("typed events", () => {
 
   test("a list of bare event types types the inbox", () => {
     agents.agent(
-      { id: "a-bare", on: [order, refund, asked], thread: "event.data.id" },
+      { id: "a-bare", triggers: [order, refund, asked], thread: "event.data.id" },
       async ({ inbox }) => {
         const message = await inbox.next();
         const trigger = message;
@@ -113,9 +113,9 @@ describe("typed events", () => {
     );
   });
 
-  test("trigger is the event of on, flat and typed, with no casts", () => {
+  test("trigger is the event of triggers, flat and typed, with no casts", () => {
     agents.agent(
-      { id: "t1", on: { event: order, thread: "event.data.id" } },
+      { id: "t1", triggers: { event: order, thread: "event.data.id" } },
       async ({ trigger }) => {
         expectTypeOf(trigger).toEqualTypeOf<Order | undefined>();
 
@@ -130,7 +130,7 @@ describe("typed events", () => {
     agents.agent(
       {
         id: "t2",
-        on: [
+        triggers: [
           { event: order, thread: "event.data.id" },
           { event: refund, thread: "event.data.order" },
           { cron: "0 * * * *", thread: '"x"' },
@@ -154,7 +154,7 @@ describe("typed events", () => {
     );
 
     agents.agent(
-      { id: "t3", on: { event: "chat/message", thread: "event.data.ts" } },
+      { id: "t3", triggers: { event: "chat/message", thread: "event.data.ts" } },
       async ({ trigger }) => {
         expectTypeOf(trigger?.name).toEqualTypeOf<"chat/message" | undefined>();
 
@@ -167,7 +167,7 @@ describe("typed events", () => {
     agents.agent(
       {
         id: "a-src",
-        on: { event: order, thread: "event.data.id" },
+        triggers: { event: order, thread: "event.data.id" },
         inbox: [{ event: refund, thread: "event.data.order" }],
       },
       async ({ inbox }) => {
@@ -192,7 +192,7 @@ describe("typed events", () => {
 
   test("a name is any record, a cron alone is a tick", () => {
     agents.agent(
-      { id: "a3", on: { event: "chat/message", thread: "event.data.ts" } },
+      { id: "a3", triggers: { event: "chat/message", thread: "event.data.ts" } },
       async ({ inbox }) => {
         const message = await inbox.next();
 
@@ -208,7 +208,7 @@ describe("typed events", () => {
       },
     );
 
-    agents.agent({ id: "a4", on: { cron: "* * * * *" } }, async ({ inbox }) => {
+    agents.agent({ id: "a4", triggers: { cron: "* * * * *" } }, async ({ inbox }) => {
       const message = await inbox.next();
 
       expectTypeOf(message?.name).toEqualTypeOf<
@@ -227,7 +227,7 @@ describe("typed events", () => {
     agents.agent(
       {
         id: "a5",
-        on: { event: order, thread: "event.data.id" },
+        triggers: { event: order, thread: "event.data.id" },
         sandboxes: ({ event }) => {
           expectTypeOf(event.data.event).toEqualTypeOf<Order | undefined>();
 

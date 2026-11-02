@@ -43,7 +43,7 @@ describe("composition", () => {
     agents.agent(
       {
         id: "lead",
-        on: { event: order, thread: "event.data.id" },
+        triggers: { event: order, thread: "event.data.id" },
         sandboxes: { work: workbench },
       },
       async ({ event, inbox, sandboxTools }) => {
@@ -73,7 +73,7 @@ describe("composition", () => {
 
   test("an agent's result type is what its body returns", () => {
     const lead = agents.agent(
-      { id: "lead2", on: order, thread: "event.data.id" },
+      { id: "lead2", triggers: order, thread: "event.data.id" },
       async () => {
         return { ok: true as const };
       },

@@ -28,7 +28,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-1",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: {
           work: workbench,
           view: { sandbox: reader, start: "eager" },
@@ -70,7 +70,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-2",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: ({ event }) => {
           return event.name ? { work: workbench } : { work: workbench };
         },
@@ -94,7 +94,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-3",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: {
           work: {
             sandbox: workbench,
@@ -114,7 +114,7 @@ describe("sandbox names and tool names", () => {
 
   test("an agent without sandboxes has none", () => {
     agents.agent(
-      { id: "typed-4", on: { cron: "0 * * * *" } },
+      { id: "typed-4", triggers: { cron: "0 * * * *" } },
       async ({ sandboxes, sandboxTools }) => {
         // @ts-expect-error this agent declares no sandboxes
         sandboxes.work;
@@ -136,7 +136,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-5",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: { work: withCode, plain: workbench },
       },
       async ({ sandboxTools }) => {
@@ -157,7 +157,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-6",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: { ...base, view: reader },
       },
       async ({ sandboxTools }) => {
@@ -171,7 +171,7 @@ describe("sandbox names and tool names", () => {
       },
     );
     agents.agent(
-      { id: "typed-7", on: { cron: "0 * * * *" }, sandboxes: held },
+      { id: "typed-7", triggers: { cron: "0 * * * *" }, sandboxes: held },
       async ({ sandboxTools }) => {
         expectTypeOf(sandboxTools).toHaveProperty("view_search");
 
@@ -184,7 +184,7 @@ describe("sandbox names and tool names", () => {
     agents.agent(
       {
         id: "typed-8",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         sandboxes: async () => {
           return { work: workbench };
         },
@@ -204,7 +204,7 @@ describe("sandbox names and tool names", () => {
     const wide: Record<string, SandboxDefinition> = { work: workbench };
 
     agents.agent(
-      { id: "typed-9", on: { cron: "0 * * * *" }, sandboxes: wide },
+      { id: "typed-9", triggers: { cron: "0 * * * *" }, sandboxes: wide },
       async ({ sandboxes }) => {
         // Known limitation: nothing says which names exist, so any compiles.
         sandboxes.anything;

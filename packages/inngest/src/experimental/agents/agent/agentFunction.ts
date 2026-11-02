@@ -186,7 +186,7 @@ export function createAgentFunction(
       const thread = getThread(client, ref, data.thread, { kv: store });
 
       // The KV scopes of the thread and session come from the trigger, which
-      // for an event of `on` does not carry them: the whole run reads them
+      // for an event of `triggers` does not carry them: the whole run reads them
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.

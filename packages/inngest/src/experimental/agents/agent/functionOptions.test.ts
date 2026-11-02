@@ -30,7 +30,7 @@ describe("function options", () => {
     const agent = agents.agent(
       {
         id: "opts-1",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         name: "Opts one",
         description: "an agent",
         concurrency: { limit: 3, key: "event.data.tenant" },
@@ -63,7 +63,7 @@ describe("function options", () => {
 
   test("the agent keeps its id, triggers and singleton per thread", () => {
     const agent = agents.agent(
-      { id: "opts-2", on: { cron: "0 * * * *" }, retries: 0, kv },
+      { id: "opts-2", triggers: { cron: "0 * * * *" }, retries: 0, kv },
       async () => {},
     );
     const options = optionsOf(agent.fn);
@@ -77,7 +77,7 @@ describe("function options", () => {
   test("options not given are not set", () => {
     const options = optionsOf(
       agents.agent(
-        { id: "opts-3", on: { cron: "0 * * * *" }, kv },
+        { id: "opts-3", triggers: { cron: "0 * * * *" }, kv },
         async () => {},
       ).fn,
     );

@@ -47,7 +47,7 @@ import type { AgentRecovery, LastRun } from "./recovery.ts";
  * what a bag leaves out takes the default of `AgentTypeDefaults`. Name only
  * what you need, such as `AgentBody<{ output: null; middleware: TMiddleware }>`.
  *
- * - `event`: the events of the agent's `on` triggers (`TriggerEvent`).
+ * - `event`: the events of the agent's `triggers` (`TriggerEvent`).
  * - `output`: what the body returns. Only `AgentBody` reads it; `agents.agent`
  *   infers the output from the body's return type, so a config or context
  *   bag does not need it.
@@ -60,7 +60,7 @@ import type { AgentRecovery, LastRun } from "./recovery.ts";
  */
 export interface AgentTypes {
   /**
-   * The events of the agent's `on` triggers.
+   * The events of the agent's `triggers`.
    */
   event?: unknown;
 
@@ -167,7 +167,7 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
 
 /**
  * The config of an agent: its ID, what starts it, and what it may use.
- * `TOn` is the type of `on`; `TTypes` is the `AgentTypes` bag (the events of
+ * `TOn` is the type of `triggers`; `TTypes` is the `AgentTypes` bag (the events of
  * its triggers, what other threads ask it and what it answers, and so on).
  * Without one, the middleware is `Middleware.Class[] | undefined`, so any
  * config fits.
@@ -215,7 +215,7 @@ export interface AgentFunctionConfig<
   /**
    * Event sources that reach a live run of the thread they map to and never
    * start one, and read through the one `inbox`.
-   * `on` still starts and wakes runs. Each source maps its own events to the
+   * `triggers` still starts and wakes runs. Each source maps its own events to the
    * thread key with its `thread` expression.
    */
   inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSource[]
@@ -298,7 +298,7 @@ export interface AgentConfigContext<TEvent = TriggerEvent> {
 
 /**
  * What a run's start event carries in `data`: the agent, the thread, and for a
- * run a trigger event of `on` started (or that recovery resumed), that event
+ * run a trigger event of `triggers` started (or that recovery resumed), that event
  * as `event`. A run an `agent/message` started has that event's own data
  * beside them.
  */
@@ -330,7 +330,7 @@ export type InboxSource = {
 export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   /**
    * The event that started the run. Its `data` has the agent and thread, and
-   * `data.event` is the trigger event, typed from `on`.
+   * `data.event` is the trigger event, typed from `triggers`.
    */
   event: {
     name: string;
@@ -338,8 +338,8 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-   * The event of `on` that started this run, as it came (`id`, `name`,
-   * `data`), typed from `on`: narrow it by `name`. It is `undefined` when a
+   * The event of `triggers` that started this run, as it came (`id`, `name`,
+   * `data`), typed from `triggers`: narrow it by `name`. It is `undefined` when a
    * plain thread message started the run (`thread.send()`, a reply in a
    * thread), because there is no trigger event then. A run that recovery
    * resumed keeps the trigger event of the run that failed. For a cron it is
@@ -476,13 +476,13 @@ type SourceMessages<TSources> = TSources extends readonly (infer TItem)[]
   : never;
 
 /**
- * The event of a trigger of `on`, as an inbox message: its own name and data.
+ * The event of a trigger of `triggers`, as an inbox message: its own name and data.
  */
 type TriggerMessage<TEvent> = TEvent extends {
   name: infer TName extends string;
   data: infer TData;
 }
-  ? // An agent whose `on` is not typed has events of any name; they stay out
+  ? // An agent whose `triggers` is not typed has events of any name; they stay out
     // of the union, so `name` still narrows the agent's own events.
     string extends TName
     ? never
@@ -493,14 +493,14 @@ type TriggerMessage<TEvent> = TEvent extends {
  * A message of the thread's inbox. It is a plain event (`id`, `name`, `data`,
  * `ts`): narrow it by `name` or `is()`, and `data` is typed.
  *
- * - An event of `on` (a trigger, which also starts the run as message 1) has
- *   its own name and data, typed from `on`.
+ * - An event of `triggers` (a trigger, which also starts the run as message 1) has
+ *   its own name and data, typed from `triggers`.
  * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
  *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
  *
  * A message from an inbox source is its event too, under the event's own
- * `name`; it is not in the type of `on`, so narrow it with `is(type)`.
+ * `name`; it is not in the type of `triggers`, so narrow it with `is(type)`.
  */
 export type ThreadInboxMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
@@ -571,7 +571,7 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
 
 /**
  * The body of an agent. `TTypes` is the `AgentTypes` bag: the events of its
- * `on` triggers, what it returns, and so on. Name only what you need.
+ * `triggers`, what it returns, and so on. Name only what you need.
  *
  * @example
  * ```ts

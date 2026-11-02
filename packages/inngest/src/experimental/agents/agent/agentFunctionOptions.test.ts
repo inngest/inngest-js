@@ -39,7 +39,7 @@ describe("AgentFunctionOptions", () => {
 describe("inbox.next", () => {
   test("undefined ends the inbox and null is an expired timeout", () => {
     const check = () => {
-      agents.agent({ id: "waiter", on: order }, async ({ inbox }) => {
+      agents.agent({ id: "waiter", triggers: order }, async ({ inbox }) => {
         const ended = await inbox.next();
 
         expectTypeOf(ended).toEqualTypeOf<

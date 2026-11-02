@@ -2,8 +2,10 @@
  * @module
  * Type tests for the public entry `inngest/experimental/agents`.
  */
+import { z } from "zod";
+import { invoke } from "../../../components/triggers/triggers.ts";
 import * as entry from "../index.ts";
-import { agents } from "./typeFixtures.ts";
+import { agents, created, typesOnly } from "./typeFixtures.ts";
 
 const deletedValues = [
   "listThreads",
@@ -67,4 +69,21 @@ test("agents: the deleted names are not exported", () => {
   expectTypeOf(defined).not.toHaveProperty("threads");
   expectTypeOf(defined).not.toHaveProperty("~tool");
   expectTypeOf(defined).not.toHaveProperty("arrival");
+});
+
+test("agents: triggers take what createFunction triggers take", () => {
+  typesOnly(() => {
+    agents.agent({
+      id: "triggers-1",
+      triggers: [
+        created,
+        { event: "order/refunded", if: "event.data.total > 10" },
+        { cron: "0 * * * *" },
+        invoke(z.object({ task: z.string() })),
+      ],
+    });
+
+    // @ts-expect-error `on` was renamed to `triggers`
+    agents.agent({ id: "triggers-2", on: created });
+  });
 });

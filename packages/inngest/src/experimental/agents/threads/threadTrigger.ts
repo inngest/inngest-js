@@ -1,6 +1,6 @@
 /**
  * @module
- * EXPERIMENTAL: starting a thread from a trigger. An agent's `on` lists the
+ * EXPERIMENTAL: starting a thread from a trigger. An agent's `triggers` lists the
  * events that talk to it (a chat message, a pull request comment). The agent
  * function triggers on them directly:
  *
@@ -13,10 +13,10 @@
  *   expression equalling its thread key, so that trigger is delivered to the
  *   run as a message.
  *
- * `on` takes the same shapes as the `triggers` of `createFunction`: an event
+ * `triggers` takes the same shapes as the `triggers` of `createFunction`: an event
  * name, an `eventType()` (alone or as `event`), and `{ cron }`. The original
  * trigger goes to the function, so core types and validates the event as it
- * does for any function, so `on: invoke(schema)` makes the agent invokable
+ * does for any function, so `triggers: [invoke(schema)]` makes the agent invokable
  * with typed input. A cron has no event data to key a thread on, so its
  * thread is one per agent (the agent's ID) unless the cron trigger sets
  * `thread`; a tick while a run is live starts nothing and is not delivered.
@@ -93,7 +93,7 @@ export interface ThreadTriggerFields {
    * as `event.data.room + "/" + event.data.thread_ts`.
    *
    * The key is the thread's address: a message sent through a thread handle
-   * with the same string, or another `on` event whose key is the same string,
+   * with the same string, or another `triggers` event whose key is the same string,
    * reaches the same thread. Prefix the expression (`"chat:" + ...`) to keep
    * events apart.
    */
@@ -141,7 +141,7 @@ export interface ThreadCronTrigger extends ThreadTriggerFields {
 }
 
 /**
- * One trigger of `on`: the shapes a function's `triggers` take.
+ * One trigger of `triggers`: the shapes a function's `triggers` take.
  */
 export type ThreadTrigger<
   TSource extends ThreadTriggerEventSource = ThreadTriggerEventSource,
@@ -192,7 +192,7 @@ export type ThreadTriggerList<TMany extends readonly unknown[]> = {
 };
 
 /**
- * The `on` of an agent that is not typed: one trigger, or a list.
+ * The `triggers` of an agent that is not typed: one trigger, or a list.
  */
 export type ThreadTriggers = ThreadTrigger | readonly ThreadTrigger[];
 
@@ -203,7 +203,7 @@ export interface ThreadKeyConfig<TOn = ThreadTriggers> {
   /**
    * What starts the agent besides messages: events, event types and crons.
    */
-  on?: TOn;
+  triggers?: TOn;
 
   /**
    * The thread key expression for event triggers, overriding the one they
@@ -322,7 +322,7 @@ export function compileTriggers(
    */
   config: ThreadKeyConfig,
 ): CompiledTrigger[] {
-  const given = (config.on ? [config.on].flat() : []) as ThreadTrigger[];
+  const given = (config.triggers ? [config.triggers].flat() : []) as ThreadTrigger[];
   const compiled: CompiledTrigger[] = [];
 
   for (const trigger of given) {

@@ -43,19 +43,19 @@ const fnOptions = (fn: { opts?: unknown }) => {
 describe("types", () => {
   test("on takes an event name, an event type, a bare event type and a cron", () => {
     agents.agent(
-      { id: "t1", on: { event: "shop/x", thread: "event.data.id" } },
+      { id: "t1", triggers: { event: "shop/x", thread: "event.data.id" } },
       noop,
     );
     agents.agent(
-      { id: "t2", on: { event: order, thread: "event.data.id" } },
+      { id: "t2", triggers: { event: order, thread: "event.data.id" } },
       noop,
     );
-    agents.agent({ id: "t3", on: order, thread: "event.data.id" }, noop);
-    agents.agent({ id: "t4", on: { cron: "0 * * * *" } }, noop);
+    agents.agent({ id: "t3", triggers: order, thread: "event.data.id" }, noop);
+    agents.agent({ id: "t4", triggers: { cron: "0 * * * *" } }, noop);
     agents.agent(
       {
         id: "t5",
-        on: [
+        triggers: [
           { event: order, if: "event.data.total > 5", thread: "event.data.id" },
           ping,
           { cron: "0 * * * *", thread: '"nightly"' },
@@ -69,7 +69,7 @@ describe("types", () => {
   test("a wrong field or a non-trigger is a type error", () => {
     expect(() => {
       // @ts-expect-error a name alone is not a trigger
-      return agents.agent({ id: "t9", on: ["shop/x"] }, noop);
+      return agents.agent({ id: "t9", triggers: ["shop/x"] }, noop);
     }).toThrow(/takes triggers/);
   });
 
@@ -109,7 +109,7 @@ describe("triggers", () => {
     const agent = agents.agent(
       {
         id: "u1",
-        on: [
+        triggers: [
           { event: order, if: "event.data.total > 5", thread: "event.data.id" },
           ping,
         ],
@@ -129,7 +129,7 @@ describe("triggers", () => {
 
   test("a cron starts one thread per agent by default", () => {
     const compiled = compileTriggers("nightly", {
-      on: { cron: "0 3 * * *" },
+      triggers: { cron: "0 3 * * *" },
     });
 
     expect(compiled).toHaveLength(1);
@@ -147,7 +147,7 @@ describe("triggers", () => {
   test("a cron's thread can be set on the cron, and the agent's thread is for events", () => {
     const compiled = compileTriggers("bot", {
       thread: "event.data.id",
-      on: [
+      triggers: [
         { event: "shop/x" },
         { cron: "0 3 * * *", thread: "event.data.cron" },
       ],
@@ -160,7 +160,7 @@ describe("triggers", () => {
   test("crons share one thread key", () => {
     expect(() => {
       return compileTriggers("bot", {
-        on: [
+        triggers: [
           { cron: "0 3 * * *", thread: '"a"' },
           { cron: "0 4 * * *", thread: '"b"' },
         ],
@@ -169,13 +169,13 @@ describe("triggers", () => {
 
     expect(
       compileTriggers("bot", {
-        on: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *" }],
+        triggers: [{ cron: "0 3 * * *" }, { cron: "0 4 * * *" }],
       }),
     ).toHaveLength(2);
   });
 
   test("the singleton is keyed on the cron's thread", () => {
-    const agent = agents.agent({ id: "u2", on: { cron: "0 3 * * *" } }, noop);
+    const agent = agents.agent({ id: "u2", triggers: { cron: "0 3 * * *" } }, noop);
     const options = fnOptions(agent.fn);
 
     expect(options.triggers[2]).toEqual({ cron: "0 3 * * *" });
@@ -183,13 +183,13 @@ describe("triggers", () => {
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );
     expect(
-      singletonKey(compileTriggers("u2", { on: { cron: "0 3 * * *" } })),
+      singletonKey(compileTriggers("u2", { triggers: { cron: "0 3 * * *" } })),
     ).toBe(options.singleton.key);
   });
 
   test("an invoke trigger makes the agent invokable, one thread per agent", () => {
     const compiled = compileTriggers("worker", {
-      on: invoke(z.object({ question: z.string() })),
+      triggers: invoke(z.object({ question: z.string() })),
     });
 
     expect(compiled[0]?.listen).toBe(false);
@@ -215,36 +215,36 @@ describe("triggers", () => {
 
   test("the agent's own events and mixed triggers are refused", () => {
     expect(() => {
-      return compileTriggers("bot", { on: agentMessage });
+      return compileTriggers("bot", { triggers: agentMessage });
     }).toThrow(/"agent\/message" is an event the agent layer owns/);
     expect(() => {
-      return compileTriggers("bot", { on: agentSteer });
+      return compileTriggers("bot", { triggers: agentSteer });
     }).toThrow(/"agent\/steer" is an event the agent layer owns/);
     expect(() => {
       return compileTriggers("bot", {
-        on: { event: "inngest/scheduled.timer", thread: '"a"' },
+        triggers: { event: "inngest/scheduled.timer", thread: '"a"' },
       });
     }).toThrow(/is the event of a cron; use \{ cron \}/);
     expect(() => {
       return compileTriggers("bot", {
-        on: { event: "inngest/function.invoked", thread: '"a"' },
+        triggers: { event: "inngest/function.invoked", thread: '"a"' },
       });
     }).toThrow(/use invoke\(schema\)/);
     expect(() => {
       return compileTriggers("bot", {
-        on: { event: "shop/*", thread: '"a"' },
+        triggers: { event: "shop/*", thread: '"a"' },
       });
     }).toThrow(/is a wildcard/);
     expect(() => {
       return compileTriggers("bot", {
-        on: { cron: "* * * * *", event: "shop/x" } as never,
+        triggers: { cron: "* * * * *", event: "shop/x" } as never,
       });
     }).toThrow(/not both/);
   });
 
   test("an event type's name is checked like a name", () => {
     expect(() => {
-      return compileTriggers("bot", { on: agentMessage });
+      return compileTriggers("bot", { triggers: agentMessage });
     }).toThrow(/"agent\/message" is an event the agent layer owns/);
   });
 });
@@ -256,7 +256,7 @@ describe("inbox validation", () => {
       {
         id: "checked",
         kv: createKv({ adapter: memoryKvAdapter() }),
-        on: {
+        triggers: {
           event: order,
           thread: "event.data.id",
         },
@@ -312,7 +312,7 @@ describe("inbox validation", () => {
         {
           id: "throwing",
           kv: createKv({ adapter: memoryKvAdapter() }),
-          on: { event: throwingEvent, thread: "event.data.id" },
+          triggers: { event: throwingEvent, thread: "event.data.id" },
         } as never,
         async ({ inbox }) => {
           await inbox.next();
@@ -360,7 +360,7 @@ describe("inbox validation", () => {
         {
           id: "closing",
           kv: createKv({ adapter: memoryKvAdapter() }),
-          on: { event: order, thread: "event.data.id" },
+          triggers: { event: order, thread: "event.data.id" },
         },
         async ({ inbox }) => {
           await inbox.next();
@@ -387,7 +387,7 @@ describe("inbox validation", () => {
         {
           id: "unchecked",
           kv: createKv({ adapter: memoryKvAdapter() }),
-          on: { event: ping, thread: "event.data.id" },
+          triggers: { event: ping, thread: "event.data.id" },
         },
         async ({ inbox }) => {
           await inbox.next();
@@ -407,7 +407,7 @@ describe("inbox validation", () => {
 
 describe("schemaProblem", () => {
   const triggers = compileTriggers("bot", {
-    on: { event: order, thread: "event.data.id" },
+    triggers: { event: order, thread: "event.data.id" },
   });
 
   const throwing = (message: string) => {
@@ -434,7 +434,7 @@ describe("schemaProblem", () => {
 
   test("a trigger without a schema, or no trigger, has no problem", async () => {
     const plain = compileTriggers("bot", {
-      on: { event: "shop/x", thread: "event.data.id" },
+      triggers: { event: "shop/x", thread: "event.data.id" },
     });
 
     expect(await schemaProblem(plain, { data: 1 })).toBeUndefined();

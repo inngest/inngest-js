@@ -1161,7 +1161,7 @@ function currentIds(): KvScopeIds | undefined {
   const { ctx } = execution;
   const app = getAsyncCtxSync()?.app as { id?: string; env?: string | null };
 
-  // A run started by another agent or by an event of `on` is told its
+  // A run started by another agent or by an event of `triggers` is told its
   // thread and session by the agent function; `data.thread` is what a message
   // starts an agent function with.
   const sessions = currentSessions(ctx);

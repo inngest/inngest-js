@@ -31,7 +31,7 @@ const docs = agents.agent(
     owner: "docs-team",
     effects: "read",
     speed: "seconds",
-    on: invoke(z.object({ question: z.string() })),
+    triggers: invoke(z.object({ question: z.string() })),
   },
   async () => {
     return { answer: "read the docs" };
@@ -90,7 +90,7 @@ describe("a schema that is not JSON Schema capable", () => {
     const typed = agents.agent(
       {
         id: "legacy",
-        on: invoke({
+        triggers: invoke({
           "~standard": {
             version: 1,
             vendor: "legacy",

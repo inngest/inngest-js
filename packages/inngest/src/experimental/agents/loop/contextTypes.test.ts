@@ -17,7 +17,7 @@ const withSandboxes = createAgents(
 describe("body context from the client's middleware", () => {
   test("step and group have what the client's middleware adds", () => {
     withSandboxes.agent(
-      { id: "ctx-1", on: { cron: "0 * * * *" } },
+      { id: "ctx-1", triggers: { cron: "0 * * * *" } },
       async ({ step, group }) => {
         expectTypeOf(step.sandbox).toHaveProperty("create");
         expectTypeOf(group.sandbox).toBeFunction();
@@ -30,7 +30,7 @@ describe("body context from the client's middleware", () => {
 
   test("a client without the middleware has no step.sandbox", () => {
     plain.agent(
-      { id: "ctx-2", on: { cron: "0 * * * *" } },
+      { id: "ctx-2", triggers: { cron: "0 * * * *" } },
       async ({ step }) => {
         expectTypeOf(step.run).toBeFunction();
 
@@ -44,7 +44,7 @@ describe("body context from the client's middleware", () => {
 
   test("the agent's fields are still there, and event is the agent's", () => {
     withSandboxes.agent(
-      { id: "ctx-3", on: { cron: "0 * * * *" } },
+      { id: "ctx-3", triggers: { cron: "0 * * * *" } },
       async ({ event, inbox, thread, runId, logger }) => {
         expectTypeOf(event.data.thread).toBeString();
         expectTypeOf(inbox).toHaveProperty("next");
@@ -61,7 +61,7 @@ describe("body context from the client's middleware", () => {
     plain.agent(
       {
         id: "ctx-4",
-        on: { cron: "0 * * * *" },
+        triggers: { cron: "0 * * * *" },
         middleware: [sandboxMiddleware()],
       },
       async ({ step, group }) => {
@@ -74,7 +74,7 @@ describe("body context from the client's middleware", () => {
     );
 
     plain.agent(
-      { id: "ctx-5", on: { cron: "0 * * * *" } },
+      { id: "ctx-5", triggers: { cron: "0 * * * *" } },
       async ({ step }) => {
         // @ts-expect-error this agent has no middleware that adds step.sandbox
         step.sandbox;

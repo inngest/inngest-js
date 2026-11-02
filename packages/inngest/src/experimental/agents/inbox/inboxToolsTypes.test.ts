@@ -21,7 +21,7 @@ describe("inboxTools types", () => {
       agents.agent(
         {
           id: "listener",
-          on: { cron: "0 * * * *" },
+          triggers: { cron: "0 * * * *" },
           inboxTools: {
             listen: [
               { event: check, thread: "string(int(event.data.pr))" },
@@ -54,7 +54,7 @@ describe("inboxTools body type", () => {
       agents.agent(
         {
           id: "with-tools",
-          on: { cron: "0 * * * *" },
+          triggers: { cron: "0 * * * *" },
           inboxTools: { listen: [{ event: "ci/status", thread: "t" }] },
         },
         async ({ inboxTools }) => {
@@ -67,7 +67,7 @@ describe("inboxTools body type", () => {
         },
       );
       agents.agent(
-        { id: "without-tools", on: { cron: "0 * * * *" } },
+        { id: "without-tools", triggers: { cron: "0 * * * *" } },
         async ({ inboxTools }) => {
           // @ts-expect-error there is no inbox_listen without inboxTools
           void inboxTools.inbox_listen;

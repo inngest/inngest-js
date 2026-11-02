@@ -28,7 +28,7 @@ const agents = createAgents(client);
  */
 const widened = (middleware: Middleware.Class[]) => {
   return agents.agent(
-    { id: "widened", on: { cron: "0 * * * *" }, middleware },
+    { id: "widened", triggers: { cron: "0 * * * *" }, middleware },
     async ({ step }) => {
       // @ts-expect-error a list typed as Middleware.Class[] adds nothing known
       step.sandbox;
@@ -53,7 +53,7 @@ const generic = <const TMiddleware extends Middleware.Class[]>(
   }>,
 ) => {
   return agents.agent(
-    { id: "generic", on: { cron: "0 * * * *" }, middleware },
+    { id: "generic", triggers: { cron: "0 * * * *" }, middleware },
     body,
   );
 };
@@ -68,7 +68,7 @@ const own = <const TMiddleware extends Middleware.Class[]>(
   return agents.agent(
     {
       id: "own",
-      on: { cron: "0 * * * *" },
+      triggers: { cron: "0 * * * *" },
       middleware: [sandboxMiddleware(), ...middleware],
     },
     async ({ step }) => {
@@ -113,7 +113,7 @@ describe("the AgentTypes bag", () => {
         AgentBodyContext<{ event: ThreadCronEvent }>
       >();
 
-      agents.agent({ id: "bag", on: { cron: "0 * * * *" } }, body);
+      agents.agent({ id: "bag", triggers: { cron: "0 * * * *" } }, body);
     };
 
     expect(check).toBeTypeOf("function");

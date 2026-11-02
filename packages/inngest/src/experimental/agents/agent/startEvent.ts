@@ -30,7 +30,7 @@ export const triggerOf = (event: TriggerEvent | undefined) => {
 };
 
 /**
- * What a run's start event carries: for an event of `on`, the agent, thread and
+ * What a run's start event carries: for an event of `triggers`, the agent, thread and
  * the event; otherwise the event's own data, which names the thread.
  */
 export const startData = (

@@ -11,7 +11,7 @@ import type { Middleware } from "../../../components/middleware/middleware.ts";
 
 /**
  * The options of a plain Inngest function that an agent takes as they are.
- * The agent owns `triggers` (see `on`) and `singleton` (one live run per
+ * The agent owns `triggers` (see `triggers`) and `singleton` (one live run per
  * thread), and rejects `debounce`, `batchEvents` and `checkpointing`,
  * which would break what a thread's run is.
  */
