@@ -24,6 +24,7 @@ import {
 import { type KvScopeInstance, type KvSource, kvFrom } from "./kv.ts";
 import type { EffectiveLimits } from "./limits.ts";
 import type { LastRun } from "./recovery.ts";
+import { parseWithAsync } from "./validate.ts";
 
 /**
  * The name of the event `thread.send()` sends.
