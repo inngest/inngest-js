@@ -4,6 +4,7 @@
  * panels on the right; a bar to move between pages.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { coreKeys } from "../../shared/keys/core.ts";
 import type { ActionId } from "../../shared/keys.ts";
 import type {
   Page,
@@ -15,29 +16,21 @@ import type {
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
-import { Events } from "./Events.tsx";
-import { Github } from "./Github.tsx";
+import { clearEdits, saveEdits, withEdits } from "./edits.ts";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
-import { announceChange, sendAction } from "./live.ts";
+import { panelKeys } from "./keytable.ts";
+import { sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Cheat, Contents, Search } from "./overlays.tsx";
-import { MessagePanel } from "./panels.tsx";
+import { allPanels, type PanelDef, panelOf } from "./panels/index.ts";
 import { Divider } from "./panes.tsx";
-import { hash, store } from "./platform.ts";
-import { Slack } from "./Slack.tsx";
+import { store } from "./platform.ts";
+import { routeStreamEvent } from "./stream.ts";
 import { TracePanel } from "./trace.tsx";
 
-type PlayTab = "message" | "slack" | "github" | "events";
 type Overlay = "contents" | "search" | "cheat" | null;
 type Line = Extract<TourEvent, { type: "log" }>;
 type Status = Extract<TourEvent, { type: "status" }>;
-
-const tabNames: Record<PlayTab, string> = {
-  message: "Messages",
-  slack: "Slack",
-  github: "GitHub",
-  events: "Events",
-};
 
 const pathOf = (id: string) => {
   return `/tour/${id}`;
@@ -49,19 +42,13 @@ const idFromPath = () => {
   return match?.[1];
 };
 
-const editKey = (page: Page) => {
-  const original = page.files.find((file) => {
-    return file.editable;
-  });
-
-  return `tour:edit:${page.id}:${hash(original?.content ?? "")}`;
-};
+type CoreId = (typeof coreKeys)[number]["id"];
 
 export const App = () => {
   const [index, setIndex] = useState<TourIndex>();
   const [page, setPage] = useState<Page>();
   const [files, setFiles] = useState<Page["files"]>([]);
-  const [active, setActive] = useState("agent.ts");
+  const [active, setActive] = useState("");
   const [ready, setReady] = useState(false);
   const [devServerUrl, setDevServerUrl] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -78,7 +65,7 @@ export const App = () => {
   const [rightRow, setRightRow] = useState(
     Number(store.get("tour:right")) || 56,
   );
-  const [play, setPlay] = useState<PlayTab>("message");
+  const [play, setPlay] = useState<string>("message");
   const [undo, setUndo] = useState<Record<string, string> | null>(null);
   const editor = useRef<EditorApi>(null);
   const runButton = useRef<HTMLButtonElement>(null);
@@ -108,33 +95,28 @@ export const App = () => {
         setStatus(event);
       } else if (event.type === "runs") {
         setRuns(event.runs);
-      } else if (event.type === "fakes") {
-        announceChange(event.topic);
+      } else {
+        routeStreamEvent(event, window);
       }
     });
   }, []);
 
   const flat = useMemo(() => {
     return (
-      index?.lessons.flatMap((lesson) => {
-        return lesson.pages;
+      index?.modules.flatMap((module) => {
+        return module.pages;
       }) ?? []
     );
   }, [index]);
 
   const open = useCallback((id: string, push = true) => {
     void api.page(id).then((next) => {
-      const saved = store.get(editKey(next));
-      const loaded = next.files.map((file) => {
-        return file.editable && saved !== null
-          ? { ...file, content: saved }
-          : file;
-      });
+      const loaded = withEdits(next, store);
 
       void api.open(next.id);
       setPage(next);
       setFiles(loaded);
-      setActive("agent.ts");
+      setActive(next.files[0]?.name ?? "");
       setLines([]);
       setUndo(null);
       store.set("tour:last", id);
@@ -194,6 +176,9 @@ export const App = () => {
     }
   };
 
+  const coreCount = flat.filter((entry) => {
+    return entry.kind === "core";
+  }).length;
   const hasCode = page?.manifest.code !== false;
   const live = runs.some((run) => {
     return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
@@ -201,20 +186,30 @@ export const App = () => {
     );
   });
 
+  // Formats every editable file with the repo's Biome.
+  const formatAll = async () => {
+    for (const file of page?.files ?? []) {
+      const current = editor.current?.values()[file.name];
+
+      if (file.editable && current !== undefined) {
+        editor.current?.replace(
+          file.name,
+          await api.format(file.name, current),
+        );
+      }
+    }
+  };
+
   const run = async () => {
     if (!page || !hasCode) {
       return;
     }
 
-    await editor.current?.format();
+    await formatAll();
 
     const values = editor.current?.values() ?? {};
-    const edited = values["agent.ts"];
 
-    if (edited !== undefined) {
-      store.set(editKey(page), edited);
-    }
-
+    saveEdits(page, values, store);
     void api.run(page.id, values);
     editor.current?.focus();
   };
@@ -230,7 +225,7 @@ export const App = () => {
       editor.current?.setValue(file.name, file.content);
     }
 
-    store.remove(editKey(page));
+    clearEdits(page, store);
     setUndo(before);
     window.clearTimeout(undoTimer.current);
     undoTimer.current = window.setTimeout(() => {
@@ -272,30 +267,36 @@ export const App = () => {
     }
   };
 
-  const target = page?.manifest.message;
-  const panels: PlayTab[] =
-    (page?.manifest.panels as PlayTab[] | undefined) ??
-    (target ? ["message"] : []);
-  const panelsKey = panels.join(",");
+  const messageTarget = page?.manifest.message;
+  const tabs = (
+    page?.manifest.panels ?? (messageTarget ? ["message"] : [])
+  ).flatMap((id) => {
+    return panelOf(id) ?? [];
+  });
+  const tabsKey = tabs
+    .map((tab) => {
+      return tab.id;
+    })
+    .join(",");
+  const Panel = panelOf(play)?.component;
 
   useEffect(() => {
-    setPlay(panelsKey.split(",")[0] as PlayTab);
-  }, [page?.id, panelsKey]);
+    setPlay(tabsKey.split(",")[0] ?? "");
+  }, [page?.id, tabsKey]);
 
-  // Opens a tab of the play pane, then focuses something in it or hands a key
-  // action to it once it is on screen.
-  const playTo = (tab: PlayTab, then: string | ActionId) => {
-    if (!panels.includes(tab)) {
-      return;
-    }
-
-    setPlay(tab);
+  // Opens a tab of the play pane, then focuses something in it.
+  const focusTab = (tab: PanelDef) => {
+    setPlay(tab.id);
     window.setTimeout(() => {
-      if (then.startsWith(".")) {
-        document.querySelector<HTMLElement>(then)?.focus();
-      } else {
-        sendAction(then as ActionId);
-      }
+      document.querySelector<HTMLElement>(tab.focus)?.focus();
+    }, 40);
+  };
+
+  // Opens a tab, then hands a key action to its panel once it is on screen.
+  const forwardTo = (tab: PanelDef, action: ActionId) => {
+    setPlay(tab.id);
+    window.setTimeout(() => {
+      sendAction(action);
     }, 40);
   };
 
@@ -305,14 +306,43 @@ export const App = () => {
     }, 0);
   };
 
-  const handlers: Handlers = {
+  // Each panel's tab key opens it. A key a panel lists in `panels` opens the
+  // tab and is handed on; one several panels list goes to the open panel
+  // first.
+  const panelHandlers: Handlers = {};
+
+  for (const def of allPanels()) {
+    panelHandlers[def.id] = () => {
+      if (tabs.includes(def)) {
+        focusTab(def);
+      }
+    };
+
+    for (const key of panelKeys(def.id)) {
+      panelHandlers[key.id] = () => {
+        const owners = tabs.filter((tab) => {
+          return key.panels?.includes(tab.id);
+        });
+        const owner =
+          owners.find((tab) => {
+            return tab.id === play;
+          }) ?? owners[0];
+
+        if (owner) {
+          forwardTo(owner, key.id);
+        }
+      };
+    }
+  }
+
+  const core: Record<CoreId, () => void> = {
     run,
     kill: () => {
       void api.kill();
     },
     reset,
     format: () => {
-      void editor.current?.format();
+      void formatAll();
     },
     next: () => {
       go(1);
@@ -335,48 +365,6 @@ export const App = () => {
     trace: () => {
       focusIn(".trace [data-row], .trace");
     },
-    message: () => {
-      playTo("message", ".message button");
-    },
-    slack: () => {
-      playTo("slack", ".slack-head button");
-    },
-    github: () => {
-      playTo("github", ".gh-head button");
-    },
-    events: () => {
-      playTo("events", ".events button");
-    },
-    slackCompose: () => {
-      playTo("slack", "slackCompose");
-    },
-    slackNew: () => {
-      playTo("slack", "slackNew");
-    },
-    approve: () => {
-      playTo("slack", "approve");
-    },
-    deny: () => {
-      playTo("slack", "deny");
-    },
-    sendOther: () => {
-      playTo("message", "sendOther");
-    },
-    githubComment: () => {
-      playTo("github", "githubComment");
-    },
-    githubApprove: () => {
-      playTo("github", "githubApprove");
-    },
-    githubPull: () => {
-      playTo("github", "githubPull");
-    },
-    githubIssue: () => {
-      playTo("github", "githubIssue");
-    },
-    sendEvent: () => {
-      playTo(play === "message" ? "message" : "events", "sendEvent");
-    },
     file: nextFile,
     devserver: () => {
       if (devServerUrl) {
@@ -394,6 +382,7 @@ export const App = () => {
     editor: toggleEditor,
     undo: undoReset,
   };
+  const handlers: Handlers = { ...panelHandlers, ...core };
   const latest = useRef(handlers);
 
   latest.current = handlers;
@@ -405,19 +394,23 @@ export const App = () => {
     const out: Marker[] = [];
 
     for (const line of lines) {
-      const match = /agent\.ts:(\d+)/.exec(line.text);
+      for (const file of files) {
+        const match = new RegExp(
+          `${file.name.replace(".", "\\.")}:(\\d+)`,
+        ).exec(line.text);
 
-      if (line.kind === "err" && match) {
-        out.push({
-          file: "agent.ts",
-          line: Number(match[1]),
-          message: line.text,
-        });
+        if (file.editable && line.kind === "err" && match) {
+          out.push({
+            file: file.name,
+            line: Number(match[1]),
+            message: line.text,
+          });
+        }
       }
     }
 
     return out;
-  }, [lines]);
+  }, [lines, files]);
 
   const pick = (summary: PageSummary) => {
     setOverlay(null);
@@ -522,7 +515,7 @@ export const App = () => {
         <div
           className="col"
           style={
-            hasCode && panels.length > 0
+            hasCode && tabs.length > 0
               ? { gridTemplateRows: `${leftRow}fr 6px ${100 - leftRow}fr` }
               : undefined
           }
@@ -533,7 +526,7 @@ export const App = () => {
             tabIndex={-1}
             aria-label="Lesson"
           >
-            <p className="crumb">{page.lessonTitle}</p>
+            <p className="crumb">{page.moduleTitle}</p>
             <h2>{page.title}</h2>
             <div
               className="prose"
@@ -545,7 +538,7 @@ export const App = () => {
               <EventBlock starts={page.manifest.start} />
             ) : null}
           </section>
-          {hasCode && panels.length > 0 ? (
+          {hasCode && tabs.length > 0 ? (
             <>
               <Divider
                 axis="horizontal"
@@ -555,20 +548,20 @@ export const App = () => {
               />
               <section className="play" aria-label="Play">
                 <div className="tabs" role="tablist" onKeyDown={tabKeys}>
-                  {panels.map((tab) => {
+                  {tabs.map((tab) => {
                     return (
                       <button
                         type="button"
                         role="tab"
-                        id={`play-tab-${tab}`}
-                        key={tab}
-                        aria-selected={play === tab}
+                        id={`play-tab-${tab.id}`}
+                        key={tab.id}
+                        aria-selected={play === tab.id}
                         aria-controls="play-panel"
-                        tabIndex={play === tab ? 0 : -1}
-                        onClick={() => setPlay(tab)}
-                        aria-keyshortcuts={shortcutsOf(tab)}
+                        tabIndex={play === tab.id ? 0 : -1}
+                        onClick={() => setPlay(tab.id)}
+                        aria-keyshortcuts={shortcutsOf(tab.id)}
                       >
-                        {tabNames[tab]} <Kbd action={tab} />
+                        {tab.label} <Kbd action={tab.id} />
                       </button>
                     );
                   })}
@@ -579,15 +572,9 @@ export const App = () => {
                   id="play-panel"
                   aria-labelledby={`play-tab-${play}`}
                 >
-                  {play === "message" && target ? (
-                    <MessagePanel
-                      target={target}
-                      disabled={status.state !== "live"}
-                    />
+                  {Panel && page ? (
+                    <Panel page={page} live={status.state === "live"} />
                   ) : null}
-                  {play === "slack" ? <Slack /> : null}
-                  {play === "github" ? <Github /> : null}
-                  {play === "events" ? <Events /> : null}
                 </div>
               </section>
             </>
@@ -645,9 +632,7 @@ export const App = () => {
                     return latest.current;
                   }}
                   onChange={(name, content) => {
-                    if (name === "agent.ts") {
-                      store.set(editKey(page), content);
-                    }
+                    saveEdits(page, { [name]: content }, store);
                   }}
                 />
                 <div className="controls">
@@ -711,7 +696,9 @@ export const App = () => {
                   runs={runs}
                   lines={lines}
                   everything={everything}
-                  onToggle={handlers.everything}
+                  onToggle={() => {
+                    handlers.everything?.();
+                  }}
                 />
               </section>
             </div>
@@ -731,7 +718,7 @@ export const App = () => {
           Previous <Kbd action="prev" />
         </button>
         <span className="counter">
-          {page.number} / {flat.length}
+          {page.label} / {coreCount}
         </span>
         <button
           type="button"

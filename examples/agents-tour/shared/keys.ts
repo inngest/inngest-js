@@ -1,6 +1,7 @@
 /**
  * @module
- * The one key table. The editor commands, the window handler, the `<kbd>`
+ * The key table's types, its matching and hint helpers, and `assembleKeys`,
+ * which joins the per-area lists in `keys/` into the one table. The editor commands, the window handler, the `<kbd>`
  * hints and the cheat sheet are all made from it, so they cannot drift.
  *
  * A combo is written `Mod+Enter`, `Alt+Shift+K` or `Alt+]`. `Mod` is Ctrl on
@@ -10,291 +11,39 @@
  * works only when focus is not in a text field; `g c` is a sequence.
  */
 
-export type ActionId =
-  | "run"
-  | "kill"
-  | "reset"
-  | "format"
-  | "next"
-  | "prev"
-  | "cheat"
-  | "contents"
-  | "search"
-  | "text"
-  | "trace"
-  | "message"
-  | "slack"
-  | "github"
-  | "events"
-  | "slackCompose"
-  | "slackNew"
-  | "githubComment"
-  | "githubApprove"
-  | "approve"
-  | "deny"
-  | "githubIssue"
-  | "githubPull"
-  | "sendEvent"
-  | "sendOther"
-  | "everything"
-  | "file"
-  | "devserver"
-  | "rowDown"
-  | "rowUp"
-  | "rowOpen"
-  | "editor"
-  | "undo";
-
 export interface KeyDef {
-  id: ActionId;
+  id: string;
   label: string;
-  group: "Code" | "Pages" | "Panes" | "Slack" | "GitHub" | "Trace" | "Focus";
+  group: string;
   // Bindings that work while the editor or another text field has focus.
-  inField: string[];
+  inField: readonly string[];
   // Bindings that work when focus is not in a text field.
-  outside: string[];
+  outside: readonly string[];
   note?: string;
   // Handled by the pane that owns it, not by the window.
   local?: boolean;
+  // Place in the table, and so in the cheat sheet. Keys without one follow
+  // the ranked ones.
+  rank?: number;
+  // The play-pane panels (by id) this action belongs to: it opens the tab and
+  // is handed to the panel.
+  panels?: readonly string[];
 }
 
-export const keys: KeyDef[] = [
-  {
-    id: "run",
-    label: "Run",
-    group: "Code",
-    inField: ["Mod+Enter"],
-    outside: ["r", "Mod+Enter"],
-  },
-  {
-    id: "kill",
-    label: "Kill live runs",
-    group: "Code",
-    inField: ["Alt+Shift+K"],
-    outside: ["x"],
-  },
-  {
-    id: "reset",
-    label: "Reset the code and the runs",
-    group: "Code",
-    inField: ["Alt+Shift+R"],
-    outside: ["R"],
-  },
-  {
-    id: "format",
-    label: "Format",
-    group: "Code",
-    inField: ["Alt+Shift+F"],
-    outside: ["f"],
-  },
-  {
-    id: "next",
-    label: "Next page",
-    group: "Pages",
-    inField: ["Alt+]", "Alt+PageDown"],
-    outside: ["ArrowRight", "j"],
-  },
-  {
-    id: "prev",
-    label: "Previous page",
-    group: "Pages",
-    inField: ["Alt+[", "Alt+PageUp"],
-    outside: ["ArrowLeft", "k"],
-  },
-  {
-    id: "contents",
-    label: "Contents",
-    group: "Pages",
-    inField: ["Alt+Shift+C"],
-    outside: ["g c"],
-  },
-  {
-    id: "search",
-    label: "Search pages",
-    group: "Pages",
-    inField: ["Alt+Shift+P"],
-    outside: ["/"],
-  },
-  {
-    id: "cheat",
-    label: "This cheat sheet",
-    group: "Pages",
-    inField: ["Alt+/"],
-    outside: ["?"],
-  },
-  {
-    id: "text",
-    label: "Lesson text",
-    group: "Panes",
-    inField: ["Alt+Shift+1"],
-    outside: ["1"],
-  },
-  {
-    id: "message",
-    label: "Play pane (message box)",
-    group: "Panes",
-    inField: ["Alt+Shift+M"],
-    outside: ["3", "g m"],
-  },
-  {
-    id: "trace",
-    label: "Trace",
-    group: "Panes",
-    inField: ["Alt+Shift+T"],
-    outside: ["4", "g t"],
-  },
-  {
-    id: "slack",
-    label: "Slack pane",
-    group: "Panes",
-    inField: ["Alt+Shift+S"],
-    outside: ["5", "g s"],
-  },
-  {
-    id: "github",
-    label: "GitHub pane",
-    group: "Panes",
-    inField: ["Alt+Shift+G"],
-    outside: ["6", "g h"],
-  },
-  {
-    id: "events",
-    label: "Event sender pane",
-    group: "Panes",
-    inField: ["Alt+Shift+V"],
-    outside: ["7", "g v"],
-  },
-  {
-    id: "sendEvent",
-    label: "Send (a message or an event)",
-    group: "Panes",
-    inField: ["Alt+Shift+Enter"],
-    outside: ["s"],
-  },
-  {
-    id: "sendOther",
-    label: "Send to the second thread",
-    group: "Panes",
-    inField: ["Alt+Shift+9"],
-    outside: ["9"],
-  },
-  {
-    id: "slackCompose",
-    label: "Mention the bot in Slack",
-    group: "Slack",
-    inField: ["Alt+Shift+Q"],
-    outside: ["i"],
-  },
-  {
-    id: "slackNew",
-    label: "Reply in the Slack thread",
-    group: "Slack",
-    inField: ["Alt+Shift+W"],
-    outside: ["w"],
-  },
-  {
-    id: "approve",
-    label: "Click Approve in Slack",
-    group: "Slack",
-    inField: ["Alt+Shift+Y"],
-    outside: ["y"],
-  },
-  {
-    id: "deny",
-    label: "Click Deny in Slack",
-    group: "Slack",
-    inField: ["Alt+Shift+N"],
-    outside: ["n"],
-  },
-  {
-    id: "githubComment",
-    label: "Comment on the latest issue or pull request",
-    group: "GitHub",
-    inField: ["Alt+Shift+A"],
-    outside: ["a"],
-  },
-  {
-    id: "githubApprove",
-    label: "Approve the latest pull request",
-    group: "GitHub",
-    inField: ["Alt+Shift+I"],
-    outside: ["v"],
-  },
-  {
-    id: "githubPull",
-    label: "Open a pull request",
-    group: "GitHub",
-    inField: ["Alt+Shift+B"],
-    outside: ["p"],
-  },
-  {
-    id: "githubIssue",
-    label: "Open an issue",
-    group: "GitHub",
-    inField: ["Alt+Shift+J"],
-    outside: ["o"],
-  },
-  {
-    id: "everything",
-    label: "Show every trace step",
-    group: "Trace",
-    inField: ["Alt+Shift+H"],
-    outside: ["h"],
-  },
-  {
-    id: "rowDown",
-    label: "Next trace row",
-    group: "Trace",
-    inField: [],
-    outside: ["ArrowDown"],
-    local: true,
-  },
-  {
-    id: "rowUp",
-    label: "Previous trace row",
-    group: "Trace",
-    inField: [],
-    outside: ["ArrowUp"],
-    local: true,
-  },
-  {
-    id: "rowOpen",
-    label: "Open a trace row or its hidden steps",
-    group: "Trace",
-    inField: [],
-    outside: ["Enter"],
-    local: true,
-  },
-  {
-    id: "file",
-    label: "Switch between the code files",
-    group: "Code",
-    inField: ["Alt+Shift+L"],
-    outside: ["l"],
-  },
-  {
-    id: "devserver",
-    label: "Open the Dev Server",
-    group: "Pages",
-    inField: ["Alt+Shift+."],
-    outside: ["."],
-  },
-  {
-    id: "undo",
-    label: "Undo reset",
-    group: "Code",
-    inField: ["Alt+Shift+U"],
-    outside: ["u"],
-  },
-  {
-    id: "editor",
-    label: "Leave or return to the editor",
-    group: "Focus",
-    inField: ["Alt+Shift+E"],
-    outside: ["e"],
-    note: "Esc also leaves when no editor widget is open",
-  },
-];
+/**
+ * Each file in `keys/` adds its list here, so `ActionId` is the ids of every
+ * list and a mistyped action fails the type check.
+ */
+export interface KeyLists {}
+
+export type ActionId = KeyLists[keyof KeyLists][number]["id"];
+
+/**
+ * Types a list so its ids stay literal.
+ */
+export const defineKeys = <const T extends readonly KeyDef[]>(defs: T) => {
+  return defs;
+};
 
 export const monacoOnly = [
   {
@@ -417,14 +166,82 @@ export const hintOf = (spec: string, isMac: boolean) => {
   return parts.join(isMac ? "" : "+");
 };
 
-export const keyOf = (id: ActionId) => {
-  const def = keys.find((candidate) => {
-    return candidate.id === id;
-  });
+/**
+ * Names each module's lists by its file (`shared/keys/slack.ts` is `slack`),
+ * ready for `assembleKeys`.
+ */
+export const areasOf = (
+  modules: Record<string, Record<string, readonly KeyDef[]>>,
+) => {
+  const byArea: Record<string, readonly KeyDef[]> = {};
 
-  if (!def) {
-    throw new Error(`No key for ${id}`);
+  for (const [path, module] of Object.entries(modules)) {
+    byArea[path.replace(/^.*\//, "").replace(/\.ts$/, "")] =
+      Object.values(module).flat();
   }
 
-  return def;
+  return byArea;
+};
+
+/**
+ * Joins the areas' key lists, by area name, into the one table: the page's own
+ * (`core`) first, then each area by name, then ordered by `rank` (keys
+ * without one stay after the ranked ones, in that order). An area adds a file
+ * of keys and touches no other; the table refuses two actions that share an
+ * id, or two that bind the same key.
+ */
+export const assembleKeys = (byArea: Record<string, readonly KeyDef[]>) => {
+  const names = Object.keys(byArea).sort((a, b) => {
+    return Number(b === "core") - Number(a === "core") || a.localeCompare(b);
+  });
+  const joined = names.flatMap((name) => {
+    return byArea[name] ?? [];
+  });
+  const table = joined
+    .map((def, at) => {
+      return { def, at };
+    })
+    .sort((a, b) => {
+      return (
+        (a.def.rank ?? Number.POSITIVE_INFINITY) -
+          (b.def.rank ?? Number.POSITIVE_INFINITY) || a.at - b.at
+      );
+    })
+    .map((entry) => {
+      return entry.def;
+    });
+  const problems: string[] = [];
+  const ids = new Set<string>();
+  const seen = new Map<string, string>();
+
+  for (const def of table) {
+    if (ids.has(def.id)) {
+      problems.push(`action ${def.id} is defined twice`);
+    }
+
+    ids.add(def.id);
+
+    for (const binding of [
+      ...def.inField.map((b) => {
+        return `in:${b}`;
+      }),
+      ...def.outside.map((b) => {
+        return `out:${b}`;
+      }),
+    ]) {
+      const owner = seen.get(binding);
+
+      if (owner) {
+        problems.push(`key ${binding} is bound to both ${owner} and ${def.id}`);
+      }
+
+      seen.set(binding, def.id);
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(problems.join("\n"));
+  }
+
+  return table;
 };

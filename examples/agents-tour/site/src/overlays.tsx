@@ -4,8 +4,9 @@
  * focus when it opens and gives it back when it closes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { hintOf, keys, monacoOnly } from "../../shared/keys.ts";
+import { hintOf, monacoOnly } from "../../shared/keys.ts";
 import type { PageSummary, TourIndex } from "../../shared/types.ts";
+import { keys } from "./keytable.ts";
 import { isMac } from "./platform.ts";
 
 const Modal = ({
@@ -74,8 +75,8 @@ export const Contents = ({
   onPick: (page: PageSummary) => void;
   onClose: () => void;
 }) => {
-  const all = index.lessons.flatMap((lesson) => {
-    return lesson.pages;
+  const all = index.modules.flatMap((module) => {
+    return module.pages;
   });
   const [cursor, setCursor] = useState(
     Math.max(
@@ -122,12 +123,12 @@ export const Contents = ({
           }
         }}
       >
-        {index.lessons.map((lesson) => {
+        {index.modules.map((module) => {
           return (
-            <section key={lesson.id}>
-              <h3>{lesson.title}</h3>
-              <p className="blurb">{lesson.blurb}</p>
-              {lesson.pages.map((page) => {
+            <section key={module.id}>
+              <h3>{module.title}</h3>
+              <p className="blurb">{module.opening}</p>
+              {module.pages.map((page) => {
                 const selected = all[cursor]?.id === page.id;
 
                 return (
@@ -143,7 +144,7 @@ export const Contents = ({
                       onPick(page);
                     }}
                   >
-                    <span className="num">{page.number}</span>
+                    <span className="num">{page.label}</span>
                     {page.title}
                   </button>
                 );
@@ -174,13 +175,13 @@ export const Search = ({
   const results = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
 
-    return index.lessons
-      .flatMap((lesson) => {
-        return lesson.pages;
+    return index.modules
+      .flatMap((module) => {
+        return module.pages;
       })
       .filter((page) => {
         const text =
-          `${page.number} ${page.title} ${page.lessonTitle}`.toLowerCase();
+          `${page.label} ${page.title} ${page.moduleTitle}`.toLowerCase();
 
         return words.every((word) => {
           return text.includes(word);
@@ -239,9 +240,9 @@ export const Search = ({
                 onPick(page);
               }}
             >
-              <span className="num">{page.number}</span>
+              <span className="num">{page.label}</span>
               {page.title}
-              <span className="where">{page.lessonTitle}</span>
+              <span className="where">{page.moduleTitle}</span>
             </button>
           );
         })}
@@ -255,14 +256,12 @@ export const Search = ({
 
 export const Cheat = ({ onClose }: { onClose: () => void }) => {
   const groups = [
-    "Code",
-    "Pages",
-    "Panes",
-    "Slack",
-    "GitHub",
-    "Trace",
-    "Focus",
-  ] as const;
+    ...new Set(
+      keys.map((def) => {
+        return def.group;
+      }),
+    ),
+  ];
 
   return (
     <Modal title="Keys" onClose={onClose}>

@@ -53,6 +53,16 @@ export const resolveBinary = () => {
   return existsSync(cached) ? cached : undefined;
 };
 
+/**
+ * The port the tour listens on: a fixed default, so the tour keeps one
+ * address, unless `TOUR_PORT` says otherwise.
+ */
+export const tourPort = (env: Record<string, string | undefined>) => {
+  const given = Number(env.TOUR_PORT);
+
+  return Number.isInteger(given) && given > 0 && given < 65536 ? given : 4730;
+};
+
 export const run = (cmd: string, args: string[], cwd = root) => {
   const result = spawnSync(cmd, args, { cwd, encoding: "utf8" });
 

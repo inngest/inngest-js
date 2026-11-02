@@ -1,0 +1,1 @@
+{ "readOnly": ["client.ts"], "editable": ["agent.ts", "tools.ts"] }

@@ -1,0 +1,6 @@
+{
+  "readOnly": ["setup.ts"],
+  "editable": ["agent.ts"],
+  "concepts": ["agent"],
+  "apis": ["agents.agent"]
+}

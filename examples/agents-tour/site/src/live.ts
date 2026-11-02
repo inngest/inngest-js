@@ -1,7 +1,7 @@
 /**
  * @module
- * Two small buses on the window. `fakes` events (a fake Slack or GitHub
- * changed) make the mini UIs reload their state. `tour:action` events carry
+ * Two small buses on the window. `fakes` events (see `stream.ts`)
+ * make a panel reload. `tour:action` events carry
  * a key action to the panel that owns it, so a key works the same from
  * Monaco, from a text box and from the page.
  */
@@ -9,10 +9,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ActionId } from "../../shared/keys.ts";
 
 export type FakeTopic = "slack" | "github";
-
-export const announceChange = (topic: FakeTopic) => {
-  window.dispatchEvent(new CustomEvent("tour:fakes", { detail: topic }));
-};
 
 export const sendAction = (id: ActionId) => {
   window.dispatchEvent(new CustomEvent("tour:action", { detail: id }));

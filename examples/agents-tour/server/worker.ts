@@ -39,9 +39,10 @@ export class Worker {
   }
 
   /**
-   * Starts the app from `dir`, and switches to it when it serves.
+   * Starts the app from `dir`, and switches to it when it serves. `files`
+   * are the page's files, in the folder, that the app imports.
    */
-  async reload(dir: string): Promise<Started> {
+  async reload(dir: string, files: string[]): Promise<Started> {
     const pending = this.pending;
     const port = await freePort();
     const errors: string[] = [];
@@ -52,6 +53,8 @@ export class Worker {
       env: {
         ...process.env,
         TOUR_DIR: dir,
+        // The page's files, which the app imports.
+        TOUR_FILES: JSON.stringify(files),
         TOUR_URL: this.env.publicUrl,
         SLACK_BOT_TOKEN: "xoxb-tour",
         PORT: String(port),
@@ -181,6 +184,17 @@ export class Worker {
 
     if (!res.ok) {
       throw new Error(body.error ?? `Sending failed: ${res.status}`);
+    }
+  }
+
+  /**
+   * Gives up on an app that is still starting. The previous one keeps serving.
+   */
+  abortStarting() {
+    for (const child of this.pending) {
+      if (child !== this.current) {
+        child.kill("SIGKILL");
+      }
     }
   }
 

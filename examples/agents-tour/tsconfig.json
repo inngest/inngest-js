@@ -17,8 +17,8 @@
     "scripts/**/*.ts",
     "server/**/*.ts",
     "runtime/**/*.ts",
-    "lessons/**/*.ts",
+    "test/**/*.ts",
     "shared/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "test/fixtures"]
 }

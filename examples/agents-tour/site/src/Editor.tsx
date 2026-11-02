@@ -21,7 +21,8 @@ self.MonacoEnvironment = {
 export interface EditorApi {
   focus(): void;
   hasFocus(): boolean;
-  format(): Promise<void>;
+  // Replaces a file's text as one edit, so undo still works.
+  replace(name: string, content: string): void;
   values(): Record<string, string>;
   setValue(name: string, content: string): void;
 }
@@ -104,8 +105,16 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
       hasFocus: () => {
         return Boolean(editor.current?.hasTextFocus());
       },
-      format: async () => {
-        await editor.current?.getAction("editor.action.formatDocument")?.run();
+      replace: (name, content) => {
+        const model = monaco.editor.getModel(uriOf(name));
+
+        if (model && model.getValue() !== content) {
+          model.pushEditOperations(
+            [],
+            [{ range: model.getFullModelRange(), text: content }],
+            () => null,
+          );
+        }
       },
       values: () => {
         const out: Record<string, string> = {};

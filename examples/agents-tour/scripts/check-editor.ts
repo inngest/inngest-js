@@ -31,7 +31,7 @@ const { chromium } = (await import(
   process.env.TOUR_PLAYWRIGHT ?? "playwright"
 )) as Playwright;
 const index = (await (await fetch(`${base}/api/index`)).json()) as {
-  lessons: { pages: { id: string }[] }[];
+  modules: { pages: { id: string }[] }[];
 };
 const browser = await chromium.launch({
   executablePath: process.env.TOUR_CHROMIUM,
@@ -63,8 +63,8 @@ const read = async (id: string, how: string) => {
   }
 };
 
-const ids = index.lessons.flatMap((lesson) => {
-  return lesson.pages.map((entry) => {
+const ids = index.modules.flatMap((module) => {
+  return module.pages.map((entry) => {
     return entry.id;
   });
 });

@@ -2,13 +2,15 @@
  * @module
  * `pnpm tour`: checks the machine, starts the Dev Server from the cached
  * build on free ports, starts the tour server, opens the browser, and stops
- * everything on Ctrl-C.
+ * everything on Ctrl-C. It listens on a fixed port (`TOUR_PORT` overrides),
+ * so the address stays the same, and opens no browser when `TOUR_NO_OPEN` is
+ * set.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createTour } from "../server/app.ts";
-import { doctor, freePort, resolveBinary, root } from "./lib.ts";
+import { doctor, freePort, resolveBinary, root, tourPort } from "./lib.ts";
 
 if (!doctor({ needGo: false })) {
   process.exit(1);
@@ -56,7 +58,7 @@ if (
 }
 
 const [port, api, gateway, gatewayGrpc, executorGrpc] = await Promise.all([
-  Number(process.env.TOUR_PORT) || freePort(),
+  tourPort(process.env),
   freePort(),
   freePort(),
   freePort(),
@@ -73,7 +75,11 @@ const tour = await createTour({
 try {
   await tour.start();
 } catch (error) {
-  console.error(String(error));
+  console.error(
+    (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+      ? `Port ${port} is already in use. Stop the tour running there, or set TOUR_PORT.`
+      : String(error),
+  );
   await tour.stop();
   process.exit(1);
 }

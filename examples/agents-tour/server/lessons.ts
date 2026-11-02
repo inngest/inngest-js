@@ -1,17 +1,28 @@
 /**
  * @module
- * Reads the lessons from disk: `lessons/<nn-lesson>/<nn-page>/` with
- * `page.md`, an optional `agent.ts` and `setup.ts`, and `manifest.json`.
- * Pages are numbered in order across lessons by the number in the page's
- * directory name.
+ * Reads the lessons from disk.
+ *
+ * ```
+ * lessons/_shared/<file>                  read-only files for the whole tour
+ * lessons/<nn-module>/module.json         title and opening line
+ * lessons/<nn-module>/_shared/<file>      read-only files for one module
+ * lessons/<nn-module>/<nn>[a-z]-<page>/   page.md, manifest.json, editable files
+ * ```
+ *
+ * A page's folder starts with its core number; a Go deeper page adds a
+ * letter (`03a-`). The folder gives the label (`3`, `3a`) and the kind. A manifest names the read-only
+ * files its page shows; each is found in the module's `_shared` folder, then
+ * in the tour-wide one, so it is stored once. An exercise page starts from
+ * its `stub` folder and keeps its `solution` folder back.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
-  Lesson,
   Manifest,
+  Module,
   Page,
   PageFile,
+  PageSummary,
   TourIndex,
 } from "../shared/types.ts";
 
@@ -36,80 +47,134 @@ const withoutTitle = (markdown: string) => {
   return markdown.split("\n").slice(1).join("\n").trim();
 };
 
-const idOf = (lessonDir: string, pageDir: string) => {
-  return `${lessonDir.replace(/^\d+-/, "")}/${pageDir.replace(/^\d+-/, "")}`;
+const slugOf = (dir: string) => {
+  return dir.replace(/^\d+[a-z]?-/, "");
+};
+
+const readJson = <T>(path: string) => {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
 };
 
 export interface LoadedPage extends Page {
   dir: string;
+  // What the check runner needs; never sent to the site.
+  exerciseFiles?: { check: string; solution: PageFile[] };
 }
 
-export const loadLessons = (lessonsDir: string) => {
-  const pages: LoadedPage[] = [];
-  const lessons: Lesson[] = [];
+export interface LoadedLessons {
+  pages: LoadedPage[];
+  index: TourIndex;
+}
 
-  for (const lessonDir of dirs(lessonsDir)) {
-    const lessonPath = join(lessonsDir, lessonDir);
-    const meta = JSON.parse(
-      readFileSync(join(lessonPath, "lesson.json"), "utf8"),
-    ) as { title: string; blurb: string };
-    const lesson: Lesson = {
-      id: lessonDir.replace(/^\d+-/, ""),
+export const loadLessons = (lessonsDir: string): LoadedLessons => {
+  const pages: LoadedPage[] = [];
+  const modules: Module[] = [];
+  const tourShared = join(lessonsDir, "_shared");
+
+  for (const moduleDir of dirs(lessonsDir)) {
+    const modulePath = join(lessonsDir, moduleDir);
+    const meta = readJson<{ title: string; opening: string }>(
+      join(modulePath, "module.json"),
+    );
+    const module: Module = {
+      id: slugOf(moduleDir),
       title: meta.title,
-      blurb: meta.blurb,
+      opening: meta.opening,
       pages: [],
     };
 
-    for (const pageDir of dirs(lessonPath)) {
-      const dir = join(lessonPath, pageDir);
-      const markdown = readFileSync(join(dir, "page.md"), "utf8");
-      const manifest = JSON.parse(
-        readFileSync(join(dir, "manifest.json"), "utf8"),
-      ) as Manifest;
-      const files: PageFile[] = [];
+    const readShared = (page: string, name: string) => {
+      for (const folder of [join(modulePath, "_shared"), tourShared]) {
+        const path = join(folder, name);
 
-      if (manifest.code !== false) {
-        files.push({
-          name: "agent.ts",
-          content: readFileSync(join(dir, "agent.ts"), "utf8"),
-          editable: true,
-        });
-
-        if (existsSync(join(dir, "setup.ts"))) {
-          files.push({
-            name: "setup.ts",
-            content: readFileSync(join(dir, "setup.ts"), "utf8"),
-            editable: false,
-          });
+        if (existsSync(path)) {
+          return readFileSync(path, "utf8");
         }
       }
 
-      const page: LoadedPage = {
-        id: idOf(lessonDir, pageDir),
-        number: Number.parseInt(pageDir, 10),
-        lesson: lesson.id,
-        lessonTitle: lesson.title,
+      throw new Error(`${page}: no shared file ${name}`);
+    };
+
+    for (const pageDir of dirs(modulePath)) {
+      const match = /^(\d+)([a-z]?)-/.exec(pageDir);
+
+      if (!match) {
+        throw new Error(
+          `${moduleDir}/${pageDir}: a page folder is <nn>-<slug>`,
+        );
+      }
+
+      const dir = join(modulePath, pageDir);
+      const id = `${module.id}/${slugOf(pageDir)}`;
+      const markdown = readFileSync(join(dir, "page.md"), "utf8");
+      const manifest = readJson<Manifest>(join(dir, "manifest.json"));
+      const files: PageFile[] = [];
+      let exerciseFiles: LoadedPage["exerciseFiles"];
+
+      if (manifest.code !== false) {
+        const exercise = manifest.exercise;
+
+        for (const name of manifest.editable ?? ["agent.ts"]) {
+          files.push({
+            name,
+            content: readFileSync(
+              join(dir, exercise ? exercise.stub : "", name),
+              "utf8",
+            ),
+            editable: true,
+          });
+        }
+
+        for (const name of manifest.readOnly ?? ["setup.ts"]) {
+          files.push({
+            name,
+            content: readShared(id, name),
+            editable: false,
+          });
+        }
+
+        if (exercise) {
+          exerciseFiles = {
+            check: join(dir, exercise.check),
+            solution: files
+              .filter((file) => {
+                return file.editable;
+              })
+              .map((file) => {
+                return {
+                  ...file,
+                  content: readFileSync(
+                    join(dir, exercise.solution, file.name),
+                    "utf8",
+                  ),
+                };
+              }),
+          };
+        }
+      }
+
+      const summary: PageSummary = {
+        id,
+        label: `${Number.parseInt(match[1] as string, 10)}${match[2]}`,
+        kind: match[2] ? "deeper" : "core",
+        module: module.id,
+        moduleTitle: module.title,
         title: titleOf(markdown),
+      };
+
+      pages.push({
+        ...summary,
         markdown: withoutTitle(markdown),
         files,
         manifest,
         dir,
-      };
-
-      pages.push(page);
-      lesson.pages.push({
-        id: page.id,
-        number: page.number,
-        lesson: page.lesson,
-        lessonTitle: page.lessonTitle,
-        title: page.title,
+        exerciseFiles,
       });
+      module.pages.push(summary);
     }
 
-    lessons.push(lesson);
+    modules.push(module);
   }
 
-  const index: TourIndex = { lessons };
-
-  return { pages, index };
+  return { pages, index: { modules } };
 };
