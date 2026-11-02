@@ -33,11 +33,18 @@ export type AgentRouting = {
 /**
  * Who sent a message, as it travels in `data.from`. An agent is its address
  * and the key of the thread that sent; a plain function is its ID and key.
- * `depth` is how many agents deep the chain that led here is; it is internal
- * and the public `Sender` leaves it out.
+ * `depth` is how many agents deep the chain that led here is, and `via` marks
+ * a run a model started with `start_agent`, whose end is reported back to it;
+ * both are internal and the public `Sender` leaves them out.
  */
 export type SenderData =
-  | { kind: "agent"; address: string; key: string; depth?: number }
+  | {
+      kind: "agent";
+      address: string;
+      key: string;
+      depth?: number;
+      via?: "start_agent";
+    }
   | { kind: "function"; id: string; key: string; depth?: number };
 
 /**

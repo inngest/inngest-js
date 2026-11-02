@@ -9,8 +9,8 @@ import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
-import { agentToolSet } from "./agentTools.ts";
 import { createAgents } from "./agents.ts";
+import { agentToolSet } from "./agentTools.ts";
 import { run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });

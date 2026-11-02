@@ -114,6 +114,12 @@ export interface StartTarget {
    * trigger's data, not as the content of an `agent/message`.
    */
   typed: boolean;
+
+  /**
+   * Set for a run a model starts with `start_agent`: its end is reported to
+   * the starter as an `agent/finished` message.
+   */
+  via?: "start_agent";
 }
 
 /**
@@ -200,6 +206,7 @@ export function startThread<TOutput>(
         key: self.thread,
         depth: depth + 1,
         thread: key,
+        ...(target.via && { via: target.via }),
       }
     : {
         kind: "function",
