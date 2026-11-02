@@ -663,25 +663,33 @@ export interface AgentLoopCallOptions<
 }
 
 /**
- * What `agent.loop()` returns.
+ * What `agent.loop()` returns. The `"budget"` end carries a `reason`; no other
+ * end has one.
  */
-export interface AgentLoopResult<TTools extends SandboxTools = AnyTools> {
+export type AgentLoopResult<TTools extends SandboxTools = AnyTools> =
+  AgentLoopResultBase<TTools> &
+    (
+      | {
+          end: "budget";
+          /**
+           * Why the loop ended, for `end: "budget"`.
+           */
+          reason: string;
+        }
+      | {
+          end: Exclude<AgentLoopEnd, "budget">;
+          reason?: never;
+        }
+    );
+
+/**
+ * What every end of a loop gives.
+ */
+export interface AgentLoopResultBase<TTools extends SandboxTools = AnyTools> {
   /**
    * The text of the last model reply.
    */
   text: string;
-
-  /**
-   * Why the loop ended: the model finished (`"done"`), it ran out of turns
-   * (`"maxTurns"`), `stop` asked to end it (`"stop"`), or the budget was
-   * spent (`"budget"`).
-   */
-  end: AgentLoopEnd;
-
-  /**
-   * Why the loop ended, for `end: "budget"`.
-   */
-  reason?: string;
 
   /**
    * How many model calls the loop made.
@@ -1166,7 +1174,9 @@ const runLoop = async <TTools extends SandboxTools>(
       toolCalls: toolRuns,
       unread,
       ...(compaction && { compaction }),
-    };
+      // Only the "budget" end is given a reason, so the object is one of the
+      // union's members; the compiler cannot relate `end` to `reason` here.
+    } as AgentLoopResult<TTools>;
   };
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {

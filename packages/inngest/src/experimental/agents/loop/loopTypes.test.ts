@@ -7,6 +7,7 @@ import { expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
 import { tool } from "../../../components/sandbox/tools.ts";
 import { createAgents } from "../agent/agents.ts";
+import { agents, created, typesOnly } from "../agent/typeFixtures.ts";
 import type { AgentFunctionConfig } from "../agent/types.ts";
 import * as entry from "../index.ts";
 import type {
@@ -302,8 +303,20 @@ test("agents: the model, system, tools, loop and remember fields take a value or
 });
 
 test("loop: a budget end carries a reason and no other end does", () => {
-  // The result keeps one shape for every end: `reason` is optional, and the
-  // loop sets it only for the "budget" end (loop.md, "the result keeps reason").
-  expectTypeOf<AgentLoopResult["reason"]>().toEqualTypeOf<string | undefined>();
-  expectTypeOf<AgentLoopResult>().toHaveProperty("reason");
+  typesOnly(() => {
+    agents.agent(
+      { id: "loop-3", triggers: [created], model },
+      async ({ inbox, loop }) => {
+        const result = await loop(await inbox.drain());
+
+        if (result.end === "budget") {
+          expectTypeOf(result.reason).toBeString();
+        } else {
+          expectTypeOf(result.reason).toEqualTypeOf<undefined>();
+        }
+
+        return null;
+      },
+    );
+  });
 });
