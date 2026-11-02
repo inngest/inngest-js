@@ -8,10 +8,10 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { run } from "./test-helpers.ts";
+import { freshKv, run } from "./test-helpers.ts";
 
 const makeClient = () => {
   return new Inngest({ id: testClientId });
@@ -38,7 +38,6 @@ describe("an agent with no handler", () => {
   test("createAgentFunction takes no body", async () => {
     const { fn } = createAgentFunction(makeClient(), {
       id: "plain",
-      kv: createKv({ adapter: memoryKvAdapter() }),
       triggers: { event: "shop/order", thread: "event.data.id" },
     });
 
@@ -77,7 +76,6 @@ describe("idle", () => {
       makeClient(),
       {
         id: "waiter",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         triggers: { event: "shop/order", thread: "event.data.id" },
         ...(idle !== undefined && { idle }),
       } as never,
@@ -174,7 +172,6 @@ describe("optimizeParallelism", () => {
     const { client, warn } = warned();
     const { fn } = createAgentFunction(client, {
       id: "quiet-agent",
-      kv: createKv({ adapter: memoryKvAdapter() }),
     });
 
     expect(fn["opts"].optimizeParallelism).toBe(false);
@@ -325,12 +322,11 @@ describe("a trigger with nothing at its thread path", () => {
 
 describe("a message after the run ended", () => {
   test("starts a new run on the same thread, which reads the state the first run wrote; another thread does not see it", async () => {
-    const store = createKv({ adapter: memoryKvAdapter() });
+    const store = freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "keeper",
-        kv: store,
         triggers: { event: "shop/order", thread: "event.data.id" },
       },
       async ({ me }) => {

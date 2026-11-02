@@ -21,7 +21,11 @@ import {
 } from "../threads/threadTrigger.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { run } from "./test-helpers.ts";
+import { freshKv, run } from "./test-helpers.ts";
+
+beforeEach(() => {
+  freshKv();
+});
 
 const order = eventType("shop/order.created", {
   schema: z.object({ id: z.string(), total: z.number() }),
@@ -258,7 +262,6 @@ describe("inbox validation", () => {
       client,
       {
         id: "checked",
-        kv: createKv({ adapter: memoryKvAdapter() }),
         triggers: {
           event: order,
           thread: "event.data.id",
@@ -314,7 +317,6 @@ describe("inbox validation", () => {
         client,
         {
           id: "throwing",
-          kv: createKv({ adapter: memoryKvAdapter() }),
           triggers: { event: throwingEvent, thread: "event.data.id" },
         } as never,
         async ({ inbox }) => {
@@ -362,7 +364,6 @@ describe("inbox validation", () => {
         client,
         {
           id: "closing",
-          kv: createKv({ adapter: memoryKvAdapter() }),
           triggers: { event: order, thread: "event.data.id" },
         },
         async ({ inbox }) => {
@@ -389,7 +390,6 @@ describe("inbox validation", () => {
         client,
         {
           id: "unchecked",
-          kv: createKv({ adapter: memoryKvAdapter() }),
           triggers: { event: ping, thread: "event.data.id" },
         },
         async ({ inbox }) => {

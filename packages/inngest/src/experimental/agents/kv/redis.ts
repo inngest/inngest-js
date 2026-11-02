@@ -7,6 +7,9 @@ import type { Socket } from "node:net";
 
 type Reply = string | number | null | Error | Reply[];
 
+// How long a connection with nothing pending stays open.
+const idleCloseMs = 30_000;
+
 interface Pending {
   resolve: (reply: Reply) => void;
   reject: (error: Error) => void;
@@ -158,7 +161,31 @@ export async function connectRedis(
   const pending: Pending[] = [];
   let buffer = Buffer.alloc(0);
 
+  // The connection never keeps the process alive: the socket is unref'd while
+  // no reply is awaited (a script that forgot to close it still exits), and
+  // ref'd while one is, so the process waits for that reply. After
+  // `idleCloseMs` with nothing pending the socket closes, and the shared
+  // connection reconnects on the next command.
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function busy() {
+    clearTimeout(idleTimer);
+    socket.ref();
+  }
+
+  function idle() {
+    socket.unref();
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      socket.destroy();
+    }, idleCloseMs);
+    idleTimer.unref();
+  }
+
+  idle();
+
   function fail(error: Error) {
+    clearTimeout(idleTimer);
     for (const p of pending.splice(0)) {
       p.reject(error);
     }
@@ -188,6 +215,9 @@ export async function connectRedis(
 
       buffer = buffer.subarray(parsedReply.end);
       pending.shift();
+      if (pending.length === 0) {
+        idle();
+      }
 
       if (parsedReply.reply instanceof Error) {
         waiting.reject(parsedReply.reply);
@@ -214,6 +244,7 @@ export async function connectRedis(
 
           return;
         }
+        busy();
         pending.push({ resolve, reject });
         socket.write(encodeCommand(args));
       });
@@ -226,6 +257,7 @@ export async function connectRedis(
           return;
         }
 
+        busy();
         const all = [["MULTI"], ...commands, ["EXEC"]];
         let failed = false;
         all.forEach((_, i) => {
