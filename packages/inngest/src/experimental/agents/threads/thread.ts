@@ -24,7 +24,7 @@ import {
   agentMessage,
   agentSteer,
 } from "../inbox/events.ts";
-import { type KvScopeInstance, type KvSource, kvFrom } from "../kv/kv.ts";
+import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
 /**
  * The name of the event `thread.send()` sends.
@@ -45,15 +45,6 @@ export type TriggerEvent<TName extends string = string, TData = unknown> = {
   name: TName;
   data: TData;
 };
-
-export interface ThreadOptions {
-  /**
-   * KV store holding the thread state, or a function that returns one, called
-   * at each use. Default: the store given to `createAgents`, else Redis at
-   * `INNGEST_EXPERIMENTAL_KV_URL`.
-   */
-  kv?: KvSource;
-}
 
 /**
  * What a thread is doing.
@@ -203,16 +194,10 @@ export interface ThreadHandle {
    * with no record or no live run. A KV store that is not configured throws.
    */
   stop(): Promise<{ stopped: boolean }>;
-
-  /**
-   * What the thread is doing and has used. It reads the thread's KV scope, so
-   * it works when no run is live.
-   */
-  state(): Promise<ThreadState>;
 }
 
 /**
- * The session metadata of a thread's events. The KV `session` scope reads it.
+ * The session metadata of a thread's events.
  * @param key Thread key.
  */
 export function threadSessions(key: string): Record<string, string> {
@@ -223,15 +208,9 @@ export function threadSessions(key: string): Record<string, string> {
  * The thread KV scope of a client, readable outside a function.
  * @param client Inngest client.
  * @param key Thread key.
- * @param kv KV store, or a function that returns one. Default: the store given
- * to `createAgents`, else Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
  */
-export function threadKv(
-  client: Inngest.Any,
-  key: string,
-  kv?: KvSource,
-): KvScopeInstance {
-  return kvFrom(kv).with(client).scope("thread", key);
+export function threadKv(client: Inngest.Any, key: string): KvScopeInstance {
+  return kv.with(client).scope("thread", key);
 }
 
 /**
@@ -273,13 +252,11 @@ export function threadStateOf(
  * @param client Inngest client.
  * @param agent The agent, as `"appId/functionId"`.
  * @param key Thread key, the thread's address.
- * @param options KV override.
  */
 export function getThread(
   client: Inngest.Any,
   agent: string,
   key: string,
-  options: ThreadOptions = {},
 ): ThreadHandle {
   // Inside a function the send is a step, so a replay does not send it again.
   async function sendEvent(
@@ -322,9 +299,9 @@ export function getThread(
       // The live run is the one the thread record names. A thread with no
       // record, or whose record says no run is live, has nothing to cancel,
       // and the answer says so. A KV store that is not configured throws.
-      const record = (await threadKv(client, key, options.kv).get(
-        threadRecordKey,
-      )) as ThreadRecord | undefined;
+      const record = (await threadKv(client, key).get(threadRecordKey)) as
+        | ThreadRecord
+        | undefined;
 
       if (
         !record?.runId ||
@@ -344,14 +321,6 @@ export function getThread(
       }
 
       return { stopped: true };
-    },
-    async state() {
-      const all = await threadKv(client, key, options.kv).all();
-
-      return threadStateOf(
-        all[threadRecordKey] as ThreadRecord | undefined,
-        all,
-      );
     },
   };
 }

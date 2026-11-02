@@ -10,7 +10,7 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { agentMessage } from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
-import type { kvFrom } from "../kv/kv.ts";
+import type { Kv } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
@@ -30,7 +30,7 @@ export const createCleanupFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: ReturnType<typeof kvFrom>,
+  store: Kv,
 ): ReturnType<typeof createDefer> => {
   return createDefer(
     client,
@@ -81,7 +81,7 @@ export const createFinishedFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: ReturnType<typeof kvFrom>,
+  store: Kv,
   triggers: CompiledTrigger[],
 ): InngestFunction.Any => {
   const recovery: AgentRecovery | undefined =

@@ -329,31 +329,17 @@ export {
 } from "../inbox/events.ts";
 export type {
   Kv,
-  KvAdapter,
   KvIndex,
   KvIndexEntry,
   KvIndexRange,
-  KvJson,
-  KvJsonCheck,
-  KvJsonSafe,
   KvKey,
-  KvKeyInput,
-  KvKeyOf,
-  KvResult,
-  KvRoundTrips,
-  KvSchemaMustRoundTrip,
   KvScope,
   KvScopeInstance,
   KvSetOptions,
-  KvSource,
   KvStore,
-  KvValue,
-  KvValueMustBeJson,
-  KvWrite,
 } from "../kv/kv.ts";
 export {
   kv,
-  kvKey,
   memoryKvAdapter,
   redisKvAdapter,
 } from "../kv/kv.ts";
@@ -362,7 +348,6 @@ export { d1KvAdapter, d1KvSchema } from "../kv/kvD1.ts";
 export type { AgentScoreName, AgentScores } from "../loop/scores.ts";
 export type {
   ThreadHandle,
-  ThreadOptions,
   ThreadState,
   ThreadStatus,
   TriggerEvent,

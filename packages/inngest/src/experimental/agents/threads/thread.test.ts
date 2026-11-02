@@ -5,7 +5,7 @@
 
 import { Inngest } from "../../../components/Inngest.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import { freshKv } from "../agent/test-helpers.ts";
 import { getThread } from "./thread.ts";
 
 const fakeClient = (
@@ -61,8 +61,8 @@ describe("thread handle", () => {
 
   test("stop cancels the live run by its run ID, whatever the thread key looks like", async () => {
     const { client, sent, cancelled } = fakeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const thread = getThread(client, "app/bot", "C1/1.2", { kv });
+    const kv = freshKv("app");
+    const thread = getThread(client, "app/bot", "C1/1.2");
     const state = kv.with(client).scope("thread", "C1/1.2");
 
     // No record: nothing to cancel, and the answer says so.
@@ -82,16 +82,16 @@ describe("thread handle", () => {
 
   test("a run that ended just before the cancel (404) is stopped; any other failure throws", async () => {
     const record = { status: "running", turn: 0, runId: "run-1" };
-    const store = createKv({ adapter: memoryKvAdapter() });
+    const store = freshKv("app");
 
     const gone = fakeClient({
       ok: false,
       error: { error: "not found", status: 404 },
     });
     await store.with(gone.client).scope("thread", "t1").set("__state", record);
-    expect(
-      await getThread(gone.client, "app/bot", "t1", { kv: store }).stop(),
-    ).toEqual({ stopped: true });
+    expect(await getThread(gone.client, "app/bot", "t1").stop()).toEqual({
+      stopped: true,
+    });
 
     const broken = fakeClient({
       ok: false,
@@ -102,54 +102,8 @@ describe("thread handle", () => {
       .scope("thread", "t2")
       .set("__state", record);
     await expect(
-      getThread(broken.client, "app/bot", "t2", { kv: store }).stop(),
+      getThread(broken.client, "app/bot", "t2").stop(),
     ).rejects.toThrow(/server error/);
-  });
-
-  test("state is the documented shape: status, turn, summary, usage and the user's keys", async () => {
-    const { client } = fakeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const thread = getThread(client, "app/bot", "t1", { kv });
-    const state = kv.with(client).scope("thread", "t1");
-
-    expect(await thread.state()).toEqual({
-      status: "idle",
-      turn: 0,
-      summary: undefined,
-      usage: { input: 0, output: 0 },
-      keys: {},
-    });
-
-    await state.set("plan", [1]);
-    await state.set("status", "mine");
-    await state.set("__state", {
-      status: "waiting",
-      turn: 3,
-      summary: "done so far",
-      usage: { input: 30, output: 15 },
-      runId: "r1",
-    });
-
-    expect(await thread.state()).toEqual({
-      status: "waiting",
-      turn: 3,
-      summary: "done so far",
-      usage: { input: 30, output: 15 },
-      keys: { plan: [1], status: "mine" },
-    });
-  });
-
-  test("state shows the status the record holds, and idle for a thread with no record", async () => {
-    const { client } = fakeClient();
-    const kv = createKv({ adapter: memoryKvAdapter() });
-    const thread = getThread(client, "app/bot", "t1", { kv });
-    const state = kv.with(client).scope("thread", "t1");
-    const base = { turn: 1, usage: { input: 1, output: 1 } };
-
-    expect((await thread.state()).status).toBe("idle");
-
-    await state.set("__state", { ...base, status: "waiting", runId: "r1" });
-    expect((await thread.state()).status).toBe("waiting");
   });
 
   describe("inside a function", () => {

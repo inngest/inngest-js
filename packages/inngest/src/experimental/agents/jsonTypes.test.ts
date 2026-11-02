@@ -4,7 +4,7 @@
  * `JsonSchema` is a record of `Json`, and the model's message type is
  * exported as `ModelMessage`.
  */
-import type { Json, JsonSchema, KvJson, ModelMessage } from "./index.ts";
+import type { Json, JsonSchema, ModelMessage } from "./index.ts";
 
 class Point {
   x = 1;
@@ -35,10 +35,6 @@ describe("Json", () => {
 
   test("JsonSchema is a record of Json", () => {
     expectTypeOf<JsonSchema>().toEqualTypeOf<{ [key: string]: Json }>();
-  });
-
-  test("KvJson is Json", () => {
-    expectTypeOf<KvJson>().toEqualTypeOf<Json>();
   });
 });
 

@@ -7,7 +7,7 @@
 import { _internals } from "../../../components/execution/engine.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import { freshKv } from "../agent/test-helpers.ts";
 import { threadRecorder } from "../threads/threadState.ts";
 
 const event = {
@@ -57,7 +57,7 @@ describe.each([true, false])(
         optimizeParallelism,
         logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
       });
-      const store = createKv({ adapter: memoryKvAdapter() });
+      const store = freshKv();
       const fn = client.createFunction(
         { id: "recorder", triggers: [{ event: "agent/message" }] },
         async ({ runId }) => {

@@ -7,14 +7,13 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { run } from "./test-helpers.ts";
+import { freshKv, run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
-const kv = createKv({ adapter: memoryKvAdapter() });
+const kv = freshKv();
 
 const optionsOf = (fn: { opts?: unknown }) => {
   return (fn as unknown as { ["opts"]: unknown })["opts"] as Record<
@@ -42,7 +41,6 @@ describe("function options", () => {
         rateLimit: { limit: 5, period: "1m" },
         throttle: { limit: 5, period: "1m" },
         priority: { run: "0" },
-        kv,
       },
       async () => {},
     );
@@ -63,7 +61,7 @@ describe("function options", () => {
 
   test("the agent keeps its id, triggers and singleton per thread", () => {
     const agent = agents.agent(
-      { id: "opts-2", triggers: { cron: "0 * * * *" }, retries: 0, kv },
+      { id: "opts-2", triggers: { cron: "0 * * * *" }, retries: 0 },
       async () => {},
     );
     const options = optionsOf(agent.fn);
@@ -77,7 +75,7 @@ describe("function options", () => {
   test("options not given are not set", () => {
     const options = optionsOf(
       agents.agent(
-        { id: "opts-3", triggers: { cron: "0 * * * *" }, kv },
+        { id: "opts-3", triggers: { cron: "0 * * * *" } },
         async () => {},
       ).fn,
     );
@@ -122,7 +120,7 @@ describe("function context in the body", () => {
     let seen: Record<string, unknown> = {};
     const { fn } = createAgentFunction(
       client,
-      { id: "bot", kv },
+      { id: "bot" },
       async (context) => {
         seen = context as unknown as Record<string, unknown>;
       },
@@ -171,7 +169,7 @@ describe("function context in the body", () => {
     let ran = "";
     const { fn } = createAgentFunction(
       client,
-      { id: "bot", kv },
+      { id: "bot" },
       async ({ step }) => {
         ran = await step.run("mine", async () => {
           return "from the body";
