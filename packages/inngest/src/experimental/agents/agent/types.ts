@@ -30,7 +30,8 @@ import type {
   AgentCardConfig,
   AgentDiscovery,
 } from "../discovery/discovery.ts";
-import type { AgentMessageData, AgentSteerData } from "../inbox/events.ts";
+import type { AgentMessageData } from "../inbox/events.ts";
+import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
 import type {
   AgentHandlerLoop,
@@ -510,12 +511,26 @@ type TriggerMessage<TEvent> = TEvent extends {
   : never;
 
 /**
+ * What `start()` takes: the data of the agent's `invoke()` trigger when it has
+ * one, otherwise JSON content.
+ */
+export type StartInput<TEvent> = [
+  Extract<TEvent, { name: "inngest/function.invoked" }>,
+] extends [never]
+  ? Json
+  : Extract<TEvent, { name: "inngest/function.invoked" }> extends {
+        data: infer TData;
+      }
+    ? TData
+    : Json;
+
+/**
  * A message of the thread's inbox. It is a plain event (`id`, `name`, `data`,
  * `ts`): narrow it by `name` or `is()`, and `data` is typed.
  *
  * - An event of `triggers` (a trigger, which also starts the run as message 1) has
  *   its own name and data, typed from `triggers`.
- * - `agent/message` (`thread.send()`), `agent/steer` (`thread.steer()`) and
+ * - `agent/message` (`thread.send()`),
  *   (none of them is a stop: `thread.stop()` cancels the run) carry the thread and agent beside their
  *   `text` or `when`.
  *
@@ -525,8 +540,7 @@ type TriggerMessage<TEvent> = TEvent extends {
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
-  | MessageOf<AgentMessageData, "agent/message">
-  | MessageOf<AgentSteerData, "agent/steer">;
+  | MessageOf<AgentMessageData, "agent/message">;
 
 /**
  * An inbox the model opened with `inbox_listen`.
@@ -615,7 +629,7 @@ export type AgentBody<TTypes extends AgentTypes = AgentTypes> = (
  * An agent made by `createAgents().agent()`: the functions to serve, its
  * address, and handles to its threads. `TOutput` is what its body returns.
  */
-export interface AgentFunction<TOutput = unknown> {
+export interface AgentFunction<TOutput = unknown, TInput = Json> {
   /**
    * Types only: what the agent's body returns.
    */
@@ -666,7 +680,7 @@ export interface AgentFunction<TOutput = unknown> {
    * step context.
    * @param input What the agent is asked to do.
    */
-  start(input: unknown): StartedThreadPromise<TOutput>;
+  start(input: TInput): StartedThreadPromise<TOutput>;
 
   /**
    * The handle of a thread of this agent.

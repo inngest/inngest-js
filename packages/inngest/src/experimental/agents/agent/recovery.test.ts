@@ -569,8 +569,8 @@ describe("what the body is told", () => {
 
     await run(agent.fn, {
       event: {
-        name: "agent/steer",
-        data: { ...trigger.data, text: "faster" },
+        name: "agent/recover",
+        data: { agent: trigger.data.agent, thread: trigger.data.thread },
       },
     });
 

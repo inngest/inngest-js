@@ -11,9 +11,9 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import { eventType, invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { agentMessage, agentSteer } from "../inbox/events.ts";
+import { agentMessage } from "../inbox/events.ts";
 import { createKv, memoryKvAdapter } from "../kv/kv.ts";
-import { agentMessageEvent, agentSteerEvent } from "../threads/thread.ts";
+import { agentMessageEvent } from "../threads/thread.ts";
 import {
   compileTriggers,
   schemaProblem,
@@ -80,11 +80,6 @@ describe("types", () => {
   test("the agent's events are event types with typed data", () => {
     expectTypeOf(agentMessage.name).toEqualTypeOf<"agent/message">();
     expectTypeOf(agentMessageEvent).toEqualTypeOf<"agent/message">();
-    expectTypeOf(agentSteer.name).toEqualTypeOf<"agent/steer">();
-    expectTypeOf(agentSteerEvent).toEqualTypeOf<"agent/steer">();
-    expectTypeOf(agentSteer.create)
-      .parameter(0)
-      .toExtend<{ agent: string; thread: string; text: string }>();
     expectTypeOf<
       Extract<Parameters<typeof agentMessage.create>[0], { content: unknown }>
     >().toHaveProperty("content");
@@ -129,7 +124,6 @@ describe("triggers", () => {
     expect(options.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
       expect.objectContaining({ event: "agent/recover" }),
-      expect.objectContaining({ event: "agent/steer" }),
       { event: order, if: "event.data.total > 5" },
       { event: ping },
     ]);
@@ -189,7 +183,7 @@ describe("triggers", () => {
     );
     const options = fnOptions(agent.fn);
 
-    expect(options.triggers[3]).toEqual({ cron: "0 3 * * *" });
+    expect(options.triggers[2]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );
@@ -228,9 +222,6 @@ describe("triggers", () => {
     expect(() => {
       return compileTriggers("bot", { triggers: agentMessage });
     }).toThrow(/"agent\/message" is an event the agent layer owns/);
-    expect(() => {
-      return compileTriggers("bot", { triggers: agentSteer });
-    }).toThrow(/"agent\/steer" is an event the agent layer owns/);
     expect(() => {
       return compileTriggers("bot", {
         triggers: { event: "inngest/scheduled.timer", thread: '"a"' },
