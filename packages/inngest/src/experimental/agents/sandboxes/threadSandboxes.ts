@@ -614,11 +614,11 @@ export const threadSandboxOwner = (
     },
 
     loadShell: async (name) => {
-      return scope.get(kvKey<ShellPlace>(sandboxShellKey(ref, name)));
+      return scope.get(typedKey<ShellPlace>(sandboxShellKey(ref, name)));
     },
 
     saveShell: async (name, place) => {
-      await scope.set(kvKey<ShellPlace>(sandboxShellKey(ref, name)), place);
+      await scope.set(typedKey<ShellPlace>(sandboxShellKey(ref, name)), place);
     },
 
     ready: async (name) => {

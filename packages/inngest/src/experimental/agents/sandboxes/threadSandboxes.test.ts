@@ -1828,7 +1828,7 @@ describe("the shell's place across a thread's runs", () => {
     await one.work?.close();
 
     const stored = await first.scope.get(
-      kvKey<unknown>(sandboxShellKey(ref, "work")),
+      typedKey<unknown>(sandboxShellKey(ref, "work")),
     );
 
     expect(JSON.stringify(stored)).not.toContain("s3cret");
