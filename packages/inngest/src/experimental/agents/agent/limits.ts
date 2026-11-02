@@ -239,7 +239,7 @@ export const narrowInherited = (
  */
 export const readInheritedLimits = (
   /**
-   * The `_agent` entry of the invoke payload.
+   * The `from` entry of the invoke payload.
    */
   info: unknown,
 ): EffectiveLimits | undefined => {

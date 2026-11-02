@@ -20,7 +20,6 @@ import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
-import { invokeAgent } from "./invoke.ts";
 import { freshKv, run, textOf } from "./test-helpers.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -72,6 +71,8 @@ const trigger = (content: string) => {
 const makeClient = () => {
   return new Inngest({ id: testClientId });
 };
+
+const leaf = createAgentFunction(makeClient(), { id: "leaf" });
 
 const userTexts = (messages: { role: string; content?: unknown }[]) => {
   return messages.flatMap((m) => {
@@ -229,14 +230,19 @@ describe("agent function", () => {
           agent: `${testClientId}/bot`,
           thread: "t1",
           content: "go",
-          _agent: { depth: 1 },
+          from: { depth: 1 },
         },
       },
     });
 
     expect(output).toEqual([
       "agent/message",
-      { agent: `${testClientId}/bot`, thread: "t1", content: "go" },
+      {
+        agent: `${testClientId}/bot`,
+        thread: "t1",
+        content: "go",
+        from: { depth: 1 },
+      },
     ]);
   });
 });
@@ -1087,7 +1093,7 @@ describe("event", () => {
     const { output } = await run(fn, {
       event: {
         name: "inngest/function.invoked",
-        data: { question: "why", _agent: { thread: "t" } },
+        data: { question: "why", from: { thread: "t" } },
       },
     });
 
@@ -1112,7 +1118,7 @@ describe("event", () => {
     const invoked = await run(fn, {
       event: {
         name: "inngest/function.invoked",
-        data: { question: "why", _agent: { depth: 2, thread: "t" } },
+        data: { question: "why", from: { depth: 2, thread: "t" } },
       },
     });
 
@@ -1236,7 +1242,7 @@ describe("agent limits", () => {
         ...invoked,
         data: {
           ...invoked.data,
-          _agent: { depth: 1, limits: { budget: { tokens: 1, usd: 0.001 } } },
+          from: { depth: 1, limits: { budget: { tokens: 1, usd: 0.001 } } },
         },
       },
     });
@@ -1346,7 +1352,7 @@ describe("agent limits", () => {
       { id: "bot" },
       async () => {
         try {
-          await invokeAgent("team/leaf", {}, {});
+          await leaf.start("x");
         } catch (error) {
           return (error as Error).message;
         }
@@ -1358,11 +1364,11 @@ describe("agent limits", () => {
     const { output } = await run(fn, {
       event: {
         ...event,
-        data: { ...event.data, _agent: { depth: 1, limits: { depth: 0 } } },
+        data: { ...event.data, from: { depth: 1, limits: { depth: 0 } } },
       },
     });
 
-    expect(output).toContain("team/leaf was not started");
+    expect(output).toContain("/leaf was not started");
   });
 });
 
@@ -1374,7 +1380,7 @@ describe("inherited limits persist on the thread", () => {
       { id: "bot" },
       async () => {
         try {
-          await invokeAgent("team/leaf", {}, {});
+          await leaf.start("x");
         } catch (error) {
           return (error as Error).message;
         }
@@ -1386,13 +1392,13 @@ describe("inherited limits persist on the thread", () => {
     await run(fn, {
       event: {
         ...first,
-        data: { ...first.data, _agent: { depth: 1, limits: { depth: 0 } } },
+        data: { ...first.data, from: { depth: 1, limits: { depth: 0 } } },
       },
     });
 
     const { output } = await run(fn, { event: trigger("again") });
 
-    expect(output).toContain("team/leaf was not started");
+    expect(output).toContain("/leaf was not started");
   });
 });
 

@@ -54,6 +54,7 @@ import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
+import type { StartedThreadPromise } from "./startThread.ts";
 
 /**
  * The types an agent carries, as one object type. Every field is optional:
@@ -647,6 +648,25 @@ export interface AgentFunction<TOutput = unknown> {
    * What the agent publishes for discovery.
    */
   card: AgentCard;
+
+  /**
+   * The agent's function ID.
+   */
+  id: string;
+
+  /**
+   * The agent's address, `"<appId>/<functionId>"` (the same as `ref`).
+   */
+  address: string;
+
+  /**
+   * Starts the agent on a new thread with a generated key and returns at once.
+   * The value is a promise of the thread's handle that also has its methods,
+   * so `await agent.start(x).result()` needs one `await`. Needs a function's
+   * step context.
+   * @param input What the agent is asked to do.
+   */
+  start(input: unknown): StartedThreadPromise<TOutput>;
 
   /**
    * The handle of a thread of this agent.
