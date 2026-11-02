@@ -237,7 +237,7 @@ test("agents: budget, price and limits fields take their types", () => {
       triggers: [created],
       budget: { usd: 1, tokens: 100 },
       price: { "*": { input: 1, output: 2 } },
-      limits: { depth: 2, mayCall: ["a/*"] },
+      limits: { depth: 2, mayCall: ["a/b"] },
     });
 
     agents.agent({
