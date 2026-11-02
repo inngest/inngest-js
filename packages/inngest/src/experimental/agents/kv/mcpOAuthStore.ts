@@ -11,7 +11,7 @@ import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { McpOAuthStore } from "../../../components/sandbox/mcpOAuth.ts";
 import { Secret } from "../../../components/sandbox/secret.ts";
-import { type KvAdapter, kvAdapterFor } from "./kv.ts";
+import { type KvStore, kvAdapterFor } from "./kv.ts";
 
 const hash = "inngest:mcp-oauth";
 const defaultKeyName = "MCP_OAUTH_ENCRYPTION_KEY";
@@ -54,7 +54,7 @@ export interface KvOAuthStoreOptions {
    * `createAgents(client, { store })`, else Redis at
    * `INNGEST_EXPERIMENTAL_KV_URL`.
    */
-  adapter?: KvAdapter;
+  adapter?: KvStore;
 
   /**
    * The app ID of the client, to find its store from a route outside a
@@ -74,7 +74,7 @@ export const kvOAuthStore = (
   const secret = options.encryptionKey ?? new Secret(defaultKeyName);
   let key: Promise<CryptoKey> | undefined;
 
-  const adapter = (): KvAdapter => {
+  const adapter = (): KvStore => {
     return (
       options.adapter ??
       kvAdapterFor(

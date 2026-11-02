@@ -12,8 +12,8 @@ import type {
 import {
   createKv,
   type KvScopeInstance,
-  kvKey,
   memoryKvAdapter,
+  typedKey,
 } from "../kv/kv.ts";
 import {
   newestSandboxGeneration,
@@ -608,7 +608,7 @@ describe("cleanupThreadSandbox", () => {
     const s = setup(w, "01A");
 
     await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
-    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+    await s.scope.set(typedKey<unknown>(sandboxPausedKey(ref, "work")), {
       id: "sb-newer",
       generation: "01Z",
     });
@@ -638,7 +638,7 @@ describe("cleanupThreadSandbox", () => {
     const s = setup(w, "01B");
 
     await s.scope.set(sandboxReadyKey(ref, "work", "01B") as never, true);
-    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+    await s.scope.set(typedKey<unknown>(sandboxPausedKey(ref, "work")), {
       id: "sb-old",
       generation: "01A",
     });
@@ -668,7 +668,7 @@ describe("cleanupThreadSandbox", () => {
     const s = setup(w, "01A");
 
     await s.scope.set(sandboxReadyKey(ref, "work", "01A") as never, true);
-    await s.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+    await s.scope.set(typedKey<unknown>(sandboxPausedKey(ref, "work")), {
       id: "sb-1",
       generation: "01A",
     });
@@ -898,7 +898,7 @@ describe("lazy sandboxes of a thread", () => {
     const first = setup(w, "01A");
 
     await first.owner().save("work", w.durable("sb-0"));
-    await first.scope.set(kvKey<unknown>(sandboxPausedKey(ref, "work")), {
+    await first.scope.set(typedKey<unknown>(sandboxPausedKey(ref, "work")), {
       id: "sb-gone",
       generation: "01A",
     });

@@ -14,11 +14,11 @@ import { fakeD1, hasNodeSqlite } from "./fake-d1.ts";
 import { startFakeRedis } from "./fake-redis.ts";
 import {
   createKv,
-  type KvAdapter,
+  type KvStore,
   kvHash,
-  kvKey,
   memoryKvAdapter,
   redisKvAdapter,
+  typedKey,
 } from "./kv.ts";
 import { d1KvAdapter } from "./kvD1.ts";
 import { connectRedis } from "./redis.ts";
@@ -33,16 +33,16 @@ describe("kv", () => {
     const fn = client.createFunction(
       { id: "kvfn", triggers: [{ event: "kv/run" }] },
       async () => {
-        await kv.set("a", 1);
-        await kv.function.set("a", 2);
-        const total = await kv.app.update(kvKey<number>("n"), function (n) {
+        await kv.run.set("a", 1);
+        await kv.env.set("a", 2);
+        const total = await kv.app.update(typedKey<number>("n"), function (n) {
           return (n ?? 0) + 5;
         });
-        out.push(await kv.get("a"), await kv.function.get("a"), total);
-        out.push(await kv.get("missing"));
-        out.push(await kv.take("a"), await kv.get("a"));
+        out.push(await kv.run.get("a"), await kv.env.get("a"), total);
+        out.push(await kv.run.get("missing"));
+        out.push(await kv.run.take("a"), await kv.run.get("a"));
         await kv.run.clear();
-        out.push(await kv.all());
+        out.push(await kv.run.all());
       },
     );
 
@@ -51,10 +51,10 @@ describe("kv", () => {
     expect(type).toBe("function-resolved");
     expect(ran).toEqual([
       "kv.set:run:a",
-      "kv.set:function:a",
+      "kv.set:env:a",
       "kv.update:app:n",
       "kv.get:run:a",
-      "kv.get:function:a",
+      "kv.get:env:a",
       "kv.get:run:missing",
       "kv.take:run:a",
       "kv.get:run:a:1",
@@ -89,7 +89,7 @@ describe("kv", () => {
     ).toEqual([1]);
   });
 
-  test("session and thread scopes need those ids", () => {
+  test("the thread scope needs a thread id", () => {
     expect(function () {
       return kvHash("thread", { env: "e", app: "a" });
     }).toThrow(/no thread id/);
@@ -99,9 +99,7 @@ describe("kv", () => {
     expect(kvHash("thread", { env: "e", app: "a", thread: "t:1|{x}" })).toBe(
       "inngest:kv:thread:e:a:t%3A1%7C%7Bx%7D",
     );
-    expect(kvHash("function", { env: "e", app: "a", function: "f" })).toBe(
-      "inngest:kv:function:e:a:f",
-    );
+    expect(kvHash("app", { env: "e", app: "a" })).toBe("inngest:kv:app:e:a");
   });
 
   test("outside a function it needs a client and goes straight to the store", async () => {
@@ -129,7 +127,7 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
   function contract(
     name: string,
     make: () => Promise<{
-      adapter: KvAdapter;
+      adapter: KvStore;
       advance: (ms: number) => void;
       done: () => Promise<void>;
     }>,
@@ -213,7 +211,7 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
           id: "app",
           env: null,
         }).env;
-        const key = kvKey<number>("count");
+        const key = typedKey<number>("count");
         let calls = 0;
 
         await Promise.all(
@@ -489,7 +487,7 @@ describe("kv typed keys", () => {
       id: "app",
       env: null,
     }).env;
-    const plan = kvKey("plan", z.object({ steps: z.number() }));
+    const plan = typedKey("plan", z.object({ steps: z.number() }));
 
     await kv.set(plan, { steps: 3 });
     const found = await kv.get(plan);
@@ -512,37 +510,39 @@ describe("kv typed keys", () => {
 
     // @ts-expect-error the value must match the key's type
     await kv.set(plan, { steps: "no" });
-    expect(await kv.get(kvKey("missing", z.string()))).toBeUndefined();
+    expect(await kv.get(typedKey("missing", z.string()))).toBeUndefined();
   });
 
   test("null is a value, a transform is refused, and keys work in a function", async () => {
     const adapter = memoryKvAdapter();
     const kv = createKv({ adapter });
-    const maybe = kvKey("maybe", z.string().nullable());
+    const maybe = typedKey("maybe", z.string().nullable());
     const bound = kv.with({ id: testClientId, env: null }).env;
 
     await bound.set(maybe, null);
     expect(await bound.get(maybe)).toBeNull();
     expect(
-      await bound.get(kvKey("gone", z.string().nullable())),
+      await bound.get(typedKey("gone", z.string().nullable())),
     ).toBeUndefined();
 
     // @ts-expect-error a transform makes the stored and read types differ
-    kvKey("when", z.string().transform(Number));
+    typedKey("when", z.string().transform(Number));
     // @ts-expect-error coercion makes the input wider than the output
-    kvKey("co", z.coerce.number());
+    typedKey("co", z.coerce.number());
     // @ts-expect-error a Date is not JSON
-    kvKey("dt", z.date());
+    typedKey("dt", z.date());
     // @ts-expect-error a type holding a Date is refused when the key is used
-    await bound.set(kvKey<{ at: Date }>("d"), { at: new Date() });
+    await bound.set(typedKey<{ at: Date }>("d"), { at: new Date() });
     // These pass: readonly data, branded primitives, optional and undefined properties.
     await bound.set("ro", ["a"] as readonly string[]);
-    const branded = kvKey<{ id: string & { __brand: "id" }; note?: string }>(
+    const branded = typedKey<{ id: string & { __brand: "id" }; note?: string }>(
       "b",
     );
     await bound.set(branded, { id: "x" as string & { __brand: "id" } });
-    await bound.set(kvKey<{ a: string | undefined }>("u2"), { a: undefined });
-    await bound.set(kvKey<readonly string[]>("ro2"), ["a"]);
+    await bound.set(typedKey<{ a: string | undefined }>("u2"), {
+      a: undefined,
+    });
+    await bound.set(typedKey<readonly string[]>("ro2"), ["a"]);
     interface Shape {
       a: string;
     }
@@ -554,7 +554,7 @@ describe("kv typed keys", () => {
     // @ts-expect-error a function is not JSON
     await bound.set("fn", () => 1);
     // @ts-expect-error a default makes the input wider than the output
-    kvKey("dflt", z.string().default("x"));
+    typedKey("dflt", z.string().default("x"));
     // @ts-expect-error undefined is not JSON
     await expect(bound.set("u", undefined)).rejects.toThrow(/undefined/);
 
@@ -563,7 +563,7 @@ describe("kv typed keys", () => {
     const fn = client.createFunction(
       { id: "kvtyped", triggers: [{ event: "kv/typed" }] },
       async () => {
-        const count = kvKey("count", z.number());
+        const count = typedKey("count", z.number());
         await kv.env.set(count, 2);
         out.push(await kv.env.get(count), await kv.env.take(count));
         out.push(await kv.env.get(count));
@@ -576,13 +576,13 @@ describe("kv typed keys", () => {
           }),
         );
 
-        const nullable = kvKey("n", z.string().nullable());
+        const nullable = typedKey("n", z.string().nullable());
         await kv.env.set(nullable, null);
         out.push(await kv.env.get(nullable), await kv.env.take(nullable));
         out.push(await kv.env.get(nullable));
 
         await kv.env.set("bad", "text");
-        const bad = kvKey("bad", z.number());
+        const bad = typedKey("bad", z.number());
         const refused = await kv.env.take(bad).catch((error: Error) => {
           return error.message;
         });
@@ -611,8 +611,8 @@ describe("kv typed keys", () => {
       id: "app",
       env: null,
     }).env;
-    const turns = kvKey<string[]>("turns");
-    const count = kvKey("count", z.number());
+    const turns = typedKey<string[]>("turns");
+    const count = typedKey("count", z.number());
 
     await kv.update(turns, (found) => {
       return [...(found ?? []), "a"];
@@ -694,7 +694,7 @@ describe("kv replay of legacy read memos", () => {
           missing: (await kv.env.get("missing")) ?? "none",
           taken: await kv.env.take("text"),
           after: (await kv.env.get("text")) ?? "none",
-          list: await kv.env.get(kvKey("list", z.array(z.number()))),
+          list: await kv.env.get(typedKey("list", z.array(z.number()))),
         };
       },
     );
@@ -718,7 +718,7 @@ describe("kv schema failures inside a function", () => {
     const fn = client.createFunction(
       { id: "kvinvalid", triggers: [{ event: "kv/invalid" }] },
       async () => {
-        const count = kvKey("count", z.number());
+        const count = typedKey("count", z.number());
         await kv.env.set("count", "text");
         for (const attempt of [
           () => kv.env.get(count),
@@ -747,7 +747,7 @@ describe("kv schema failures inside a function", () => {
     const fn = client.createFunction(
       { id: "kvupdlegacy", triggers: [{ event: "kv/updlegacy" }] },
       async () => {
-        return kv.env.update(kvKey<number>("n"), (n) => (n ?? 0) + 5);
+        return kv.env.update(typedKey<number>("n"), (n) => (n ?? 0) + 5);
       },
     );
     let stepState: Parameters<typeof runFnWithStack>[1] = {};

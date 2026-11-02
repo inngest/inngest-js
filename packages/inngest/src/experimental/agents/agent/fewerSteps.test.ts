@@ -7,12 +7,12 @@
 
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import type { Kv } from "../kv/kv.ts";
 import { type AgentModelResponse, agent } from "../loop/loop.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import { threadRecorder } from "../threads/threadState.ts";
 import { createAgentFunction } from "./agentFunction.ts";
-import { run } from "./test-helpers.ts";
+import { freshKv, run } from "./test-helpers.ts";
 
 const toolTurn: AgentModelResponse = {
   message: { role: "assistant", content: [] },
@@ -36,13 +36,10 @@ const trigger = {
   },
 };
 
-const build = (
-  kv: ReturnType<typeof createKv>,
-  turns: AgentModelResponse[],
-) => {
+const build = (kv: Kv, turns: AgentModelResponse[]) => {
   return createAgentFunction(
     new Inngest({ id: testClientId }),
-    { id: "bot", kv },
+    { id: "bot" },
     async ({ inbox, control, previousRun }) => {
       const first = await inbox.next();
       const result = await agent.loop({
@@ -65,7 +62,7 @@ const build = (
 
 describe("steps of an agent run", () => {
   test("the start is one step and a turn's record adds none", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const { fn } = build(kv, [toolTurn, done]);
     const steps: string[] = [];
 
@@ -93,7 +90,7 @@ describe("steps of an agent run", () => {
   });
 
   test("a turn recorded again, as a retried step would, is counted once", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    const kv = freshKv();
     const client = new Inngest({ id: testClientId });
     const fn = client.createFunction(
       { id: "recorder", triggers: [{ event: "agent/message" }] },
@@ -120,13 +117,12 @@ describe("steps of an agent run", () => {
 
 describe("a run that began before these steps", () => {
   test("replays against its own steps: the old state writes, the per-source opens and the turn write", async () => {
-    const kv = createKv({ adapter: memoryKvAdapter() });
+    freshKv();
     const client = new Inngest({ id: testClientId });
     const { fn } = createAgentFunction(
       client,
       {
         id: "bot",
-        kv,
         inbox: [
           { event: "extra/one", if: "true" },
           { event: "extra/two", if: "true" },

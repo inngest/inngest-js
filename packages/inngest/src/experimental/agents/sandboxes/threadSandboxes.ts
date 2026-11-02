@@ -56,7 +56,7 @@ import {
 } from "../../../components/sandbox/snapshotCache.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { DeferHandle } from "../../../types.ts";
-import { type KvScopeInstance, kvKey } from "../kv/kv.ts";
+import { type KvScopeInstance, typedKey } from "../kv/kv.ts";
 import {
   generationScore,
   newestSandboxGeneration,
@@ -529,7 +529,7 @@ export const threadSandboxOwner = (
 
     takePaused: async (name) => {
       const found = await scope.take(
-        kvKey<PausedSandbox>(sandboxPausedKey(ref, name)),
+        typedKey<PausedSandbox>(sandboxPausedKey(ref, name)),
       );
 
       return found?.id;
@@ -538,7 +538,7 @@ export const threadSandboxOwner = (
     pause: async (name, sandbox, epoch = 0) => {
       const suffix = epoch > 0 ? `:g${epoch}` : "";
 
-      const key = kvKey<PausedSandbox>(sandboxPausedKey(ref, name));
+      const key = typedKey<PausedSandbox>(sandboxPausedKey(ref, name));
 
       try {
         // The record comes first: one that points at a sandbox the pause then
@@ -672,10 +672,12 @@ export const cleanupThreadSandbox = async (
   const { client, ref, thread, runId, scope, sandbox } = options;
   const readyKey = sandboxReadyKey(ref, sandbox.name, runId);
   const generation = sandboxGeneration(runId, sandbox.epoch);
-  const ready = (await scope.get(kvKey<boolean>(readyKey))) === true;
+  const ready = (await scope.get(typedKey<boolean>(readyKey))) === true;
 
   if (ready && (sandbox.idle ?? defaultSandboxIdle) === "pause") {
-    const pausedKey = kvKey<PausedSandbox>(sandboxPausedKey(ref, sandbox.name));
+    const pausedKey = typedKey<PausedSandbox>(
+      sandboxPausedKey(ref, sandbox.name),
+    );
     const held = await scope.get(pausedKey);
 
     // This sandbox is the one the thread already holds: the run paused it
