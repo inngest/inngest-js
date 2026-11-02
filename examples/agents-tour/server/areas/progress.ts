@@ -100,9 +100,7 @@ export const area: AreaFactory = (ctx) => {
 
           persist();
 
-          if (mark.collected.length > 0 || mark.moduleDone) {
-            ctx.hub.broadcast({ type: "progress", mark, page: page.id });
-          }
+          ctx.hub.broadcast({ type: "progress", mark, page: page.id });
 
           return mark;
         },
@@ -113,6 +111,11 @@ export const area: AreaFactory = (ctx) => {
         handle: () => {
           saved = { pages: {}, concepts: {} };
           persist();
+          ctx.hub.broadcast({
+            type: "progress",
+            mark: { collected: [], moduleDone: null },
+            page: "",
+          });
 
           return { ok: true };
         },

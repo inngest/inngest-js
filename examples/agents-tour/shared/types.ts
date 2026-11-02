@@ -64,6 +64,8 @@ export interface PageSummary {
   module: string;
   moduleTitle: string;
   title: string;
+  // The module's exercise, which ends its core path.
+  exercise: boolean;
 }
 
 export interface Page extends PageSummary {
@@ -87,7 +89,7 @@ export interface TourIndex {
 export type PageState = "opened" | "ran" | "passed";
 
 export interface ProgressSnapshot {
-  pages: Record<string, Partial<Record<PageState, true>>>;
+  pages: Record<string, Partial<Record<PageState, boolean>>>;
   // Collected concepts: the page that taught each, and its definition.
   concepts: Record<string, { page: string; definition: string }>;
   totalConcepts: number;

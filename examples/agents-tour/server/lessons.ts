@@ -162,6 +162,7 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
         module: module.id,
         moduleTitle: module.title,
         title: titleOf(markdown),
+        exercise: manifest.exercise !== undefined,
       };
 
       pages.push({
