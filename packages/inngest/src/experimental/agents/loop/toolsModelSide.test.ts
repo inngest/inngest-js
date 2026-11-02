@@ -8,7 +8,9 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { tool } from "../../../components/sandbox/tools.ts";
+import { fakeMcpFetch } from "../../../components/sandbox/mcpFakes.ts";
+import { secret } from "../../../components/sandbox/secret.ts";
+import { resolveToolCall, tool } from "../../../components/sandbox/tools.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import type { OutgoingOp } from "../../../types.ts";
 import type {
@@ -17,6 +19,7 @@ import type {
   AgentModelResponse,
 } from "./loop.ts";
 import { model, runLoop } from "./loopKit.ts";
+import { untrustedText } from "./untrustedText.ts";
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -275,5 +278,115 @@ describe("untrusted tool results", () => {
 
     expect(isError).toEqual([true]);
     expect(shown[0]).toBe("boom");
+  });
+});
+
+describe("untrusted text escaping", () => {
+  test("every tag variant is broken and the label is capped", () => {
+    const wrapped = untrustedText(
+      'a <untrusted> b < / UNTRUSTED > c <untrusted x="1"> d </untrusted',
+      { source: `${"s".repeat(300)}"<>\n` },
+    );
+    const inner = wrapped.split("\n").slice(1, -1).join("\n");
+
+    expect(inner).not.toMatch(/<\s*\/?\s*untrusted/i);
+    expect(inner.match(/\[untrusted tag removed\]/g)).toHaveLength(4);
+    expect(wrapped.split("\n")[0]?.length).toBeLessThanOrEqual(
+      '<untrusted source="">'.length + 120,
+    );
+    expect(wrapped.split("\n")[0]).not.toContain("<>");
+  });
+});
+
+describe("the wrap pattern", () => {
+  test("a wrapped tool changes its result for the model and for a script", async () => {
+    const original = tool.step({
+      input: z.object({ id: z.string() }),
+      run: ({ id }) => {
+        return { id, token: "hidden" };
+      },
+    });
+    const wrapped = tool.step({
+      input: z.object({ id: z.string() }),
+      run: async (input, ctx) => {
+        const result = (await (
+          original.run as (...args: unknown[]) => Promise<{ id: string }>
+        )(input, ctx)) as { id: string };
+
+        return { id: result.id };
+      },
+    });
+    const { shown } = await run([call("wrapped", { id: "7" }), say("done")], {
+      wrapped,
+    });
+    const resolved = await resolveToolCall(
+      { wrapped },
+      {
+        op: "call",
+        id: 1,
+        tool: "wrapped",
+        args: [],
+        kwargs: { id: "7" },
+      },
+      "{}",
+    );
+
+    if (resolved.error !== undefined) {
+      throw new Error(resolved.error);
+    }
+
+    const forScript = await resolved.invoke({
+      signal: new AbortController().signal,
+      idempotencyKey: "k",
+    });
+
+    expect(shown).toEqual(['{"id":"7"}']);
+    expect(forScript).toEqual({ id: "7" });
+  });
+});
+
+describe("untrusted for sandbox code", () => {
+  test("a script gets the plain result of an untrusted tool", async () => {
+    const issue = tool.step({
+      untrusted: true,
+      run: () => {
+        return "text from outside";
+      },
+    });
+    const resolved = await resolveToolCall(
+      { issue },
+      { op: "call", id: 1, tool: "issue", args: [], kwargs: {} },
+      "{}",
+    );
+
+    if (resolved.error !== undefined) {
+      throw new Error(resolved.error);
+    }
+
+    expect(
+      await resolved.invoke({
+        signal: new AbortController().signal,
+        idempotencyKey: "k",
+      }),
+    ).toBe("text from outside");
+  });
+});
+
+describe("a bare MCP server's tools for the model", () => {
+  test("are untrusted by default", async () => {
+    const server = fakeMcpFetch({
+      tools: { read: { description: "r", run: () => "remote text" } },
+      token: "t-0123456789",
+    });
+    process.env.MCP_MODEL_TOKEN = "t-0123456789";
+    const hex = tool.mcp({
+      id: "hex",
+      url: server.url,
+      fetch: server.fetch,
+      auth: { bearer: secret("MCP_MODEL_TOKEN") },
+    });
+    const { shown } = await run([call("hex_read", {}), say("done")], { hex });
+
+    expect(shown[0]).toBe("<untrusted>\nremote text\n</untrusted>");
   });
 });
