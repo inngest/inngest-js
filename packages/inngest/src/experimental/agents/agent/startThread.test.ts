@@ -352,3 +352,32 @@ describe("result({ timeout }) after the start was planned", () => {
     expect(output).toBe("done");
   });
 });
+
+describe("start() without await", () => {
+  test("a start nobody awaits is still invoked before the agent returns", async () => {
+    const agents = makeAgents();
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      callee.start("fire and forget");
+
+      return "returned";
+    });
+    const sent: unknown[] = [];
+    const { output } = await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
+      },
+      onInvoke: (op) => {
+        sent.push(op.opts);
+
+        return "pending";
+      },
+    });
+
+    expect(output).toBe("returned");
+    expect(sent).toMatchObject([
+      { payload: { data: { content: "fire and forget" } } },
+    ]);
+  });
+});

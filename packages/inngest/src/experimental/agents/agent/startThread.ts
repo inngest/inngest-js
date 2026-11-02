@@ -14,7 +14,7 @@ import { step } from "../../../components/InngestStepTools.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SenderData } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
-import { threadHandle } from "../threads/thread.ts";
+import { type ThreadHandle, threadHandle } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
   checkInvoke,
@@ -86,12 +86,8 @@ export interface StartTarget {
 /**
  * The thread a `start()` opened.
  */
-export interface StartedThread<TOutput = unknown> {
-  /**
-   * The thread's key.
-   */
-  key: string;
-
+export interface StartedThread<TOutput = unknown>
+  extends ThreadHandle<TOutput> {
   /**
    * Waits for the run `start()` began and gives its output. It throws when the
    * run failed or was stopped. With a `timeout` it throws an
@@ -103,11 +99,6 @@ export interface StartedThread<TOutput = unknown> {
    * then throws an error that names the chained form.
    */
   result(options?: ResultOptions): Promise<TOutput>;
-
-  /**
-   * Stops the thread's live run.
-   */
-  stop(): Promise<void>;
 }
 
 /**
@@ -117,7 +108,33 @@ export interface StartedThread<TOutput = unknown> {
 export type StartedThreadPromise<TOutput = unknown> = Promise<
   StartedThread<TOutput>
 > &
-  Pick<StartedThread<TOutput>, "result" | "stop">;
+  Pick<StartedThread<TOutput>, "result" | "stop" | "message" | "ask">;
+
+/**
+ * How a `start()` reaches the child: the one place that knows the mechanism
+ * (a `step.invoke` whose answer is the run's output), so it can be swapped
+ * without touching the callers. Returns the promise of the child's output.
+ */
+const reachChild = (call: {
+  address: string;
+  id: string;
+  data: Record<string, unknown>;
+  sessions: Record<string, string>;
+}): Promise<unknown> => {
+  const slash = call.address.indexOf("/");
+
+  return step.invoke(
+    { id: call.id, name: `start ${call.address}` },
+    {
+      function: referenceFunction({
+        appId: call.address.slice(0, slash),
+        functionId: call.address.slice(slash + 1),
+      }),
+      data: call.data,
+      meta: { sessions: call.sessions },
+    },
+  );
+};
 
 /**
  * Starts the agent.
@@ -178,18 +195,12 @@ export function startThread<TOutput>(
   const data = target.typed
     ? { ...(input as Record<string, unknown>), from }
     : { agent: target.address, thread: key, content: input as Json, from };
-  const slash = target.address.indexOf("/");
-  const invoked = step.invoke(
-    { id: `start:${target.address}:${n}`, name: `start ${target.address}` },
-    {
-      function: referenceFunction({
-        appId: target.address.slice(0, slash),
-        functionId: target.address.slice(slash + 1),
-      }),
-      data,
-      meta: { sessions },
-    },
-  );
+  const invoked = reachChild({
+    address: target.address,
+    id: `start:${target.address}:${n}`,
+    data,
+    sessions,
+  });
 
   // An unread result must not become an unhandled rejection.
   invoked.catch(() => {});
@@ -199,8 +210,9 @@ export function startThread<TOutput>(
   // Set once the start has been planned: from then on the code after it has
   // waited for the run's step, so a timeout has nothing left to race.
   let planned = false;
+  const thread = threadHandle<TOutput>(target.client, target.address, key);
   const handle: StartedThread<TOutput> = {
-    key,
+    ...thread,
     async result(options) {
       if (planned && options?.timeout !== undefined) {
         throw new Error(
@@ -238,9 +250,6 @@ export function startThread<TOutput>(
 
       return output as TOutput;
     },
-    async stop() {
-      await threadHandle(target.client, target.address, key).stop();
-    },
   };
 
   // A replayed invoke is already answered, so the race ends without waiting
@@ -254,5 +263,7 @@ export function startThread<TOutput>(
   return Object.assign(started, {
     result: handle.result,
     stop: handle.stop,
+    message: handle.message,
+    ask: handle.ask,
   });
 }

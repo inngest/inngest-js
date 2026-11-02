@@ -23,10 +23,12 @@ export * from "./agent/agents.ts";
 export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
+export type { ResultOptions } from "./agent/runResults.ts";
 export {
   AgentStoppedError,
   AgentTimeoutError,
 } from "./agent/runResults.ts";
+export type { StartedThread } from "./agent/startThread.ts";
 export type { Json, JsonSchema } from "./json.ts";
 export type {
   AnthropicCall,

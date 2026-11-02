@@ -6,7 +6,9 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { memoryKvAdapter } from "../kv/kv.ts";
 import { threadHandle } from "../threads/thread.ts";
+import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
 const setup = (body: (thread: ReturnType<typeof threadHandle>) => unknown) => {
@@ -86,16 +88,26 @@ describe("thread.message().result()", () => {
     expect(output).toBe("done");
   });
 
-  test("a message called without await is still sent", async () => {
-    const { fn, bodies } = setup(async (thread) => {
-      thread.message("y");
+  test("a message called without await in an agent is still sent", async () => {
+    const { client, bodies } = setup(async () => {});
+    const agents = createAgents(client, { store: memoryKvAdapter() });
+    const callee = agents.agent({ id: "callee" });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      callee.thread("t9").message("y");
 
       return "returned";
     });
-    const { output } = await run(fn, options());
+    const { output } = await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: { agent: `${testClientId}/caller`, thread: "c1", content: "go" },
+      },
+    });
 
     expect(output).toBe("returned");
-    expect(bodies).toMatchObject([{ name: "agent/message" }]);
+    expect(bodies).toMatchObject([
+      { name: "agent/message", data: { thread: "t9", content: "y" } },
+    ]);
   });
 
   test("a failed run throws its error", async () => {
@@ -181,8 +193,12 @@ describe("thread.message().result()", () => {
       }),
     );
 
-    // The open and the send, then the one read that waited for the result.
-    expect(ops.map((op) => op.op)).toEqual(["open", "wait", "wait"]);
+    // The open and the send are the two steps; the one read finds the result.
+    expect(
+      ops.map((op) => {
+        return op.op;
+      }),
+    ).toEqual(["open", "wait"]);
     expect(steps).toHaveLength(1);
   });
 });

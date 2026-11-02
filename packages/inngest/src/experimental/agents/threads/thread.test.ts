@@ -4,7 +4,7 @@
  */
 
 import { Inngest } from "../../../components/Inngest.ts";
-import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
+import { testClientId } from "../../../test/helpers.ts";
 import { freshKv } from "../agent/test-helpers.ts";
 import { threadHandle } from "./thread.ts";
 
@@ -32,8 +32,6 @@ const fakeClient = (
 
   return { client, sent, cancelled };
 };
-
-import { StepOpCode } from "../../../types.ts";
 
 const sessions = { agent_session: "t1", agent_thread: "t1" };
 
@@ -130,16 +128,14 @@ describe("thread handle", () => {
       const { fn, bodies } = setup(async (thread) => {
         await thread.message("faster");
       });
+      const { run } = await import("../agent/test-helpers.ts");
 
-      const result = await runFnWithStack(fn, {}, { event });
+      await run(fn, { event, key: "msg:run.0", runId: "run" });
 
-      expect(result).toMatchObject({
-        type: "step-ran",
-        step: { op: StepOpCode.StepRun, displayName: "thread:t1:message" },
-      });
       expect(bodies).toMatchObject([
         [
           {
+            id: "msg:run.0",
             name: "agent/message",
             data: { thread: "t1", content: "faster" },
             meta: { sessions },

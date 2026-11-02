@@ -344,6 +344,8 @@ export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "../kv/kvD1.ts";
 export { d1KvAdapter, d1KvSchema } from "../kv/kvD1.ts";
 export type { AgentScoreName } from "../loop/scores.ts";
 export type {
+  AskOptions,
+  RunHandle,
   ThreadHandle,
   ThreadState,
   ThreadStatus,
