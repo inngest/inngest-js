@@ -46,6 +46,11 @@ export const run = async (
      */
     timeouts?: number;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
+
+    /**
+     * The run's ID, for a test that needs the run's lazy reads to be its own.
+     */
+    runId?: string;
     /**
      * Called with each `step.run` step as it ran, metadata included.
      */
@@ -56,6 +61,8 @@ export const run = async (
   const incoming = [...(options.incoming ?? [])];
   let timeoutsLeft = options.timeouts ?? 0;
   const ops: { id: string; op: string; opts: unknown }[] = [];
+  // The lazy reads that draw rows, which are not steps.
+  const reads: string[] = [];
   const saved: unknown[] = [];
   const stack: string[] = [];
   const pauses: Pause[] = [];
@@ -120,6 +127,7 @@ export const run = async (
       event,
       events: [structuredClone(event)],
       stackOrder: [...stack],
+      runId: options.runId,
     });
     const found =
       result.type === "step-ran"
@@ -129,16 +137,16 @@ export const run = async (
           : [];
 
     if (result.type === "function-resolved") {
-      return { ops, saved, output: result.data, waiting: false };
+      return { ops, reads, saved, output: result.data, waiting: false };
     }
 
     if (result.type === "function-rejected") {
-      return { ops, saved, output: result.error, waiting: false };
+      return { ops, reads, saved, output: result.error, waiting: false };
     }
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
-        return { ops, saved, output: op.data, waiting: false };
+        return { ops, reads, saved, output: op.data, waiting: false };
       }
 
       if (op.op === StepOpCode.StepPlanned) {
@@ -148,6 +156,7 @@ export const run = async (
           events: [structuredClone(event)],
           stackOrder: [...stack],
           runStep: op.id,
+          runId: options.runId,
         });
 
         if (ran.type === "step-ran") {
@@ -169,6 +178,8 @@ export const run = async (
       const opts = op.opts as Record<string, unknown> | undefined;
 
       if (op.op === StepOpCode.SubscribeRead) {
+        reads.push(op.userland?.id ?? op.id);
+
         continue;
       }
 
@@ -249,7 +260,7 @@ export const run = async (
 
         // The run is blocked until a message arrives; the replay finds it.
         if (incoming.length === 0) {
-          return { ops, saved, output: undefined, waiting: true };
+          return { ops, reads, saved, output: undefined, waiting: true };
         }
 
         save(incoming.shift());

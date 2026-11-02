@@ -39,11 +39,21 @@ import {
 } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { step } from "../InngestStepTools.ts";
-import { type Inbox, inboxOpened } from "../inbox/Inbox.ts";
+import {
+  type BatchOptions,
+  type Inbox,
+  type InboxMessageOf,
+  inboxOpenedPromise,
+  type ReadOptions,
+  type UntypedInboxMessage,
+} from "../inbox/Inbox.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import type { AgentTool, SandboxTool, SandboxTools } from "../sandbox/tools.ts";
-import type { EventTypeWithAnySchema } from "../triggers/triggers.ts";
+import {
+  addEventIs,
+  type EventTypeWithAnySchema,
+} from "../triggers/triggers.ts";
 import { type AgentToolInput, agentToolOf } from "./agentTool.ts";
 import { toAsync } from "./cel.ts";
 import {
@@ -74,15 +84,6 @@ import {
   type AgentSteerData,
   agentMessage,
 } from "./events.ts";
-import {
-  type BatchOptions,
-  type EventMessage,
-  eventNameOf,
-  type InboxMessage,
-  type NextOptions,
-  type View,
-  withIs,
-} from "./inboxMessage.ts";
 import {
   createInboxTools,
   type InboxToolInbox,
@@ -332,6 +333,8 @@ const functionOptions = (
  * - `client`: the Inngest client, whose middleware types the body's context.
  * - `middleware`: the function-level middleware, which adds to the context.
  * - `inboxTools`: the config of the model's inbox tools, if any.
+ * - `sources`: the `inbox` sources of the config, whose event types type the
+ *   messages they add to the inbox.
  */
 export interface AgentTypes {
   /**
@@ -373,6 +376,11 @@ export interface AgentTypes {
    * The config of the model's inbox tools, or `undefined` for none.
    */
   inboxTools?: InboxToolsConfig | undefined;
+
+  /**
+   * The `inbox` sources of the agent's config.
+   */
+  sources?: readonly InboxSource[] | undefined;
 }
 
 /**
@@ -418,6 +426,11 @@ export interface AgentTypeDefaults {
    * Inbox tools that may or may not be configured.
    */
   inboxTools: InboxToolsConfig | undefined;
+
+  /**
+   * No typed sources.
+   */
+  sources: undefined;
 }
 
 /**
@@ -447,6 +460,11 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
   }
     ? V
     : AgentTypeDefaults["inboxTools"];
+  sources: TTypes extends {
+    sources: infer V extends readonly InboxSource[] | undefined;
+  }
+    ? V
+    : AgentTypeDefaults["sources"];
 };
 
 /**
@@ -531,15 +549,17 @@ export interface AgentFunctionConfig<
 
   /**
    * Event sources that reach a live run of the thread they map to and never
-   * start one, as if the run had called `inbox.listen()` for each when it began.
+   * start one, and read through the one `inbox`.
    * `on` still starts and wakes runs. Each source maps its own events to the
    * thread key with its `thread` expression.
    */
-  inbox?: readonly InboxSource[];
+  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSource[]
+    ? AgentTypesOf<TTypes>["sources"]
+    : readonly InboxSource[];
 
   /**
    * Lets the model listen for events while it works: the body gets
-   * `inboxTools` (`inbox_listen`, `inbox_wait`, `inbox_read`, `inbox_stop`) to
+   * `inboxTools` (`inbox_listen`, `inbox_next`, `inbox_next_batch`, `inbox_close`) to
    * pass to `agent.loop()`, and to `sandbox.tools.code({ tools })` so `run_code`
    * scripts use the same inbox. Off unless set. The model can only listen to the
    * sources listed here, each tied to this thread by its own `thread`; its
@@ -645,8 +665,10 @@ export type AgentStartData<TEvent = TriggerEvent> = {
 /**
  * An event source for an agent's inbox. Its events reach the run of the thread
  * they map to while it is live, and never start one. `thread` is an expression
- * over `event` that gives the thread key; `if` is an expression over
- * `event`. At least one is required.
+ * over `event` (the arriving event) that gives the thread key. `if` is written
+ * like the `if` of `step.subscribe()`: `async` is the arriving event and
+ * `event` is the event that started the run, so `async.data.pr == event.data.pr`
+ * ties a source to the trigger. At least one is required.
  */
 export type InboxSource = {
   /**
@@ -654,29 +676,6 @@ export type InboxSource = {
    */
   event: string | EventTypeWithAnySchema<string>;
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
-
-/**
- * What `listen()` takes beside a bare event: the filter that ties it to the
- * thread.
- */
-export type InboxListenOptions =
-  | { thread: string; if?: string }
-  | { if: string; thread?: string };
-
-/**
- * A source added to the inbox mid-run: a view over exactly that source's
- * messages, with a read position of its own. The main inbox receives the events
- * too. `stop()` ends the source (the same as `close()`); messages already saved
- * stay in the inbox.
- */
-export interface ThreadListener<
-  TType extends InboxSource["event"] = InboxSource["event"],
-> extends View<EventMessage<TType>> {
-  /**
-   * Stops listening.
-   */
-  stop(): Promise<void>;
-}
 
 /**
  * What `onArrival` is given.
@@ -768,8 +767,8 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   sandboxTools: SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>;
 
   /**
-   * The model's inbox tools: `inbox_listen`, `inbox_wait`, `inbox_read` and
-   * `inbox_stop`, all of them when the config has `inboxTools` and none
+   * The model's inbox tools: `inbox_listen`, `inbox_next`, `inbox_next_batch` and
+   * `inbox_close`, all of them when the config has `inboxTools` and none
    * without it.
    */
   inboxTools: InboxToolsOf<AgentTypesOf<TTypes>["inboxTools"]>;
@@ -797,7 +796,8 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   inbox: ThreadInbox<
     AgentTypesOf<TTypes>["event"],
     AgentTypesOf<TTypes>["request"],
-    AgentTypesOf<TTypes>["reply"]
+    AgentTypesOf<TTypes>["reply"],
+    AgentTypesOf<TTypes>["sources"]
   >;
 
   /**
@@ -829,6 +829,12 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    */
   control: {
     steer: () => Promise<AgentEvent[]>;
+
+    /**
+     * The inboxes the model has open, with the source each was opened on, for
+     * a loop that reads them with the thread's own.
+     */
+    inboxes: () => OpenedInbox[];
     onTurn: (turn: AgentTurn) => Promise<void>;
 
     /**
@@ -848,6 +854,31 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 }
 
 /**
+ * A message made from an event: the core message with its `name` and `data`
+ * fixed.
+ */
+type MessageOf<TData, TName extends string> = Omit<
+  UntypedInboxMessage,
+  "name" | "data"
+> & {
+  name: TName;
+  data: TData;
+};
+
+/**
+ * The messages of the typed sources of the config's `inbox`. A source written
+ * as a name has no type to give, so it stays out of the union and `name` still
+ * narrows the agent's own messages.
+ */
+type SourceMessages<TSources> = TSources extends readonly (infer TItem)[]
+  ? TItem extends { event: infer TEvent }
+    ? TEvent extends EventTypeWithAnySchema<string>
+      ? InboxMessageOf<{ event: TEvent }>
+      : never
+    : never
+  : never;
+
+/**
  * The event of a trigger of `on`, as an inbox message: its own name and data.
  */
 type TriggerMessage<TEvent> = TEvent extends {
@@ -858,12 +889,12 @@ type TriggerMessage<TEvent> = TEvent extends {
     // of the union, so `name` still narrows the agent's own events.
     string extends TName
     ? never
-    : InboxMessage<TData, TName>
+    : MessageOf<TData, TName>
   : never;
 
 /**
  * A message of the thread's inbox. It is a plain event (`id`, `name`, `data`,
- * `ts`): narrow it by `name`, and `data` is typed.
+ * `ts`): narrow it by `name` or `is()`, and `data` is typed.
  *
  * - An event of `on` (a trigger, which also starts the run as message 1) has
  *   its own name and data, typed from `on`.
@@ -874,18 +905,19 @@ type TriggerMessage<TEvent> = TEvent extends {
  *   answered with `reply()`.
  *
  * A message from an inbox source is its event too, under the event's own
- * `name`; it is not in the type of `on`, so read it typed through
- * `inbox.of(type)`.
+ * `name`; it is not in the type of `on`, so narrow it with `is(type)`.
  */
 export type ThreadInboxMessage<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
+  TSources = undefined,
 > =
   | TriggerMessage<TEvent>
-  | InboxMessage<AgentMessageData, "agent/message">
-  | InboxMessage<AgentSteerData, "agent/steer">
-  | (InboxMessage<AgentRequestData<TRequest>, "agent/request"> & {
+  | SourceMessages<TSources>
+  | MessageOf<AgentMessageData, "agent/message">
+  | MessageOf<AgentSteerData, "agent/steer">
+  | (MessageOf<AgentRequestData<TRequest>, "agent/request"> & {
       /**
        * Answers the request: sends `data` to the thread that asked. It is a
        * step.
@@ -901,53 +933,37 @@ export type ThreadInboxMessage<
 /**
  * The thread's inbox: an `Inbox` (`step.subscribe()`'s) whose first message is
  * the event that started the run, and whose messages can reply. A message that
- * breaks its schema is dropped.
+ * breaks its schema is dropped. It is opened for you with the run's triggers,
+ * the config's `inbox` sources and the agent's own messages, and has one
+ * reader, like any inbox.
  */
-export interface ThreadInbox<
+export type ThreadInbox<
   TEvent = TriggerEvent,
   TRequest = unknown,
   TReply = unknown,
-> extends View<ThreadInboxMessage<TEvent, TRequest, TReply>> {
-  /**
-   * A view of the messages of one event with a read position of its own. It
-   * hides nothing from the inbox or other views. Messages are typed by the
-   * event type, and ones that break its schema are dropped, as in the inbox.
-   * @param type The event name or event type.
-   */
-  of<TType extends InboxSource["event"]>(
-    type: TType,
-  ): View<EventMessage<TType>>;
-
-  /**
-   * Adds an event source to the inbox mid-run: its events reach this thread's
-   * run from now on, never start a run, and join the inbox in order. It is one
-   * step. A source needs a `thread` or an `if` that ties it to this thread.
-   * @param source The event and how it maps to the thread.
-   */
-  listen<TSource extends InboxSource>(
-    source: TSource,
-  ): ThreadListener<TSource["event"]>;
-  listen<TType extends InboxSource["event"]>(
-    source: TType,
-    options: InboxListenOptions,
-  ): ThreadListener<TType>;
-}
+  TSources = undefined,
+> = Inbox<ThreadInboxMessage<TEvent, TRequest, TReply, TSources>>;
 
 /**
- * What the inbox tools need of the thread's inbox. They read through views of
- * the events they listen to, which have cursors of their own, so a stop, a
- * user message or a request is never taken from the loop.
+ * An inbox the model opened with `inbox_listen`.
  */
-const toolInbox = (inbox: ThreadInbox): InboxToolInbox => {
-  return {
-    listen: async (event, options) => {
-      return inbox.listen(event, options);
-    },
-    of: (event) => {
-      return inbox.of(event);
-    },
-  };
-};
+export interface OpenedInbox {
+  /**
+   * The name the model gave it.
+   */
+  as: string;
+
+  /**
+   * The source it was opened on: the event, and the filter that ties it to the
+   * thread.
+   */
+  source: { event: string; if: string };
+
+  /**
+   * The inbox. Messages that break their source's schema are dropped.
+   */
+  inbox: Inbox<UntypedInboxMessage>;
+}
 
 /**
  * The function context an agent's body shares with a plain function, typed
@@ -1182,20 +1198,26 @@ interface ThreadSources {
   /**
    * The thread's inbox.
    */
-  inbox: Inbox<InboxMessage>;
+  inbox: Inbox<UntypedInboxMessage>;
+}
 
-  /**
-   * A view of one event.
-   */
-  of: (type: InboxSource["event"]) => Inbox<InboxMessage>;
-
-  /**
-   * Adds a source mid-run.
-   */
-  listen: (
-    source: InboxSource["event"] | InboxSource,
-    options?: InboxListenOptions,
-  ) => Inbox<InboxMessage>;
+/**
+ * A reader of an inbox with the agent's rules over it: the surface of an
+ * `Inbox`.
+ */
+interface Reader<TMessage> extends AsyncIterable<TMessage>, AsyncDisposable {
+  next(): Promise<TMessage | undefined>;
+  next(options: ReadOptions): Promise<TMessage | null | undefined>;
+  nextBatch(options?: BatchOptions): Promise<TMessage[] | undefined>;
+  nextBatch(
+    options: BatchOptions & ReadOptions,
+  ): Promise<TMessage[] | null | undefined>;
+  drain(options?: BatchOptions): Promise<TMessage[]>;
+  batches(
+    options?: BatchOptions & Partial<ReadOptions>,
+  ): AsyncGenerator<TMessage[], void, undefined>;
+  close(): Promise<TMessage[]>;
+  readonly closed: boolean;
 }
 
 /**
@@ -1223,18 +1245,21 @@ function threadInbox(
 
   // The event that started the run: the inbox's first message, and the one
   // message that is not checked against a schema, because core checked it.
-  started?: InboxMessage,
+  started?: UntypedInboxMessage,
 ): {
   inbox: ThreadInbox;
+  view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
   steering: {
     take: () => Promise<ThreadInboxMessage[]>;
     keep: (messages: ThreadInboxMessage[]) => void;
   };
 } {
   // The event each message was made from, to leave it unread as it came.
-  const raws = new WeakMap<object, InboxMessage>();
+  const raws = new WeakMap<object, UntypedInboxMessage>();
 
-  function unwrap(message: InboxMessage | null): ThreadInboxMessage | null {
+  function unwrap(
+    message: UntypedInboxMessage | null,
+  ): ThreadInboxMessage | null {
     if (!message) {
       return null;
     }
@@ -1245,7 +1270,7 @@ function threadInbox(
       message.name === agentMessageEvent
         ? (message.data as Partial<AgentResendData>).event
         : undefined;
-    const unwrapped = withIs({
+    const unwrapped = addEventIs({
       ...message,
       ...(resent
         ? {
@@ -1277,9 +1302,9 @@ function threadInbox(
     return unwrapped as unknown as ThreadInboxMessage;
   }
 
-  function rawOf(message: ThreadInboxMessage): InboxMessage {
+  function rawOf(message: ThreadInboxMessage): UntypedInboxMessage {
     // A message that did not come from `unwrap` is already an event.
-    return raws.get(message) ?? (message as unknown as InboxMessage);
+    return raws.get(message) ?? (message as unknown as UntypedInboxMessage);
   }
 
   let delivered = 0;
@@ -1288,7 +1313,7 @@ function threadInbox(
   // it does not reach a live one either: it is dropped. The event that started
   // the run was checked by core, except for the payload of a request, which
   // core does not see.
-  async function skipped(raw: InboxMessage) {
+  async function skipped(raw: UntypedInboxMessage) {
     const problem = await problemOf(raw, raw === started);
     if (!problem) {
       return false;
@@ -1302,7 +1327,7 @@ function threadInbox(
   // The drop is decided again when the run replays, and the handler's logger
   // is quiet while a run replays, so the warning goes to the client's own
   // logger once per message and process.
-  function warnOnce(raw: InboxMessage, problem: string) {
+  function warnOnce(raw: UntypedInboxMessage, problem: string) {
     const id = `${runId}:${raw.id}`;
     if (warned.has(id)) {
       return;
@@ -1322,12 +1347,12 @@ function threadInbox(
   // Messages to return before the source's: the event that started the run,
   // and the ones steering took and left for the next turn. They are rebuilt on
   // every replay, which takes and keeps the same messages.
-  const lead: InboxMessage[] = started ? [started] : [];
+  const lead: UntypedInboxMessage[] = started ? [started] : [];
 
   // What is left of messages the source handed over once the ones that break
   // their schema are dropped.
-  async function keep(raws: InboxMessage[]) {
-    const kept: InboxMessage[] = [];
+  async function keep(raws: UntypedInboxMessage[]) {
+    const kept: UntypedInboxMessage[] = [];
 
     for (const raw of raws) {
       if (!(await skipped(raw))) {
@@ -1341,20 +1366,26 @@ function threadInbox(
   // A reader with the agent's rules over an `Inbox`. Only the main one starts
   // with the event that started the run and records the thread's status.
   function view<TOut>(
-    source: Inbox<InboxMessage>,
-    present: (raw: InboxMessage) => TOut,
+    source: Inbox<UntypedInboxMessage>,
+    present: (raw: UntypedInboxMessage) => TOut,
     main: boolean,
-  ): View<TOut> {
+  ): Reader<TOut> {
     const first = main ? lead : [];
 
-    const reader: View<TOut> = {
-      next: (async (options?: NextOptions) => {
+    const reader: Reader<TOut> = {
+      next: (async (options?: ReadOptions) => {
         if (main && delivered > 0) {
           await recorder.waiting();
         }
 
         for (;;) {
           const queued = first.shift();
+
+          // The trigger comes from the run's state: it still gets its row.
+          if (queued && main && queued === started) {
+            source.noteStart();
+          }
+
           const raw =
             queued ??
             (options ? await source.next(options) : await source.next());
@@ -1393,21 +1424,21 @@ function threadInbox(
 
           return message;
         }
-      }) as View<TOut>["next"],
-      nextBatch: (async (options?: BatchOptions & Partial<NextOptions>) => {
+      }) as Reader<TOut>["next"],
+      nextBatch: (async (options?: BatchOptions & Partial<ReadOptions>) => {
         if (main && delivered > 0) {
           await recorder.waiting();
         }
 
         for (;;) {
           const queued = first.splice(0);
-          let raws: InboxMessage[];
+          let raws: UntypedInboxMessage[];
 
           if (queued.length > 0) {
             raws = [...queued, ...(await source.drain(options))];
           } else {
             const got = await source.nextBatch(
-              options as BatchOptions & NextOptions,
+              options as BatchOptions & ReadOptions,
             );
 
             if (got === undefined) {
@@ -1453,11 +1484,11 @@ function threadInbox(
             return batch;
           }
         }
-      }) as View<TOut>["nextBatch"],
-      async *batches(options?: BatchOptions & Partial<NextOptions>) {
+      }) as Reader<TOut>["nextBatch"],
+      async *batches(options?: BatchOptions & Partial<ReadOptions>) {
         for (;;) {
           const batch = await reader.nextBatch(
-            options as BatchOptions & NextOptions,
+            options as BatchOptions & ReadOptions,
           );
 
           if (batch === undefined || batch === null) {
@@ -1499,9 +1530,8 @@ function threadInbox(
     return reader;
   }
 
-  const views = new Map<string, View<InboxMessage>>();
-  const plain = (raw: InboxMessage) => {
-    return withIs({ ...raw });
+  const plain = (raw: UntypedInboxMessage) => {
+    return addEventIs({ ...raw });
   };
   const main = view(
     sources.inbox,
@@ -1512,31 +1542,10 @@ function threadInbox(
   );
 
   return {
-    inbox: Object.assign(Object.create(main), {
-      of(type: InboxSource["event"]) {
-        const key = eventNameOf(type);
-        let mine = views.get(key);
-
-        if (!mine) {
-          mine = view(sources.of(type), plain, false);
-          views.set(key, mine);
-        }
-
-        return mine as never;
-      },
-      listen(
-        source: InboxSource["event"] | InboxSource,
-        options?: InboxListenOptions,
-      ) {
-        const mine = view(sources.listen(source, options), plain, false);
-
-        return Object.assign(Object.create(mine), {
-          stop: async () => {
-            await mine.close();
-          },
-        });
-      },
-    }) as ThreadInbox,
+    inbox: main as unknown as ThreadInbox,
+    view: (source: Inbox<UntypedInboxMessage>) => {
+      return view(source, plain, false);
+    },
     steering: {
       async take() {
         const raws = await keep([
@@ -1570,21 +1579,6 @@ function quote(value: string) {
 }
 
 /**
- * Whether a value is an inbox source object, not a bare event name or type.
- * @param value The first argument of `listen()`.
- */
-function isInboxSource(
-  value: InboxSource["event"] | InboxSource,
-): value is InboxSource {
-  return (
-    typeof value === "object" &&
-    "event" in value &&
-    !("schema" in value) &&
-    !("create" in value)
-  );
-}
-
-/**
  * The subscription source of an inbox source: its `if` and `thread`
  * expressions (over `event`) turned into one filter over `async` that also
  * ties it to the thread.
@@ -1593,7 +1587,7 @@ function isInboxSource(
  */
 function inboxFilter(source: { if?: string; thread?: string }, thread: string) {
   const conditions = [
-    source.if && `(${toAsync(source.if)})`,
+    source.if && `(${source.if})`,
     source.thread && `(${toAsync(source.thread)}) == ${quote(thread)}`,
   ].filter((condition): condition is string => {
     return Boolean(condition);
@@ -2024,6 +2018,26 @@ export function createAgentFunction(
           );
         }
 
+        // What each inbox source's events are checked against, by the name of
+        // the source's event.
+        const sourceSchemas = new Map<string, StandardSchemaV1>();
+
+        const noteSource = (source: InboxSource) => {
+          const schema =
+            typeof source.event === "object" ? source.event.schema : undefined;
+
+          if (schema) {
+            sourceSchemas.set(
+              eventNameOf(source.event),
+              schema as StandardSchemaV1,
+            );
+          }
+        };
+
+        for (const source of config.inbox ?? []) {
+          noteSource(source);
+        }
+
         // Opened first, so the gap in which a message could be missed is the few
         // milliseconds between the run starting and this op.
         // Closed when the run's work is done, whichever way it ends. That only
@@ -2047,57 +2061,27 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
+          ...(config.inbox ?? []).map((source) => {
+            return {
+              event: eventNameOf(source.event),
+              if: inboxFilter(source, data.thread),
+            };
+          }),
         ]);
 
-        // The sources of `inbox` listen from the start of the run.
-        if ((config.inbox ?? []).length > 0) {
-          subscription.listen(
-            (config.inbox ?? []).map((source) => {
-              return {
-                event: eventNameOf(source.event),
-                if: inboxFilter(source, data.thread),
-              };
-            }),
-          );
-        }
+        await inboxOpenedPromise(subscription);
 
-        await subscription[inboxOpened]();
-
-        // What each inbox source's events are checked against, by the name of
-        // the source's event.
-        const sourceSchemas = new Map<string, StandardSchemaV1>();
-
-        const noteSource = (source: InboxSource) => {
-          const schema =
-            typeof source.event === "object" ? source.event.schema : undefined;
-
-          if (schema) {
-            sourceSchemas.set(
-              eventNameOf(source.event),
-              schema as StandardSchemaV1,
-            );
-          }
-        };
-
-        for (const source of config.inbox ?? []) {
-          noteSource(source);
-        }
-
-        // Adds a source mid-run: a bare event takes its filter from the options.
-        const listenTo = (
-          source: InboxSource["event"] | InboxSource,
-          options?: InboxListenOptions,
-        ) => {
-          const given: InboxSource = isInboxSource(source)
-            ? source
-            : ({ event: source, ...options } as InboxSource);
-
-          noteSource(given);
-
-          return subscription.listen({
-            event: eventNameOf(given.event),
-            if: inboxFilter(given, data.thread),
-          }) as unknown as Inbox<InboxMessage>;
+        // The inboxes the model opened, by the name it gave them. They end with
+        // the run, whichever way it ends, before the thread's own inbox.
+        const named = new Map<string, OpenedInbox>();
+        await using _named = {
+          async [Symbol.asyncDispose]() {
+            for (const open of [...named.values()]) {
+              if (!open.inbox.closed) {
+                await open.inbox.close();
+              }
+            }
+          },
         };
 
         // A plain agent (no `invoke()` trigger) that `step.invoke` started with
@@ -2112,13 +2096,13 @@ export function createAgentFunction(
         // The event that started the run is the inbox's first message, made
         // from the run's own state: it costs no step. The inbox can receive it
         // too, when it was sent just before the inbox opened: it is read once.
-        const startMessage = withIs({
+        const startMessage = addEventIs({
           id: event.id ?? "",
           name: invokedAsMessage ? agentMessageEvent : event.name,
           data: invokedAsMessage ? invokedData : event.data,
           ts: event.ts ?? 0,
           user: {},
-        }) as InboxMessage;
+        }) as unknown as UntypedInboxMessage;
 
         const bindings = await resolveSandboxes(config.sandboxes, {
           event: event as unknown as AgentConfigContext["event"],
@@ -2199,17 +2183,9 @@ export function createAgentFunction(
         );
         const agentScores = createAgentScores(client);
 
-        const { inbox, steering } = threadInbox(
+        const { inbox, view, steering } = threadInbox(
           {
-            inbox: subscription as unknown as Inbox<InboxMessage>,
-            of: (type) => {
-              // The wrapper types its own messages and reads sources by name;
-              // the core view only reads the name of each type.
-              return subscription.of({
-                name: eventNameOf(type),
-              } as EventTypeWithAnySchema<string>) as unknown as Inbox<InboxMessage>;
-            },
-            listen: listenTo,
+            inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
           async function problemOf(raw, started) {
             // A request's payload is checked against `requests`, which core
@@ -2275,6 +2251,9 @@ export function createAgentFunction(
 
             return folded;
           },
+          inboxes() {
+            return [...named.values()];
+          },
           budget() {
             return budgetReason(limits);
           },
@@ -2332,7 +2311,57 @@ export function createAgentFunction(
             sandboxes: opened,
             sandboxTools: sandboxTools(opened),
             inboxTools: config.inboxTools
-              ? createInboxTools(toolInbox(inbox), config.inboxTools)
+              ? createInboxTools(
+                  {
+                    handler: inbox,
+                    open: async (as, event, options) => {
+                      // The tools write `thread` and `if` over `event`, the
+                      // arriving event.
+                      const given: InboxSource = {
+                        event,
+                        ...options,
+                        ...(options.if !== undefined && {
+                          if: toAsync(options.if),
+                        }),
+                      } as InboxSource;
+
+                      noteSource(given);
+
+                      const filter = inboxFilter(given, data.thread);
+                      const opened = step.subscribe(`inbox:${as}`, {
+                        event: eventNameOf(event),
+                        if: filter,
+                      });
+
+                      await inboxOpenedPromise(opened);
+
+                      const mine = view(
+                        opened as unknown as Inbox<UntypedInboxMessage>,
+                      );
+
+                      named.set(as, {
+                        as,
+                        source: { event: eventNameOf(event), if: filter },
+                        inbox: mine as unknown as Inbox<UntypedInboxMessage>,
+                      });
+
+                      return {
+                        next: (options) => {
+                          return mine.next(options);
+                        },
+                        drain: () => {
+                          return mine.drain();
+                        },
+                        close: async () => {
+                          named.delete(as);
+
+                          return mine.close();
+                        },
+                      };
+                    },
+                  },
+                  config.inboxTools,
+                )
               : {},
             channels,
             report,
@@ -2428,4 +2457,12 @@ export function createAgentFunction(
       },
     },
   };
+}
+
+/**
+ * The name of an event source.
+ * @param source A name or an event type.
+ */
+function eventNameOf(source: InboxSource["event"]): string {
+  return typeof source === "string" ? source : source.name;
 }

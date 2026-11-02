@@ -59,9 +59,9 @@ describe("inboxTools body type", () => {
         },
         async ({ inboxTools }) => {
           expectTypeOf(inboxTools.inbox_listen).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_wait).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_read).not.toBeUndefined();
-          expectTypeOf(inboxTools.inbox_stop).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_next).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_next_batch).not.toBeUndefined();
+          expectTypeOf(inboxTools.inbox_close).not.toBeUndefined();
 
           return null;
         },

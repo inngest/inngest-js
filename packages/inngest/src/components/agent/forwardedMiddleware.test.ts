@@ -90,6 +90,7 @@ describe("the AgentTypes bag", () => {
       client: AgentTypeDefaults["client"];
       middleware: undefined;
       inboxTools: AgentTypeDefaults["inboxTools"];
+      sources: undefined;
     }>();
     expectTypeOf<AgentTypesOf<{ output: number }>["output"]>().toBeNumber();
     expectTypeOf<AgentTypesOf<{ output: number }>["request"]>().toBeUnknown();

@@ -3,7 +3,7 @@
  * Type tests for the public entry `inngest/experimental/agents`: the types
  * that name an `AgentTypes` bag and an agent's body context are exported, so
  * a helper outside an `agents.agent()` call can type what the body gets, and
- * the listener `inbox.listen()` returns is a typed view.
+ * and `InboxMessage` names the messages of an agent's inbox.
  */
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
@@ -11,15 +11,12 @@ import type {
   AgentBodyContext,
   AgentTypes,
   AgentTypesOf,
-  EventMessage,
-  InboxListenOptions,
+  InboxMessage,
   InboxSource,
   InboxToolsConfig,
   SandboxToolNames,
   ThreadInbox,
-  ThreadListener,
   TriggerEvent,
-  View,
 } from "../../experimental/agents/index.ts";
 import { Inngest } from "../Inngest.ts";
 import type { Middleware } from "../middleware/middleware.ts";
@@ -51,32 +48,18 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
   expectTypeOf<AgentTypesOf<Bag>["request"]>().toEqualTypeOf<{ ask: string }>();
 });
 
-test("a listener is the typed view of its event", () => {
-  const status = eventType("ci/status", {
-    schema: z.object({ state: z.string() }),
-  });
+test("the inbox of an agent is a core Inbox, and InboxMessage names its messages", () => {
   const check = async (inbox: ThreadInbox) => {
-    const listener = await inbox.listen(status, { thread: "event.data.t" });
+    const message: InboxMessage<typeof inbox> | undefined = await inbox.next();
 
-    expectTypeOf(listener).toEqualTypeOf<ThreadListener<typeof status>>();
-    expectTypeOf(listener).toExtend<View<EventMessage<typeof status>>>();
-    expectTypeOf(listener).toExtend<AsyncDisposable>();
-
-    const message = await listener.next({ timeout: "1m" });
-
-    if (message) {
-      expectTypeOf(message.data.state).toBeString();
-    }
-
-    const fromSource = await inbox.listen({ event: status, if: "true" });
-
-    expectTypeOf(fromSource).toEqualTypeOf<ThreadListener<typeof status>>();
+    expectTypeOf(message).toEqualTypeOf<
+      InboxMessage<ThreadInbox> | undefined
+    >();
+    expectTypeOf(inbox).toExtend<AsyncDisposable>();
 
     const source: InboxSource = { event: "x", if: "true" };
-    const options: InboxListenOptions = { if: "true" };
 
     void source;
-    void options;
   };
 
   expectTypeOf(check).toBeFunction();

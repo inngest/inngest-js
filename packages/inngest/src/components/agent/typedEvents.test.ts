@@ -185,7 +185,7 @@ describe("typed events", () => {
     );
   });
 
-  test("is() narrows the messages of on, and a source's messages are typed through a view", () => {
+  test("is() narrows the messages of on and of the sources", () => {
     agents.agent(
       {
         id: "a-src",
@@ -200,10 +200,12 @@ describe("typed events", () => {
           expectTypeOf(message.data.total).toBeNumber();
         }
 
-        // A source's message keeps its own event name; the view types it.
-        const refunds = await inbox.of(refund).next();
+        // A source's message keeps its own event name; is() types it.
+        const refunds = await inbox.next();
 
-        expectTypeOf(refunds?.data.amount).toEqualTypeOf<number | undefined>();
+        if (refunds?.is(refund)) {
+          expectTypeOf(refunds.data.amount).toBeNumber();
+        }
 
         return undefined;
       },
