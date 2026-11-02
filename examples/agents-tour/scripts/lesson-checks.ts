@@ -34,6 +34,7 @@ const checkPage = (
   page: LoadedPage,
   options: CheckOptions,
   actions: readonly { id: string }[],
+  definitions: Record<string, string>,
 ) => {
   const problems: string[] = [];
   const say = (text: string) => {
@@ -47,6 +48,14 @@ const checkPage = (
   for (const name of hintTokens(page.markdown)) {
     if (!actionNamed(actions, name)) {
       say(`{${name}} in the text names no action in the key table`);
+    }
+  }
+
+  for (const concept of page.manifest.concepts ?? []) {
+    if (!definitions[concept]) {
+      say(
+        `concept ${concept} has no definition in lessons/_shared/concepts.json`,
+      );
     }
   }
 
@@ -113,9 +122,10 @@ export const checkLessons = async (options: CheckOptions = defaults) => {
   }
 
   let pages: LoadedPage[] = [];
+  let definitions: Record<string, string> = {};
 
   try {
-    pages = loadLessons(options.lessonsDir).pages;
+    ({ pages, definitions } = loadLessons(options.lessonsDir));
   } catch (error) {
     return [...problems, (error as Error).message];
   }
@@ -123,7 +133,7 @@ export const checkLessons = async (options: CheckOptions = defaults) => {
   const files = new Map<string, { where: string; content: string }>();
 
   for (const page of pages) {
-    problems.push(...checkPage(page, options, actions));
+    problems.push(...checkPage(page, options, actions, definitions));
 
     for (const file of [
       ...page.files,

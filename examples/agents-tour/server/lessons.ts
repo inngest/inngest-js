@@ -62,6 +62,8 @@ export interface LoadedPage extends Page {
 }
 
 export interface LoadedLessons {
+  // One line per concept, from `lessons/_shared/concepts.json`.
+  definitions: Record<string, string>;
   pages: LoadedPage[];
   index: TourIndex;
 }
@@ -160,6 +162,7 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
         module: module.id,
         moduleTitle: module.title,
         title: titleOf(markdown),
+        exercise: manifest.exercise !== undefined,
       };
 
       pages.push({
@@ -176,5 +179,13 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
     modules.push(module);
   }
 
-  return { pages, index: { modules } };
+  const definitionsPath = join(tourShared, "concepts.json");
+
+  return {
+    definitions: existsSync(definitionsPath)
+      ? readJson<Record<string, string>>(definitionsPath)
+      : {},
+    pages,
+    index: { modules },
+  };
 };

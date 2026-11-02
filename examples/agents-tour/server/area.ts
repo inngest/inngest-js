@@ -53,6 +53,10 @@ export interface TourContext {
   scriptedModel: boolean;
   publicUrl: string;
   dataDir: string;
+  // Kept across starts, unlike `dataDir`.
+  cacheDir: string;
+  // One line per concept the lessons introduce.
+  definitions: Record<string, string>;
   devServer: DevServer;
   worker: Worker;
   hub: Hub;

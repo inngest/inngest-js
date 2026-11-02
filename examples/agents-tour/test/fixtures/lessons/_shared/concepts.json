@@ -1,0 +1,4 @@
+{
+  "agent": "A function that holds conversations.",
+  "inbox": "A durable, ordered collection of messages inside one run."
+}

@@ -123,11 +123,11 @@ export const useKeyboard = (handlers: Handlers, blocked: () => boolean) => {
             continue;
           }
 
-          // Arrow keys belong to a tab list or a divider that has focus.
+          // Arrow keys belong to a tab list, a divider or the nav that has focus.
           if (
             binding.startsWith("Arrow") &&
             (target as HTMLElement).closest?.(
-              '[role="tablist"], [role="separator"]',
+              '[role="tablist"], [role="separator"], .nav',
             )
           ) {
             continue;
@@ -229,9 +229,19 @@ export const registerEditorCommands = (
  * A `<kbd>` hint. It always shows the binding that works everywhere, inside
  * the editor or not; single keys outside text fields are silent extras.
  */
-export const Kbd = ({ action }: { action: ActionId }) => {
+export const Kbd = ({
+  action,
+  short,
+}: {
+  action: ActionId;
+  // Shows the single key that works outside text fields, where space is tight.
+  short?: boolean;
+}) => {
   const def = keyOf(action);
-  const spec = def.inField[0] ?? def.outside[0];
+
+  const spec = short
+    ? (def.outside[0] ?? def.inField[0])
+    : (def.inField[0] ?? def.outside[0]);
 
   if (!spec) {
     return null;

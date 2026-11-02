@@ -45,6 +45,9 @@ export interface TourOptions {
   checkTiming?: Partial<CheckTiming>;
   // Tells the app to use the scripted model; `tour:verify` sets it.
   scriptedModel?: boolean;
+  // Where the tour keeps progress, which outlives the data folder that is
+  // wiped at start. Default: `.tour-cache` in the root.
+  cacheDir?: string;
 }
 
 const mime: Record<string, string> = {
@@ -99,7 +102,8 @@ export const createTour = async (options: TourOptions) => {
     }),
   );
   const dataDir = options.dataDir ?? join(root, ".tour");
-  const { pages, index } = loadLessons(
+  const cacheDir = options.cacheDir ?? join(root, ".tour-cache");
+  const { pages, index, definitions } = loadLessons(
     options.lessonsDir ?? join(root, "lessons"),
   );
   const hub = new Hub();
@@ -128,6 +132,8 @@ export const createTour = async (options: TourOptions) => {
     scriptedModel: options.scriptedModel ?? false,
     publicUrl,
     dataDir,
+    cacheDir,
+    definitions,
     devServer,
     worker,
     hub,
