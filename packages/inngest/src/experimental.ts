@@ -168,6 +168,6 @@ export type {
   ToolJsonDefinition,
 } from "./components/sandbox/tools.ts";
 export { tool, toolDefinitions } from "./components/sandbox/tools.ts";
-export type { KvOAuthStoreOptions } from "./experimental/agents/mcpOAuthStore.ts";
-export { kvOAuthStore } from "./experimental/agents/mcpOAuthStore.ts";
+export type { KvOAuthStoreOptions } from "./experimental/agents/kv/mcpOAuthStore.ts";
+export { kvOAuthStore } from "./experimental/agents/kv/mcpOAuthStore.ts";
 export type { ExperimentRef } from "./types.ts";

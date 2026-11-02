@@ -6,7 +6,7 @@
 import type {
   AgentModel,
   AgentModelRequest as Request,
-} from "../../experimental/agents/loop.ts";
+} from "../../experimental/agents/loop/loop.ts";
 
 /**
  * One step of a scripted model: say something, or call a tool.

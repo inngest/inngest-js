@@ -4,8 +4,8 @@
  * server, refresh and its races, revocation, and that no credential leaks.
  */
 import { describe, expect, test } from "vitest";
-import { memoryKvAdapter } from "../../experimental/agents/kv.ts";
-import { kvOAuthStore } from "../../experimental/agents/mcpOAuthStore.ts";
+import { memoryKvAdapter } from "../../experimental/agents/kv/kv.ts";
+import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { fakeMcpFetch } from "./mcpFakes.ts";
 import {
   completeMcpAuthorization,

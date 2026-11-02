@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import {
   type AgentModelRequest,
   agent,
-} from "../../experimental/agents/loop.ts";
+} from "../../experimental/agents/loop/loop.ts";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";

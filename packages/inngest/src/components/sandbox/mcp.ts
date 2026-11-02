@@ -12,7 +12,7 @@
  * decides. Tools the server marks `readOnlyHint` or `idempotentHint` retry.
  */
 
-import { kvOAuthStore } from "../../experimental/agents/mcpOAuthStore.ts";
+import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { durationToMs } from "../../helpers/duration.ts";
 import { version } from "../../version.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
