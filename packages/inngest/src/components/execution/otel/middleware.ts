@@ -1,4 +1,10 @@
-import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
+import {
+  context,
+  type DiagLogger,
+  DiagLogLevel,
+  diag,
+  trace,
+} from "@opentelemetry/api";
 import Debug from "debug";
 import type { OTelSetup } from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { version } from "../../../version.ts";
@@ -221,11 +227,38 @@ export const extendedTracesMiddleware = ({
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {
+      const step = arg.ctx.step;
+      const run = step.run;
+
+      // Preserve the OpenTelemetry async-context that is active when
+      // `step.run()` is called so that it is still active inside the step's
+      // callback when it executes. Steps run asynchronously via the execution
+      // engine, so by the time the callback runs the caller's `context.with()`
+      // scope (e.g. Langfuse's `propagateAttributes`) has already ended; this
+      // captures the context at declaration time and restores it on execution.
+      // See #1436
+      const stepWithPreservedContext = {
+        ...step,
+        run: ((
+          idOrOptions: Parameters<typeof run>[0],
+          fn: Parameters<typeof run>[1],
+          ...input: Parameters<typeof run>[2]
+        ) => {
+          const outerContext = context.active();
+
+          const preserveContext = (...args: Parameters<typeof fn>) =>
+            context.with(outerContext, () => fn(...args));
+
+          return run(idOrOptions, preserveContext as typeof fn, ...input);
+        }) as typeof run,
+      } as typeof step;
+
       return {
         ...arg,
         ctx: {
           ...arg.ctx,
           tracer: trace.getTracer("inngest", version),
+          step: stepWithPreservedContext,
         },
       };
     }
