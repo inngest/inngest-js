@@ -665,7 +665,38 @@ const awaitEchoes = async (copy: Copy): Promise<void> => {
           return;
         }
 
-        takeMessages(copy, batch);
+        // A writer that holds no state only needs to know which of its writes
+        // the ledger has: an echo of one of its own (from any ledger run), or
+        // a `reset` that says how far its writes got.
+        for (const message of batch) {
+          if (
+            (message.name !== threadChanged.name &&
+              message.name !== threadReady.name) ||
+            !ledgerDataIsSigned(copy.signer, message.name, message.data)
+          ) {
+            continue;
+          }
+
+          if (message.name === threadReady.name) {
+            copy.heardReady = true;
+            continue;
+          }
+
+          const data = message.data as ThreadChangedData;
+
+          if (data.change.op === "reset") {
+            const { last } = data.change;
+
+            copy.pending = copy.pending.filter((p) => {
+              return p.seq > (last[copy.runId] ?? 0);
+            });
+            copy.resend = copy.pending.length > 0;
+          } else if (data.runId === copy.runId) {
+            copy.pending = copy.pending.filter((p) => {
+              return p.seq !== data.seq;
+            });
+          }
+        }
 
         if (copy.resend || (copy.heardReady && copy.pending.length > 0)) {
           await resendPending(copy);
