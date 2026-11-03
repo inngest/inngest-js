@@ -10,11 +10,20 @@
  * one).
  * It is driven by the platform's own terminal event, so no run's ending goes
  * unreported. There is one per app, whatever agent the run belonged to.
+ *
+ * It is served only when the app has a KV store. With none, the thread's
+ * ledger sends `agent/finished` itself (see `ledger.ts`), because it holds
+ * which owed reports the run sent, and this function would send a second,
+ * different message for the same ending.
  */
 
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { agentFinished, type SenderData } from "../inbox/events.ts";
+import {
+  type AgentFinishedData,
+  agentFinished,
+  type SenderData,
+} from "../inbox/events.ts";
 import type { RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { threadSessions } from "../threads/thread.ts";
@@ -25,6 +34,69 @@ import { finishedOf } from "./recovery.ts";
  */
 const startedByTool = (path: string): string => {
   return `${path}.data.from.via == 'start_agent'`;
+};
+
+/**
+ * The first event of a run, as the executor reports it in
+ * `inngest/function.finished`.
+ */
+export const startOfFinished = (
+  data: Record<string, unknown>,
+): RawEvent | undefined => {
+  return ((data.events as RawEvent[] | undefined)?.[0] ?? data.event) as
+    | RawEvent
+    | undefined;
+};
+
+/**
+ * The `agent/finished` a run `start_agent` began ends with, from its
+ * `inngest/function.finished` data, or `undefined` for any other run. It is
+ * complete except for `missing`, which only the thread's own state knows.
+ * @param data The data of the `inngest/function.finished` event.
+ */
+export const finishedNotice = (
+  data: Record<string, unknown>,
+): AgentFinishedData | undefined => {
+  const start = startOfFinished(data);
+  const from = (start?.data as { from?: SenderData } | undefined)?.from;
+
+  if (from?.kind !== "agent" || from.via === undefined) {
+    return undefined;
+  }
+
+  const child = {
+    kind: "agent" as const,
+    address: from.target ?? String(data.function_id),
+    key: from.thread ?? "",
+  };
+  const ended = finishedOf(data);
+  const outcome =
+    ended.status === "failed"
+      ? {
+          outcome: "failed" as const,
+          error: ended.error?.message ?? "unknown error",
+        }
+      : ended.status === "cancelled"
+        ? { outcome: "stopped" as const }
+        : {
+            outcome: "completed" as const,
+            ...(data.result !== undefined && {
+              output: data.result as Json,
+            }),
+          };
+
+  // An attached child that was stopped may have been cancelled because its
+  // parent's run ended: the report is for a live run only and never starts
+  // one on the parent's thread.
+  const quiet = from.parent_run !== undefined && outcome.outcome === "stopped";
+
+  return {
+    agent: from.address,
+    thread: from.key,
+    from: child,
+    ...outcome,
+    ...(quiet && { quiet: true as const }),
+  };
 };
 
 /**
@@ -48,56 +120,18 @@ export const agentFinishedFunction = (
     },
     async ({ event, step }) => {
       const data = event.data as Record<string, unknown>;
-      const start = ((data.events as RawEvent[] | undefined)?.[0] ??
-        data.event) as RawEvent | undefined;
-      const from = (start?.data as { from?: SenderData } | undefined)?.from;
+      const notice = finishedNotice(data);
 
-      if (from?.kind !== "agent" || from.via === undefined) {
+      if (!notice) {
         return;
       }
 
-      const child = {
-        kind: "agent" as const,
-        address: from.target ?? String(data.function_id),
-        key: from.thread ?? "",
-      };
-      const ended = finishedOf(data);
-      const outcome =
-        ended.status === "failed"
-          ? {
-              outcome: "failed" as const,
-              error: ended.error?.message ?? "unknown error",
-            }
-          : ended.status === "cancelled"
-            ? { outcome: "stopped" as const }
-            : {
-                outcome: "completed" as const,
-                ...(data.result !== undefined && {
-                  output: data.result as Json,
-                }),
-              };
-
-      // An attached child that was stopped may have been cancelled because its
-      // parent's run ended: the report is for a live run only and never starts
-      // one on the parent's thread.
-      const quiet =
-        from.parent_run !== undefined && outcome.outcome === "stopped";
-
       await step.sendEvent(
         "agent-finished",
-        agentFinished.create(
-          {
-            agent: from.address,
-            thread: from.key,
-            from: child,
-            ...outcome,
-            ...(quiet && { quiet: true as const }),
-          },
-          {
-            id: `finished-${String(data.run_id)}`,
-            meta: { sessions: threadSessions(from.key) },
-          },
-        ),
+        agentFinished.create(notice, {
+          id: `finished-${String(data.run_id)}`,
+          meta: { sessions: threadSessions(notice.thread) },
+        }),
       );
     },
   );

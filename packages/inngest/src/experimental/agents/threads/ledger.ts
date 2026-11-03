@@ -19,6 +19,15 @@
  *   seq }`.
  * - `agent/thread.handover { thread, version, state, last }`: starts a fresh
  *   ledger run carrying the state when the old one nears Inngest's step limit.
+ * - `agent/thread.ended { thread, runId, last, required?, notice? }`: a run of
+ *   the thread ended. The thread's `<id>-finished` function sends it from the
+ *   executor's `inngest/function.finished`, which names the run and its
+ *   trigger event but not the thread, so that function is the one place that
+ *   knows both. The ledger records `last` as the thread's `__lastRun` (the
+ *   next run's `previousRun`) and, when the run was started by `start_agent`,
+ *   sends the starter its `agent/finished` with `missing`: the owed reports
+ *   (`required`) that are not in the `__reports` record the run kept in this
+ *   thread's state as it sent them.
  *
  * Nothing here is durable outside the ledger's run: a thread that no run has
  * touched for a long time still holds a live ledger run.
@@ -32,7 +41,31 @@ import {
   eventType,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
+import { type LastRun, runScore } from "../agent/recovery.ts";
+import { type AgentFinishedData, agentFinished } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
+
+/**
+ * The thread-state key of how the thread's last run ended: the next run's
+ * `previousRun`.
+ */
+const lastRunKey = "__lastRun";
+
+/**
+ * The thread-state key of the reports a run has sent, which a run that keeps
+ * its thread state in the ledger writes as it sends them. The ledger reads it
+ * when the run ends, to tell the starter which owed reports never came. The
+ * `__` prefix hides it from `state().keys`.
+ */
+export const reportsRecordKey = "__reports";
+
+/**
+ * What `reportsRecordKey` holds: the run, and the reports it has sent.
+ */
+export interface ReportsRecord {
+  run: string;
+  sent: string[];
+}
 
 /**
  * The most a thread's resolved state may hold, as serialized JSON. Thread
@@ -182,6 +215,37 @@ export type ThreadHandoverData = {
   last: Record<string, number>;
 };
 
+/**
+ * The data of `agent/thread.ended`.
+ */
+export type ThreadEndedData = {
+  /**
+   * The thread key.
+   */
+  thread: string;
+
+  /**
+   * The run that ended.
+   */
+  runId: string;
+
+  /**
+   * How it ended, as the thread's `lastRun`.
+   */
+  last: LastRun;
+
+  /**
+   * The reports the run owed, by name.
+   */
+  required?: string[];
+
+  /**
+   * The `agent/finished` to send the starter, for a run `start_agent` began,
+   * complete except for `missing`.
+   */
+  notice?: AgentFinishedData;
+};
+
 export const threadWrite = eventType("agent/thread.write", {
   schema: staticSchema<ThreadWriteData>(),
 });
@@ -196,6 +260,9 @@ export const threadStateReply = eventType("agent/thread.state", {
 });
 export const threadHandover = eventType("agent/thread.handover", {
   schema: staticSchema<ThreadHandoverData>(),
+});
+export const threadEnded = eventType("agent/thread.ended", {
+  schema: staticSchema<ThreadEndedData>(),
 });
 
 /**
@@ -345,6 +412,7 @@ export const createLedgerFunctions = (
         { event: threadWrite.name },
         { event: threadRead.name },
         { event: threadHandover.name },
+        { event: threadEnded.name },
       ],
       singleton: { key: "event.data.thread", mode: "skip" },
     },
@@ -403,13 +471,21 @@ export const createLedgerFunctions = (
           event: threadRead.name,
           if: `async.data.thread == ${quoted(thread)}`,
         },
+        {
+          event: threadEnded.name,
+          if: `async.data.thread == ${quoted(thread)}`,
+        },
       ]);
 
       await inboxOpenedPromise(sub);
       steps += 1;
 
       const out: Array<
-        ReturnType<typeof threadChanged.create | typeof threadStateReply.create>
+        ReturnType<
+          | typeof threadChanged.create
+          | typeof threadStateReply.create
+          | typeof agentFinished.create
+        >
       > = [];
 
       const apply = (write: ThreadWriteData, now: number) => {
@@ -447,8 +523,74 @@ export const createLedgerFunctions = (
         out.push(threadChanged.create({ ...write, version }));
       };
 
+      // A run of the thread ended: the ledger writes how, as a change of its
+      // own that every holder of a copy takes in like any other, and tells
+      // the starter of a `start_agent` run what it owed and never sent.
+      const end = (ended: ThreadEndedData) => {
+        const found = liveKey(state, lastRunKey, Date.now())?.v as
+          | LastRun
+          | undefined;
+
+        // A late report for an older run never replaces a newer run's.
+        if (
+          !found ||
+          found.runId === ended.runId ||
+          runScore(found.runId) <= runScore(ended.runId)
+        ) {
+          const change: ThreadChange = {
+            op: "set",
+            key: lastRunKey,
+            value: ended.last as unknown as Json,
+          };
+
+          applyChange(state, change, Date.now());
+          version += 1;
+
+          if (!based && applied.length < appliedMax) {
+            applied.push({ thread, runId: "ledger", seq: 0, change });
+          }
+
+          out.push(
+            threadChanged.create({
+              thread,
+              runId: "ledger",
+              seq: 0,
+              version,
+              change,
+            }),
+          );
+        }
+
+        if (ended.notice) {
+          const sent = liveKey(state, reportsRecordKey, Date.now())?.v as
+            | ReportsRecord
+            | undefined;
+          const have = new Set(sent?.run === ended.runId ? sent.sent : []);
+
+          out.push(
+            agentFinished.create(
+              {
+                ...ended.notice,
+                missing: (ended.required ?? []).filter((name) => {
+                  return !have.has(name);
+                }),
+              },
+              {
+                id: `finished-${ended.runId}`,
+                meta: {
+                  sessions: {
+                    agent_session: ended.notice.thread,
+                    agent_thread: ended.notice.thread,
+                  },
+                },
+              },
+            ),
+          );
+        }
+      };
+
       // Takes in one message: a write goes in order or is held, a read is
-      // answered.
+      // answered, an end is recorded.
       const take = (message: {
         id?: string;
         name: string;
@@ -500,6 +642,12 @@ export const createLedgerFunctions = (
               change: { op: "reset", state, last: Object.fromEntries(last) },
             }),
           );
+
+          return;
+        }
+
+        if (message.name === threadEnded.name) {
+          end(message.data as ThreadEndedData);
 
           return;
         }

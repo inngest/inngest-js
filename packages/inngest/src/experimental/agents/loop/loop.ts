@@ -109,7 +109,8 @@ const textOfJson = (value: unknown): string => {
  * - `agent/question`: the question, its id, who asked, and a pointer to the
  *   `reply` tool.
  * - `agent/finished`: which agent and thread finished, the outcome, then the
- *   output or the error.
+ *   output or the error, and the owed reports it never sent when the app has
+ *   no KV store.
  * - `agent/group.joined`: who joined the group and the thread key to reach it
  *   with.
  * - `agent/report/<type>`: `Report "<type>" from <address> (thread <key>): <data>`.
@@ -152,18 +153,23 @@ export const formatEvent = (
 
   if (event.name === "agent/finished") {
     const who = `${whoOf(from)}${where}`;
+    const missing = Array.isArray(data.missing) ? data.missing : [];
+    const owed =
+      missing.length > 0
+        ? ` It never sent the report${missing.length > 1 ? "s" : ""} it owed: ${missing.join(", ")}.`
+        : "";
 
     if (data.outcome === "completed") {
       return data.output === undefined
-        ? `${who} finished: completed.`
-        : `${who} finished: completed. Output: ${textOfJson(data.output)}`;
+        ? `${who} finished: completed.${owed}`
+        : `${who} finished: completed. Output: ${textOfJson(data.output)}${owed}`;
     }
 
     if (data.outcome === "failed") {
-      return `${who} finished: failed. Error: ${String(data.error)}`;
+      return `${who} finished: failed. Error: ${String(data.error)}${owed}`;
     }
 
-    return `${who} finished: stopped.`;
+    return `${who} finished: stopped.${owed}`;
   }
 
   if (event.name === "agent/group.joined") {
@@ -926,7 +932,7 @@ export interface AgentLoopWiring {
    * The report types the run still owes. A model that tries to finish while
    * this is not empty is reminded and the loop continues.
    */
-  owed?: () => string[];
+  owed?: () => string[] | Promise<string[]>;
 
   /**
    * Whether a question already has a reply, so the model spends no turn on it.
@@ -1579,7 +1585,7 @@ const runLoop = async <TTools extends SandboxTools>(
 
       // A model that stops while a report is owed is reminded, up to a few
       // times, and the loop goes on within `maxTurns` and the budget.
-      const owed = wiring?.owed?.() ?? [];
+      const owed = (await wiring?.owed?.()) ?? [];
 
       if (
         owed.length > 0 &&

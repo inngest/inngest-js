@@ -389,8 +389,12 @@ export const createAgents = <TClient extends Inngest.Any>(
       const relay = finishedFunctions.get(client);
       const timeout = askTimeoutFunctions.get(client);
 
-      // With no KV store the thread's state is kept by the ledger function.
-      const ledger = hasKvStore(client.id)
+      const stored = hasKvStore(client.id);
+
+      // With no KV store the thread's state is kept by the ledger function,
+      // which also sends `agent/finished` (it knows which owed reports the run
+      // sent), so the relay that sends it is served only with a store.
+      const ledger = stored
         ? []
         : (ledgers.get(client) ??
           (ledgers.set(client, createLedgerFunctions(client)),
@@ -401,7 +405,7 @@ export const createAgents = <TClient extends Inngest.Any>(
           ...hosted,
           ...functions,
           announcer,
-          relay,
+          ...(stored ? [relay] : []),
           timeout,
           parentEndedFunction(client),
           ...ledger,

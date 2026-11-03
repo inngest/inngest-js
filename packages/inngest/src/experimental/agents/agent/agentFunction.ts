@@ -58,6 +58,7 @@ import {
   reportsOf,
   reportTool,
   sendReport,
+  threadReportRecord,
 } from "../inbox/reports.ts";
 import { senderFrom } from "../inbox/sender.ts";
 import {
@@ -421,11 +422,15 @@ export function createAgentFunction(
       const questions = new QuestionBook();
       const bridge: AgentBridge = { questions };
 
-      // Run-scoped KV keys end with the run, whichever way it ends.
-      defer("kv-cleanup", {
-        function: cleanup,
-        data: { runId, thread: data.thread },
-      });
+      // Run-scoped KV keys end with the run, whichever way it ends. With no
+      // store there are none: a sandbox the run opens schedules its own
+      // cleanup, so nothing is deferred here.
+      if (store) {
+        defer("kv-cleanup", {
+          function: cleanup,
+          data: { runId, thread: data.thread },
+        });
+      }
 
       const thread = threadHandle(client, ref, data.thread);
 
@@ -803,9 +808,13 @@ export function createAgentFunction(
         // What the run owes: the reports its start event carries, and which of
         // them it has sent.
         const reportSpec = reportsOf({ name: event.name, data: event.data });
+        // With no KV store the run notes each report it sends in its own
+        // thread state, which is local to it at once: the thread's ledger
+        // holds it when the run ends, to tell the starter what never came.
         const reportBook: ReportBook | undefined = reportSpec && {
           spec: reportSpec,
           sent: new Set(),
+          ...(!store && { record: threadReportRecord(kv.thread, runId) }),
         };
 
         bridge.reports = reportBook;

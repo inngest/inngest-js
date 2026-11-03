@@ -33,6 +33,8 @@ import { senderOf } from "../agent/sender.ts";
 import { compileExpression, MissingPathError } from "../cel.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import type { Json, JsonSchema } from "../json.ts";
+import { type Kv, typedKey } from "../kv/kv.ts";
+import { type ReportsRecord, reportsRecordKey } from "../threads/ledger.ts";
 import type { SenderData } from "./events.ts";
 
 /**
@@ -386,14 +388,61 @@ export const resolveReports = (
 };
 
 /**
+ * Where a run with no KV store keeps which of its reports it has sent: its own
+ * thread's state, which is local to the run at once and which the thread's
+ * ledger holds when the run ends.
+ */
+export interface ReportRecord {
+  /**
+   * Notes that a report was sent.
+   */
+  add(type: string): Promise<void>;
+
+  /**
+   * The report types this run has sent.
+   */
+  sent(): Promise<string[]>;
+}
+
+/**
  * The reports a run was started with and which it has sent. The routing is
- * read from the start event; the sent types are rebuilt on every replay,
- * since each report goes out in a step the run runs again.
+ * read from the start event. With no KV store the sent types are also kept in
+ * the thread's state (`record`) and read from there; with one they are
+ * rebuilt on every replay, since each report goes out in a step the run runs
+ * again.
  */
 export interface ReportBook {
   readonly spec: ReportSpec;
   readonly sent: Set<string>;
+  readonly record?: ReportRecord;
 }
+
+/**
+ * The reports a run has sent, kept in the thread's state under
+ * `reportsRecordKey`. The record belongs to one run: a run that finds another
+ * run's record starts its own.
+ * @param thread The thread state to keep it in.
+ * @param runId The run.
+ */
+export const threadReportRecord = (thread: Kv["thread"], runId: string) => {
+  const key = typedKey<ReportsRecord>(reportsRecordKey);
+  const record: ReportRecord = {
+    async add(type) {
+      await thread.update(key, (current) => {
+        const sent = current?.run === runId ? current.sent : [];
+
+        return { run: runId, sent: [...new Set([...sent, type])] };
+      });
+    },
+    async sent() {
+      const current = await thread.get(key);
+
+      return current?.run === runId ? current.sent : [];
+    },
+  };
+
+  return record;
+};
 
 /**
  * The reports a start event carries, if it carries any.
@@ -414,16 +463,31 @@ export const reportsOf = (start: {
 };
 
 /**
- * The types the run still owes, in the order they were listed.
+ * The types a start spec marks owed, in the order they were listed.
+ * @param spec The reports a run was started with.
  */
-export const owedReports = (book: ReportBook | undefined): string[] => {
-  return Object.entries(book?.spec ?? {})
-    .filter(([type, entry]) => {
-      return entry.required === true && !book?.sent.has(type);
+export const requiredReports = (spec: ReportSpec | undefined): string[] => {
+  return Object.entries(spec ?? {})
+    .filter(([, entry]) => {
+      return entry.required === true;
     })
     .map(([type]) => {
       return type;
     });
+};
+
+/**
+ * The types the run still owes, in the order they were listed. It reads the
+ * thread's state when the run keeps one, which is a local read.
+ */
+export const owedReports = async (
+  book: ReportBook | undefined,
+): Promise<string[]> => {
+  const sent = book?.record ? new Set(await book.record.sent()) : book?.sent;
+
+  return requiredReports(book?.spec).filter((type) => {
+    return !sent?.has(type);
+  });
 };
 
 /**
@@ -484,6 +548,8 @@ export const sendReport = async (
   book.sent.add(type);
 
   if (destinations.length === 0) {
+    await book.record?.add(type);
+
     return;
   }
 
@@ -514,6 +580,10 @@ export const sendReport = async (
       );
     }),
   );
+
+  // Written after the send, so a run cut off before it never claims a report
+  // it did not send.
+  await book.record?.add(type);
 };
 
 /**

@@ -90,7 +90,7 @@ export const createLoopWiring = (options: {
         return questions.admit(event);
       });
     },
-    owed() {
+    async owed() {
       return owedReports(reports);
     },
     answered(id: string) {

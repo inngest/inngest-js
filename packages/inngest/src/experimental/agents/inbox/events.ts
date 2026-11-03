@@ -163,6 +163,14 @@ export type AgentFinishedData = AgentRouting & {
    * because its parent ended does not wake the parent's thread.
    */
   quiet?: true;
+
+  /**
+   * The names of the reports the run owed (`report.required()`) and finished
+   * without sending. An empty list means every owed report was sent. Set when
+   * the app has no KV store, where the thread's ledger knows what the run
+   * sent; with a store it is not set.
+   */
+  missing?: string[];
 } & (
     | { outcome: "completed"; output?: Json }
     | { outcome: "failed"; error: string }

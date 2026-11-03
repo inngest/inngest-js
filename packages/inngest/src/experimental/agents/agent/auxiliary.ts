@@ -13,13 +13,15 @@ import {
   agentRecover,
   type MessageOutcome,
 } from "../inbox/events.ts";
+import { reportsOf, requiredReports } from "../inbox/reports.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import { type Kv, kv } from "../kv/kv.ts";
+import type { Kv } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
 } from "../sandboxes/threadSandboxes.ts";
+import { threadEnded } from "../threads/ledger.ts";
 import {
   agentMessageEvent,
   agentRecoverEvent,
@@ -27,7 +29,8 @@ import {
 } from "../threads/thread.ts";
 import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
-import { finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedNotice } from "./finishedRelay.ts";
+import { finishedOf, lastRunOf, turnInFlight } from "./recovery.ts";
 import { startData, startInflight } from "./startEvent.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -116,8 +119,10 @@ const senderIdsOf = (start: RawEvent): string[] => {
 
 /**
  * The function that runs when the executor reports that a run of the agent
- * ended: it writes the thread's `lastRun` and, with `recovery` on, resends the
- * turn that was in flight.
+ * ended. With a store it writes the thread's `lastRun` and, with `recovery`
+ * on, resends the turn that was in flight. With none it sends the thread's
+ * ledger one event, which records how the run ended.
+ * Either way the senders of the messages the run took hear how it ended.
  */
 export const createFinishedFunction = (
   client: Inngest.Any,
@@ -159,38 +164,40 @@ export const createFinishedFunction = (
       const runId = String(data.run_id);
 
       if (!store) {
-        // How the run ended goes to the thread ledger, which keeps the
-        // thread's `lastRun` with no store.
-        await recordEnd(kv, message.thread, {
-          runId,
-          at: event.ts ?? 0,
-          finished: ended,
-          inflight: started,
-          turn: started !== undefined,
-        });
-
-        // The senders hear how the run ended.
+        // With no store the thread's ledger keeps the thread's state. It
+        // already holds what the run wrote (the reports it sent), so the end
+        // is one event to it: the ledger records how the run ended, and tells
+        // the starter of a `start_agent` run which owed reports never came.
+        // Nothing is read here.
         const ids = senderIdsOf(start);
+        const notice = finishedNotice(data);
 
-        if (ids.length > 0) {
-          await step.sendEvent(
-            "message-results",
-            ids.map((id) => {
-              return agentMessageResult.create({
-                id,
-                run_id: runId,
-                ...(ended.status === "completed"
-                  ? { status: "completed", output: data.result as Json }
-                  : ended.status === "failed"
-                    ? {
-                        status: "failed",
-                        error: ended.error?.message ?? "unknown error",
-                      }
-                    : { status: "stopped" }),
-              } as Parameters<typeof agentMessageResult.create>[0]);
-            }),
-          );
-        }
+        await step.sendEvent("run-ended", [
+          ...ids.map((id) => {
+            return agentMessageResult.create({
+              id,
+              run_id: runId,
+              ...(ended.status === "completed"
+                ? { status: "completed", output: data.result as Json }
+                : ended.status === "failed"
+                  ? {
+                      status: "failed",
+                      error: ended.error?.message ?? "unknown error",
+                    }
+                  : { status: "stopped" }),
+            } as Parameters<typeof agentMessageResult.create>[0]);
+          }),
+          threadEnded.create(
+            {
+              thread: message.thread,
+              runId,
+              last: lastRunOf(runId, event.ts ?? 0, ended),
+              required: requiredReports(reportsOf(start)),
+              ...(notice && { notice }),
+            },
+            { id: `ended-${runId}` },
+          ),
+        ]);
 
         return undefined;
       }

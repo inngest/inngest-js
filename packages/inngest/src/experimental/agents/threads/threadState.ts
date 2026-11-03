@@ -21,6 +21,7 @@ import {
   type Finished,
   fingerprint,
   type LastRun,
+  runScore,
   summarize,
   turnInFlight,
   turnOf,
@@ -34,6 +35,8 @@ import {
   type ThreadRecord,
   threadRecordKey,
 } from "./thread.ts";
+
+export { runScore };
 
 const recordKey = typedKey<ThreadRecord>(threadRecordKey);
 const lastRunKey = typedKey<LastRun>(lastRunRecordKey);
@@ -440,33 +443,6 @@ export const recordEnd = async (
   });
 
   return { last, record };
-};
-
-const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-/**
- * When a run started, from its ID: run IDs are ULIDs, whose first ten
- * characters are a millisecond timestamp. Anything else scores 0.
- */
-export const runScore = (
-  /**
-   * The run ID.
-   */
-  runId: string,
-): number => {
-  let score = 0;
-
-  for (const char of runId.slice(0, 10).toUpperCase()) {
-    const digit = crockford.indexOf(char);
-
-    if (digit < 0) {
-      return 0;
-    }
-
-    score = score * 32 + digit;
-  }
-
-  return score;
 };
 
 /**
