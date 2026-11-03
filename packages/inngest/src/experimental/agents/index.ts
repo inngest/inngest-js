@@ -79,8 +79,8 @@ export {
   formatEvent,
   hasToolCall,
 } from "./loop/loop.ts";
-export { untrustedTag } from "./loop/untrustedText.ts";
 export { toolScore as score } from "./loop/scores.ts";
+export { untrustedTag } from "./loop/untrustedText.ts";
 export type {
   AgentSandbox,
   AgentSandboxWithRepo,

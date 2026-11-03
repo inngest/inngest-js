@@ -14,9 +14,9 @@ import {
   type AgentLoopResult,
   type AgentLoopWiring,
   type AgentModel,
-  type ModelValue,
   agent,
   agentModel,
+  type ModelValue,
 } from "./loop.ts";
 
 /**

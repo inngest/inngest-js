@@ -5,11 +5,11 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { StepError } from "../../../components/StepError.ts";
-import type { DeferHandle } from "../../../types.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
 } from "../../../components/sandbox/types.ts";
+import type { DeferHandle } from "../../../types.ts";
 import {
   createKv,
   type KvScopeInstance,

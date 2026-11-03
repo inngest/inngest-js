@@ -21,9 +21,9 @@ import { type AgentPriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
-  AgentToolChoice,
   AgentModelResponse,
   AgentToolCall,
+  AgentToolChoice,
   AgentUsage,
   ModelMessage,
   ModelValue,
