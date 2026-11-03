@@ -4,7 +4,7 @@
  * published for apps as `fakeGitDataApi()` of the testing entry; the tests of
  * the SDK use the same implementation with its failure knobs.
  */
-import { blobSha, createGitDataApi } from "../../agent/testing/gitDataApi.ts";
+import { blobSha, createGitDataApi } from "./gitDataApi.ts";
 
 export { blobSha };
 

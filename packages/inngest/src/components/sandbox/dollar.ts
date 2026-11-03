@@ -69,14 +69,20 @@ export interface DollarOptions {
    */
   exitCodes?: SandboxExitCodes;
   /**
+   * EXPERIMENTAL: Tools the command's code can call, as on
+   * `commands.run()`. A command with tools can run for as long as `timeout`
+   * allows.
+   */
+  tools?: SandboxToolsOptions["tools"];
+  /**
    * EXPERIMENTAL: Programs the command runs that call your app, made with
    * `tool.shim()`. A command with shims can run for as long as `timeout`
    * allows.
    */
   shims?: SandboxToolsOptions["shims"];
   /**
-   * EXPERIMENTAL: Limits for the calls shims make to your app, such as how
-   * long a handler may take (`toolTimeout`, 30s unless set).
+   * EXPERIMENTAL: Limits for the calls tools and shims make to your app, such
+   * as how long a handler may take (`toolTimeout`, 30s unless set).
    */
   toolOptions?: SandboxToolsOptions["toolOptions"];
 }
@@ -377,6 +383,7 @@ export const createDollar = (
       cwd,
       timeout = maxSandboxProcessTimeoutMs,
       exitCodes = [0],
+      tools,
       shims,
       toolOptions,
     } = defaults;
@@ -388,6 +395,7 @@ export const createDollar = (
       ...(cwd !== undefined && { cwd }),
       timeout,
       exitCodes,
+      ...(tools && { tools }),
       ...(shims && { shims }),
       ...(toolOptions && { toolOptions }),
     }).catch((error: unknown) => {

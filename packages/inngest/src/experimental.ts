@@ -1,7 +1,5 @@
 // AsyncLocalStorage
 
-export type { KvOAuthStoreOptions } from "./components/agent/mcpOAuthStore.ts";
-export { kvOAuthStore } from "./components/agent/mcpOAuthStore.ts";
 export {
   createDefer,
   DeferredFunction,
@@ -106,19 +104,18 @@ export type {
   McpServer,
   McpServerOptions,
 } from "./components/sandbox/mcp.ts";
+export { disconnect } from "./components/sandbox/mcp.ts";
 export type {
   McpAuthorizedData,
+  McpCallbackOptions,
   McpNeedsAuthorization,
   McpOAuthOptions,
   McpOAuthStore,
   McpOAuthUserContext,
 } from "./components/sandbox/mcpOAuth.ts";
 export {
-  completeMcpAuthorization,
-  isMcpNeedsAuthorization,
-  McpAuthorizationError,
   mcpAuthorizedEvent,
-  waitForMcpAuthorization,
+  mcpCallback,
 } from "./components/sandbox/mcpOAuth.ts";
 export type { Secret, SecretSource } from "./components/sandbox/secret.ts";
 export { secret } from "./components/sandbox/secret.ts";
@@ -159,7 +156,6 @@ export {
 export type {
   AgentTool,
   AgentToolDefinition,
-  AgentToolSource,
   JsonSchemaObject,
   SandboxTool,
   SandboxToolContext,
@@ -171,4 +167,6 @@ export type {
   ToolJsonDefinition,
 } from "./components/sandbox/tools.ts";
 export { tool, toolDefinitions } from "./components/sandbox/tools.ts";
+export type { KvOAuthStoreOptions } from "./experimental/agents/kv/mcpOAuthStore.ts";
+export { kvOAuthStore } from "./experimental/agents/kv/mcpOAuthStore.ts";
 export type { ExperimentRef } from "./types.ts";

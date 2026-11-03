@@ -1,10 +1,13 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
-import type { CodeToolName, CodeToolsOptions } from "./codeTools.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
-import type { SandboxShell, SandboxShellOptions } from "./shell.ts";
-import type { SandboxTool, SandboxToolsOptions } from "./tools.ts";
+import type {
+  SandboxShell,
+  SandboxShellOptions,
+  ShellSession,
+} from "./shell.ts";
+import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -588,22 +591,38 @@ export interface SandboxClient {
 }
 
 /**
- * Tools a model can use in a sandbox, built on the sandbox's own commands and
- * files.
+ * The commands and files of a sandbox, which the tools and a sandbox's `setup`
+ * use.
  */
-export interface DurableSandboxToolSet {
-  /**
-   * `read`, `write`, `edit`, `search` and `run`, for `agent.loop()`.
-   */
-  code<TName extends CodeToolName = CodeToolName>(
-    options?: CodeToolsOptions<TName>,
-  ): Record<TName, SandboxTool>;
-}
+export type SandboxIO = Pick<DurableSandbox, "commands" | "files">;
 
 /**
- * The parts of a sandbox that tools use: commands and files.
+ * A sandbox as the tools listed on it see it (`context.sandbox` of a
+ * `tool.group()`): its commands and files are durable steps with scoped IDs,
+ * its commands carry the sandbox's `shims`, and it opens on first use.
  */
-export type SandboxHandle = Pick<DurableSandbox, "commands" | "files">;
+export interface SandboxHandle extends SandboxIO {
+  /**
+   * Where relative paths and commands start: the sandbox's `cwd`, or the
+   * repository's path when it has one. Default `/work`.
+   */
+  readonly cwd: string;
+
+  /**
+   * Runs a command as one step, from a tagged template: `` $`git status` ``,
+   * `` $.sh`a | b` ``, or `$(options)`. Its steps are scoped like `commands`,
+   * carry the sandbox's `shims`, and start in `cwd`.
+   */
+  readonly $: DurableSandbox["$"];
+
+  /**
+   * The shell the tools of this sandbox share (`run`, `read`, `edit`,
+   * `search`): commands that keep their working directory and exported
+   * environment. Made once per sandbox, in the place the thread's last run left
+   * it.
+   */
+  shell(): Promise<ShellSession>;
+}
 
 export interface DurableSandbox {
   /**
@@ -629,7 +648,6 @@ export interface DurableSandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
-  readonly tools: DurableSandboxToolSet;
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,

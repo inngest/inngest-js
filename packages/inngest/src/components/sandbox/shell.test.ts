@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { getCommandError } from "./commandError.ts";
 import { createFakeClient, groupFunction, runAll } from "./dollar-fixtures.ts";
+import { beginShellCommand, type ShellState } from "./shell.ts";
 import type { DurableSandbox } from "./types.ts";
 
 const root = realpathSync(mkdtempSync(path.join(tmpdir(), "ingest-shell-")));
@@ -286,74 +287,5 @@ l3"`;
     const { ran } = await runAll(fn);
 
     expect(ran).toContain("cd app");
-  });
-});
-
-describe("sandbox.tools.code() run", () => {
-  const call = (tools: ReturnType<DurableSandbox["tools"]["code"]>) => {
-    const ctx = { signal: new AbortController().signal, idempotencyKey: "k" };
-    const run = tools.run.run as (
-      input: unknown,
-      ctx: unknown,
-    ) => Promise<string>;
-
-    return (command: string) => {
-      return run({ command }, ctx);
-    };
-  };
-
-  test("keeps cd and export between calls, and says where it moved", async () => {
-    const { client } = realClient();
-    const fn = groupFunction(client, async (sandbox) => {
-      const run = call(sandbox.tools.code({ cwd: root }));
-
-      return [
-        await run("cd app"),
-        await run("export A=1"),
-        await run('echo "$A"; pwd'),
-        await run("pwd"),
-      ];
-    });
-
-    const { result } = await runAll(fn);
-
-    expect(result).toMatchObject({
-      data: [
-        `exit 0\n\ncwd: ${app}`,
-        "exit 0\n",
-        `exit 0\n1\n${app}\n`,
-        `exit 0\n${app}\n`,
-      ],
-    });
-  });
-
-  test("session: false starts every command fresh", async () => {
-    const { client } = realClient();
-    const fn = groupFunction(client, async (sandbox) => {
-      const run = call(sandbox.tools.code({ cwd: root, session: false }));
-
-      await run("cd app");
-
-      return run("pwd");
-    });
-
-    const { result } = await runAll(fn);
-
-    expect(result).toMatchObject({ data: `exit 0\n${root}\n` });
-  });
-
-  test("a failing command is a result the model sees, and still moves the session", async () => {
-    const { client } = realClient();
-    const fn = groupFunction(client, async (sandbox) => {
-      const run = call(sandbox.tools.code({ cwd: root }));
-
-      return [await run("cd app && false"), await run("pwd")];
-    });
-
-    const { result } = await runAll(fn);
-
-    expect(result).toMatchObject({
-      data: [`exit 1\n\ncwd: ${app}`, `exit 0\n${app}\n`],
-    });
   });
 });
