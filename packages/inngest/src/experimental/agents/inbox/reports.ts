@@ -578,6 +578,69 @@ export const owesRecord = (thread: Kv["thread"], agent: string) => {
 };
 
 /**
+ * What a run noted that a child owes while it was inside a step's callback,
+ * where thread state cannot be written. Written once the run is outside a
+ * step again, by `flushOwes`.
+ */
+const pendingOwes = new WeakMap<object, { child: string; required: string[] }[]>();
+
+/**
+ * Notes what a started child owes. Outside a step it is written at once;
+ * inside one (a tool that sandbox code called) it waits in the run until the
+ * next `flushOwes`, which the run does before it reads what a child sent and
+ * before it ends.
+ * @param instance The run's execution instance.
+ * @param inStep Whether the caller is inside a step's callback.
+ * @param owes The starter's record.
+ * @param child The child's thread key.
+ * @param required The report types the child owes.
+ */
+export const noteOwes = async (
+  instance: object,
+  inStep: boolean,
+  owes: ReturnType<typeof owesRecord>,
+  child: string,
+  required: string[],
+): Promise<void> => {
+  if (required.length === 0) {
+    return;
+  }
+
+  if (inStep) {
+    const list = pendingOwes.get(instance) ?? [];
+
+    list.push({ child, required });
+    pendingOwes.set(instance, list);
+
+    return;
+  }
+
+  await owes.expect(child, required);
+};
+
+/**
+ * Writes what `noteOwes` kept while the run was inside a step.
+ * @param instance The run's execution instance.
+ * @param owes The starter's record.
+ */
+export const flushOwes = async (
+  instance: object,
+  owes: ReturnType<typeof owesRecord>,
+): Promise<void> => {
+  const list = pendingOwes.get(instance);
+
+  if (!list || list.length === 0) {
+    return;
+  }
+
+  pendingOwes.delete(instance);
+
+  for (const { child, required } of list) {
+    await owes.expect(child, required);
+  }
+};
+
+/**
  * The signature of the routing a start event carries for its reports, if any.
  * @param start The event that started the run, as saved.
  */

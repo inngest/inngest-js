@@ -36,6 +36,7 @@ import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { agentAskTimeout, agentQuestion } from "../inbox/events.ts";
 import {
+  noteOwes,
   owesRecord,
   type ReportSpec,
   requiredReports,
@@ -239,17 +240,22 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
 
     if (via === "start_agent") {
       trackChild(execution.instance, started.key);
+    }
 
-      // What the child owes is kept in this thread's state, which the
-      // child's `agent/finished` is read against.
-      const self = execution.agent;
+    // What the child owes is kept in this thread's state, which its reports and
+    // its end are read against. Sandbox code calls this inside a step's
+    // callback, where thread state cannot be written, so the note waits until
+    // the run is outside a step.
+    const self = execution.agent;
 
-      if (self?.ref && resolved) {
-        await owesRecord(kv.thread, self.ref).expect(
-          started.key,
-          requiredReports(resolved),
-        );
-      }
+    if (self?.ref && resolved) {
+      await noteOwes(
+        execution.instance,
+        execution.executingStep !== undefined,
+        owesRecord(kv.thread, self.ref),
+        started.key,
+        requiredReports(resolved),
+      );
     }
 
     if (via === undefined) {

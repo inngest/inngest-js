@@ -9,7 +9,7 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
 import { freshKv } from "../agent/test-helpers.ts";
-import { owesRecord } from "../inbox/reports.ts";
+import { flushOwes, noteOwes, owesRecord } from "../inbox/reports.ts";
 import { inflightOf } from "../inbox/threadInbox.ts";
 import {
   applyChange,
@@ -100,6 +100,24 @@ describe("what a starter's children owe", () => {
     expect(await owes.missing("child-1")).toEqual(["summary"]);
     expect(await owes.missing("child-1")).toBeUndefined();
     expect(await owes.missing("child-2")).toBeUndefined();
+  });
+
+  test("what a child owes noted inside a step is written once outside it", async () => {
+    const client = new Inngest({ id: testClientId });
+    const thread = freshKv().with(client).scope("thread", "starter");
+    const owes = owesRecord(thread, "app/starter");
+    const run = {};
+
+    await noteOwes(run, true, owes, "child-1", ["summary"]);
+    await noteOwes(run, true, owes, "child-2", []);
+    expect(await owes.missing("child-1")).toBeUndefined();
+
+    await noteOwes(run, true, owes, "child-1", ["summary"]);
+    await flushOwes(run, owes);
+    expect(await owes.missing("child-1")).toEqual(["summary"]);
+
+    await noteOwes(run, false, owes, "child-3", ["x"]);
+    expect(await owes.missing("child-3")).toEqual(["x"]);
   });
 });
 

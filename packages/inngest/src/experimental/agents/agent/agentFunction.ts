@@ -53,6 +53,7 @@ import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
   type AgentReport,
+  flushOwes,
   handleAddressKey,
   isReportEvent,
   owesRecord,
@@ -796,6 +797,9 @@ export function createAgentFunction(
           const as = resentAs(raw);
 
           try {
+            // What a child owes, noted while sandbox code started it.
+            await flushOwes(instance, owes);
+
             if (isReportEvent(as.name)) {
               const child = (as as { from?: { key?: unknown } }).from?.key;
 
@@ -1069,6 +1073,7 @@ export function createAgentFunction(
 
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
+          await flushOwes(instance, owes).catch(() => undefined);
           await inbox.close();
           await closeThreadCopies(instance);
 
