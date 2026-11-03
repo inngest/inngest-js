@@ -12,6 +12,8 @@
   --warn: #e0b04a;
   --bad: #ff6b78;
   --code-bg: #1d2029;
+  --motion: 200ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 40%);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -182,6 +184,7 @@ main.grid {
 .tracepane {
   background: var(--surface);
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 main.single {
@@ -191,6 +194,7 @@ main.single {
 
 .text {
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 32px 36px;
   max-width: 800px;
   outline: none;
@@ -1584,4 +1588,99 @@ main.single .text {
 .message-text {
   flex: 1;
   min-width: 0;
+}
+
+/* Motion: things that appear and disappear. Calm, quick, ease-out. */
+.reveal {
+  overflow: hidden;
+  transition:
+    height var(--motion) var(--ease),
+    opacity var(--motion) var(--ease);
+}
+
+.reveal-closed {
+  opacity: 0;
+}
+
+.reveal-inner {
+  display: flow-root;
+}
+
+/* The slot carries the gap the run's own margin used to. */
+.run-slot > .reveal-inner {
+  padding-top: 8px;
+}
+
+.run-slot .run {
+  margin: 0;
+}
+
+.fit {
+  overflow: hidden;
+  transition: height var(--motion) var(--ease);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.fade-in {
+  animation: fade-in var(--motion) var(--ease) both;
+}
+
+.run .status.fade-in,
+.run-output.fade-in {
+  animation-duration: 250ms;
+}
+
+.text > *,
+.pills > li,
+.exercise .pass,
+.exercise .fail,
+.sent {
+  animation: rise-in var(--motion) var(--ease) both;
+}
+
+.pills > li {
+  animation-delay: 60ms;
+}
+
+.wf-bar,
+.dot,
+.tabs button {
+  transition-property:
+    background-color, color, border-color, opacity, left, width;
+}
+
+.dot,
+.tabs button {
+  transition-duration: var(--motion);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .fit,
+  .wf-bar,
+  .dot,
+  .tabs button {
+    transition: none !important;
+  }
+
+  .fade-in,
+  .text > *,
+  .pills > li,
+  .exercise .pass,
+  .exercise .fail,
+  .sent {
+    animation: none !important;
+  }
 }

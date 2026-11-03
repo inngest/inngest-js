@@ -862,9 +862,12 @@ export const App = () => {
               tabIndex={-1}
               aria-label="Lesson"
             >
-              <p className="crumb">{page.moduleTitle}</p>
-              <h2>{page.title}</h2>
+              <p className="crumb" key={`crumb-${page.id}`}>
+                {page.moduleTitle}
+              </p>
+              <h2 key={`title-${page.id}`}>{page.title}</h2>
               <div
+                key={`prose-${page.id}`}
                 className="prose"
                 onClick={onProseClick}
                 onKeyDown={onProseKey}
@@ -873,7 +876,11 @@ export const App = () => {
                 }}
               />
               {page.manifest.apis?.length || page.manifest.concepts?.length ? (
-                <ul className="pills" aria-label="New on this page">
+                <ul
+                  className="pills"
+                  key={`pills-${page.id}`}
+                  aria-label="New on this page"
+                >
                   {(page.manifest.apis ?? []).map((api) => {
                     return (
                       <li key={`api-${api}`} className="pill api">
@@ -907,7 +914,7 @@ export const App = () => {
                 />
               ) : null}
               {hasCode && page.manifest.start?.length ? (
-                <EventBlock starts={page.manifest.start} />
+                <EventBlock key={page.id} starts={page.manifest.start} />
               ) : null}
             </section>
             {hasCode && tabs.length > 0 ? (

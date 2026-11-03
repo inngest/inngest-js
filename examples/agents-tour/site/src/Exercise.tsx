@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import type { CheckResult } from "../../shared/types.ts";
 import { Kbd, shortcutsOf } from "./keyboard.tsx";
 import { useAction } from "./live.ts";
+import { Reveal } from "./motion.tsx";
 
 type State = "idle" | "checking" | CheckResult;
 
@@ -96,7 +97,9 @@ export const Exercise = ({
           Show a solution <Kbd action="solution" />
         </button>
       </div>
-      {showHint && hint ? <p className="hint">{hint}</p> : null}
+      <Reveal show={Boolean(showHint && hint)}>
+        <p className="hint">{hint}</p>
+      </Reveal>
       <p className="verdict" role="status" aria-live="polite">
         {state === "checking" ? "Checking..." : null}
         {typeof state === "object" && state.pass ? (
