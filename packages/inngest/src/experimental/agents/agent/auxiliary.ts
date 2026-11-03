@@ -15,7 +15,7 @@ import {
 } from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import type { Kv } from "../kv/kv.ts";
+import { type Kv, kv } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
@@ -159,7 +159,17 @@ export const createFinishedFunction = (
       const runId = String(data.run_id);
 
       if (!store) {
-        // Nothing is recorded; the senders still hear how the run ended.
+        // How the run ended goes to the thread ledger, which keeps the
+        // thread's `lastRun` with no store.
+        await recordEnd(kv, message.thread, {
+          runId,
+          at: event.ts ?? 0,
+          finished: ended,
+          inflight: started,
+          turn: started !== undefined,
+        });
+
+        // The senders hear how the run ended.
         const ids = senderIdsOf(start);
 
         if (ids.length > 0) {

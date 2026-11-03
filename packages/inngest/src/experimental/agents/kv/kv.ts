@@ -27,6 +27,12 @@ import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import { currentSessions } from "../agent/sessions.ts";
 import type { Json } from "../json.ts";
+import {
+  type LedgerHandle,
+  type LedgerSender,
+  ledgerHandle,
+  outsideLedgerHandle,
+} from "../threads/ledgerClient.ts";
 import { redisConnection } from "./redis.ts";
 
 /**
@@ -1388,7 +1394,10 @@ export function kvAdapterFor(app?: string): KvStore {
  * @param options.bound Environment and app to use outside a function.
  */
 export function createKv(
-  options: { adapter?: KvStore; bound?: { env: string; app: string } } = {},
+  options: {
+    adapter?: KvStore;
+    bound?: { env: string; app: string; client?: LedgerSender };
+  } = {},
 ): Kv {
   // The store of an app: the one this KV was built with, else the one the app
   // gave `createAgents`, else Redis at the environment's URL.
@@ -1411,6 +1420,32 @@ export function createKv(
       const scoped: KvScopeIds = { ...ids };
       if (explicitId !== undefined) {
         scoped[scope] = explicitId;
+      }
+
+      // With no store, the thread scope is kept by the thread ledger.
+      if (scope === "thread" && !options.adapter && !hasKvStore(ids.app)) {
+        if (!scoped.thread) {
+          throw new Error(
+            'kv scope "thread" is not available here: no thread id (the thread scope needs an agent run; use kv.scope("thread", key) to name one).',
+          );
+        }
+
+        const handle: LedgerHandle = current
+          ? ledgerHandle(scoped.thread)
+          : outsideLedgerHandle(
+              scoped.thread,
+              options.bound?.client ?? {
+                send() {
+                  throw new Error(
+                    "Writing thread state from outside a function needs the client: use kv.with(client).",
+                  );
+                },
+              },
+            );
+
+        // The ledger's calls are steps of their own, so they are not wrapped
+        // in another.
+        return { handle: handle as unknown as RawKv, inFunction: false };
       }
 
       return {
@@ -1590,7 +1625,11 @@ export function createKv(
     with(client) {
       return createKv({
         adapter: options.adapter,
-        bound: { env: client.env ?? "default", app: client.id },
+        bound: {
+          env: client.env ?? "default",
+          app: client.id,
+          client: client as unknown as LedgerSender,
+        },
       });
     },
   };

@@ -17,9 +17,10 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
 import { announceFunction, rememberCard } from "../discovery/discovery.ts";
-import { type KvStore, setAppKvStore } from "../kv/kv.ts";
+import { hasKvStore, type KvStore, setAppKvStore } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
+import { createLedgerFunctions } from "../threads/ledger.ts";
 import type {
   ThreadCronEvent,
   ThreadCronTrigger,
@@ -279,6 +280,11 @@ const finishedFunctions = new WeakMap<object, InngestFunction.Any>();
 const askTimeoutFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * The thread ledger functions of each client, made once.
+ */
+const ledgers = new WeakMap<object, InngestFunction.Any[]>();
+
+/**
  * Options of `createAgents`.
  */
 export interface CreateAgentsOptions {
@@ -289,11 +295,12 @@ export interface CreateAgentsOptions {
    * `KvStore`. One store per app ID: a second `createAgents` for the same
    * client ID replaces the first's.
    *
-   * Optional. Without a store (and no `INNGEST_EXPERIMENTAL_KV_URL`) a run
-   * touches no KV: sandboxes last only for the run and are destroyed when it
-   * ends, nothing is remembered between runs, thread state is not recorded
-   * and `previousRun` is `undefined`. `remember: true`, `budget`,
-   * `recovery: true`, `kv.thread`/`kv.app` and `thread.state()` need one.
+   * Optional. Without a store (and no `INNGEST_EXPERIMENTAL_KV_URL`) the
+   * thread scope (`kv.thread`, `previousRun` and `remember: true` history) is
+   * kept by the thread ledger, a function that `agents.functions()` serves:
+   * it holds up to 128 KB of small data per thread. Sandboxes last only for
+   * the run and are destroyed when it ends. `budget`, `recovery: true`,
+   * `kv.app` and `thread.state()` need a store.
    */
   store?: KvStore;
 
@@ -382,6 +389,13 @@ export const createAgents = <TClient extends Inngest.Any>(
       const relay = finishedFunctions.get(client);
       const timeout = askTimeoutFunctions.get(client);
 
+      // With no KV store the thread's state is kept by the ledger function.
+      const ledger = hasKvStore(client.id)
+        ? []
+        : (ledgers.get(client) ??
+          (ledgers.set(client, createLedgerFunctions(client)),
+          ledgers.get(client) ?? []));
+
       if (made.length > 0 && announcer && relay && timeout) {
         return [
           ...hosted,
@@ -390,6 +404,7 @@ export const createAgents = <TClient extends Inngest.Any>(
           relay,
           timeout,
           parentEndedFunction(client),
+          ...ledger,
         ];
       }
 

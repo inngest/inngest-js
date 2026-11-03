@@ -105,6 +105,7 @@ import {
   type SkillSources,
   skillsPrompt,
 } from "../skills/skills.ts";
+import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
   agentMessageEvent,
   agentQuestionEvent,
@@ -362,12 +363,6 @@ export function createAgentFunction(
     "give createAgents(client, { store }) a store, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL";
 
   if (!stored) {
-    if (config.remember === true) {
-      throw new Error(
-        `Agent "${config.id}" sets \`remember: true\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-
     if (config.budget !== undefined) {
       throw new Error(
         `Agent "${config.id}" sets \`budget\`, which needs a KV store: ${storeFix}`,
@@ -502,7 +497,12 @@ export function createAgentFunction(
               },
             );
         const started = begun.started as ThreadRecord;
-        const previousRun = begun.previousRun ?? undefined;
+        // With no store the thread ledger holds how the run before this one
+        // ended; the ledger reads once, here, and the rest of the run uses
+        // its copy.
+        const previousRun = store
+          ? (begun.previousRun ?? undefined)
+          : await readLastRun(kv);
 
         recorder.observe({
           usage: started.usage,
@@ -823,12 +823,18 @@ export function createAgentFunction(
           threadKey: thread.key,
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
-          remember:
-            store !== undefined &&
-            (await fields.get(
-              "remember",
-              config.remember as RunField<boolean | undefined>,
-            )) !== false,
+          // With a store, history is remembered unless `remember` is off. With
+          // none, the thread ledger keeps it, and only when `remember` is
+          // set: the history counts against the ledger's size limit.
+          remember: store
+            ? (await fields.get(
+                "remember",
+                config.remember as RunField<boolean | undefined>,
+              )) !== false
+            : (await fields.get(
+                "remember",
+                config.remember as RunField<boolean | undefined>,
+              )) === true,
         });
 
         const listenTools = createBodyInboxTools({
@@ -949,10 +955,12 @@ export function createAgentFunction(
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
           await inbox.close();
+          await closeThreadCopies(instance);
 
           // A score the handler did not await is still written.
           await agentScore.flush();
         } catch (error) {
+          await closeThreadCopies(instance).catch(() => undefined);
           await closeAll();
 
           throw error;
