@@ -36,11 +36,17 @@ import {
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
-import type { SandboxTools } from "../../../components/sandbox/tools.ts";
+import {
+  hostOfSharedTool,
+  isSharedTool,
+  type SandboxTools,
+} from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
+import type { Logger } from "../../../middleware/logger.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
+import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
@@ -187,12 +193,14 @@ const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
  * `loop` field. A `loop` field that is a whole loop replaces it.
  */
 const createHandlerLoop = async (options: {
+  client: Inngest.Any;
+  logger: Logger;
   config: AgentFunctionConfig;
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
   skills: readonly Skill[];
 }): Promise<AgentHandlerLoop> => {
-  const { config, fields, listenTools, skills } = options;
+  const { client, logger, config, fields, listenTools, skills } = options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -251,20 +259,33 @@ const createHandlerLoop = async (options: {
     }) as unknown as AgentHandlerLoop;
   }
 
+  const own = {
+    ...agentToolsFor(config.discovery),
+    ...listenTools,
+    ...(skills.length > 0 && createSkillTools(skills)),
+  } as SandboxTools;
+  // Shared tools the definition lists are called through their hosted
+  // function; the others `discovery.tools` allows are added beside them.
+  const listed = new Set(
+    Object.values(tools ?? {}).flatMap((entry) => {
+      const host = isSharedTool(entry) ? hostOfSharedTool(entry) : undefined;
+
+      return isSharedTool(entry) && host ? [`${host}/${entry.id}`] : [];
+    }),
+  );
+  const shared = await sharedToolsFor(client, config.discovery, {
+    taken: new Set([...Object.keys(own), ...Object.keys(tools ?? {})]),
+    listed,
+    logger,
+  });
+
   return buildHandlerLoop({
     // `format` and `steer` are typed with the agent's own messages on the
     // definition; the loop hands them those same messages, with `is()`.
     ...(config.loop as Omit<AgentLoopOptions, "model">),
     model,
     ...(system !== undefined && { system }),
-    tools: addTools(
-      {
-        ...agentToolsFor(config.discovery),
-        ...listenTools,
-        ...(skills.length > 0 && createSkillTools(skills)),
-      } as SandboxTools,
-      tools,
-    ),
+    tools: addTools(addTools(own, shared), tools),
   }) as unknown as AgentHandlerLoop;
 };
 
@@ -789,6 +810,8 @@ export function createAgentFunction(
         });
 
         const handlerLoop = await createHandlerLoop({
+          client,
+          logger,
           config,
           fields,
           skills: runSkills,

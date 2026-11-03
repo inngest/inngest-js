@@ -78,6 +78,13 @@ export interface AgentCardSkill {
  */
 export interface AgentCard {
   /**
+   * What the card describes. `"tool"` for a shared tool made with
+   * `tool.shared()`, which discovery offers as a tool and never as an agent.
+   * Absent for an agent.
+   */
+  kind?: "tool";
+
+  /**
    * `"<app>/<agent>"`. It maps onto `referenceFunction({ appId, functionId })`;
    * the platform's qualified ID is `"<app>-<agent>"`.
    */
@@ -321,6 +328,11 @@ export const cardOf = (
      * The agent's skills.
      */
     skills?: AgentCardSkill[];
+
+    /**
+     * `"tool"` for the card of a shared tool.
+     */
+    kind?: "tool";
   },
 ): AgentCard => {
   const schema = triggerSchema(fn, true);
@@ -340,6 +352,7 @@ export const cardOf = (
   const description = config.description ?? parts.description;
 
   return {
+    ...(parts.kind === "tool" && { kind: "tool" as const }),
     address: `${app}/${agentId}`,
     ...(description !== undefined && { description }),
     ...(input && { input }),
@@ -717,7 +730,7 @@ export const findCard = async (
     return card.address === address;
   });
 
-  if (!found || !mayUse(found, appId)) {
+  if (!found || found.kind === "tool" || !mayUse(found, appId)) {
     throw new Error(
       `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
     );
@@ -812,7 +825,11 @@ export const discoveryToolSet = (
         return {
           agents: matchCards(
             cards.filter((card) => {
-              return mayUse(card, appId) && allowsAgent(card, options);
+              return (
+                card.kind !== "tool" &&
+                mayUse(card, appId) &&
+                allowsAgent(card, options)
+              );
             }),
             query,
           ).map(summaryOf),

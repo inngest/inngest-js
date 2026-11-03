@@ -15,6 +15,7 @@ const model = agentModel(async (): Promise<AgentModelResponse> => {
 describe("discovery types", () => {
   test("discovery: a card has the documented fields and no others", () => {
     expectTypeOf<AgentCard>().toEqualTypeOf<{
+      kind?: "tool";
       address: string;
       description?: string;
       input?: JsonSchema;

@@ -11,6 +11,10 @@
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
+import {
+  hostSharedTool,
+  type SharedTool,
+} from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
 import { announceFunction, rememberCard } from "../discovery/discovery.ts";
 import { type KvStore, setAppKvStore } from "../kv/kv.ts";
@@ -28,6 +32,7 @@ import type {
 import { createAgentFunction } from "./agentFunction.ts";
 import { askTimeoutFunction } from "./askTimeout.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
+import { createSharedToolFunction } from "./sharedToolFunction.ts";
 import type {
   AgentBody,
   AgentBodyContext,
@@ -290,6 +295,14 @@ export interface CreateAgentsOptions {
    * `recovery: true`, `kv.thread`/`kv.app` and `thread.state()` need one.
    */
   store?: KvStore;
+
+  /**
+   * EXPERIMENTAL: The shared tools (`tool.shared()`) this app hosts. Only
+   * tools listed here are served: `agents.functions()` returns a function for
+   * each, and the app announces their cards with its agents'. An app of
+   * nothing but shared tools works.
+   */
+  tools?: readonly SharedTool[];
 }
 
 /**
@@ -315,6 +328,18 @@ export const createAgents = <TClient extends Inngest.Any>(
   }
 
   const made: AgentFunction[] = [];
+  const hosted = (options.tools ?? []).map((shared) => {
+    const created = createSharedToolFunction(client, shared);
+
+    hostSharedTool(shared, client.id);
+    rememberCard(client.id, created.card);
+
+    return created.fn;
+  });
+
+  if (hosted.length > 0 && !announceFunctions.has(client)) {
+    announceFunctions.set(client, announceFunction(client));
+  }
 
   return {
     // One implementation backs every overload of `Agents["agent"]`. The
@@ -336,6 +361,9 @@ export const createAgents = <TClient extends Inngest.Any>(
 
       if (!announceFunctions.has(client)) {
         announceFunctions.set(client, announceFunction(client));
+      }
+
+      if (!finishedFunctions.has(client)) {
         finishedFunctions.set(client, agentFinishedFunction(client));
         askTimeoutFunctions.set(client, askTimeoutFunction(client));
       }
@@ -350,9 +378,13 @@ export const createAgents = <TClient extends Inngest.Any>(
       const relay = finishedFunctions.get(client);
       const timeout = askTimeoutFunctions.get(client);
 
-      return announcer && relay && timeout && made.length > 0
-        ? [...functions, announcer, relay, timeout]
-        : functions;
+      if (made.length > 0 && announcer && relay && timeout) {
+        return [...hosted, ...functions, announcer, relay, timeout];
+      }
+
+      return announcer && hosted.length > 0
+        ? [...hosted, ...functions, announcer]
+        : [...hosted, ...functions];
     },
   };
 };
@@ -363,6 +395,11 @@ export type {
   InboxMessage,
   ReadOptions,
 } from "../../../components/inbox/Inbox.ts";
+export type {
+  SharedTool,
+  SharedToolContext,
+  SharedToolDefinition,
+} from "../../../components/sandbox/tools.ts";
 export type {
   AgentCard,
   AgentCardConfig,
