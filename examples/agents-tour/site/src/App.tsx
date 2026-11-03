@@ -828,6 +828,31 @@ export const App = () => {
                   __html: renderMarkdown(page.markdown),
                 }}
               />
+              {page.manifest.apis?.length || page.manifest.concepts?.length ? (
+                <ul className="pills" aria-label="New on this page">
+                  {(page.manifest.apis ?? []).map((api) => {
+                    return (
+                      <li key={`api-${api}`} className="pill api">
+                        <code>{api}</code>
+                      </li>
+                    );
+                  })}
+                  {(page.manifest.concepts ?? []).map((concept) => {
+                    return (
+                      <li key={`concept-${concept}`}>
+                        <button
+                          type="button"
+                          className="pill"
+                          title="Open the concepts you have collected"
+                          onClick={() => setOverlay("concepts")}
+                        >
+                          {concept}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
               {hasCode && page.manifest.exercise ? (
                 <Exercise
                   key={page.id}
