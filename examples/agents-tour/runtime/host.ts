@@ -6,10 +6,12 @@
  * tour-owned function, and answers a few tour-only routes: health, the agents
  * it found, "start an agent" and "send a message to a thread".
  *
- * Run calls the `run` export of the page's `run.ts`, or starts an agent from
- * a manifest start entry with `agent.start()`. `start()` only works inside a
- * function, so the host registers `tour-start` (triggered by `tour/start`) to
- * make either call. A run opened by `start()` ends after its answer. The tour
+ * Run imports the page's `run.ts`, whose top-level code calls
+ * `agent.start()`, or starts an agent from a manifest start entry.
+ * `start()` only works inside a function, so the host registers `tour-start`
+ * (triggered by `tour/start`) to do either. `run.ts` is imported afresh on
+ * every call of `tour-start`, never at load, so its top-level code runs
+ * inside the function each time, against the same agents the host serves. A run opened by `start()` ends after its answer. The tour
  * hides `tour-start` from the runs it shows. A message to a thread is the
  * plain `agent/message` event, sent from here.
  */
@@ -43,10 +45,13 @@ const names = JSON.parse(process.env.TOUR_FILES ?? "[]") as string[];
 const found = new Map<string, StartableAgent>();
 let client: Inngest.Any | undefined;
 let agents: unknown;
-// The `run` export of the page's `run.ts`: what Run runs.
-let runFile: (() => Promise<unknown>) | undefined;
+// The page's `run.ts`, if it has one: what Run runs.
+const runFile = names.includes("run.ts")
+  ? pathToFileURL(join(dir, "run.ts")).href
+  : undefined;
+let runs = 0;
 
-for (const name of names) {
+for (const name of names.filter((one) => one !== "run.ts")) {
   const loaded = (await import(pathToFileURL(join(dir, name)).href)) as Record<
     string,
     unknown
@@ -54,10 +59,6 @@ for (const name of names) {
 
   client ??= loaded.client as Inngest.Any | undefined;
   agents ??= loaded.agents;
-
-  if (name === "run.ts" && typeof loaded.run === "function") {
-    runFile = loaded.run as () => Promise<unknown>;
-  }
 
   for (const [exported, value] of Object.entries(loaded)) {
     const candidate = value as Partial<StartableAgent> | undefined;
@@ -101,10 +102,13 @@ const tourStart = app.createFunction(
   async ({ event }) => {
     if ((event.data as { runFile?: boolean }).runFile) {
       if (!runFile) {
-        throw new Error("The page has no run.ts exporting run");
+        throw new Error("The page has no run.ts");
       }
 
-      await runFile();
+      // A new URL each time makes Node evaluate `run.ts` again; the files it
+      // imports keep their URLs, so they stay the modules served here.
+      runs += 1;
+      await import(`${runFile}?run=${runs}`);
 
       return { ran: "run.ts" };
     }
@@ -149,10 +153,10 @@ const json = (
 };
 
 const routes: Record<string, (target: Target) => Promise<unknown>> = {
-  // Run on a page with `run.ts`: `tour-start` calls its `run` export.
+  // Run on a page with `run.ts`: `tour-start` imports and so runs it.
   "/__tour/run": async () => {
     if (!runFile) {
-      throw new Error("The page has no run.ts exporting run");
+      throw new Error("The page has no run.ts");
     }
 
     return app.send({ name: tourStartEvent, data: { runFile: true } });

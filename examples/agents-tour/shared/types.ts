@@ -60,7 +60,7 @@ export interface Manifest {
   editable?: string[];
   // Read-only files shown on the page, found in the page's folder, then the
   // module's `_shared` folder, then the tour-wide one. Default: `setup.ts`.
-  // A page whose files include `run.ts` runs that file's `run` export on Run.
+  // A page whose files include `run.ts` runs that file on Run.
   readOnly?: string[];
   // The tabs of the play pane, by the id a panel registered with.
   panels?: string[];

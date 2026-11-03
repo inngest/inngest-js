@@ -95,6 +95,14 @@ const runs = () => {
   }))`);
 };
 
+// Scrolls a button into view, clear of the footer, then clicks it.
+const press = (selector: string) => {
+  page<null>(
+    `(document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: "center" }), null)`,
+  );
+  ab("click", selector);
+};
+
 const typed = (text: string) => {
   return `!!document.querySelector(".text h2") && ${text}`;
 };
@@ -193,7 +201,7 @@ try {
 
   if (flag("exercise")) {
     const verdict = async () => {
-      ab("click", ".exercise .controls .primary");
+      press(".exercise .controls .primary");
       await until(
         `(() => { const v = document.querySelector(".verdict")?.textContent ?? ""; return v !== "" && v !== "Checking..."; })()`,
         90_000,
@@ -203,7 +211,7 @@ try {
     };
 
     show("Check on the stub", await verdict());
-    ab("click", ".exercise .controls button:last-child");
+    press(".exercise .controls button:last-child");
     await sleep(1000);
     show("Check on the solution", await verdict());
     show("nav state after Check", navState());

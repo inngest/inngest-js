@@ -5,12 +5,13 @@ How to add one page of the Agents Tour and prove it works. Written for someone w
 ## Writing the text
 
 - **Show, don't tell.** Every call, value or file the text names is on screen: a tab, the Trace, a panel. If Run does something, the code for it is in `run.ts`. Never describe in prose something the reader cannot see.
-- **Name the thing every time.** No "it", "its", "this" or "that" standing in for a thing: write "Run calls...", "The run returns...", "`hello` has no body". A learner cannot tell what "it" points at.
+- **Name the thing every time.** No "it", "its", "this" or "that" standing in for a thing: write "Run calls...", "The run returns...", "Our `hello` agent has no body". A learner cannot tell what "it" points at.
+- **We build together.** Collaborative and friendly: say "we", "let's", "our". An agent the reader built is "our `hello` agent", never a bare `hello` on its own. Warm but short: no filler, no exclamation marks.
 - **Every "look at" sentence says where**: "In `run.ts`, ...", "In the Trace, ...".
 - **One shape per page**, one paragraph each:
   1. What the idea does for you, in one or two sentences. The code is in the editor.
-  2. "Press {Run}." and what `run.ts` does, naming the tab: "Run calls the code in `run.ts`, which starts `hello` with the message `Hi`."
-  3. Where to look and what is there: "In the Trace, the run of `hello` is completed."
+  2. "Press {Run}." and what `run.ts` does, naming the tab: "Run calls the code in `run.ts`, which starts our `hello` agent with the message `Hi`."
+  3. Where to look and what is there: "In the Trace, the run of our `hello` agent is completed."
 - At most three short sentences before the reader needs the code.
 - Name every action with its key hint in braces: `Press {Run}.` renders as **Run** plus its key. The names come from the key table in `shared/keys/*.ts` (`{Run}` and `{cheat}` are in use; `shared/hints.ts` resolves them); an unknown name fails `pnpm tour:lessons`.
 - First line of `page.md` is `# Title`. Supported markdown: paragraphs, `code`, **bold**, *italic*, `<kbd>`. Nothing else.
@@ -36,15 +37,12 @@ lessons/_parked/                         old pages on the old API: copy their sh
 
 ## run.ts
 
-Every page with Run has its own `run.ts`. Run calls its `run` export inside the tour's `tour-start` function, so `start()` works there (`start()`, `message()` and `ask()` throw outside a function). The runs list and the Trace hide `tour-start` itself.
+Every page with Run has its own `run.ts`. Its top-level code is what Run runs: the tour's `tour-start` function imports `run.ts` afresh on every Run, so the code runs inside that function and `start()` works there (`start()`, `message()` and `ask()` throw outside a function). The files `run.ts` imports stay the same modules the app serves. The runs list and the Trace hide `tour-start` itself.
 
 ```ts
 import { hello } from "./agent";
 
-// Run calls this.
-export const run = async () => {
-  await hello.start("Hi");
-};
+await hello.start("Hi");
 ```
 
 - Keep `run.ts` as plain as the page allows, and use only what the tour has taught by then: page 2 passes no thread, since threads come in module 2.

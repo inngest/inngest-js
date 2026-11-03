@@ -198,7 +198,8 @@ export class Worker {
 
   /**
    * Runs the page's `run.ts` through the app's `tour-start` function, which
-   * calls its `run` export inside the function, so `start()` works there.
+   * imports the file, so its top-level `start()` calls run inside the
+   * function.
    */
   async run() {
     await this.post("/__tour/run", {});
