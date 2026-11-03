@@ -34,12 +34,12 @@
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { step } from "../../../components/InngestStepTools.ts";
-import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import {
   type Inbox,
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
+import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
 import type { Json } from "../json.ts";
 import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";

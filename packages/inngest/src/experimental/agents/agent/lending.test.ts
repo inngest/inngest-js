@@ -64,9 +64,9 @@ describe("lending", () => {
     expect(() => lendOf(client, message({}), "app/a:other")).toThrow(
       "unsigned",
     );
-    expect(() => lendOf(client, message({ parent_run: "run2" }), thread)).toThrow(
-      "unsigned",
-    );
+    expect(() =>
+      lendOf(client, message({ parent_run: "run2" }), thread),
+    ).toThrow("unsigned");
     expect(() =>
       lendOf(client, message({ lent_sig: undefined }), thread),
     ).toThrow("unsigned");
@@ -132,7 +132,11 @@ describe("lending", () => {
     );
     // Not one that names another parent run, or a thread that kept none.
     expect(
-      lendIsOpen({ ...start, recovered: true }, { ...kept, parentRun: "x" }, "c"),
+      lendIsOpen(
+        { ...start, recovered: true },
+        { ...kept, parentRun: "x" },
+        "c",
+      ),
     ).toBe(false);
     expect(lendIsOpen({ ...start, recovered: true }, undefined, "c")).toBe(
       false,

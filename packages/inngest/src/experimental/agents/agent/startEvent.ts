@@ -5,6 +5,7 @@
  */
 
 import { internalEvents } from "../../../helpers/consts.ts";
+import { reportWireEvent, routingOf } from "../inbox/reports.ts";
 import { inflightOf } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import type { Inflight, TriggerEvent } from "../threads/thread.ts";
@@ -39,6 +40,16 @@ export const startData = (
   found: CompiledTrigger | undefined,
   event: { id?: string; name: string; data?: unknown },
 ) => {
+  if (!found && event.name === reportWireEvent) {
+    // A report names its agent and thread under the reserved key.
+    return routingOf(event.data) as {
+      agent: string;
+      thread: string;
+      event?: TriggerEvent;
+      fresh?: true;
+    };
+  }
+
   return found
     ? startOf(ref, found, event as unknown as ThreadTriggerEvent)
     : (event.data as {

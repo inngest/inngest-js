@@ -189,7 +189,7 @@ describe("triggers", () => {
 
     expect(options.triggers[6]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
-      'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
+      'event.name == "inngest/scheduled.timer" ? ("u2") : event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread',
     );
     expect(
       singletonKey(compileTriggers("u2", { triggers: { cron: "0 3 * * *" } })),

@@ -73,6 +73,8 @@ import {
   isOwnEvent,
   missingThreadFilter,
   ownEvents,
+  ownInboxFilter,
+  ownTriggerFilter,
   quote,
   type RawEvent,
   resentAs,
@@ -418,7 +420,7 @@ export function createAgentFunction(
           // A `quiet` message is for a live run only: it never starts one.
           return {
             event: name,
-            if: `event.data.agent == ${quote(ref)} && event.data.quiet != true`,
+            if: ownTriggerFilter(name, ref),
           };
         }),
         ...triggers.map((trigger) => {
@@ -619,7 +621,7 @@ export function createAgentFunction(
           ...ownEvents.map((name) => {
             return {
               event: name,
-              if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+              if: ownInboxFilter(name, ref, data.thread),
             };
           }),
           ...triggers

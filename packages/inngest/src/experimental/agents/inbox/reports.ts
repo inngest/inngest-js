@@ -199,10 +199,17 @@ export type ReportSpec = Record<
 >;
 
 /**
- * The data of a report event as it is sent: the routing, the sender and the
- * report's own data, which the receiver's inbox puts back as `data`.
+ * The key of `data` that holds everything the SDK needs to route a report, so
+ * the rest of `data` is the user's own. In a CEL expression it is read as
+ * `event.data["::agents"].thread`, since a dot cannot reach it. A report whose
+ * data already has the key is refused when it is sent.
  */
-export type ReportEnvelope = {
+export const routingKey = "::agents";
+
+/**
+ * The routing of a report event, under `routingKey` in its data.
+ */
+export type ReportRouting = {
   agent: string;
   thread: string;
 
@@ -217,7 +224,41 @@ export type ReportEnvelope = {
    * not start the sender can tell it was named.
    */
   grant?: { to: Record<string, ReportDestination[]>; sig: string };
-  report: Record<string, unknown>;
+};
+
+/**
+ * The data of a report event as it is sent: the report's own data with the
+ * routing under `routingKey`. Nothing else is added to the user's data.
+ */
+export type ReportEnvelope = Record<string, unknown> & {
+  "::agents": ReportRouting;
+};
+
+/**
+ * The routing of a report event, or `undefined` when its data carries none.
+ * @param data The event's data.
+ */
+export const routingOf = (
+  data: unknown,
+): Partial<ReportRouting> | undefined => {
+  const given = (data as Record<string, unknown> | undefined)?.[routingKey];
+
+  return typeof given === "object" && given !== null
+    ? (given as Partial<ReportRouting>)
+    : undefined;
+};
+
+/**
+ * The report's own data: the event's data without the routing.
+ * @param data The event's data.
+ */
+export const withoutRouting = (data: unknown): Record<string, unknown> => {
+  const { [routingKey]: _routing, ...own } = (data ?? {}) as Record<
+    string,
+    unknown
+  >;
+
+  return own;
 };
 
 /**
@@ -582,7 +623,10 @@ export const owesRecord = (thread: Kv["thread"], agent: string) => {
  * where thread state cannot be written. Written once the run is outside a
  * step again, by `flushOwes`.
  */
-const pendingOwes = new WeakMap<object, { child: string; required: string[] }[]>();
+const pendingOwes = new WeakMap<
+  object,
+  { child: string; required: string[] }[]
+>();
 
 /**
  * Notes what a started child owes. Outside a step it is written at once;
@@ -732,6 +776,16 @@ export const sendReport = async (
     );
   }
 
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    Object.hasOwn(data, routingKey)
+  ) {
+    throw new Error(
+      `The ${type} report was not sent: its data has a "${routingKey}" field, which the SDK reserves for routing. Send it again without that field.`,
+    );
+  }
+
   const problem = check
     ? await check(data)
     : entry.schema
@@ -772,22 +826,24 @@ export const sendReport = async (
     destinations.map((destination) => {
       return event.create(
         {
-          agent: destination.agent,
-          thread: destination.thread,
-          type,
-          from,
-          ...(book.grantSig !== undefined && {
-            grant: {
-              to: Object.fromEntries(
-                Object.entries(book.spec).map(([name, spec]) => {
-                  return [name, spec.to];
-                }),
-              ),
-              sig: book.grantSig,
-            },
-          }),
-          report: data as Record<string, unknown>,
-        },
+          ...(data as Record<string, unknown>),
+          [routingKey]: {
+            agent: destination.agent,
+            thread: destination.thread,
+            type,
+            from,
+            ...(book.grantSig !== undefined && {
+              grant: {
+                to: Object.fromEntries(
+                  Object.entries(book.spec).map(([name, spec]) => {
+                    return [name, spec.to];
+                  }),
+                ),
+                sig: book.grantSig,
+              },
+            }),
+          },
+        } as ReportEnvelope,
         {
           meta: {
             sessions: {

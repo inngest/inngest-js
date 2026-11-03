@@ -17,8 +17,8 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
 import { nextCount } from "../agent/executionCounter.ts";
-import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
 import type { LentRecord } from "../agent/lending.ts";
+import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
 import {
   AgentStoppedError,

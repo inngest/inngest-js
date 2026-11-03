@@ -34,10 +34,12 @@ import type {
 } from "./events.ts";
 import {
   isReportEvent,
-  type ReportEnvelope,
   reportDataProblem,
   reportEventPrefix,
   reportWireEvent,
+  routingKey,
+  routingOf,
+  withoutRouting,
 } from "./reports.ts";
 
 /**
@@ -151,19 +153,15 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
   // A report is sent with its routing around it; the message is the report's
   // own data, with the sender beside it as `from`.
   if (as.name === reportWireEvent || isReportEvent(as.name)) {
-    const envelope = as.data as Partial<ReportEnvelope> | undefined;
+    const routing = routingOf(as.data);
 
-    if (
-      as.name === reportWireEvent &&
-      envelope?.report !== undefined &&
-      envelope.type !== undefined
-    ) {
+    if (as.name === reportWireEvent && routing?.type !== undefined) {
       return addEventIs({
         ...as,
-        name: `${reportEventPrefix}${envelope.type}`,
-        data: envelope.report,
-        ...(envelope.from !== undefined && { from: envelope.from }),
-        ...(envelope.grant !== undefined && { grant: envelope.grant }),
+        name: `${reportEventPrefix}${routing.type}`,
+        data: withoutRouting(as.data),
+        ...(routing.from !== undefined && { from: routing.from }),
+        ...(routing.grant !== undefined && { grant: routing.grant }),
       } as UntypedInboxMessage);
     }
 
@@ -687,6 +685,56 @@ export interface RawEvent {
 export function quote(value: string) {
   return JSON.stringify(value);
 }
+
+/**
+ * The path in a CEL expression to the routing fields of an own event: the
+ * data itself, or for a report the reserved key, which only a bracket reaches.
+ * @param name The event's name.
+ * @param root `event` or `async`.
+ */
+const routingPath = (name: string, root: "event" | "async"): string => {
+  return name === reportWireEvent
+    ? `${root}.data[${quote(routingKey)}]`
+    : `${root}.data`;
+};
+
+/**
+ * The condition under which an own event starts a run of an agent: it is for
+ * that agent, and not `quiet`.
+ * @param name The event's name.
+ * @param ref The agent, as `"appId/functionId"`.
+ */
+export const ownTriggerFilter = (name: string, ref: string): string => {
+  const path = routingPath(name, "event");
+
+  return name === reportWireEvent
+    ? `${path}.agent == ${quote(ref)}`
+    : `${path}.agent == ${quote(ref)} && ${path}.quiet != true`;
+};
+
+/**
+ * The condition under which an own event belongs to one thread's inbox.
+ * @param name The event's name.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param thread The thread's key.
+ */
+export const ownInboxFilter = (
+  name: string,
+  ref: string,
+  thread: string,
+): string => {
+  const path = routingPath(name, "async");
+
+  return `${path}.agent == ${quote(ref)} && ${path}.thread == ${quote(thread)}`;
+};
+
+/**
+ * The CEL for the thread an own event names, over `event`.
+ * @param name The event's name.
+ */
+export const ownThreadPath = (name: string): string => {
+  return `${routingPath(name, "event")}.thread`;
+};
 
 /**
  * The subscription source of an inbox source: its `if` and `thread`

@@ -74,6 +74,9 @@ const userTexts = (messages: { role: string; content?: unknown }[]) => {
   });
 };
 
+const reportAwareThread =
+  'event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread';
+
 describe("agent function", () => {
   test("is addressed as appId/functionId and starts on its own non-stop messages", () => {
     const { fn, ref } = createAgentFunction(
@@ -88,7 +91,7 @@ describe("agent function", () => {
       triggers: { event: string; if: string }[];
     };
     expect(config.singleton).toEqual({
-      key: "event.data.thread",
+      key: reportAwareThread,
       mode: "skip",
     });
     expect(config.triggers.map((t) => t.event)).toEqual([

@@ -316,6 +316,28 @@ describe("reports", () => {
     ).toBeDefined();
   });
 
+  test("a report's data is the user's own: the routing sits under one reserved key", () => {
+    const seen = resentAs({
+      id: "r1",
+      name: "agent/report",
+      data: {
+        to: "user-field",
+        from: "user-field",
+        grant: "user-field",
+        "::agents": { agent: "a/boss", thread: "t", type: "approval" },
+      },
+      ts: 0,
+      user: {},
+    } as unknown as UntypedInboxMessage);
+
+    expect(seen.name).toBe("agent/report/approval");
+    expect(seen.data).toEqual({
+      to: "user-field",
+      from: "user-field",
+      grant: "user-field",
+    });
+  });
+
   test("a report is taken only from a thread this thread started", () => {
     const appA = new Inngest({ id: "a", signingKey: envSigningKey });
     const boss = "a/boss:run1.0";
@@ -328,11 +350,13 @@ describe("reports", () => {
         id: "r1",
         name: "agent/report",
         data: {
-          agent: "a/boss",
-          thread: boss,
-          type: "approval",
-          from: { kind: "agent", address: "a/security-reviewer", key },
-          report: { approved: true },
+          approved: true,
+          "::agents": {
+            agent: "a/boss",
+            thread: boss,
+            type: "approval",
+            from: { kind: "agent", address: "a/security-reviewer", key },
+          },
         },
         ts: 0,
         user: {},
