@@ -11,6 +11,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { request } from "node:http";
 import { join } from "node:path";
 import { freePort } from "../scripts/lib.ts";
+import type { RunFailure } from "../shared/types.ts";
 
 export interface WorkerEnv {
   root: string;
@@ -19,6 +20,8 @@ export interface WorkerEnv {
   // Base URL of the Dev Server, handed to the app.
   devServerUrl: string;
   onOutput: (kind: "out" | "err", text: string) => void;
+  // The app's `tour-start` finished `run.ts`, or failed with `failure`.
+  onRunResult?: (failure?: RunFailure) => void;
 }
 
 export interface Started {
@@ -75,6 +78,13 @@ export class Worker {
       pending.delete(child);
     });
     child.on("error", () => {});
+    child.on("message", (message) => {
+      const sent = message as { type?: string; failure?: RunFailure };
+
+      if (sent.type === "tour-run" && this.current === child) {
+        this.env.onRunResult?.(sent.failure);
+      }
+    });
     child.stdout?.on("data", (chunk: Buffer) => {
       this.env.onOutput("out", chunk.toString("utf8"));
     });

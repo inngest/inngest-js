@@ -8,10 +8,12 @@ import { createPortal } from "react-dom";
 import type { coreKeys } from "../../shared/keys/core.ts";
 import type { ActionId } from "../../shared/keys.ts";
 import { resolveSpan } from "../../shared/links.ts";
+import { describeDiagnostic } from "../../shared/problems.ts";
 import type {
   Page,
   PageSummary,
   ProgressSnapshot,
+  RunFailure,
   TourEvent,
   TourIndex,
   TraceRun,
@@ -81,6 +83,9 @@ export const App = () => {
   const [everything, setEverything] = useState(false);
   // Set the moment Run is pressed, so the Trace can show a placeholder run.
   const [runSignal, setPressed] = useState<RunPressed | null>(null);
+  // Why the last Run made no run, and when `run.ts` finished without failing.
+  const [failure, setFailure] = useState<RunFailure | null>(null);
+  const [finished, setFinished] = useState<number | null>(null);
   const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
   const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
   const [rightRow, setRightRow] = useState(
@@ -162,6 +167,14 @@ export const App = () => {
 
         heard.current = event.runs;
         setRuns(event.runs);
+      } else if (event.type === "run-result") {
+        if (event.ok) {
+          setFinished(Date.now());
+        } else {
+          const { type: _type, ok: _ok, ...why } = event;
+
+          setFailure(why);
+        }
       } else if (event.type === "progress") {
         refresh();
 
@@ -206,6 +219,9 @@ export const App = () => {
       setActive(next.files[0]?.name ?? "");
       setLines([]);
       setUndo(null);
+      setPressed(null);
+      setFailure(null);
+      setFinished(null);
       store.set("tour:last", id);
 
       if (push) {
@@ -396,6 +412,8 @@ export const App = () => {
     }
 
     moment("run");
+    setFailure(null);
+    setFinished(null);
     setPressed({
       at: Date.now(),
       label: page.files.some((file) => file.name === "run.ts")
@@ -407,8 +425,31 @@ export const App = () => {
     const values = editor.current?.values() ?? {};
 
     saveEdits(page, values, store);
-    void api.run(page.id, values).catch(() => {
-      setPressed(null);
+
+    // Broken code never reaches the server: the editor's TypeScript says so
+    // at once, in the Trace.
+    const problems = (await editor.current?.problems()) ?? [];
+    // A syntax error explains the others, so it comes first.
+    const first = problems.find((one) => one.code < 2000) ?? problems[0];
+
+    if (first) {
+      const why = describeDiagnostic(first);
+
+      setFailure(
+        problems.length > 1 && !problems.some((one) => one.code < 2000)
+          ? {
+              ...why,
+              headline: `${why.headline} ${problems.length - 1} more ${problems.length === 2 ? "problem" : "problems"} in the code.`,
+            }
+          : why,
+      );
+      editor.current?.focus();
+
+      return;
+    }
+
+    void api.run(page.id, values).catch((error: unknown) => {
+      setFailure({ headline: `The Run did not start: ${String(error)}` });
     });
 
     pressed.current = {
@@ -421,6 +462,21 @@ export const App = () => {
     };
 
     editor.current?.focus();
+  };
+
+  // Opens the file of a failure and shows its line.
+  const jumpTo = (why: RunFailure) => {
+    if (!why.file || !why.line) {
+      return;
+    }
+
+    setActive(why.file);
+    editor.current?.reveal({
+      file: why.file,
+      line: why.line,
+      column: why.column ?? 1,
+      length: why.length || 1,
+    });
   };
 
   const checkExercise = async () => {
@@ -1191,6 +1247,9 @@ export const App = () => {
                       });
                     }}
                     pressed={runSignal}
+                    failure={failure}
+                    finished={finished}
+                    onJump={jumpTo}
                   />
                 </section>
               </div>

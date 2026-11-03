@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import type { Inngest } from "inngest";
 import { agentMessage, type Json } from "inngest/experimental/agents";
 import { serve } from "inngest/node";
+import { describeRuntimeError } from "../shared/problems.ts";
 
 interface StartableAgent {
   id: string;
@@ -108,7 +109,26 @@ const tourStart = app.createFunction(
       // A new URL each time makes Node evaluate `run.ts` again; the files it
       // imports keep their URLs, so they stay the modules served here.
       runs += 1;
-      await import(`${runFile}?run=${runs}`);
+
+      try {
+        await import(`${runFile}?run=${runs}`);
+      } catch (error) {
+        // Tell the tour at once, so the Trace does not wait for a run that
+        // will never come.
+        const text =
+          error instanceof Error
+            ? `${error.message}\n${error.stack ?? ""}`
+            : String(error);
+
+        process.send?.({
+          type: "tour-run",
+          failure: describeRuntimeError(text, names, "run.ts"),
+        });
+
+        throw error;
+      }
+
+      process.send?.({ type: "tour-run" });
 
       return { ran: "run.ts" };
     }
