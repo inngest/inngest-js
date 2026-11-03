@@ -190,7 +190,7 @@ describe("running pages", { skip: binary === undefined }, () => {
 
   // The pinned Dev Server must run the SDK's agents: a pin that does not fit
   // fails here (every run failed at Finalization on an old pin).
-  it("starts the page's agent with start() and the run completes with its answer", async () => {
+  it("runs the page's run.ts, whose start() call opens a run that completes with its answer", async () => {
     const stream = await listen(base);
 
     await post(base, "/api/open", { id: "live/answer" });

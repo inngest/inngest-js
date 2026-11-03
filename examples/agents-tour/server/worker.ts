@@ -196,6 +196,14 @@ export class Worker {
     await this.post("/__tour/start", { agent, thread, content });
   }
 
+  /**
+   * Runs the page's `run.ts` through the app's `tour-start` function, which
+   * calls its `run` export inside the function, so `start()` works there.
+   */
+  async run() {
+    await this.post("/__tour/run", {});
+  }
+
   private async post(path: string, body: Record<string, unknown>) {
     const res = await fetch(`http://127.0.0.1:${this.port}${path}`, {
       method: "POST",

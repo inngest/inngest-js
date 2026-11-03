@@ -6,9 +6,10 @@
  * tour-owned function, and answers a few tour-only routes: health, the agents
  * it found, "start an agent" and "send a message to a thread".
  *
- * Run starts an agent with `agent.start()`, which only works inside a
+ * Run calls the `run` export of the page's `run.ts`, or starts an agent from
+ * a manifest start entry with `agent.start()`. `start()` only works inside a
  * function, so the host registers `tour-start` (triggered by `tour/start`) to
- * make that call. A run opened by `start()` ends after its answer. The tour
+ * make either call. A run opened by `start()` ends after its answer. The tour
  * hides `tour-start` from the runs it shows. A message to a thread is the
  * plain `agent/message` event, sent from here.
  */
@@ -42,6 +43,8 @@ const names = JSON.parse(process.env.TOUR_FILES ?? "[]") as string[];
 const found = new Map<string, StartableAgent>();
 let client: Inngest.Any | undefined;
 let agents: unknown;
+// The `run` export of the page's `run.ts`: what Run runs.
+let runFile: (() => Promise<unknown>) | undefined;
 
 for (const name of names) {
   const loaded = (await import(pathToFileURL(join(dir, name)).href)) as Record<
@@ -51,6 +54,10 @@ for (const name of names) {
 
   client ??= loaded.client as Inngest.Any | undefined;
   agents ??= loaded.agents;
+
+  if (name === "run.ts" && typeof loaded.run === "function") {
+    runFile = loaded.run as () => Promise<unknown>;
+  }
 
   for (const [exported, value] of Object.entries(loaded)) {
     const candidate = value as Partial<StartableAgent> | undefined;
@@ -92,6 +99,16 @@ const agentOf = (name: string) => {
 const tourStart = app.createFunction(
   { id: "tour-start", retries: 0, triggers: [{ event: tourStartEvent }] },
   async ({ event }) => {
+    if ((event.data as { runFile?: boolean }).runFile) {
+      if (!runFile) {
+        throw new Error("The page has no run.ts exporting run");
+      }
+
+      await runFile();
+
+      return { ran: "run.ts" };
+    }
+
     const target = event.data as Target;
 
     await agentOf(target.agent).start(target.content, {
@@ -132,6 +149,14 @@ const json = (
 };
 
 const routes: Record<string, (target: Target) => Promise<unknown>> = {
+  // Run on a page with `run.ts`: `tour-start` calls its `run` export.
+  "/__tour/run": async () => {
+    if (!runFile) {
+      throw new Error("The page has no run.ts exporting run");
+    }
+
+    return app.send({ name: tourStartEvent, data: { runFile: true } });
+  },
   // Run: `tour-start` calls `agent.start(content, { thread })`.
   "/__tour/start": async (target) => {
     agentOf(target.agent);

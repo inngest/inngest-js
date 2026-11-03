@@ -58,12 +58,13 @@ export interface Manifest {
   code?: boolean;
   // Files the reader edits, from the page's folder. Default: `agent.ts`.
   editable?: string[];
-  // Read-only files shown on the page, found in the module's `_shared`
-  // folder, then in the tour-wide one. Default: `setup.ts`.
+  // Read-only files shown on the page, found in the page's folder, then the
+  // module's `_shared` folder, then the tour-wide one. Default: `setup.ts`.
+  // A page whose files include `run.ts` runs that file's `run` export on Run.
   readOnly?: string[];
   // The tabs of the play pane, by the id a panel registered with.
   panels?: string[];
-  // What Run sends.
+  // What Run sends, after `run.ts` if the page has one.
   start?: Start[];
   // The message box sends to this agent and thread.
   // `threads` adds one button per thread; the first is the default.

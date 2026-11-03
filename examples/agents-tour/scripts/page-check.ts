@@ -2,7 +2,7 @@
  * @module
  * `pnpm tour:page-check <url> [--no-run] [--exercise] [--keep]`: drives one
  * page of a running tour with `agent-browser` and prints what a reader would
- * see: the title, the pills, the files, the editor's red squiggles, the page
+ * see: the title, the pills, the file tabs (in order), the editor's red squiggles, the page
  * state in the left nav, and after Run (pressed with its key in the editor)
  * every run with its status, output and trace rows, the first row opened.
  *
@@ -118,12 +118,20 @@ try {
       `Array.from(document.querySelectorAll(".pills li")).map((pill) => pill.textContent.trim())`,
     ),
   );
-  show(
-    "files",
-    page<string[]>(
-      `Array.from(document.querySelectorAll('section[aria-label="Code"] [role="tab"]')).map((tab) => tab.textContent.trim())`,
-    ),
+  const tabs = page<string[]>(
+    `Array.from(document.querySelectorAll('section[aria-label="Code"] [role="tab"]')).map((tab) => tab.textContent.trim())`,
   );
+
+  show("tabs", tabs);
+
+  if (
+    tabs.length > 0 &&
+    !tabs.some((tab) => {
+      return tab.startsWith("run.ts");
+    })
+  ) {
+    console.log("warning: no run.ts tab, so Run's call is not on screen");
+  }
   show(
     "concepts chip",
     page<string>(`document.getElementById("concepts-chip")?.textContent ?? ""`),

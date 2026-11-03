@@ -220,6 +220,23 @@ export const area: AreaFactory = (ctx) => {
       hub.info(`started in ${Date.now() - started} ms`);
       hub.setStatus("live", "Live");
 
+      const runsFile = page.files.some((file) => {
+        return file.name === "run.ts";
+      });
+
+      if (runsFile && options.start !== false) {
+        mayBeLive = true;
+
+        try {
+          await worker.run();
+          hub.info("ran run.ts");
+        } catch (error) {
+          if (!stale()) {
+            hub.emit({ type: "log", kind: "err", text: String(error) });
+          }
+        }
+      }
+
       for (const start of options.start === false
         ? []
         : (page.manifest.start ?? [])) {

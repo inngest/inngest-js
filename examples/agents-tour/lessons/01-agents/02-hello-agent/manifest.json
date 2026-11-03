@@ -1,5 +1,5 @@
 {
-  "start": [{ "agent": "hello", "thread": "main", "content": "Hi" }],
+  "readOnly": ["run.ts", "setup.ts"],
   "apis": ["agents.agent"],
   "concepts": ["agent", "run"]
 }

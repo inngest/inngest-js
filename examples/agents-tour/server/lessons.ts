@@ -11,8 +11,9 @@
  *
  * A page's folder starts with its core number; a Go deeper page adds a
  * letter (`03a-`). The folder gives the label (`3`, `3a`) and the kind. A manifest names the read-only
- * files its page shows; each is found in the module's `_shared` folder, then
- * in the tour-wide one, so it is stored once. An exercise page starts from
+ * files its page shows; each is found in the page's own folder (its
+ * `run.ts`), then the module's `_shared` folder, then the tour-wide one, so a
+ * shared file is stored once. An exercise page starts from
  * its `stub` folder and keeps its `solution` folder back.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -85,8 +86,8 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
       pages: [],
     };
 
-    const readShared = (page: string, name: string) => {
-      for (const folder of [join(modulePath, "_shared"), tourShared]) {
+    const readShared = (page: string, dir: string, name: string) => {
+      for (const folder of [dir, join(modulePath, "_shared"), tourShared]) {
         const path = join(folder, name);
 
         if (existsSync(path)) {
@@ -130,7 +131,7 @@ export const loadLessons = (lessonsDir: string): LoadedLessons => {
         for (const name of manifest.readOnly ?? ["setup.ts"]) {
           files.push({
             name,
-            content: readShared(id, name),
+            content: readShared(id, dir, name),
             editable: false,
           });
         }

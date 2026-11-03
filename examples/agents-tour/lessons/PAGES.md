@@ -2,16 +2,31 @@
 
 How to add one page of the Agents Tour and prove it works. Written for someone who has never seen the tour. The plan for every page is `projects/agents-tour/lesson-plan.md` in Jack's workspace; teach only the API in `packages/inngest/src/experimental/agents/` and its spec.
 
+## Writing the text
+
+- **Show, don't tell.** Every call, value or file the text names is on screen: a tab, the Trace, a panel. If Run does something, the code for it is in `run.ts`. Never describe in prose something the reader cannot see.
+- **Name the thing every time.** No "it", "its", "this" or "that" standing in for a thing: write "Run calls...", "The run returns...", "`hello` has no body". A learner cannot tell what "it" points at.
+- **Every "look at" sentence says where**: "In `run.ts`, ...", "In the Trace, ...".
+- **One shape per page**, one paragraph each:
+  1. What the idea does for you, in one or two sentences. The code is in the editor.
+  2. "Press {Run}." and what `run.ts` does, naming the tab: "Run calls the code in `run.ts`, which starts `hello` with the message `Hi`."
+  3. Where to look and what is there: "In the Trace, the run of `hello` is completed."
+- At most three short sentences before the reader needs the code.
+- Name every action with its key hint in braces: `Press {Run}.` renders as **Run** plus its key. The names come from the key table in `shared/keys/*.ts` (`{Run}` and `{cheat}` are in use; `shared/hints.ts` resolves them); an unknown name fails `pnpm tour:lessons`.
+- First line of `page.md` is `# Title`. Supported markdown: paragraphs, `code`, **bold**, *italic*, `<kbd>`. Nothing else.
+- No em dashes, no arrows, plain sentences.
+
 ## Files
 
 ```text
 lessons/<nn>-<module>/module.json        { "title": "Agents", "opening": "One line." }
 lessons/<nn>-<module>/<nn>-<page>/       one core page
   page.md                                # Title, then the text
-  manifest.json                          what Run does, pills, panels
+  manifest.json                          tabs, pills, panels
   agent.ts                               the code the reader edits
+  run.ts                                 what Run runs, a read-only tab
 lessons/<nn>-<module>/<nn>a-<page>/      a Go deeper page (label 3a)
-lessons/_shared/                         read-only tabs (setup.ts, ...) and concepts.json
+lessons/_shared/                         shared read-only tabs (setup.ts, ...) and concepts.json
 lessons/_parked/                         old pages on the old API: copy their shape, never their API
 ```
 
@@ -19,28 +34,38 @@ lessons/_parked/                         old pages on the old API: copy their sh
 - Use the plan's page number for the page folder (`02-hello-agent` for plan page 2): the footer shows that number. The module's number in the left nav is its position, not the folder number, so module 1 (Agents) shows as `2. Agents` after Welcome. Leave it.
 - Editable files default to `agent.ts`; read-only tabs default to `setup.ts`. A page's code imports from `./setup`, as `import { agents } from "./setup";`.
 
+## run.ts
+
+Every page with Run has its own `run.ts`. Run calls its `run` export inside the tour's `tour-start` function, so `start()` works there (`start()`, `message()` and `ask()` throw outside a function). The runs list and the Trace hide `tour-start` itself.
+
+```ts
+import { hello } from "./agent";
+
+// Run calls this.
+export const run = async () => {
+  await hello.start("Hi");
+};
+```
+
+- Keep `run.ts` as plain as the page allows, and use only what the tour has taught by then: page 2 passes no thread, since threads come in module 2.
+- A run opened by `start()` ends after its answer.
+
 ## manifest.json
 
 ```json
 {
-  "start": [{ "agent": "hello", "thread": "main", "content": "Hi" }],
+  "readOnly": ["run.ts", "setup.ts"],
   "apis": ["agents.agent"],
   "concepts": ["agent", "run"]
 }
 ```
 
-- `start`: what Run does, in order. `{ agent, thread, content }` calls `agent.start(content, { thread })` through the tour's own `tour-start` function (`start()`, `message()` and `ask()` throw outside a function, so the tour wraps them). `agent` is the agent's `id`; `content` is a string in the manifest's type. A run opened by `start()` ends after its answer. `{ event: { name, data } }` sends a plain event instead, for a trigger page.
+- `readOnly`: the read-only tabs, in order after the editable file. A name is found in the page's folder first (`run.ts`), then the module's `_shared`, then `lessons/_shared`. Order: the editable file, `run.ts`, then `setup.ts` and the rest.
 - `apis` and `concepts`: the pills under the text. API pills are code; concept pills open the Concepts collection, and the first page to name a concept collects it. Every concept needs a line in `lessons/_shared/concepts.json` (`pnpm tour:lessons` fails otherwise). Introduce each on one page only.
-- `panels`: play-pane tabs by id (`message`, `github`, `slack`, `events`; files in `site/src/panels/`). `message: { agent, thread }` adds the Messages box, which sends a plain `agent/message` event with a `content` field. Such a message starts a run that waits the agent's `idle` for more, unlike Run's `start()` run.
-- `exercise`: `{ check, hint, stub, solution }`, with `check.ts` and `stub/` and `solution/` folders. See `03-sample-exercise/12-greeter`.
+- `panels`: play-pane tabs by id (`message`, `github`, `slack`, `events`; files in `site/src/panels/`). `message: { agent, thread }` adds the Messages box, which sends a plain `agent/message` event with a `content` field. Such a message starts a run that waits the agent's `idle` for more, unlike a run opened by `start()`.
+- `start`: the older way to say what Run sends, still read after `run.ts`. `{ event: { name, data } }` sends a plain event (for a trigger page, if the page cannot show the send in `run.ts`); `{ agent, thread, content }` starts an agent without showing the call. Prefer `run.ts`.
+- `exercise`: `{ check, hint, stub, solution }`, with `check.ts` and `stub/` and `solution/` folders. `run.ts` stays the same for the stub and the solution. See `03-sample-exercise/12-greeter`.
 - `verify`: what `tour:verify` expects (`shared/types.ts`), optional.
-
-## page.md
-
-- First line is `# Title`. Then: what the idea does for you, the code is in the editor, then where to look after Run. At most three short sentences before the reader needs the code.
-- Name every action with its key hint in braces: `Press {Run}.` renders as **Run** plus its key. The names come from the key table in `shared/keys/*.ts` (`{Run}` and `{cheat}` are in use; `shared/hints.ts` resolves them); an unknown name fails `pnpm tour:lessons`.
-- Supported markdown: paragraphs, `code`, **bold**, *italic*, `<kbd>`. Nothing else.
-- No em dashes, no arrows, plain sentences.
 
 ## Prove it
 
@@ -68,7 +93,7 @@ lessons/_parked/                         old pages on the old API: copy their sh
    pnpm tour:page-check <page url> --keep       # leave the browser open
    ```
 
-   It prints the title, pills, file tabs, concept count, the page's nav state (`opened`, `ran`, `passed`), the editor's red squiggles, then after Run (pressed with Ctrl+Enter in the editor) each run's status, output and trace rows, the first trace row opened, the nav state again and a screenshot path. The runs list hides `tour-start`, each agent's `-cleanup` and `-finished` and the SDK's shared functions, so "one run" means one row.
+   It prints the title, pills, the file tabs in order (and warns when `run.ts` is missing), the concept count, the page's nav state (`opened`, `ran`, `passed`), the editor's red squiggles, then after Run (pressed with Ctrl+Enter in the editor) each run's status, output and trace rows, the first trace row opened, the nav state again and a screenshot path. The runs list hides `tour-start`, each agent's `-cleanup` and `-finished` and the SDK's shared functions, so "one run" means one row.
 
 4. Press the rest by hand with `agent-browser` in the session it printed (`export AGENT_BROWSER_SESSION=<session>`, `--keep`):
 
