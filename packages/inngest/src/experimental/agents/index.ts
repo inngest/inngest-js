@@ -71,7 +71,7 @@ export type {
   AgentUserContent,
   ModelMessage,
 } from "./loop/loop.ts";
-export { agent, formatEvent } from "./loop/loop.ts";
+export { agent, formatEvent, hasToolCall } from "./loop/loop.ts";
 export { untrustedTag } from "./loop/untrustedText.ts";
 export type {
   AgentSandbox,

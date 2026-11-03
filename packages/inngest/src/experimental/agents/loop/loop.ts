@@ -645,10 +645,13 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
 
   /**
    * Checked before each model call. Return `true` to end the loop with
-   * `end: "stop"`. It runs in your function, so it can use steps to read a
-   * durable flag.
+   * `end: "stop"`. `runs` are the tool runs finished so far. It runs in your
+   * function, so it can use steps to read a durable flag. See `hasToolCall`.
    */
-  stop?: (call: { turn: number }) => boolean | Promise<boolean>;
+  stop?: (call: {
+    turn: number;
+    runs: AgentToolRun<TTools>[];
+  }) => boolean | Promise<boolean>;
 
   /**
    * Called before each model call. Return a reason to end the loop with
@@ -1250,7 +1253,7 @@ const runLoop = async <TTools extends SandboxTools>(
   };
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
-    if (await options.stop?.({ turn })) {
+    if (await options.stop?.({ turn, runs: toolRuns })) {
       return finish("stop", turn - 1);
     }
 
@@ -1570,7 +1573,7 @@ export const buildLoop = <TTools extends SandboxTools>(
   options: AgentLoopOptions<TTools>,
 ): AgentLoop<TTools> => {
   return (async (batch: AgentLoopInput, call?: AgentLoopCallOptions) => {
-    return runLoop(withCall(options, call), batch);
+    return runLoop<TTools>(withCall(options, call), batch);
   }) as AgentLoop<TTools>;
 };
 
@@ -1618,6 +1621,19 @@ const loop = <TTools extends SandboxTools>(
 ): AgentLoop<TTools> => {
   return buildLoop(options);
 };
+
+/**
+ * A `stop` function that is true once a tool named `name` has run without
+ * error. A refused call (`agent.toolError(...)`) does not stop the loop.
+ */
+export const hasToolCall =
+  (name: string) =>
+  ({
+    runs,
+  }: {
+    runs: readonly { name: string; isError: boolean }[];
+  }): boolean =>
+    runs.some((run) => run.name === name && !run.isError);
 
 /**
  * EXPERIMENTAL: The agent helpers: `agent.loop()` makes a model-and-tools
