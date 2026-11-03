@@ -17,7 +17,7 @@ export const messagesKeys = defineKeys([
     id: "sendEvent",
     rank: 16,
     panels: ["message", "events"],
-    label: "Send (a message or an event)",
+    label: "Send",
     group: "Panes",
     inField: ["Alt+Shift+Enter"],
     outside: ["s"],
