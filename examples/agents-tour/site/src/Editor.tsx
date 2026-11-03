@@ -8,6 +8,7 @@ import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { CodeTarget } from "../../shared/links.ts";
+import type { Diagnostic } from "../../shared/problems.ts";
 import type { PageFile } from "../../shared/types.ts";
 import { type Handlers, registerEditorCommands } from "./keyboard.tsx";
 
@@ -26,6 +27,9 @@ export interface EditorApi {
   replace(name: string, content: string): void;
   // Shows a file's line in the middle and flashes the token at the target.
   reveal(target: CodeTarget): void;
+  // The errors TypeScript finds in every file of the page, current as of
+  // the text now in the editor.
+  problems(): Promise<Diagnostic[]>;
   values(): Record<string, string>;
   setValue(name: string, content: string): void;
 }
@@ -87,6 +91,16 @@ const defineTheme = () => {
       "editor.lineHighlightBackground": "#1b1e26",
     },
   });
+};
+
+type MessageChain = string | { messageText: string; next?: MessageChain[] };
+
+const flatten = (text: MessageChain): string => {
+  if (typeof text === "string") {
+    return text;
+  }
+
+  return [text.messageText, ...(text.next ?? []).map(flatten)].join("\n");
 };
 
 const uriOf = (name: string) => {
@@ -155,6 +169,80 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
         flashTimer.current = window.setTimeout(() => {
           flash.current?.clear();
         }, 1800);
+      },
+      problems: async () => {
+        const models = latest.current.files.flatMap((file) => {
+          const model = monaco.editor.getModel(uriOf(file.name));
+
+          return model ? [{ name: file.name, model }] : [];
+        });
+
+        // Monaco's own markers trail an edit by half a second. Asking the TS
+        // worker directly gives the same checks, current at once.
+        const fromWorker = async (): Promise<Diagnostic[]> => {
+          const getWorker =
+            await monaco.languages.typescript.getTypeScriptWorker();
+          const worker = await getWorker(...models.map((one) => one.model.uri));
+          const out: Diagnostic[] = [];
+
+          for (const { name, model } of models) {
+            const uri = model.uri.toString();
+            const found = [
+              ...(await worker.getSyntacticDiagnostics(uri)),
+              ...(await worker.getSemanticDiagnostics(uri)),
+            ];
+
+            for (const one of found) {
+              if (one.category !== 1 || one.start === undefined) {
+                continue;
+              }
+
+              const at = model.getPositionAt(one.start);
+
+              out.push({
+                file: name,
+                line: at.lineNumber,
+                column: at.column,
+                length: one.length ?? 0,
+                code: one.code,
+                message: flatten(one.messageText),
+              });
+            }
+          }
+
+          return out;
+        };
+        const fromMarkers = (): Diagnostic[] => {
+          return models.flatMap(({ name, model }) => {
+            return monaco.editor
+              .getModelMarkers({ resource: model.uri })
+              .filter(
+                (marker) => marker.severity === monaco.MarkerSeverity.Error,
+              )
+              .map((marker) => {
+                return {
+                  file: name,
+                  line: marker.startLineNumber,
+                  column: marker.startColumn,
+                  length: Math.max(0, marker.endColumn - marker.startColumn),
+                  code: Number(
+                    typeof marker.code === "object"
+                      ? marker.code.value
+                      : (marker.code ?? 0),
+                  ),
+                  message: marker.message,
+                };
+              });
+          });
+        };
+
+        // If the worker is slow, the markers are the best there is.
+        return Promise.race([
+          fromWorker().catch(fromMarkers),
+          new Promise<Diagnostic[]>((resolve) => {
+            window.setTimeout(() => resolve(fromMarkers()), 300);
+          }),
+        ]);
       },
       values: () => {
         const out: Record<string, string> = {};

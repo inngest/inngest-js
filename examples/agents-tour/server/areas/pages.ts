@@ -7,6 +7,7 @@
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { describeRuntimeError } from "../../shared/problems.ts";
 import type { Start, TraceRun } from "../../shared/types.ts";
 import type { Area, AreaFactory } from "../area.ts";
 import { HttpError } from "../http-error.ts";
@@ -198,6 +199,14 @@ export const area: AreaFactory = (ctx) => {
           text: result.error ?? "The app did not start",
         });
         hub.setStatus("failed", "Your code did not start");
+        hub.emit({
+          type: "run-result",
+          ok: false,
+          ...describeRuntimeError(
+            result.error ?? "The app did not start",
+            page.files.map((file) => file.name),
+          ),
+        });
 
         return;
       }

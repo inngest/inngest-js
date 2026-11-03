@@ -117,6 +117,13 @@ export const createTour = async (options: TourOptions) => {
     root,
     publicUrl,
     devServerUrl: devServer.url,
+    onRunResult: (failure) => {
+      hub.emit(
+        failure
+          ? { type: "run-result", ok: false, ...failure }
+          : { type: "run-result", ok: true },
+      );
+    },
     onOutput: (kind, text) => {
       for (const line of text.split("\n")) {
         if (line.trim()) {

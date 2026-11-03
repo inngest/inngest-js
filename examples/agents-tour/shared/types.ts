@@ -181,6 +181,10 @@ export type TourEvent =
       text: string;
     }
   | { type: "runs"; runs: TraceRun[] }
+  // What `tour-start` did with the page's `run.ts` (or an app that did not
+  // start): it finished, or failed with this.
+  | { type: "run-result"; ok: true }
+  | ({ type: "run-result"; ok: false } & RunFailure)
   | { type: "fakes"; topic: "slack" | "github" }
   | { type: "progress"; mark: ProgressMark; page: string }
   // Any area's own topic: the site turns it into a `tour:area` window event.
@@ -191,3 +195,14 @@ export type TourEvent =
 export type CheckResult =
   | { pass: true }
   | { pass: false; reason: string; broken?: boolean };
+
+// Why a Run did not produce a run: the headline is plain English with the
+// real names in backticks; `file` and `line` say where, when known.
+export interface RunFailure {
+  headline: string;
+  detail?: string;
+  file?: string;
+  line?: number;
+  column?: number;
+  length?: number;
+}

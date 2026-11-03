@@ -14,7 +14,12 @@
  * calm "running" row instead.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
+import type {
+  RunFailure,
+  TourEvent,
+  TraceRun,
+  TraceStep,
+} from "../../shared/types.ts";
 import { api } from "./api.ts";
 import { Fit, Reveal } from "./motion.tsx";
 
@@ -522,8 +527,56 @@ export interface RunPressed {
   label: string | null;
 }
 
-// How long a placeholder waits for a real run before it gives up.
-const pendingMs = 15_000;
+// How long the placeholder waits for a real run before it gives up. Every
+// failure that can be known sooner (a type error, `run.ts` throwing) is
+// reported at once, so this only catches what nothing reports.
+const pendingMs = 6_000;
+// How long after `run.ts` finished a run may still take to be listed.
+const noRunMs = 1_500;
+
+// Text with `names` in backticks, the names as code.
+const Ticked = ({ text }: { text: string }) => {
+  return (
+    <>
+      {text.split("`").map((part, at) => {
+        // Odd parts sit between a pair of backticks.
+        return at % 2 === 1 ? <code key={`${at}-${part}`}>{part}</code> : part;
+      })}
+    </>
+  );
+};
+
+// The card for a Run that did not make a run: what is wrong, and where. It
+// takes the place of the placeholder, and a click jumps to the line.
+const FailedRun = ({
+  failure,
+  onJump,
+}: {
+  failure: RunFailure;
+  onJump: (failure: RunFailure) => void;
+}) => {
+  const where = failure.file && failure.line ? failure.detail : undefined;
+
+  return (
+    <section className="run failed-run" aria-label="Run failed" role="alert">
+      <div className="run-head">
+        <span className="dot failed" aria-hidden="true" />
+        <span className="failure-text">
+          <Ticked text={failure.headline} />
+        </span>
+        {where ? (
+          <button
+            type="button"
+            className="ghost failure-where"
+            onClick={() => onJump(failure)}
+          >
+            {where}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+};
 
 // The card for a run Run has started but the Dev Server has not listed yet.
 // It names only what is known: the file Run runs, never the agent.
@@ -773,12 +826,20 @@ export const TracePanel = ({
   everything,
   onToggle,
   pressed,
+  failure,
+  finished,
+  onJump,
 }: {
   runs: TraceRun[];
   lines: Line[];
   everything: boolean;
   onToggle: () => void;
   pressed: RunPressed | null;
+  // Why the Run made no run, when it is known.
+  failure: RunFailure | null;
+  // When `run.ts` finished without failing; null before then.
+  finished: number | null;
+  onJump: (failure: RunFailure) => void;
 }) => {
   const [now, setNow] = useState(Date.now());
   // Runs already listed when the panel first renders do not animate in.
@@ -790,6 +851,8 @@ export const TracePanel = ({
     before: Set<string>;
     errors: number;
   } | null>(null);
+  // A failure the Trace works out itself: nothing was listed in time.
+  const [late, setLate] = useState<RunFailure | null>(null);
   const latest = useRef({ runs, errors: 0 });
   const errors = lines.filter((line) => {
     return line.kind === "err";
@@ -798,6 +861,8 @@ export const TracePanel = ({
   latest.current = { runs, errors };
 
   useEffect(() => {
+    setLate(null);
+
     if (!pressed) {
       setWaiting(null);
 
@@ -814,8 +879,16 @@ export const TracePanel = ({
       errors: latest.current.errors,
     });
 
+    // `waiting` stays set until the next Run, so the runs listed before this
+    // Run never come back, whatever happens.
     const timer = window.setTimeout(() => {
-      setWaiting(null);
+      setLate((previous) => {
+        return (
+          previous ?? {
+            headline: `No run showed up within ${pendingMs / 1000} s. Press Run to try again.`,
+          }
+        );
+      });
     }, pendingMs);
 
     return () => {
@@ -823,19 +896,50 @@ export const TracePanel = ({
     };
   }, [pressed]);
 
+  // `run.ts` finished, but the Dev Server lists nothing new shortly after.
+  useEffect(() => {
+    if (finished === null || !pressed) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLate((previous) => {
+        return (
+          previous ?? {
+            headline: `\`${pressed.label ?? "run.ts"}\` finished, but no run started.`,
+          }
+        );
+      });
+    }, noRunMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [finished, pressed]);
+
   const arrived = waiting
     ? runs.some((run) => {
         return !waiting.before.has(run.id);
       })
     : false;
   const failed = waiting ? errors > waiting.errors : false;
-  const placeholder = waiting !== null && !arrived && !failed;
-  // Runs listed when Run was pressed fade out at once and stay out, so old
-  // and new cards are never side by side and the server clearing them later
-  // changes nothing on screen.
+  // The failure to show: one reported, or one the wait ran out into (only
+  // while no new run is listed).
+  const shown = waiting !== null ? (failure ?? (arrived ? null : late)) : null;
+  const lastShown = useRef(shown);
+
+  if (shown) {
+    lastShown.current = shown;
+  }
+
+  const placeholder = waiting !== null && !arrived && !failed && !shown;
+  // Runs listed when Run was pressed fade out at once and stay out, even
+  // when the Run fails, so old and new cards are never side by side and the
+  // old successful run never looks like the new one.
   const superseded = (run: TraceRun) => {
-    return waiting !== null && !failed && waiting.before.has(run.id);
+    return waiting !== null && waiting.before.has(run.id);
   };
+  const shownRuns = runs.filter((run) => !superseded(run)).length;
   const live = runs.some((run) => {
     return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
       run.status,
@@ -878,7 +982,7 @@ export const TracePanel = ({
     <div className="trace" aria-label="Trace" tabIndex={-1}>
       <div className="trace-bar">
         <span>
-          {runs.length} {runs.length === 1 ? "run" : "runs"}
+          {shownRuns} {shownRuns === 1 ? "run" : "runs"}
         </span>
         <button
           type="button"
@@ -890,9 +994,11 @@ export const TracePanel = ({
           Show everything
         </button>
       </div>
+      {/* Once a run or a failure card is shown, it carries the error; the
+          app's stderr (one block per retry) would only bury it. */}
       {lines
         .filter((line) => {
-          return line.kind === "err";
+          return line.kind === "err" && !arrived && shown === null;
         })
         .map((line, at) => {
           return (
@@ -901,10 +1007,18 @@ export const TracePanel = ({
             </p>
           );
         })}
-      <Reveal show={runs.length === 0 && !placeholder} appear={false}>
+      <Reveal
+        show={runs.length === 0 && !placeholder && shown === null}
+        appear={false}
+      >
         <p className="empty">
           Waiting for a run. Press Run, or send a message.
         </p>
+      </Reveal>
+      <Reveal className="run-slot" show={shown !== null}>
+        {lastShown.current ? (
+          <FailedRun failure={lastShown.current} onJump={onJump} />
+        ) : null}
       </Reveal>
       <Reveal className="run-slot" show={placeholder}>
         <PendingRun label={waiting?.label ?? null} />

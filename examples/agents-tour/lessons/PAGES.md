@@ -125,6 +125,15 @@ In a fresh worktree, start the tour (step 2) once first: that installs `node_mod
 
 5. Stop your tour: `devstack stop page-<n>`.
 
+## What Run does with broken code
+
+Run never leaves the reader waiting on code that cannot work. Each problem shows as a red card in the Trace, in place of the "Running" card, with a plain-English line naming the real files and identifiers and a `file:line` that jumps to the code. The old runs stay hidden until the next Run, so a past success never looks like this Run.
+
+- Before anything is sent, the editor's TypeScript checks every file of the page (the editable files, `run.ts` and `setup.ts`) and Run stops at the first error. The check asks Monaco's TS worker directly, since its markers trail an edit by about half a second. The words come from `shared/problems.ts` (for example, `run.ts` importing `hello` when `agent.ts` has no `export const hello`).
+- If the app fails to load, or `run.ts` throws, the host tells the tour server at once and the card shows the error, with `file:line` when the stack has one.
+- If `run.ts` finishes and no run is listed within 1.5 s, the card says `run.ts` finished, but no run started. If nothing at all arrives within 6 s, it says so. A normal Run lists its run about 1.2 to 1.6 s after Run.
+- An agent that throws in its own body is a real run. The Trace shows it as running while the SDK retries (about 4 s), then failed with the error on the card.
+
 ## Gotchas
 
 - Key hints are hidden in headless Chromium (`@media (hover: none)` hides `kbd`), so "Press Run ." in a snapshot is right; a real screen shows the key.
