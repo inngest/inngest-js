@@ -233,8 +233,13 @@ export const lentOf = (
 /**
  * The `cancelOn` entry every agent has: the `agent/parent.ended` of the run
  * that started it attached. A run nothing attached never matches it.
+ *
+ * In `cancelOn`, `event` is the run's own trigger and `async` is the arriving
+ * `agent/parent.ended`. The trigger names the parent run; the arriving event
+ * names the run that ended. A trigger without `from.parent_run` makes the
+ * expression `async.data.run_id == null`, which a real event never matches.
  */
 export const parentEndedCancel = {
   event: agentParentEnded.name,
-  if: "event.data.run_id == async.data.from.parent_run",
+  if: "async.data.run_id == event.data.from.parent_run",
 };

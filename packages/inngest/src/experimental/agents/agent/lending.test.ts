@@ -59,7 +59,7 @@ describe("lending", () => {
   test("attached children are cancelled by the parent's run ID", () => {
     expect(parentEndedCancel).toEqual({
       event: "agent/parent.ended",
-      if: "event.data.run_id == async.data.from.parent_run",
+      if: "async.data.run_id == event.data.from.parent_run",
     });
   });
 });
