@@ -2,24 +2,45 @@
  * @module
  * The app the tour runs for the learner. It imports the page's files, which
  * `TOUR_FILES` lists, from `TOUR_DIR`; the files together export `client` and
- * `agents`. It serves the agents over HTTP the way any app
- * would, and answers a few tour-only routes: health, the agents it found, and
- * "send a message to a thread", which uses the agent's own thread handle.
+ * `agents`. It serves the agents over HTTP the way any app would, plus one
+ * tour-owned function, and answers a few tour-only routes: health, the agents
+ * it found, "start an agent" and "send a message to a thread".
+ *
+ * Run starts an agent with `agent.start()`, which only works inside a
+ * function, so the host registers `tour-start` (triggered by `tour/start`) to
+ * make that call. A run opened by `start()` ends after its answer. The tour
+ * hides `tour-start` from the runs it shows. A message to a thread is the
+ * plain `agent/message` event, sent from here.
  */
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { Inngest } from "inngest";
+import { agentMessage, type Json } from "inngest/experimental/agents";
 import { serve } from "inngest/node";
 
-interface ThreadSender {
-  thread(key: string): { send(message: string): Promise<void> };
+interface StartableAgent {
+  id: string;
+  address: string;
+  start(input: Json, options?: { thread?: string }): Promise<unknown>;
+  thread(key: string): unknown;
+}
+
+// The event that asks `tour-start` to start an agent.
+const tourStartEvent = "tour/start";
+
+interface Target {
+  agent: string;
+  thread: string;
+  content: Json;
 }
 
 const dir = process.env.TOUR_DIR ?? "";
 
 const names = JSON.parse(process.env.TOUR_FILES ?? "[]") as string[];
-const senders = new Map<string, ThreadSender>();
-let client: unknown;
+// By export name and by agent id: the manifests name agents by id.
+const found = new Map<string, StartableAgent>();
+let client: Inngest.Any | undefined;
 let agents: unknown;
 
 for (const name of names) {
@@ -28,14 +49,22 @@ for (const name of names) {
     unknown
   >;
 
-  client ??= loaded.client;
+  client ??= loaded.client as Inngest.Any | undefined;
   agents ??= loaded.agents;
 
   for (const [exported, value] of Object.entries(loaded)) {
-    const candidate = value as Partial<ThreadSender> | undefined;
+    const candidate = value as Partial<StartableAgent> | undefined;
 
-    if (candidate && typeof candidate.thread === "function") {
-      senders.set(exported, candidate as ThreadSender);
+    if (
+      candidate &&
+      typeof candidate.thread === "function" &&
+      typeof candidate.start === "function"
+    ) {
+      found.set(exported, candidate as StartableAgent);
+
+      if (typeof candidate.id === "string") {
+        found.set(candidate.id, candidate as StartableAgent);
+      }
     }
   }
 }
@@ -46,11 +75,41 @@ if (!client || !agents) {
   );
 }
 
+const app = client;
+
+const agentOf = (name: string) => {
+  const agent = found.get(name);
+
+  if (!agent) {
+    throw new Error(
+      `No exported agent named "${name}" (found: ${[...new Set(found.values())].map((one) => one.id).join(", ") || "none"})`,
+    );
+  }
+
+  return agent;
+};
+
+const tourStart = app.createFunction(
+  { id: "tour-start", retries: 0, triggers: [{ event: tourStartEvent }] },
+  async ({ event }) => {
+    const target = event.data as Target;
+
+    await agentOf(target.agent).start(target.content, {
+      thread: target.thread,
+    });
+
+    return { started: target.agent, thread: target.thread };
+  },
+);
+
 const inngest = serve({
-  client: client as Parameters<typeof serve>[0]["client"],
-  functions: (
-    agents as { functions: () => Parameters<typeof serve>[0]["functions"] }
-  ).functions(),
+  client: app,
+  functions: [
+    ...(
+      agents as { functions: () => Parameters<typeof serve>[0]["functions"] }
+    ).functions(),
+    tourStart,
+  ],
 });
 
 const readBody = async (req: import("node:http").IncomingMessage) => {
@@ -72,36 +131,61 @@ const json = (
   res.end(JSON.stringify(body));
 };
 
+const routes: Record<string, (target: Target) => Promise<unknown>> = {
+  // Run: `tour-start` calls `agent.start(content, { thread })`.
+  "/__tour/start": async (target) => {
+    agentOf(target.agent);
+
+    return app.send({ name: tourStartEvent, data: target });
+  },
+  // A message to a thread: into the live run's inbox, or a new run.
+  "/__tour/send": async (target) => {
+    const agent = agentOf(target.agent);
+
+    return app.send(
+      agentMessage.create({
+        agent: agent.address,
+        thread: target.thread,
+        content: target.content,
+      }),
+    );
+  },
+};
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://host");
 
   if (url.pathname === "/__tour/health") {
-    json(res, 200, { ok: true, agents: [...senders.keys()] });
+    json(res, 200, {
+      ok: true,
+      agents: [...new Set(found.values())].map((agent) => {
+        return agent.id;
+      }),
+    });
 
     return;
   }
 
-  if (url.pathname === "/__tour/send" && req.method === "POST") {
+  const route = routes[url.pathname];
+
+  if (route && req.method === "POST") {
     try {
-      const body = JSON.parse(await readBody(req)) as {
-        agent: string;
-        thread: string;
-        message: string;
-      };
-      const sender = senders.get(body.agent);
+      const body = JSON.parse(await readBody(req)) as Target;
+      let status = 200;
+      let result: unknown = { ok: true };
 
-      if (!sender) {
-        json(res, 404, {
-          error: `No exported agent named "${body.agent}" (found: ${[...senders.keys()].join(", ") || "none"})`,
-        });
+      try {
+        await route(body);
+      } catch (error) {
+        const missing = String(error).includes("No exported agent");
 
-        return;
+        status = missing ? 404 : 500;
+        result = { error: missing ? (error as Error).message : String(error) };
       }
 
-      await sender.thread(body.thread).send(body.message);
-      json(res, 200, { ok: true });
+      json(res, status, result);
     } catch (error) {
-      json(res, 500, { error: String(error) });
+      json(res, 400, { error: String(error) });
     }
 
     return;

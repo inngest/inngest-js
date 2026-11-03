@@ -41,7 +41,12 @@ export interface SettleOptions {
 
 export interface CheckApi {
   /** Sends a message to an agent's thread, as the Messages panel does. */
-  send: (agent: string, thread: string, text: string) => Promise<void>;
+  send: (agent: string, thread: string, content: string) => Promise<void>;
+  /**
+   * Starts an agent on a thread, as Run does: through `agent.start()`, so the
+   * run ends after its answer.
+   */
+  start: (agent: string, thread: string, content: string) => Promise<void>;
   /** Sends a plain event. */
   event: (name: string, data?: Record<string, unknown>) => Promise<void>;
   /** Presses a panel's button: a POST to the panel's own route. */

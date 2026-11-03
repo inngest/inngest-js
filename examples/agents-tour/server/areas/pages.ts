@@ -102,8 +102,8 @@ export const area: AreaFactory = (ctx) => {
     }
 
     if ("agent" in start) {
-      await worker.send(start.agent, start.thread, start.text);
-      hub.info(`sent "${start.text}" to ${start.agent}`);
+      await worker.start(start.agent, start.thread, start.content);
+      hub.info(`started ${start.agent} with "${start.content}"`);
 
       return;
     }

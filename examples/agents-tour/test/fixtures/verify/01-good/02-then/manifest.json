@@ -1,7 +1,7 @@
 {
-  "start": [{ "agent": "echo", "thread": "t", "text": "hi" }],
+  "start": [{ "agent": "echo", "thread": "t", "content": "hi" }],
   "verify": {
-    "then": [{ "agent": "echo", "thread": "t", "text": "again" }],
+    "then": [{ "agent": "echo", "thread": "t", "content": "again" }],
     "runs": [{ "fn": "echo", "status": "COMPLETED", "output": "hi again" }]
   }
 }

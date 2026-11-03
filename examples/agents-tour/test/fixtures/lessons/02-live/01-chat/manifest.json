@@ -1,1 +1,1 @@
-{ "start": [{ "agent": "chat", "thread": "ada", "text": "Hi" }] }
+{ "start": [{ "agent": "chat", "thread": "ada", "content": "Hi" }] }

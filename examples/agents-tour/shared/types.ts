@@ -3,10 +3,13 @@
  * The shapes the tour server and the site agree on.
  */
 
+// Run starts the agent with `agent.start(content, { thread })`, through the
+// host's `tour-start` function, so the run ends after its answer. `agent` is
+// the agent's id.
 export interface StartMessage {
   agent: string;
   thread: string;
-  text: string;
+  content: string;
 }
 
 export interface StartEvent {

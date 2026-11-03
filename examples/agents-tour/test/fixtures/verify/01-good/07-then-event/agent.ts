@@ -1,7 +1,7 @@
 import { agents } from "./setup";
 
 export const pair = agents.agent(
-  { id: "pair", on: { event: "tour/pair", thread: "event.data.name" } },
+  { id: "pair", triggers: [{ event: "tour/pair", thread: "event.data.name" }] },
   async ({ inbox }) => {
     const first = await inbox.next();
     const second = await inbox.next();

@@ -135,7 +135,7 @@ const perform = async (base: string, start: Start) => {
     await api(base, "/api/send", {
       agent: start.agent,
       thread: start.thread,
-      message: start.text,
+      message: start.content,
     });
   }
 };

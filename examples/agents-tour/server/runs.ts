@@ -131,6 +131,12 @@ const triggerOf = async (devServer: DevServer, id: string | undefined) => {
   return trigger;
 };
 
+// Functions the reader did not write: each agent's `-cleanup` and
+// `-finished`, the SDK's shared agent functions, and the host's `tour-start`,
+// which starts the page's agent for Run.
+const hidden =
+  /-(cleanup|finished|arrival|agents-announce|agents-ask-timeout|tour-start)$/;
+
 export const readRuns = async (devServer: DevServer, from: string) => {
   const data = await devServer.gql<{
     runs: { edges: { node: RunNode }[] };
@@ -140,7 +146,7 @@ export const readRuns = async (devServer: DevServer, from: string) => {
       return node;
     })
     .filter((node) => {
-      return !/-(cleanup|finished|arrival)$/.test(node.function.slug);
+      return !hidden.test(node.function.slug);
     });
 
   return Promise.all(
