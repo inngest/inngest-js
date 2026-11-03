@@ -1159,6 +1159,37 @@ main.single .text {
   padding: 0;
 }
 
+.exercise {
+  margin: 18px 0;
+}
+
+.exercise .hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.exercise .verdict {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+}
+
+.exercise .pass {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.exercise .fail {
+  color: var(--bad);
+}
+
+.exercise .controls {
+  flex-wrap: wrap;
+}
+
+.exercise .controls button {
+  white-space: nowrap;
+}
+
 /* Progress: the left nav, the chips, the module-done banner and the pills. */
 .body {
   display: grid;

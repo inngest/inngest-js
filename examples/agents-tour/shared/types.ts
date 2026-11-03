@@ -23,9 +23,31 @@ export type Start = StartMessage | StartEvent | StartSlack;
 export interface Exercise {
   // The check script in the page's folder.
   check: string;
+  // One line shown on request, nudging without giving the answer away.
+  hint?: string;
   // Folders in the page's folder holding one file per editable file.
   stub: string;
   solution: string;
+}
+
+// A run `tour:verify` expects to see after the page's action.
+export interface ExpectedRun {
+  // The function's name: the agent's id.
+  fn: string;
+  // Default: any status but FAILED or CANCELLED.
+  status?: string;
+  // Compared to what the run returned, when given.
+  output?: unknown;
+}
+
+// What `tour:verify` does on a page, beyond running its starting code.
+export interface Verify {
+  // More of the page's promised action, done after Run's start entries.
+  then?: Start[];
+  // The runs that must exist once the action has settled.
+  runs?: ExpectedRun[];
+  // What the scripted model says, one step per turn (`say` or `call`).
+  model?: unknown[];
 }
 
 export interface Manifest {
@@ -48,6 +70,9 @@ export interface Manifest {
   apis?: string[];
   // Present on an exercise page.
   exercise?: Exercise;
+  // What `tour:verify` checks. Without it a page must start, and none of its
+  // runs may fail.
+  verify?: Verify;
 }
 
 export interface PageFile {
@@ -156,3 +181,9 @@ export type TourEvent =
   | { type: "progress"; mark: ProgressMark; page: string }
   // Any area's own topic: the site turns it into a `tour:area` window event.
   | { type: "area"; area: string; topic: string; data?: unknown };
+
+// What Check answers. A failure carries one sentence saying why; `broken`
+// marks a check script that threw instead of judging.
+export type CheckResult =
+  | { pass: true }
+  | { pass: false; reason: string; broken?: boolean };

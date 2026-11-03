@@ -8,6 +8,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Start, TourEvent, TourIndex } from "../shared/types.ts";
+import type { CheckTiming } from "./check-runner.ts";
 import type { DevServer } from "./devserver.ts";
 import type { Hub } from "./hub.ts";
 import type { LoadedPage } from "./lessons.ts";
@@ -45,6 +46,11 @@ export interface Area {
 
 export interface TourContext {
   root: string;
+  // How long a check waits; tests shorten it.
+  checkTiming: CheckTiming;
+  // True when `tour:verify` runs the tour: the app is told to use the
+  // scripted model (see `runtime/scripted-model.ts`).
+  scriptedModel: boolean;
   publicUrl: string;
   dataDir: string;
   // Kept across starts, unlike `dataDir`.
@@ -60,6 +66,13 @@ export interface TourContext {
   areas: () => Area[];
   // Runs every area's `reset`.
   resetAreas: () => Promise<void>;
+  // Runs a page as Run does; `start: false` leaves out the page's start
+  // entries, for a check that sends its own. Set by the pages area.
+  runPage: (
+    id: string,
+    files: Record<string, string>,
+    options?: { start?: boolean },
+  ) => Promise<void>;
 }
 
 export type AreaFactory = (ctx: TourContext) => Area;

@@ -1,0 +1,4 @@
+{
+  "exercise": { "check": "check.ts", "stub": "stub", "solution": "solution" },
+  "start": [{ "event": { "name": "tour/greet", "data": { "name": "Zed" } } }]
+}

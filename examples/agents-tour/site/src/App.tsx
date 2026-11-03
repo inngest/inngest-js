@@ -17,6 +17,7 @@ import type {
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
+import { Exercise } from "./Exercise.tsx";
 import { clearEdits, saveEdits, withEdits } from "./edits.ts";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { panelKeys } from "./keytable.ts";
@@ -76,6 +77,7 @@ export const App = () => {
     Number(store.get("tour:right")) || 56,
   );
   const [play, setPlay] = useState<string>("message");
+  const [edits, setEdits] = useState(0);
   const [progress, setProgress] = useState<ProgressSnapshot>(noProgress);
   const [rail, setRail] = useState(store.get("tour:rail") === "1");
   const [moduleDone, setModuleDone] = useState<string | null>(null);
@@ -381,6 +383,38 @@ export const App = () => {
     editor.current?.focus();
   };
 
+  const checkExercise = async () => {
+    if (!page) {
+      return { pass: false as const, reason: "No page is open." };
+    }
+
+    await formatAll();
+
+    const values = editor.current?.values() ?? {};
+
+    saveEdits(page, values, store);
+
+    return api.check(page.id, values);
+  };
+
+  const showSolution = async () => {
+    if (!page) {
+      return;
+    }
+
+    const before = editor.current?.values() ?? {};
+
+    for (const file of await api.solution(page.id)) {
+      editor.current?.setValue(file.name, file.content);
+    }
+
+    setUndo(before);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => {
+      setUndo(null);
+    }, 10_000);
+  };
+
   const reset = () => {
     if (!page || !hasCode) {
       return;
@@ -547,6 +581,18 @@ export const App = () => {
     editor: toggleEditor,
     undo: undoReset,
   };
+  // The exercise controls listen for these; see `Exercise.tsx`.
+  const exerciseHandlers: Handlers = {
+    check: () => {
+      sendAction("check");
+    },
+    hint: () => {
+      sendAction("hint");
+    },
+    solution: () => {
+      sendAction("solution");
+    },
+  };
   const progressHandlers: Handlers = {
     navToggle: toggleRail,
     nextModule: () => {
@@ -578,6 +624,7 @@ export const App = () => {
   const handlers: Handlers = {
     ...panelHandlers,
     ...progressHandlers,
+    ...(page?.manifest.exercise ? exerciseHandlers : {}),
     ...core,
   };
 
@@ -781,6 +828,15 @@ export const App = () => {
                   __html: renderMarkdown(page.markdown),
                 }}
               />
+              {hasCode && page.manifest.exercise ? (
+                <Exercise
+                  key={page.id}
+                  hint={page.manifest.exercise.hint}
+                  check={checkExercise}
+                  showSolution={showSolution}
+                  edits={edits}
+                />
+              ) : null}
               {hasCode && page.manifest.start?.length ? (
                 <EventBlock starts={page.manifest.start} />
               ) : null}
@@ -886,6 +942,9 @@ export const App = () => {
                     }}
                     onChange={(name, content) => {
                       saveEdits(page, { [name]: content }, store);
+                      setEdits((count) => {
+                        return count + 1;
+                      });
                     }}
                   />
                   <div className="controls">
