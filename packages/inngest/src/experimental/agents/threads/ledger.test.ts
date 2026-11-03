@@ -59,3 +59,20 @@ test("ledger: the size limit message names the thread and the limit", () => {
   expect(size).toBeGreaterThan(threadStateLimit);
   expect(overLimitMessage("t", size)).toContain(`limit of ${threadStateLimit}`);
 });
+
+test("ledger: a conditional change says whether it applied", () => {
+  const state = emptyThreadState();
+  const apply = (change: Parameters<typeof applyChange>[1]) => {
+    return applyChange(state, change, 0);
+  };
+
+  expect(apply({ op: "setIfAbsent", key: "a", value: "1" })).toBe(true);
+  expect(apply({ op: "setIfAbsent", key: "a", value: "2" })).toBe(false);
+  expect(apply({ op: "cas", key: "a", expected: "0", value: "9" })).toBe(false);
+  expect(apply({ op: "cas", key: "a", expected: "1", value: "2" })).toBe(true);
+  expect(apply({ op: "cas", key: "b", expected: null, value: "x" })).toBe(true);
+  expect(liveKey(state, "a", 0)?.v).toBe("2");
+  expect(apply({ op: "casDelete", key: "a", expected: "1" })).toBe(false);
+  expect(apply({ op: "casDelete", key: "a", expected: "2" })).toBe(true);
+  expect(liveKey(state, "a", 0)).toBeUndefined();
+});

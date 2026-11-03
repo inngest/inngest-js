@@ -76,7 +76,7 @@ import {
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import { hasKvStore, kv } from "../kv/kv.ts";
+import { kv, usesLedger } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
   type AgentLoop,
@@ -365,29 +365,23 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  // With no store, a run touches KV nowhere.
-  const stored = hasKvStore(client.id);
-  const storeFix =
-    "give createAgents(client, { store }) a store, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL";
+  // The KV is a configured store, else the ledger. The ledger keeps its own
+  // steps and cannot be written inside a step's callback, so a run on it does
+  // its thread bookkeeping between steps.
+  const store = kv;
+  const onLedger = () => {
+    return usesLedger(client.id);
+  };
 
-  if (!stored) {
-    if (config.budget !== undefined) {
-      throw new Error(
-        `Agent "${config.id}" sets \`budget\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-
-    if (config.recovery === true) {
-      throw new Error(
-        `Agent "${config.id}" sets \`recovery: true\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-  }
-
-  const store = stored ? kv : undefined;
-
-  const cleanup = createCleanupFunction(client, config, ref, store);
-  const finished = createFinishedFunction(client, config, ref, store, triggers);
+  const cleanup = createCleanupFunction(client, config, ref, store, onLedger);
+  const finished = createFinishedFunction(
+    client,
+    config,
+    ref,
+    store,
+    triggers,
+    onLedger,
+  );
 
   const fn = client.createFunction(
     {
@@ -443,15 +437,12 @@ export function createAgentFunction(
       const questions = new QuestionBook();
       const bridge: AgentBridge = { questions };
 
-      // Run-scoped KV keys end with the run, whichever way it ends. With no
-      // store there are none: a sandbox the run opens schedules its own
-      // cleanup, so nothing is deferred here.
-      if (store) {
-        defer("kv-cleanup", {
-          function: cleanup,
-          data: { runId, thread: data.thread },
-        });
-      }
+      // Run-scoped KV keys end with the run, whichever way it ends, and the
+      // thread is marked idle.
+      defer("kv-cleanup", {
+        function: cleanup,
+        data: { runId, thread: data.thread },
+      });
 
       const thread = threadHandle(client, ref, data.thread);
 
@@ -460,7 +451,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId);
+        const recorder = threadRecorder(store, ref, runId, onLedger());
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -472,12 +463,6 @@ export function createAgentFunction(
               : data) as Record<string, unknown>
           ).from,
         );
-        // A run that began with the start as separate KV steps replays them
-        // as they were: the KV steps are numbered by how many came before, so
-        // folding the start would shift every later one.
-        const startedBefore =
-          getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
-            .found === true;
         // The thread's budget as this agent defines it, read before the start
         // so the first run can keep it on the thread.
         const ownBudget =
@@ -495,16 +480,16 @@ export function createAgentFunction(
               inStep,
               ownBudget,
             ),
-            previousRun: store
-              ? ((await readLastRun(store, inStep)) ?? null)
-              : null,
+            previousRun: (await readLastRun(store, ref, inStep)) ?? null,
           };
         };
 
         // How the run before this one ended is a key of its own, read apart
         // from the record. Both are KV calls inside one step, so the start
         // costs one step; the write is safe to repeat if the step is retried.
-        const begun = startedBefore
+        // The ledger cannot be written inside a step, so a run on it makes the
+        // same two KV calls between steps, and reads the ledger once, here.
+        const begun = onLedger()
           ? await startWith()
           : await step.run(
               { id: "thread:start", name: "Thread state" },
@@ -523,12 +508,15 @@ export function createAgentFunction(
               },
             );
         const started = begun.started as ThreadRecord;
-        // With no store the thread ledger holds how the run before this one
-        // ended; the ledger reads once, here, and the rest of the run uses
-        // its copy.
-        const previousRun = store
-          ? (begun.previousRun ?? undefined)
-          : await readLastRun(kv);
+        const previousRun = begun.previousRun ?? undefined;
+
+        if (onLedger() && data.fresh) {
+          traceWarning(
+            logger,
+            "thread.fresh",
+            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+          );
+        }
 
         recorder.observe({
           usage: started.usage,
@@ -857,14 +845,16 @@ export function createAgentFunction(
         // them it has sent.
         const reportSpec = reportsOf({ name: event.name, data: event.data });
         const grantSig = reportsSigOf({ name: event.name, data: event.data });
-        // With no KV store the run notes each report it sends in its own
+        // With the ledger KV store the run notes each report it sends in its own
         // thread state, which is local to it at once: the thread's ledger
         // holds it when the run ends, to tell the starter what never came.
         const reportBook: ReportBook | undefined = reportSpec && {
           spec: reportSpec,
           sent: new Set(),
           ...(grantSig !== undefined && { grantSig }),
-          ...(!store && { record: threadReportRecord(kv.thread, runId) }),
+          ...(onLedger() && {
+            record: threadReportRecord(kv.thread, ref, runId),
+          }),
         };
 
         bridge.reports = reportBook;
@@ -882,18 +872,14 @@ export function createAgentFunction(
           threadKey: thread.key,
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
-          // With a store, history is remembered unless `remember` is off. With
-          // none, the thread ledger keeps it, and only when `remember` is
-          // set: the history counts against the ledger's size limit.
-          remember: store
-            ? (await fields.get(
-                "remember",
-                config.remember as RunField<boolean | undefined>,
-              )) !== false
-            : (await fields.get(
-                "remember",
-                config.remember as RunField<boolean | undefined>,
-              )) === true,
+          // History is remembered unless `remember` is off.
+          remember:
+            (await fields.get(
+              "remember",
+              config.remember as RunField<boolean | undefined>,
+            )) !== false,
+          agent: ref,
+          recordInStep: !onLedger(),
         });
 
         const listenTools = createBodyInboxTools({

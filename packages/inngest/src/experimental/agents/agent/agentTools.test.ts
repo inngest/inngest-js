@@ -469,10 +469,13 @@ describe("stop_agent", () => {
   test("cancels the live run of the thread", async () => {
     const cancel = cancelled();
 
-    await threadKv(client, childOf("t-live")).set(threadRecordKey, {
-      runId: "run-1",
-      status: "running",
-    });
+    await threadKv(client, childOf("t-live")).set(
+      threadRecordKey(plain.card.address),
+      {
+        runId: "run-1",
+        status: "running",
+      },
+    );
 
     const { results } = await callTools([
       { tool: "stop_agent", input: { thread: childOf("t-live") } },
@@ -485,10 +488,13 @@ describe("stop_agent", () => {
   test("does nothing for a thread with no live run", async () => {
     const cancel = cancelled();
 
-    await threadKv(client, childOf("t-idle")).set(threadRecordKey, {
-      runId: "run-2",
-      status: "idle",
-    });
+    await threadKv(client, childOf("t-idle")).set(
+      threadRecordKey(plain.card.address),
+      {
+        runId: "run-2",
+        status: "idle",
+      },
+    );
 
     const { results } = await callTools([
       { tool: "stop_agent", input: { thread: childOf("t-idle") } },

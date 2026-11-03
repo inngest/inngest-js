@@ -117,8 +117,9 @@ export interface ThreadState {
 }
 
 /**
- * What the agent function keeps in the thread KV (key `__state`) for
- * the thread state. Keys starting with `__` are hidden from `keys`.
+ * What the agent function keeps in the thread KV (key `__state:<agent>`, see
+ * `threadRecordKey`) for the thread state. Keys starting with `__` are hidden
+ * from `keys`.
  */
 export interface ThreadRecord {
   status: ThreadStatus;
@@ -191,14 +192,34 @@ export type Inflight =
   | { content: Json; event?: undefined }
   | { event: { id?: string; name: string; data: unknown }; text?: undefined };
 
-export const threadRecordKey = "__state";
+/**
+ * The thread KV key of an agent's run record. Run records belong to an agent
+ * (its address, `"appId/functionId"`) as well as a thread key, because two
+ * agents may share a thread key: each keeps its own record, while the keys your
+ * code sets in `kv.thread` stay shared by the key.
+ * @param agent The agent, as `"appId/functionId"`.
+ */
+export const threadRecordKey = (agent: string): string => {
+  return `__state:${agent}`;
+};
 
 /**
- * The KV key of how the thread's last run ended. It is a key of its own, not
- * a field of the record, because the record is rewritten whole by whichever
- * run writes it last.
+ * The thread KV key of how the agent's last run on the thread ended. It is a
+ * key of its own, not a field of the record, because the record is rewritten
+ * whole by whichever run writes it last.
+ * @param agent The agent, as `"appId/functionId"`.
  */
-export const lastRunRecordKey = "__lastRun";
+export const lastRunRecordKey = (agent: string): string => {
+  return `__lastRun:${agent}`;
+};
+
+/**
+ * The thread KV key of the agent's remembered history.
+ * @param agent The agent, as `"appId/functionId"`.
+ */
+export const historyRecordKey = (agent: string): string => {
+  return `__history:${agent}`;
+};
 
 /**
  * The longest `summary` kept.
@@ -268,7 +289,8 @@ export interface ThreadHandle<TOutput = unknown> {
    * Inngest API, so it needs the API reachable from where you call it (the
    * signing key, or the Dev Server), and works for any thread key. A thread
    * with no live run has nothing to stop, and the call does nothing. A KV
-   * store that is not configured throws.
+   * store that is not configured throws. It reads the thread's record, so
+   * with the ledger KV store it works inside a function only.
    */
   stop(): Promise<void>;
 }
@@ -303,10 +325,12 @@ export function stepContext() {
 /**
  * The thread state record as the handle shows it. A thread with no record has
  * never run.
+ * @param agent The agent, as `"appId/functionId"`.
  * @param record What the agent function kept, if anything.
  * @param all The thread's whole KV scope.
  */
 export function threadStateOf(
+  agent: string,
   record: ThreadRecord | undefined,
   all: Record<string, unknown>,
 ): ThreadState {
@@ -315,7 +339,7 @@ export function threadStateOf(
     turn: record?.turn ?? 0,
     summary: record?.summary,
     usage: record?.usage ?? { input: 0, output: 0 },
-    lastRun: all[lastRunRecordKey] as LastRun | undefined,
+    lastRun: all[lastRunRecordKey(agent)] as LastRun | undefined,
     keys: Object.fromEntries(
       Object.entries(all).filter(([name]) => {
         return !name.startsWith("__");
@@ -474,9 +498,9 @@ export function threadHandle<TOutput = unknown>(
     async stop() {
       // The live run is the one the thread record names. A thread with no
       // record, or whose record says no run is live, has nothing to cancel.
-      const record = (await threadKv(client, key).get(threadRecordKey)) as
-        | ThreadRecord
-        | undefined;
+      const record = (await threadKv(client, key).get(
+        threadRecordKey(agent),
+      )) as ThreadRecord | undefined;
 
       if (
         !record?.runId ||

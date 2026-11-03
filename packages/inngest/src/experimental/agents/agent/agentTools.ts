@@ -40,7 +40,7 @@ import type { Json, JsonSchema } from "../json.ts";
 import { threadHandle, threadSessions } from "../threads/thread.ts";
 import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
-import { relationOf } from "./relations.ts";
+import { agentOfKey, relationOf } from "./relations.ts";
 import { AgentStoppedError } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
 import { type StartedThread, startThread } from "./startThread.ts";
@@ -271,8 +271,15 @@ const checkReach = (tool: string, thread: string): string | undefined => {
 };
 
 const stopAgent = async ({ thread }: { thread: string }) => {
+  // The thread's run record is the target agent's own, whose address starts
+  // the key.
   checkReach("stop_agent", thread);
-  await threadHandle(clientOf(), executionOf().agent?.ref ?? "", thread).stop();
+
+  await threadHandle(
+    clientOf(),
+    agentOfKey(thread) ?? executionOf().agent?.ref ?? "",
+    thread,
+  ).stop();
 
   return { ok: true as const };
 };

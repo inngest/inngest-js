@@ -56,12 +56,20 @@ describe("thread handle", () => {
     await thread.stop();
     expect(cancelled).toEqual([]);
 
-    await state.set("__state", { status: "waiting", turn: 0, runId: "run-1" });
+    await state.set("__state:app/bot", {
+      status: "waiting",
+      turn: 0,
+      runId: "run-1",
+    });
     await thread.stop();
     expect(cancelled).toEqual(["run-1"]);
 
     // A finished run is not cancelled again.
-    await state.set("__state", { status: "idle", turn: 0, runId: "run-1" });
+    await state.set("__state:app/bot", {
+      status: "idle",
+      turn: 0,
+      runId: "run-1",
+    });
     await thread.stop();
     expect(cancelled).toEqual(["run-1"]);
     expect(sent).toEqual([]);
@@ -75,7 +83,10 @@ describe("thread handle", () => {
       ok: false,
       error: { error: "not found", status: 404 },
     });
-    await store.with(gone.client).scope("thread", "t1").set("__state", record);
+    await store
+      .with(gone.client)
+      .scope("thread", "t1")
+      .set("__state:app/bot", record);
     await expect(
       threadHandle(gone.client, "app/bot", "t1").stop(),
     ).resolves.toBeUndefined();
@@ -87,7 +98,7 @@ describe("thread handle", () => {
     await store
       .with(broken.client)
       .scope("thread", "t2")
-      .set("__state", record);
+      .set("__state:app/bot", record);
     await expect(
       threadHandle(broken.client, "app/bot", "t2").stop(),
     ).rejects.toThrow(/server error/);

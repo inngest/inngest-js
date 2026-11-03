@@ -174,6 +174,18 @@ const groupIdOf = (
 };
 
 /**
+ * The address of the agent a started thread belongs to: the part of its key
+ * before the run, which `start_agent` starts the key with. `undefined` for a
+ * key that was not made by a start.
+ * @param key A thread key.
+ */
+export const agentOfKey = (key: string): string | undefined => {
+  const colon = key.lastIndexOf(":");
+
+  return parseKey(key) && colon > 0 ? key.slice(0, colon) : undefined;
+};
+
+/**
  * The id of the group `group` of the thread `starter`, which is also what the
  * members' keys carry. It is `undefined` for a key that is not a group member's.
  * @param key A thread key.

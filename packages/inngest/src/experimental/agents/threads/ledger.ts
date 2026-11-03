@@ -29,8 +29,24 @@
  *   (`required`) that are not in the `__reports` record the run kept in this
  *   thread's state as it sent them.
  *
- * Nothing here is durable outside the ledger's run: a thread that no run has
- * touched for a long time still holds a live ledger run.
+ * The ledger is storage behind `ledgerKvAdapter()`, the default KV store: it
+ * keeps the keys and sorted indexes of one KV scope instance. Its address is
+ * that instance's hash (`kvHash`), carried as `thread` in every event, so a
+ * thread, an app and an environment each have a ledger. Events also carry the
+ * `app` they belong to: a ledger function belongs to one app, so a
+ * ledger is shared by the functions of one app only (`kv.env` included).
+ *
+ * Limits, which hold for every ledger:
+ *
+ * - Nothing here is durable outside the ledger's run. A ledger run waits for
+ *   its next message for as long as the platform lets a run wait; it ends if it
+ *   is cancelled or the platform ends it, and then its state is gone (the next
+ *   message starts an empty ledger). Near Inngest's step limit it hands over
+ *   its state to a fresh run: that is the only planned end.
+ * - Each write costs the writer one step and the ledger two, so a ledger hands
+ *   over after roughly 400 writes. A state past 128 KB refuses writes.
+ * - A write that reaches the ledger between its last read and its handover is
+ *   lost.
  */
 
 import { createDefer } from "../../../components/DeferredFunction.ts";
@@ -41,23 +57,19 @@ import {
   eventType,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
-import { type LastRun, runScore } from "../agent/recovery.ts";
 import { type AgentFinishedData, agentFinished } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 
 /**
- * The thread-state key of how the thread's last run ended: the next run's
- * `previousRun`.
+ * The thread-state key of the reports an agent's run has sent, which the run
+ * writes as it sends them. It is the agent's own: two agents may share a thread
+ * key. The ledger reads it when the run ends, to tell the starter which owed
+ * reports never came. The `__` prefix hides it from `state().keys`.
+ * @param agent The agent, as `"appId/functionId"`.
  */
-const lastRunKey = "__lastRun";
-
-/**
- * The thread-state key of the reports a run has sent, which a run that keeps
- * its thread state in the ledger writes as it sends them. The ledger reads it
- * when the run ends, to tell the starter which owed reports never came. The
- * `__` prefix hides it from `state().keys`.
- */
-export const reportsRecordKey = "__reports";
+export const reportsRecordKey = (agent: string): string => {
+  return `__reports:${agent}`;
+};
 
 /**
  * What `reportsRecordKey` holds: the run, and the reports it has sent.
@@ -96,6 +108,25 @@ export interface ThreadLedgerState {
 export type ThreadChange =
   | { op: "set"; key: string; value: Json; exp?: number }
   | { op: "setIfAbsent"; key: string; value: Json; exp?: number }
+  | {
+      /**
+       * Deletes the key only when its live value is `expected`. The ledger
+       * says whether it did.
+       */
+      op: "casDelete";
+      key: string;
+      expected: Json;
+    }
+  | {
+      /**
+       * Replaces the key only when its live value is `expected` (`null`:
+       * the key is absent). The ledger says whether it did.
+       */
+      op: "cas";
+      key: string;
+      expected: Json | null;
+      value: Json;
+    }
   | { op: "delete"; key: string }
   | { op: "clear" }
   | { op: "indexAdd"; index: string; member: string; score: number }
@@ -116,9 +147,14 @@ export type ThreadChange =
  */
 export type ThreadWriteData = {
   /**
-   * The thread key.
+   * The ledger's address: the hash of the KV scope instance it keeps.
    */
   thread: string;
+
+  /**
+   * The app whose ledger function takes the event.
+   */
+  app: string;
 
   /**
    * The writer: a run's ID, or a name starting with `ext-` for a write from
@@ -152,6 +188,13 @@ export type ThreadChangedData = ThreadWriteData & {
    * of it. A refused write does not change the version.
    */
   rejected?: string;
+
+  /**
+   * Set when a conditional write (`setIfAbsent`, `cas`) did not apply because
+   * the key was not as the writer expected. `current` is the key's live value
+   * then (`null`: absent). A refused write does not change the version.
+   */
+  conflict?: { current: Json | null };
 };
 
 /**
@@ -159,9 +202,14 @@ export type ThreadChangedData = ThreadWriteData & {
  */
 export type ThreadReadData = {
   /**
-   * The thread key.
+   * The ledger's address.
    */
   thread: string;
+
+  /**
+   * The app whose ledger function takes the event.
+   */
+  app: string;
 
   /**
    * The run that asks, which the answer is addressed to.
@@ -194,9 +242,14 @@ export type ThreadStateData = ThreadReadData & {
  */
 export type ThreadHandoverData = {
   /**
-   * The thread key.
+   * The ledger's address.
    */
   thread: string;
+
+  /**
+   * The app.
+   */
+  app: string;
 
   /**
    * The version the state is at.
@@ -220,19 +273,24 @@ export type ThreadHandoverData = {
  */
 export type ThreadEndedData = {
   /**
-   * The thread key.
+   * The ledger's address: the hash of the thread's KV scope instance.
    */
   thread: string;
+
+  /**
+   * The app.
+   */
+  app: string;
+
+  /**
+   * The agent, as `"appId/functionId"`: whose `__reports` record to read.
+   */
+  agent: string;
 
   /**
    * The run that ended.
    */
   runId: string;
-
-  /**
-   * How it ended, as the thread's `lastRun`.
-   */
-  last: LastRun;
 
   /**
    * The reports the run owed, by name.
@@ -283,7 +341,7 @@ export const stateSize = (state: ThreadLedgerState): number => {
  * The message of the error a write past the size limit throws.
  */
 export const overLimitMessage = (thread: string, size: number): string => {
-  return `Thread state of "${thread}" would be ${size} bytes, past the limit of ${threadStateLimit} bytes. Thread state is for small data: keep less in it, or configure a KV store with createAgents(client, { store }).`;
+  return `Ledger state of "${thread}" would be ${size} bytes, past the limit of ${threadStateLimit} bytes. The ledger KV store is for small data: keep less in it, or configure a store adapter with createAgents(client, { store }).`;
 };
 
 /**
@@ -306,34 +364,59 @@ export const liveKey = (
  * @param state The state.
  * @param change The change.
  * @param now The time, in milliseconds since the epoch.
+ * @returns Whether it applied. Only a conditional change (`setIfAbsent`,
+ * `cas`) can be refused.
  */
 export const applyChange = (
   state: ThreadLedgerState,
   change: ThreadChange,
   now: number,
-): void => {
+): boolean => {
   switch (change.op) {
     case "set":
       state.keys[change.key] = {
         v: change.value,
         ...(change.exp !== undefined && { exp: change.exp }),
       };
-      return;
+      return true;
     case "setIfAbsent":
       if (!liveKey(state, change.key, now)) {
         state.keys[change.key] = {
           v: change.value,
           ...(change.exp !== undefined && { exp: change.exp }),
         };
+
+        return true;
       }
-      return;
+
+      return false;
+    case "cas": {
+      const live = liveKey(state, change.key, now);
+
+      if ((live?.v ?? null) !== change.expected) {
+        return false;
+      }
+
+      state.keys[change.key] = { v: change.value };
+
+      return true;
+    }
+    case "casDelete": {
+      if (liveKey(state, change.key, now)?.v !== change.expected) {
+        return false;
+      }
+
+      delete state.keys[change.key];
+
+      return true;
+    }
     case "delete":
       delete state.keys[change.key];
-      return;
+      return true;
     case "clear":
       state.keys = {};
       state.indexes = {};
-      return;
+      return true;
     case "indexAdd": {
       const members = Object.hasOwn(state.indexes, change.index)
         ? state.indexes[change.index]
@@ -343,7 +426,7 @@ export const applyChange = (
 
       state.indexes[change.index] = target;
       target[change.member] = change.score;
-      return;
+      return true;
     }
     case "indexRemove": {
       const members = state.indexes[change.index];
@@ -355,7 +438,11 @@ export const applyChange = (
           delete state.indexes[change.index];
         }
       }
+
+      return true;
     }
+    default:
+      return true;
   }
 };
 
@@ -409,11 +496,14 @@ export const createLedgerFunctions = (
       retries: 0,
       optimizeParallelism: false,
       triggers: [
-        { event: threadWrite.name },
-        { event: threadRead.name },
-        { event: threadHandover.name },
-        { event: threadEnded.name },
-      ],
+        threadWrite.name,
+        threadRead.name,
+        threadHandover.name,
+        threadEnded.name,
+      ].map((event) => {
+        // A ledger function belongs to one app and takes only its events.
+        return { event, if: `event.data.app == ${quoted(client.id)}` };
+      }),
       singleton: { key: "event.data.thread", mode: "skip" },
     },
     async ({ event, step, defer, logger }) => {
@@ -423,7 +513,9 @@ export const createLedgerFunctions = (
         data: Record<string, unknown>;
       };
       const thread = String(start.data.thread);
+      const app = String(start.data.app);
       const limit = handoverAt();
+      const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
 
       let state = emptyThreadState();
       let version = 0;
@@ -461,19 +553,19 @@ export const createLedgerFunctions = (
       await using sub = step.subscribe("ledger", [
         {
           event: threadHandover.name,
-          if: `async.data.thread == ${quoted(thread)}`,
+          if: mine,
         },
         {
           event: threadWrite.name,
-          if: `async.data.thread == ${quoted(thread)}`,
+          if: mine,
         },
         {
           event: threadRead.name,
-          if: `async.data.thread == ${quoted(thread)}`,
+          if: mine,
         },
         {
           event: threadEnded.name,
-          if: `async.data.thread == ${quoted(thread)}`,
+          if: mine,
         },
       ]);
 
@@ -493,7 +585,21 @@ export const createLedgerFunctions = (
 
         const next = structuredClone(state);
 
-        applyChange(next, write.change, now);
+        if (!applyChange(next, write.change, now)) {
+          // A conditional write that did not apply: the writer is told what the
+          // key holds, and nothing changes.
+          const key = (write.change as { key: string }).key;
+
+          out.push(
+            threadChanged.create({
+              ...write,
+              version,
+              conflict: { current: liveKey(state, key, now)?.v ?? null },
+            }),
+          );
+
+          return;
+        }
 
         const size = stateSize(next);
 
@@ -523,46 +629,17 @@ export const createLedgerFunctions = (
         out.push(threadChanged.create({ ...write, version }));
       };
 
-      // A run of the thread ended: the ledger writes how, as a change of its
-      // own that every holder of a copy takes in like any other, and tells
-      // the starter of a `start_agent` run what it owed and never sent.
+      // A run of the thread ended: the run's own `__lastRun` was written by
+      // the function that saw it end. The ledger tells the starter of a
+      // `start_agent` run what it owed and never sent.
       const end = (ended: ThreadEndedData) => {
-        const found = liveKey(state, lastRunKey, Date.now())?.v as
-          | LastRun
-          | undefined;
-
-        // A late report for an older run never replaces a newer run's.
-        if (
-          !found ||
-          found.runId === ended.runId ||
-          runScore(found.runId) <= runScore(ended.runId)
-        ) {
-          const change: ThreadChange = {
-            op: "set",
-            key: lastRunKey,
-            value: ended.last as unknown as Json,
-          };
-
-          applyChange(state, change, Date.now());
-          version += 1;
-
-          if (!based && applied.length < appliedMax) {
-            applied.push({ thread, runId: "ledger", seq: 0, change });
-          }
-
-          out.push(
-            threadChanged.create({
-              thread,
-              runId: "ledger",
-              seq: 0,
-              version,
-              change,
-            }),
-          );
-        }
-
         if (ended.notice) {
-          const sent = liveKey(state, reportsRecordKey, Date.now())?.v as
+          const raw = liveKey(
+            state,
+            reportsRecordKey(ended.agent),
+            Date.now(),
+          )?.v;
+          const sent = (typeof raw === "string" ? JSON.parse(raw) : raw) as
             | ReportsRecord
             | undefined;
           const have = new Set(sent?.run === ended.runId ? sent.sent : []);
@@ -636,6 +713,7 @@ export const createLedgerFunctions = (
           out.push(
             threadChanged.create({
               thread,
+              app,
               runId: "ledger",
               seq: 0,
               version,
@@ -658,6 +736,7 @@ export const createLedgerFunctions = (
           out.push(
             threadStateReply.create({
               thread,
+              app,
               runId: data.runId,
               version,
               state,
@@ -735,6 +814,7 @@ export const createLedgerFunctions = (
             function: handoverFn,
             data: {
               thread,
+              app,
               version,
               state,
               last: Object.fromEntries(last),

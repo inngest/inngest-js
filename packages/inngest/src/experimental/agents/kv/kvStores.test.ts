@@ -6,7 +6,7 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { createAgents } from "../agent/agents.ts";
 import { fakeD1, hasNodeSqlite } from "./fake-d1.ts";
-import { createKv, kv, memoryKvAdapter } from "./kv.ts";
+import { createKv, kv, memoryKvAdapter, usesLedger } from "./kv.ts";
 import { d1KvAdapter, d1KvSchema } from "./kvD1.ts";
 
 describe.skipIf(!hasNodeSqlite)("the d1 store", () => {
@@ -194,13 +194,14 @@ describe("the store an app gives createAgents", () => {
     });
   });
 
-  test("with no store and no URL, a call throws an error that names both ways", async () => {
+  test("with no store and no URL the ledger is the store, and a read outside a function says to configure one", async () => {
     vi.stubEnv("INNGEST_EXPERIMENTAL_KV_URL", "");
 
     try {
+      expect(usesLedger("stores-app-none")).toBe(true);
       await expect(
         kv.with({ id: "stores-app-none", env: null }).app.get("k"),
-      ).rejects.toThrow(/createAgents.*INNGEST_EXPERIMENTAL_KV_URL/);
+      ).rejects.toThrow(/createAgents.*store/);
     } finally {
       vi.unstubAllEnvs();
     }

@@ -470,9 +470,9 @@ export const resolveReports = (
 };
 
 /**
- * Where a run with no KV store keeps which of its reports it has sent: its own
- * thread's state, which is local to the run at once and which the thread's
- * ledger holds when the run ends.
+ * Where a run keeps which of its reports it has sent when the KV is the
+ * ledger: its own thread's state, which is local to the run at once and which
+ * the thread's ledger holds when the run ends.
  */
 export interface ReportRecord {
   /**
@@ -488,10 +488,10 @@ export interface ReportRecord {
 
 /**
  * The reports a run was started with and which it has sent. The routing is
- * read from the start event. With no KV store the sent types are also kept in
- * the thread's state (`record`) and read from there; with one they are
- * rebuilt on every replay, since each report goes out in a step the run runs
- * again.
+ * read from the start event. With the ledger KV store the sent types are also
+ * kept in the thread's state (`record`) and read from there; with another
+ * store they are rebuilt on every replay, since each report goes out in a step
+ * the run runs again.
  */
 export interface ReportBook {
   readonly spec: ReportSpec;
@@ -509,10 +509,15 @@ export interface ReportBook {
  * `reportsRecordKey`. The record belongs to one run: a run that finds another
  * run's record starts its own.
  * @param thread The thread state to keep it in.
+ * @param agent The agent, as `"appId/functionId"`: the record is its own.
  * @param runId The run.
  */
-export const threadReportRecord = (thread: Kv["thread"], runId: string) => {
-  const key = typedKey<ReportsRecord>(reportsRecordKey);
+export const threadReportRecord = (
+  thread: Kv["thread"],
+  agent: string,
+  runId: string,
+) => {
+  const key = typedKey<ReportsRecord>(reportsRecordKey(agent));
   const record: ReportRecord = {
     async add(type) {
       await thread.update(key, (current) => {

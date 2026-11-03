@@ -308,11 +308,12 @@ export interface AgentFunctionConfig<
 
   /**
    * Whether the loop remembers the model's history across runs of a thread.
-   * Default `true` with a KV store, `false` without one; `false` starts each
-   * run clean. Setting `true` with no store is an error when the agent is
-   * defined. A value, or a function of `{ event, thread }` read once at the
-   * start of each run. Needs a store: `createAgents(client, { store })` or
-   * `INNGEST_EXPERIMENTAL_KV_URL`.
+   * Default `true`; `false` starts each run clean. A value, or a function of
+   * `{ event, thread }` read once at the start of each run. The history is
+   * kept under this agent's own key on the thread, so two agents sharing a
+   * thread key each remember their own. On the ledger KV store it counts
+   * against the 128 KB the thread holds: a history past it is not kept (a
+   * warning is logged and the run goes on).
    */
   remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
 
@@ -378,9 +379,10 @@ export interface AgentFunctionConfig<
    * the thread's first run starts. The loop always enforces it, ending with
    * `end: "budget"` before its next model call once it is spent. The budget
    * is kept on the thread and belongs to this agent's own definition: it is
-   * never handed down by the agent that started the thread. Needs a KV store
-   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
-   * with none, setting it is an error when the agent is defined.
+   * never handed down by the agent that started the thread. The spend is
+   * kept in this agent's record on the thread, written once per model turn: on
+   * the ledger KV store that is one step for the run and two for the ledger
+   * per write.
    */
   budget?: RunField<
     AgentBudget,
@@ -405,9 +407,9 @@ export interface AgentFunctionConfig<
    * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
-   * is kept either way: see `previousRun`. Needs a KV store
-   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
-   * with none, `recovery: true` is an error when the agent is defined.
+   * is kept either way: see `previousRun`. The guard (the error
+   * fingerprints of the turn) is kept in this agent's own `lastRun` record on
+   * the thread, so two agents sharing a thread key never share a guard.
    */
   recovery?: boolean;
 }

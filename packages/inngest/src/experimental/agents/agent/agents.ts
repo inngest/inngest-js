@@ -17,7 +17,7 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
 import { announceFunction, rememberCard } from "../discovery/discovery.ts";
-import { hasKvStore, type KvStore, setAppKvStore } from "../kv/kv.ts";
+import { type KvStore, setAppKvStore, usesLedger } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
 import { createLedgerFunctions } from "../threads/ledger.ts";
@@ -289,18 +289,20 @@ const ledgers = new WeakMap<object, InngestFunction.Any[]>();
  */
 export interface CreateAgentsOptions {
   /**
-   * Where the KV, thread state and indexes live: `redisKvAdapter(url)`,
-   * `d1KvAdapter(env.DB)` or `memoryKvAdapter()`. Default: Redis at
-   * `INNGEST_EXPERIMENTAL_KV_URL`. The guarantees of a store are on
-   * `KvStore`. One store per app ID: a second `createAgents` for the same
-   * client ID replaces the first's.
+   * Where the KV, thread state, run records and indexes live:
+   * `redisKvAdapter(url)`, `d1KvAdapter(env.DB)`, `memoryKvAdapter()` or
+   * `ledgerKvAdapter()`. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL` when
+   * that is set, else the ledger. The guarantees of a store are on `KvStore`.
+   * One store per app ID: a second `createAgents` for the same client ID
+   * replaces the first's.
    *
-   * Optional. Without a store (and no `INNGEST_EXPERIMENTAL_KV_URL`) the
-   * thread scope (`kv.thread`, `previousRun` and `remember: true` history) is
-   * kept by the thread ledger, a function that `agents.functions()` serves:
-   * it holds up to 128 KB of small data per thread. Sandboxes last only for
-   * the run and are destroyed when it ends. `budget`, `recovery: true`,
-   * `kv.app` and `thread.state()` need a store.
+   * Optional. With no store everything (`kv.thread`, `kv.app`, `kv.env`,
+   * `previousRun`, history, `budget`, `recovery` and a thread's sandboxes) is
+   * kept by the ledger, functions that `agents.functions()` serves, with no
+   * outside service. Its limits are on `ledgerKvAdapter`: 128 KB per scope
+   * instance, no writes inside a step's callback, no reads from outside a
+   * function, and `kv.env` shared by one app only. An operation it cannot do
+   * throws an error that says to configure a store.
    */
   store?: KvStore;
 
@@ -389,11 +391,11 @@ export const createAgents = <TClient extends Inngest.Any>(
       const relay = finishedFunctions.get(client);
       const timeout = askTimeoutFunctions.get(client);
 
-      const stored = hasKvStore(client.id);
+      const stored = !usesLedger(client.id);
 
-      // With no KV store the thread's state is kept by the ledger function,
-      // which also sends `agent/finished` (it knows which owed reports the run
-      // sent), so the relay that sends it is served only with a store.
+      // With the ledger KV store the ledger function also sends
+      // `agent/finished` (it knows which owed reports the run sent), so the
+      // relay that sends it is served only with another store.
       const ledger = stored
         ? []
         : (ledgers.get(client) ??
@@ -486,6 +488,8 @@ export {
 export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "../kv/kvD1.ts";
 export { d1KvAdapter, d1KvSchema } from "../kv/kvD1.ts";
 export type { AgentScoreName } from "../loop/scores.ts";
+export type { LedgerKvStore } from "../threads/ledgerClient.ts";
+export { ledgerKvAdapter } from "../threads/ledgerClient.ts";
 export type {
   AskOptions,
   RunHandle,

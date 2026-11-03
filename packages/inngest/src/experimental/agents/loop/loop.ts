@@ -34,6 +34,7 @@ import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import type { Json } from "../json.ts";
 import { kv } from "../kv/kv.ts";
+import { historyRecordKey } from "../threads/thread.ts";
 import {
   type AgentCompaction,
   type AgentCompactionOptions,
@@ -922,6 +923,12 @@ export interface AgentLoopWiring {
   observeTurn?: (turn: AgentTurn, recorded: unknown) => Promise<void>;
 
   /**
+   * The agent, as `"appId/functionId"`: the history is kept under its own key
+   * on the thread, so two agents sharing a thread key each remember their own.
+   */
+  agent?: string;
+
+  /**
    * Whether the loop saves the model's history in thread KV after each batch
    * and picks it up when the thread's next run starts. The agent's `remember`
    * field, `true` unless it says `false`.
@@ -1205,8 +1212,10 @@ export const addTools = <TTools extends SandboxTools>(
   return { ...own, ...extra };
 };
 
-// The thread KV key the model's history is kept under.
-const historyKey = kv.key<Remembered>("__history");
+// The thread KV key an agent's model history is kept under.
+const historyKeyOf = (agent: string | undefined) => {
+  return kv.key<Remembered>(historyRecordKey(agent ?? ""));
+};
 
 interface Remembered {
   history: ModelMessage[];
@@ -1274,7 +1283,9 @@ const runLoop = async <TTools extends SandboxTools>(
   const remembering = wiring?.remember === true;
   const stored =
     remembering && options.history === undefined
-      ? ((await kv.thread.get(historyKey)) as Remembered | undefined)
+      ? ((await kv.thread.get(historyKeyOf(wiring?.agent))) as
+          | Remembered
+          | undefined)
       : undefined;
   const messages: ModelMessage[] = [
     ...(options.history ?? stored?.history ?? []),
@@ -1304,10 +1315,20 @@ const runLoop = async <TTools extends SandboxTools>(
     await Promise.allSettled(hooks);
 
     if (remembering) {
-      await kv.thread.set(historyKey, {
-        history: messages,
-        ...(compaction && { compaction }),
-      } as Remembered as never);
+      try {
+        await kv.thread.set(historyKeyOf(wiring?.agent), {
+          history: messages,
+          ...(compaction && { compaction }),
+        } as Remembered as never);
+      } catch (error) {
+        // The ledger KV store holds 128 KB per thread: a history past it is
+        // not kept, and the run does not fail for it.
+        if (!/past the limit of \d+ bytes/.test(String(error))) {
+          throw error;
+        }
+
+        logHookError("remember", error);
+      }
     }
 
     return {

@@ -34,7 +34,7 @@ export const openRunSandboxes = async (options: {
   context: RunFieldContext<TriggerEvent>;
   thread: string;
   runId: string;
-  store: Kv | undefined;
+  store: Kv;
   step: typeof step;
   logger: Logger;
   defer: Context.Any["defer"];
@@ -68,10 +68,9 @@ export const openRunSandboxes = async (options: {
             run: (id, fn) => {
               return step.run(id, fn) as ReturnType<typeof fn>;
             },
-            // With no store nothing is kept, but a run that ends without
-            // closing a sandbox (cancelled, or failed for good) still has it
-            // destroyed. A defer ID is used once per run, so a recycled
-            // sandbox's cleanup has its own.
+            // A run that ends without closing a sandbox (cancelled, or failed
+            // for good) still has it destroyed. A defer ID is used once per
+            // run, so a recycled sandbox's cleanup has its own.
             guard: (name, sandbox, epoch) => {
               const suffix = epoch > 0 ? `:g${epoch}` : "";
 
@@ -81,28 +80,27 @@ export const openRunSandboxes = async (options: {
               });
             },
           },
-          store &&
-            threadSandboxOwner({
-              client: client as unknown as Parameters<
-                typeof threadSandboxOwner
-              >[0]["client"],
-              ref,
-              thread: thread,
-              runId,
-              scope: store.thread,
-              warn: (data, message) => {
-                logger.warn(data, message);
-              },
-              run: (id, fn) => {
-                return step.run(id, fn) as ReturnType<typeof fn>;
-              },
-              defer: (id, sandbox) => {
-                return defer(id, {
-                  function: cleanup,
-                  data: { runId, thread: thread, sandbox },
-                });
-              },
-            }),
+          threadSandboxOwner({
+            client: client as unknown as Parameters<
+              typeof threadSandboxOwner
+            >[0]["client"],
+            ref,
+            thread: thread,
+            runId,
+            scope: store.thread,
+            warn: (data, message) => {
+              logger.warn(data, message);
+            },
+            run: (id, fn) => {
+              return step.run(id, fn) as ReturnType<typeof fn>;
+            },
+            defer: (id, sandbox) => {
+              return defer(id, {
+                function: cleanup,
+                data: { runId, thread: thread, sandbox },
+              });
+            },
+          }),
           undefined,
           options.lent,
         )

@@ -47,6 +47,9 @@ const ended = async (options: {
     ref,
     kv,
     compileTriggers("bot", config),
+    () => {
+      return false;
+    },
   );
   const sent: { name: string; data: Record<string, unknown> }[] = [];
 

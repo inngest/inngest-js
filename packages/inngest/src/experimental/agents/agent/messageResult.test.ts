@@ -181,7 +181,7 @@ describe("messages folded into a live run", () => {
     await store
       .with(client)
       .scope("thread", "t1")
-      .set("__state", {
+      .set(`__state:${testClientId}/bot`, {
         status: "idle",
         turn: 0,
         usage: { input: 0, output: 0 },
@@ -245,7 +245,10 @@ describe("messages folded into a live run", () => {
     expect(output).toBe(1);
     expect(
       (
-        (await store.with(client).scope("thread", "t1").get("__state")) as {
+        (await store
+          .with(client)
+          .scope("thread", "t1")
+          .get(`__state:${testClientId}/bot`)) as {
           folded?: unknown;
         }
       ).folded,

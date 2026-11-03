@@ -1,14 +1,29 @@
 /**
  * @module
- * EXPERIMENTAL: how a run (or a script) uses the thread ledger: see
- * `ledger.ts` for the protocol.
+ * EXPERIMENTAL: `ledgerKvAdapter()`, the default KV store: how a run (or a
+ * script) uses the ledger. See `ledger.ts` for the protocol.
  *
- * A run that needs a thread's state subscribes first (an inbox filtered by
- * thread that never starts a run), then asks the ledger once, and keeps a
- * local copy: the ledger's state plus the run's own writes that the ledger has
- * not echoed yet. Every access after that reads the copy, after taking in the
- * changes that arrived since the last access. All of it is inbox reads and
- * `sendEvent` steps, so a replay sees the same copy at the same point.
+ * A run that needs the state of a KV scope instance subscribes first (an inbox
+ * filtered by the instance's hash that never starts a run), then asks the
+ * ledger once, and keeps a local copy: the ledger's state plus the run's own
+ * writes that the ledger has not echoed yet. Every access after that reads the
+ * copy, after taking in the changes that arrived since the last access. All of
+ * it is inbox reads and `sendEvent` steps, so a replay sees the same copy at
+ * the same point.
+ *
+ * What the adapter cannot do, and says so by throwing an error that points at
+ * a store adapter (`createAgents(client, { store })`):
+ *
+ * - write inside a step's callback (a read there comes from the copy the run
+ *   already holds);
+ * - read from outside a function (a route or a script can write by event);
+ * - run a conditional write (`setIfAbsent`, `compareAndSet`, so also `update`
+ *   and `take`) from outside a function: the verdict comes back as an event
+ *   only a run can wait for.
+ *
+ * A conditional write is the one place a run asks the ledger something after
+ * its start: the ledger applies it only if the key is as expected, and says
+ * which. It costs one round trip.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
@@ -19,7 +34,7 @@ import {
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import type { Json } from "../json.ts";
-import type { KvIndexEntry, KvIndexRange, KvSetOptions } from "../kv/kv.ts";
+import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";
 import {
   applyChange,
   emptyThreadState,
@@ -38,46 +53,35 @@ import {
 } from "./ledger.ts";
 
 /**
- * Reads and writes one thread's state through the ledger, the way a KV scope
- * instance's raw handle does.
- */
-export interface LedgerHandle {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
-  setIfAbsent(
-    key: string,
-    value: unknown,
-    options?: KvSetOptions,
-  ): Promise<boolean>;
-  update<R>(
-    key: string,
-    compute: (current: unknown) => Promise<{ stop: R } | { write: unknown }>,
-  ): Promise<{ stopped: R } | { written: unknown }>;
-  delete(key: string): Promise<void>;
-  all(): Promise<Record<string, unknown>>;
-  clear(): Promise<void>;
-  indexAdd(index: string, member: string, score: number): Promise<void>;
-  indexRange(index: string, options: KvIndexRange): Promise<KvIndexEntry[]>;
-  indexRemove(index: string, member: string): Promise<void>;
-}
-
-/**
- * What a script needs to write to the ledger.
+ * What a script needs to write to the ledger: a client.
  */
 export interface LedgerSender {
+  /**
+   * The app ID: a ledger function takes the events of its own app.
+   */
+  id: string;
   send(payload: unknown): Promise<unknown>;
 }
 
 /**
- * A run's copy of one thread's state.
+ * A run's copy of one ledger's state.
  */
 interface Copy {
+  /**
+   * The ledger's address: the hash of the KV scope instance.
+   */
   thread: string;
+  app: string;
   runId: string;
   confirmed: ThreadLedgerState;
   version: number;
   pending: Array<{ seq: number; change: ThreadChange }>;
   future: Map<number, ThreadChangedData>;
+
+  /**
+   * What the ledger said about each of this run's writes, by `seq`.
+   */
+  echoes: Map<number, ThreadChangedData>;
   seq: number;
   sub?: Inbox;
   loading?: Promise<void>;
@@ -98,16 +102,20 @@ const quoted = (value: string): string => {
   return JSON.stringify(value);
 };
 
-const copyOf = (thread: string): Copy => {
-  const execution = getAsyncCtxSync()?.execution;
+const storeFix =
+  "Configure a store adapter with createAgents(client, { store }) to do this.";
+
+const copyOf = (thread: string, write: boolean, fallbackApp?: string): Copy => {
+  const als = getAsyncCtxSync();
+  const execution = als?.execution;
 
   if (!execution) {
-    throw new Error("The thread ledger needs a function run");
+    throw new Error("The ledger KV store needs a function run");
   }
 
-  if (execution.executingStep) {
+  if (execution.executingStep && write) {
     throw new Error(
-      "Thread state with no KV store cannot be used inside a step's callback: read or write it between steps, or configure a KV store with createAgents(client, { store }).",
+      `The ledger KV store cannot be written inside a step's callback (a tool, tool.step or step.run): write between steps. ${storeFix}`,
     );
   }
 
@@ -115,13 +123,21 @@ const copyOf = (thread: string): Copy => {
   let found = byThread.get(thread);
 
   if (!found) {
+    if (execution.executingStep) {
+      throw new Error(
+        `The ledger KV store cannot be read inside a step's callback before the run has read it outside one: read the same scope between steps first. ${storeFix}`,
+      );
+    }
+
     found = {
       thread,
+      app: (als?.app as { id?: string } | undefined)?.id ?? fallbackApp ?? "",
       runId: String(execution.ctx.runId),
       confirmed: emptyThreadState(),
       version: 0,
       pending: [],
       future: new Map(),
+      echoes: new Map(),
       seq: 0,
       ready: false,
     };
@@ -168,10 +184,11 @@ const takeChange = (copy: Copy, data: ThreadChangedData): void => {
     copy.pending = copy.pending.filter((p) => {
       return p.seq !== data.seq;
     });
+    copy.echoes.set(data.seq, data);
     copy.view = undefined;
   }
 
-  if (data.rejected !== undefined) {
+  if (data.rejected !== undefined || data.conflict !== undefined) {
     return;
   }
 
@@ -222,15 +239,16 @@ const takeMessages = (copy: Copy, messages: UntypedInboxMessage[]): void => {
  * are applied.
  */
 const load = async (copy: Copy): Promise<void> => {
-  const { thread, runId } = copy;
-  const sub = step.subscribe(`thread-state:${thread}`, [
+  const { thread, runId, app } = copy;
+  const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
+  const sub = step.subscribe(`ledger-state:${thread}`, [
     {
       event: threadChanged.name,
-      if: `async.data.thread == ${quoted(thread)}`,
+      if: mine,
     },
     {
       event: threadStateReply.name,
-      if: `async.data.thread == ${quoted(thread)} && async.data.runId == ${quoted(runId)}`,
+      if: `${mine} && async.data.runId == ${quoted(runId)}`,
     },
   ]) as unknown as Inbox;
 
@@ -241,15 +259,15 @@ const load = async (copy: Copy): Promise<void> => {
 
   for (let attempt = 0; attempt < readAttempts; attempt++) {
     await step.sendEvent(
-      `thread-read:${thread}:${attempt}`,
-      threadRead.create({ thread, runId }),
+      `ledger-read:${thread}:${attempt}`,
+      threadRead.create({ thread, app, runId }),
     );
 
     while (true) {
       const message = await sub.next({ timeout: readWait });
 
       if (message === undefined) {
-        throw new Error(`Thread state of "${thread}": the inbox closed early`);
+        throw new Error(`Ledger state of "${thread}": the inbox closed early`);
       }
 
       if (message === null) {
@@ -282,7 +300,7 @@ const load = async (copy: Copy): Promise<void> => {
   }
 
   throw new Error(
-    `Thread state of "${thread}": the ledger did not answer. Serve agents.functions() so the thread ledger runs, or configure a KV store with createAgents(client, { store }).`,
+    `Ledger state of "${thread}": the ledger did not answer. Serve agents.functions() so the ledger function runs. ${storeFix}`,
   );
 };
 
@@ -309,7 +327,10 @@ const sync = async (copy: Copy): Promise<void> => {
   }
 };
 
-const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
+/**
+ * Sends a write and returns its `seq`. The write is in the copy at once.
+ */
+const write = async (copy: Copy, change: ThreadChange): Promise<number> => {
   await ensure(copy);
 
   const next = structuredClone(viewOf(copy));
@@ -330,20 +351,82 @@ const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
   copy.view = undefined;
 
   await step.sendEvent(
-    `thread-write:${copy.thread}:${seq}`,
+    `ledger-write:${copy.thread}:${seq}`,
     threadWrite.create({
       thread: copy.thread,
+      app: copy.app,
       runId: copy.runId,
       seq,
       change,
     }),
   );
+
+  return seq;
 };
 
-const expiry = (options?: KvSetOptions): { exp?: number } => {
-  return options?.ttl === undefined
-    ? {}
-    : { exp: Date.now() + options.ttl * 1000 };
+/**
+ * Sends a conditional write and waits for the ledger's verdict, then for the
+ * changes it says came first, so the next read sees what won.
+ * @returns Whether the write applied, and the key's value when it did not.
+ */
+const conditional = async (
+  copy: Copy,
+  change: ThreadChange,
+): Promise<{ applied: boolean; current: Json | null }> => {
+  const seq = await write(copy, change);
+  let attempts = 0;
+
+  while (!copy.echoes.has(seq)) {
+    const batch = await copy.sub?.nextBatch({ timeout: readWait });
+
+    if (batch === undefined) {
+      throw new Error(`Ledger state of "${copy.thread}": the inbox closed`);
+    }
+
+    if (batch === null) {
+      attempts += 1;
+
+      if (attempts >= readAttempts) {
+        throw new Error(
+          `Ledger state of "${copy.thread}": the ledger did not answer a conditional write. ${storeFix}`,
+        );
+      }
+
+      continue;
+    }
+
+    takeMessages(copy, batch);
+  }
+
+  const echo = copy.echoes.get(seq) as ThreadChangedData;
+
+  copy.echoes.delete(seq);
+
+  if (echo.rejected !== undefined) {
+    throw new Error(echo.rejected);
+  }
+
+  if (!echo.conflict) {
+    return { applied: true, current: null };
+  }
+
+  // The write that won came before this verdict: wait for it, a few times,
+  // so the caller's next read is not stale.
+  for (let tries = 0; tries < 3 && copy.version < echo.version; tries++) {
+    const batch = await copy.sub?.nextBatch({ timeout: "3s" });
+
+    if (!batch) {
+      break;
+    }
+
+    takeMessages(copy, batch);
+  }
+
+  return { applied: false, current: echo.conflict.current };
+};
+
+const expiry = (ttl?: number): { exp?: number } => {
+  return ttl === undefined ? {} : { exp: Date.now() + ttl * 1000 };
 };
 
 const members = (
@@ -377,94 +460,28 @@ const members = (
 };
 
 /**
- * The handle of a thread's state for code running inside a function.
- * @param thread The thread key.
+ * EXPERIMENTAL: The ledger KV store: `ledgerKvAdapter()` is a `KvStore`.
  */
-export const ledgerHandle = (thread: string): LedgerHandle => {
-  const live = async () => {
-    const copy = copyOf(thread);
+export interface LedgerKvStore extends KvStore {
+  /**
+   * Marks the store as the ledger, which keeps its own steps: the KV layer
+   * does not wrap its calls in steps.
+   */
+  readonly ledger: true;
 
-    await sync(copy);
+  /**
+   * Deletes the field only if it still holds `expected`, by the ledger's
+   * verdict, and says whether it did.
+   */
+  deleteIf(hash: string, field: string, expected: string): Promise<boolean>;
+}
 
-    return { copy, view: viewOf(copy) };
-  };
-
-  return {
-    async get(key) {
-      const { view } = await live();
-
-      return liveKey(view, key, Date.now())?.v;
-    },
-    async set(key, value, options) {
-      await write(copyOf(thread), {
-        op: "set",
-        key,
-        value: value as Json,
-        ...expiry(options),
-      });
-    },
-    async setIfAbsent(key, value, options) {
-      const { copy, view } = await live();
-
-      if (liveKey(view, key, Date.now())) {
-        return false;
-      }
-
-      await write(copy, {
-        op: "setIfAbsent",
-        key,
-        value: value as Json,
-        ...expiry(options),
-      });
-
-      return true;
-    },
-    async update(key, compute) {
-      const { copy, view } = await live();
-      const outcome = await compute(liveKey(view, key, Date.now())?.v);
-
-      if ("stop" in outcome) {
-        return { stopped: outcome.stop };
-      }
-
-      await write(copy, {
-        op: "set",
-        key,
-        value: outcome.write as Json,
-      });
-
-      return { written: outcome.write };
-    },
-    async delete(key) {
-      await write(copyOf(thread), { op: "delete", key });
-    },
-    async all() {
-      const { view } = await live();
-      const now = Date.now();
-
-      return Object.fromEntries(
-        Object.keys(view.keys).flatMap((key) => {
-          const found = liveKey(view, key, now);
-
-          return found ? [[key, found.v]] : [];
-        }),
-      );
-    },
-    async clear() {
-      await write(copyOf(thread), { op: "clear" });
-    },
-    async indexAdd(index, member, score) {
-      await write(copyOf(thread), { op: "indexAdd", index, member, score });
-    },
-    async indexRange(index, options) {
-      const { view } = await live();
-
-      return members(view, index, options);
-    },
-    async indexRemove(index, member) {
-      await write(copyOf(thread), { op: "indexRemove", index, member });
-    },
-  };
+/**
+ * Whether a store is the ledger KV store.
+ * @param store The store.
+ */
+export const isLedgerKvStore = (store: KvStore): store is LedgerKvStore => {
+  return (store as Partial<LedgerKvStore>).ledger === true;
 };
 
 /**
@@ -475,61 +492,184 @@ const outsideWriter = `ext-${globalThis.crypto.randomUUID()}`;
 const outsideSeq = new Map<string, number>();
 
 /**
- * The handle of a thread's state for code outside a function (a route or a
- * script). A write is an event, so it is applied in order, not at once. A read
- * has no inbox to be answered on, so it throws.
- * @param thread The thread key.
- * @param client What sends the events.
+ * EXPERIMENTAL: The default KV store: thread state, `kv.app`, `kv.env` and the
+ * agents' own records kept by ledger functions, one live run per KV scope
+ * instance, with no outside service. A run reads an instance once, keeps a
+ * local copy and takes in the changes the ledger sends: nothing polls and
+ * nothing asks the ledger questions mid-run, except a conditional write
+ * (`setIfAbsent`, `compareAndSet`, so `update` and `take` too), which waits for
+ * the ledger's verdict.
+ *
+ * Serve `agents.functions()` so the ledger function runs. Limits:
+ *
+ * - Each instance holds up to 128 KB of JSON (agent history counts), and a
+ *   write past it throws.
+ * - A ledger lives as a function run: it holds its state for as long as the
+ *   platform lets a run wait, and hands over to a fresh run near Inngest's step
+ *   limit (about 400 writes). A write sent during a handover can be lost.
+ * - A ledger belongs to one app: `kv.env` is shared by the functions of one app,
+ *   not across apps.
+ * - Writing inside a step's callback, reading outside a function, and a
+ *   conditional write outside a function throw an error that says to configure
+ *   a store adapter.
+ * - A concurrent `set` of one key by two live writers keeps the one the ledger
+ *   applies last; only conditional writes are arbitrated.
+ *
+ * @param options.client A client, to write from outside a function. Inside a
+ * function the running function's own app is used.
  */
-export const outsideLedgerHandle = (
-  thread: string,
-  client: LedgerSender,
-): LedgerHandle => {
-  const send = async (change: ThreadChange) => {
-    const seq = (outsideSeq.get(thread) ?? 0) + 1;
+export const ledgerKvAdapter = (
+  options: { client?: LedgerSender } = {},
+): LedgerKvStore => {
+  const inFunction = () => {
+    return getAsyncCtxSync()?.execution !== undefined;
+  };
 
-    outsideSeq.set(thread, seq);
+  const outside = async (hash: string, change: ThreadChange) => {
+    const client = options.client;
+
+    if (!client) {
+      throw new Error(
+        `Writing the ledger KV store from outside a function needs the client: use kv.with(client). ${storeFix}`,
+      );
+    }
+
+    const seq = (outsideSeq.get(hash) ?? 0) + 1;
+
+    outsideSeq.set(hash, seq);
     await client.send(
-      threadWrite.create({ thread, runId: outsideWriter, seq, change }),
+      threadWrite.create({
+        thread: hash,
+        app: client.id,
+        runId: outsideWriter,
+        seq,
+        change,
+      }),
     );
   };
-  const noRead = (): never => {
+
+  const noOutside = (): never => {
     throw new Error(
-      "Reading thread state with no KV store needs a running function: a route or script can write it, not read it. Read it from a function, or configure a KV store with createAgents(client, { store }).",
+      `Reading the ledger KV store needs a running function: a route or script can write it, not read it. ${storeFix}`,
     );
+  };
+
+  // The copy a read uses: synced between steps, as it stands inside one.
+  const live = async (hash: string) => {
+    const copy = copyOf(hash, false, options.client?.id);
+
+    if (getAsyncCtxSync()?.execution?.executingStep) {
+      if (!copy.ready) {
+        throw new Error(
+          `The ledger KV store cannot be read inside a step's callback before the run has read it outside one. ${storeFix}`,
+        );
+      }
+    } else {
+      await sync(copy);
+    }
+
+    return { copy, view: viewOf(copy) };
+  };
+
+  const change = async (hash: string, op: ThreadChange) => {
+    if (!inFunction()) {
+      await outside(hash, op);
+
+      return;
+    }
+
+    await write(copyOf(hash, true, options.client?.id), op);
+  };
+
+  const decide = async (hash: string, op: ThreadChange) => {
+    if (!inFunction()) {
+      return noOutside();
+    }
+
+    return conditional(copyOf(hash, true, options.client?.id), op);
   };
 
   return {
-    get: noRead,
-    all: noRead,
-    indexRange: noRead,
-    setIfAbsent: noRead,
-    update: noRead,
-    async set(key, value, options) {
-      await send({
-        op: "set",
-        key,
-        value: value as Json,
-        ...expiry(options),
+    ledger: true,
+    async get(hash, field) {
+      if (!inFunction()) {
+        return noOutside();
+      }
+
+      const { view } = await live(hash);
+      const found = liveKey(view, field, Date.now())?.v;
+
+      return found === undefined ? null : String(found);
+    },
+    async set(hash, field, value, ttl) {
+      await change(hash, { op: "set", key: field, value, ...expiry(ttl) });
+    },
+    async setIfAbsent(hash, field, value, ttl) {
+      const verdict = await decide(hash, {
+        op: "setIfAbsent",
+        key: field,
+        value,
+        ...expiry(ttl),
       });
+
+      return verdict.applied || verdict.current === value;
     },
-    async delete(key) {
-      await send({ op: "delete", key });
+    async compareAndSet(hash, field, expected, next) {
+      return (
+        await decide(hash, {
+          op: "cas",
+          key: field,
+          expected,
+          value: next,
+        })
+      ).applied;
     },
-    async clear() {
-      await send({ op: "clear" });
+    async delete(hash, field) {
+      await change(hash, { op: "delete", key: field });
     },
-    async indexAdd(index, member, score) {
-      await send({ op: "indexAdd", index, member, score });
+    async deleteIf(hash, field, expected) {
+      return (await decide(hash, { op: "casDelete", key: field, expected }))
+        .applied;
     },
-    async indexRemove(index, member) {
-      await send({ op: "indexRemove", index, member });
+    async all(hash) {
+      if (!inFunction()) {
+        return noOutside();
+      }
+
+      const { view } = await live(hash);
+      const now = Date.now();
+
+      return Object.fromEntries(
+        Object.keys(view.keys).flatMap((key) => {
+          const found = liveKey(view, key, now);
+
+          return found ? [[key, String(found.v)]] : [];
+        }),
+      );
+    },
+    async clear(hash) {
+      await change(hash, { op: "clear" });
+    },
+    async indexAdd(hash, index, member, score) {
+      await change(hash, { op: "indexAdd", index, member, score });
+    },
+    async indexRange(hash, index, range) {
+      if (!inFunction()) {
+        return noOutside();
+      }
+
+      const { view } = await live(hash);
+
+      return members(view, index, range);
+    },
+    async indexRemove(hash, index, member) {
+      await change(hash, { op: "indexRemove", index, member });
     },
   };
 };
 
 /**
- * Ends the run's subscriptions to thread changes. An agent run calls it when
+ * Ends the run's subscriptions to ledger changes. An agent run calls it when
  * its work is done.
  * @param instance The run's execution (`execution.instance`).
  */
