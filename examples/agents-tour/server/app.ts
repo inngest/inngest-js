@@ -18,7 +18,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { basename, extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Area, AreaFactory, Route, TourContext } from "./area.ts";
 import { type CheckTiming, defaultTiming } from "./check-runner.ts";
@@ -58,7 +58,13 @@ const mime: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".ttf": "font/ttf",
   ".woff2": "font/woff2",
+  ".png": "image/png",
+  ".ogg": "audio/ogg",
+  ".md": "text/plain; charset=utf-8",
 };
+
+// Freedoom's licence and credits have no extension and are read in the browser.
+const plainFiles = new Set(["LICENSE", "CREDITS-MUSIC"]);
 
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });
@@ -253,7 +259,11 @@ export const createTour = async (options: TourOptions) => {
         : join(siteDir, "index.html");
 
     res.writeHead(200, {
-      "content-type": mime[extname(file)] ?? "application/octet-stream",
+      "content-type":
+        mime[extname(file)] ??
+        (plainFiles.has(basename(file))
+          ? "text/plain; charset=utf-8"
+          : "application/octet-stream"),
     });
     createReadStream(file).pipe(res);
   };
