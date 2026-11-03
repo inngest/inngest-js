@@ -47,6 +47,7 @@ import type {
   AgentUserContent,
   ModelValue,
 } from "../loop/loop.ts";
+import type { AgentScoreFn } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -63,7 +64,6 @@ import type {
 import type { AgentToolSet } from "./agentTools.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
-import type { AgentScoreFn } from "../loop/scores.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 import type { StartedThreadPromise } from "./startThread.ts";
@@ -639,10 +639,20 @@ export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
   AgentTypesOf<TTypes>["sources"]
 >;
 
+type Replies = {
+  /**
+   * Answers the sender that waits on this message (`message()` or `start()`
+   * on a live thread): its `result()` resolves with `output` now, without
+   * waiting for the run to end. Only the first result counts. On a message no
+   * one waits on it does nothing.
+   */
+  reply(output: unknown): Promise<void>;
+};
+
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
-  | TriggerMessage<TEvent>
-  | SourceMessages<TSources>
-  | (MessageOf<AgentMessageData, "agent/message"> & FromSender)
+  | (TriggerMessage<TEvent> & Replies)
+  | (SourceMessages<TSources> & Replies)
+  | (MessageOf<AgentMessageData, "agent/message"> & FromSender & Replies)
   | (MessageOf<AgentQuestionData, "agent/question"> &
       FromSender & {
         /**
@@ -651,8 +661,8 @@ export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
          */
         reply(answer: string | { outcome: "refused" }): Promise<void>;
       })
-  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender)
-  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender);
+  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender & Replies)
+  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender & Replies);
 
 /**
  * An inbox the model opened with `inbox_listen`.

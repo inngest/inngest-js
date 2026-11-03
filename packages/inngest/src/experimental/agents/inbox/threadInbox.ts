@@ -218,6 +218,9 @@ export function threadInbox(
   // Told of each question that reaches the inbox, so the run can answer it
   // later by its ID.
   noteQuestion?: (data: AgentQuestionData) => void,
+
+  // Sends the result of a message a sender waits on, by the message's ID.
+  replyTo?: (id: string, output: unknown) => Promise<void>,
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -229,6 +232,20 @@ export function threadInbox(
 
     const unwrapped = resentAs(message);
     const sender = (unwrapped.data as { from?: SenderData } | undefined)?.from;
+
+    // A message sent with `message()` or `start()` has a sender waiting on
+    // its result: `reply()` sends it now, before the run ends. On any other
+    // message there is no one to answer and it does nothing. Not enumerable,
+    // like `is()`, so the message still spreads as the event it came as.
+    Object.defineProperty(unwrapped, "reply", {
+      writable: true,
+      configurable: true,
+      value: async (output: unknown) => {
+        if (message.name === agentMessageEvent && message.id && replyTo) {
+          await replyTo(message.id, output);
+        }
+      },
+    });
 
     if (sender && senderFor && senderMessages.includes(unwrapped.name)) {
       Object.assign(unwrapped, { from: senderFor(sender) });
