@@ -4,12 +4,13 @@
  * its tools come out as a plain record.
  */
 import { expectTypeOf } from "vitest";
-import { agent } from "../agent/loop.ts";
+import { agent } from "../../experimental/agents/loop/loop.ts";
 import type { McpAuth, McpServer } from "./mcp.ts";
 import { secret } from "./secret.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 
 const hex = tool.mcp({
+  id: "hex",
   url: "https://app.hex.tech/mcp",
   auth: { bearer: secret("HEX_TOKEN") },
   tools: ["create_thread"],

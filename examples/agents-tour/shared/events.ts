@@ -5,10 +5,16 @@
  */
 import type { Start } from "./types.ts";
 
-export const eventOfMessage = (agent: string, thread: string, text: string) => {
+// The message the agent receives. For a Run, `start()` sends it with a `from`
+// that names the starting run; the block shows the part the page is about.
+export const eventOfMessage = (
+  agent: string,
+  thread: string,
+  content: string,
+) => {
   return {
     name: "agent/message",
-    data: { agent: `tour/${agent}`, thread, text },
+    data: { agent: `tour/${agent}`, thread, content },
   };
 };
 
@@ -21,5 +27,5 @@ export const eventOfStart = (start: Start) => {
     return { name: "slack/message", data: start.slack };
   }
 
-  return eventOfMessage(start.agent, start.thread, start.text);
+  return eventOfMessage(start.agent, start.thread, start.content);
 };

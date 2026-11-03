@@ -5,7 +5,7 @@
  * these draw it.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Kbd, shortcutsOf } from "./keyboard.tsx";
+import { Kbd } from "./keyboard.tsx";
 import { faceKey, faceUrl, type Look } from "./sound/faces.ts";
 import {
   getState,
@@ -21,130 +21,78 @@ export const useSound = () => {
 };
 
 /**
- * The speaker. Click to turn sound on or off; hover (or `Shift+M`) for the
- * style menu, numbered 1 to 5.
+ * The speaker, beside the stack icon at the top right. Mouse only, out of the
+ * Tab order and with no shortcut. Click it to turn sound on or off; hover it
+ * for the style menu, numbered 1 to 5, and click a style to pick it.
  */
 export const SoundButton = () => {
   const sound = useSound();
-  const [cursor, setCursor] = useState(0);
   const closeTimer = useRef<number | undefined>(undefined);
-  const button = useRef<HTMLButtonElement>(null);
   const open = sound.menu;
 
   const openMenu = () => {
     window.clearTimeout(closeTimer.current);
-    setCursor(
-      Math.max(
-        0,
-        styles.findIndex((style) => {
-          return style.id === sound.style;
-        }),
-      ),
-    );
     setMenu(true);
   };
 
-  const closeMenu = (refocus: boolean) => {
-    setMenu(false);
-
-    if (refocus) {
-      button.current?.focus();
-    }
+  const leave = () => {
+    closeTimer.current = window.setTimeout(() => {
+      setMenu(false);
+    }, 250);
   };
 
-  const pick = (at: number) => {
-    const style = styles[at];
-
-    if (style) {
-      pickStyle(style.id);
-      closeMenu(true);
-    }
-  };
-
-  // The menu's own keys. While it is open the page's keys are blocked.
+  // A click outside the menu closes it.
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) {
-        return;
-      }
-
-      const eat = () => {
-        event.preventDefault();
-        event.stopPropagation();
-      };
-
-      if (event.key === "Escape") {
-        eat();
-        closeMenu(true);
-      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        eat();
-        setCursor((at) => {
-          return (
-            (at + (event.key === "ArrowDown" ? 1 : -1) + styles.length) %
-            styles.length
-          );
-        });
-      } else if (event.key === "Enter") {
-        eat();
-        pick(cursor);
-      } else if (/^[1-5]$/.test(event.key)) {
-        eat();
-        pick(Number(event.key) - 1);
-      } else if (event.key === "m") {
-        eat();
-        toggleMuted();
+    const onDown = (event: MouseEvent) => {
+      if (
+        !(event.target instanceof Element) ||
+        !event.target.closest(".sound")
+      ) {
+        setMenu(false);
       }
     };
 
-    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown);
 
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onDown);
     };
-  }, [open, cursor]);
-
-  const leave = () => {
-    closeTimer.current = window.setTimeout(() => {
-      if (
-        !document.getElementById("sound-menu")?.contains(document.activeElement)
-      ) {
-        closeMenu(false);
-      }
-    }, 250);
-  };
+  }, [open]);
 
   return (
     <span className="sound" onMouseEnter={openMenu} onMouseLeave={leave}>
       <button
         type="button"
-        ref={button}
-        className={`ghost speaker${sound.muted ? "" : " on"}`}
+        className={`ghost stack-button speaker${sound.muted ? "" : " on"}`}
+        tabIndex={-1}
         aria-label="Sound"
         aria-pressed={!sound.muted}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-keyshortcuts={shortcutsOf("soundToggle")}
         onClick={toggleMuted}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" && !open) {
-            event.preventDefault();
-            openMenu();
-          }
-        }}
       >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2 6h2.5L8 3v10L4.5 10H2z" />
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 9h3.5L12 4.5v15L6.5 15H3z" />
           {sound.muted ? (
-            <path d="M11 6l3 4M14 6l-3 4" />
+            <path d="m16 9 5 6m0-6-5 6" />
           ) : (
-            <path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.8a6 6 0 0 1 0 8.4" />
+            <path d="M16 9a4 4 0 0 1 0 6m2.5-9a8 8 0 0 1 0 12" />
           )}
         </svg>
-        <Kbd action="soundToggle" short />
       </button>
       {open ? (
         <div id="sound-menu" className="sound-menu" role="menu">
@@ -153,11 +101,13 @@ export const SoundButton = () => {
               <button
                 type="button"
                 key={style.id}
+                tabIndex={-1}
                 role="menuitemradio"
                 aria-checked={style.id === sound.style}
-                className={`sound-opt${at === cursor ? " cur" : ""}`}
+                className="sound-opt"
                 onClick={() => {
-                  pick(at);
+                  pickStyle(style.id);
+                  setMenu(false);
                 }}
               >
                 <kbd>{at + 1}</kbd>
@@ -165,7 +115,6 @@ export const SoundButton = () => {
               </button>
             );
           })}
-          <div className="sound-foot">arrows, Enter, Esc</div>
         </div>
       ) : null}
     </span>

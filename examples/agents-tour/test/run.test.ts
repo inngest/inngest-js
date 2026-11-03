@@ -9,7 +9,8 @@ import { after, before, describe, it } from "node:test";
 import { freePort, resolveBinary, root } from "../scripts/lib.ts";
 import { createTour } from "../server/app.ts";
 import type { Area } from "../server/area.ts";
-import type { TourEvent } from "../shared/types.ts";
+import { terminal } from "../server/runs.ts";
+import type { TourEvent, TraceRun } from "../shared/types.ts";
 
 const binary = resolveBinary();
 
@@ -185,6 +186,45 @@ describe("running pages", { skip: binary === undefined }, () => {
 
     assert.deepEqual(sent, ["example/ping"]);
     assert.ok(resets > before);
+  });
+
+  // The pinned Dev Server must run the SDK's agents: a pin that does not fit
+  // fails here (every run failed at Finalization on an old pin).
+  it("runs the page's run.ts, whose start() call opens a run that completes with its answer", async () => {
+    const stream = await listen(base);
+
+    await post(base, "/api/open", { id: "live/answer" });
+    await post(base, "/api/run", { id: "live/answer", files: {} });
+
+    let done: TraceRun | undefined;
+
+    await stream.until((event) => {
+      if (event.type !== "runs") {
+        return false;
+      }
+
+      assert.ok(
+        !event.runs.some((run) => {
+          return run.fn !== "answer";
+        }),
+        `only the page's agent is shown, got ${event.runs.map((run) => run.fn).join(", ")}`,
+      );
+
+      done = event.runs.find((run) => {
+        return run.fn === "answer" && terminal.has(run.status);
+      });
+
+      return done !== undefined;
+    }, 60_000);
+    stream.stop();
+
+    assert.equal(done?.status, "COMPLETED");
+
+    const output = (await (
+      await fetch(`${base}/api/output?id=${done?.output}`)
+    ).json()) as { data: string | null };
+
+    assert.equal(JSON.parse(output.data ?? "null"), "Hello, Ada!");
   });
 
   it("cancels a page's runs when the reader moves to another page", async () => {

@@ -2,7 +2,7 @@
 
 An interactive tour of `inngest/experimental/agents`, in the style of the Go Tour. Lesson text on the left, an editor on the right, and below it the output of your code and the real trace of its runs. Every Run goes to a real Dev Server on your machine, so what you see is what you would get in production.
 
-This is phase 1: the runtime, the site and the first lesson (pages 1 to 8). The fake Slack and GitHub, the event sender and the rest of the lessons come next.
+Today the tour shows the welcome pages and a sample exercise. The first lessons were written against an older agents API and are parked in `lessons/_parked/` (modules `01-agents-and-triggers` and `02-the-fakes`, with their checks and verify promises); the loader skips any folder whose name starts with `_`. The new module 1 replaces them.
 
 ## Run it
 
@@ -38,7 +38,7 @@ Agents use `step.subscribe`, which the published Inngest CLI does not have yet. 
 
 - `pnpm tour:devserver` fetches that commit (shallow), builds the Dev Server's own UI (`pnpm install` and `pnpm build` in `ui/apps/dev-server-ui`), embeds it, builds the Dev Server with `go build` and caches the binary in `~/.cache/inngest-agents-tour/devserver/<commit>/`. Running it again does nothing. The first run takes several minutes: it installs the packages of the Dev Server UI and the dashboard sources it imports (not the rest of the OSS repo's UI workspace), builds the UI, then compiles the Go binary. The tour's "Dev Server" button opens that dashboard.
 - `pnpm tour` starts that binary as `inngest dev` with the options below, on free ports.
-- The pin is a commit, never a branch tip: the branch moves, and a newer tip can reject what the SDK sends. Today it is `7fbcecf1c`, which has the `subscribe` capability the SDK checks for. Bumping the pin is a one-line change; when `step.subscribe` ships in the published CLI the pin becomes a version.
+- The pin is a commit, never a branch tip: the branch moves, and a newer tip can reject what the SDK sends. Today it is `7ce9ac384` (`jack/subscribe-v1`), which has the `subscribe` capability and the inbox shapes the SDK uses. `test/run.test.ts` runs an agent end to end on the pinned binary, so a pin that does not fit the SDK fails a test. Bumping the pin is a one-line change; when `step.subscribe` ships in the published CLI the pin becomes a version.
 
 ### Dev Server options
 
@@ -89,7 +89,8 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 ```
 
 - **Run** writes the page's files to `.tour/run/`, starts the app as a new process, switches the tour server's proxy to it once it serves, and registers it with the Dev Server. The Dev Server always talks to the proxy, so its address never changes. A file that does not load keeps the previous app serving and shows the error.
-- The page's start events are sent through the agent's own thread handle (or as a plain event for a trigger page).
+- Run then runs the page's read-only `run.ts`, so what Run does is on screen. `start()` works only inside a function, so the app also serves a tour-owned function, `tour-start` (triggered by `tour/start`), that imports `run.ts` afresh on every Run; the top-level code of `run.ts` runs inside that function, against the same agent modules the app serves. A manifest start entry `{ agent, thread, content }` still works the same way through `agent.start(content, { thread })`. A run opened by `start()` ends after its answer. The runs list and the trace hide `tour-start`, as they hide each agent's `-cleanup` and `-finished` and the SDK's shared agent functions. A start entry `{ event }` sends a plain event, for a trigger page.
+- The Messages panel and a check's `t.send()` send a plain `agent/message` (`{ agent, thread, content }`) to the thread: into the live run's inbox, or as the start of a run that waits the agent's `idle` for more. A check's `t.start()` starts the agent the way Run does. Never send two messages to one thread at once: the second can be lost.
 - The Trace pane reads the Dev Server's GraphQL API (`runs`, `runTraceSpanOutputByID`, the trigger event) every 300 ms and draws the real spans as a waterfall.
 - **Reset** restores the page's code and restarts the Dev Server, so the runs list is clean.
 
@@ -99,6 +100,8 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 |---|---|
 | `lessons/<nn-module>/module.json` | a module's `title` and `opening` line |
 | `lessons/<nn-module>/<nn>[a-z]-<page>/` | `page.md`, `manifest.json` and the editable files; `03-` is a core page, `03a-` a Go deeper page (label `3a`). An exercise adds `check.ts` and `stub/` and `solution/` folders |
+| `lessons/PAGES.md` | how to write a page and prove it: `pnpm tour:page`, `pnpm tour:page-check`, `pnpm tour:lessons` |
+| `lessons/_parked/` | lesson modules on the old agents API, kept but not loaded |
 | `lessons/_shared/`, `lessons/<nn-module>/_shared/` | read-only files stored once; a manifest's `readOnly` names which a page shows (the module's first, then the tour-wide one) |
 | `scripts/` | `tour.ts`, `devserver.ts`, `check.ts` (what the type checker cannot see), `typecheck-lessons.ts`, shared `lib.ts` |
 | `server/` | the tour server, the Dev Server and app supervisors, the trace reader |

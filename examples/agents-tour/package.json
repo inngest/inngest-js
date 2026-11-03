@@ -12,7 +12,11 @@
     "tour:devserver": "node --disable-warning=ExperimentalWarning scripts/devserver.ts",
     "tour:check-editor": "node --disable-warning=ExperimentalWarning scripts/check-editor.ts",
     "tour:check": "node --disable-warning=ExperimentalWarning scripts/check.ts",
+    "tour:verify": "node --disable-warning=ExperimentalWarning scripts/verify.ts",
     "tour:test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "tour:page": "node --disable-warning=ExperimentalWarning scripts/page.ts",
+    "tour:page-check": "node --disable-warning=ExperimentalWarning scripts/page-check.ts",
+    "tour:lessons": "node --disable-warning=ExperimentalWarning scripts/typecheck-lessons.ts && node --disable-warning=ExperimentalWarning scripts/check.ts",
     "tour:live": "TOUR_NO_OPEN=1 node --disable-warning=ExperimentalWarning scripts/tour.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p site/tsconfig.json && node --disable-warning=ExperimentalWarning scripts/typecheck-lessons.ts && node --disable-warning=ExperimentalWarning scripts/check.ts"
   },

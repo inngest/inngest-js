@@ -2,6 +2,7 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import { subscribeCapability } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import {
   normalizeEventMeta,
@@ -34,17 +35,9 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import {
-  eventNameOf,
-  openSubscription,
-  type SubscribeEvent,
-  type SubscribeOptions,
-  type SubscribeTool,
-  type Subscription,
-  streamsOf,
-} from "./agent/subscribe.ts";
 import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
+import { firstReport, hashedStepId } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -69,9 +62,17 @@ import {
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
+import {
+  type Cut,
+  Inbox,
+  type InboxMessageOf,
+  type InboxSources,
+  sourcesOf,
+} from "./inbox/Inbox.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
+import { sdkOrigin } from "./sandbox/trace.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
 /**
@@ -302,6 +303,29 @@ export const withoutStepIdPrefix = <T>(callback: () => T): T => {
     },
     callback,
   );
+};
+
+/**
+ * The tag every inbox statement carries in a trace, shown beside its row.
+ */
+export const inboxTag = "\u2709\uFE0F";
+
+/**
+ * The options that make an op one part of the inbox statement `statement`.
+ * Every op of a statement shares the span, which the trace shows as one group
+ * row carrying `inboxTag`, and each has the SDK's origin, so the trace dims it
+ * inside that row.
+ */
+const inboxStatement = (
+  statement: string,
+  name: string,
+  op: string,
+): StepOptions => {
+  return {
+    id: op,
+    "~span": { id: statement, name, kind: inboxTag },
+    "~origin": sdkOrigin,
+  };
 };
 
 /**
@@ -594,152 +618,280 @@ export const createStepTools = <
    * Each key is the function name and is expected to run `createTool` and pass
    * a generic type for that function as it will appear in the user's code.
    */
-  /**
-   * Opens a subscription whose ops are steps named after it.
-   */
-  const openInbox = (
-    idOrOptions: StepOptionsOrId,
-    opts: SubscribeOptions,
-    allowEmpty: boolean,
-  ): Promise<Subscription> => {
-    const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
-
-    // The event of a park, which has no source of its own.
-    const parkEvent = streamsOf(opts, allowEmpty)[0]?.event;
-
-    return openSubscription(
-      function op(stepId, mode, seq, stream, extra) {
-        const target = extra?.target;
-
-        if (
-          !target &&
-          mode !== "park" &&
-          mode !== "poll" &&
-          mode !== "current" &&
-          mode !== "close"
-        ) {
-          throw new Error(`step.subscribe(): no source for stream ${stream}.`);
-        }
-
-        // The executor names the steps of a subscription itself, so a prefix
-        // from a group the op was called in (such as a tool group) must not
-        // change their ids.
-        return withoutStepIdPrefix(() => {
-          return tools["~subscribeOp"](stepId, {
-            event: eventNameOf(
-              target?.event ?? parkEvent ?? "inngest/subscription",
-            ),
-            if: target?.if,
-            subscribe: {
-              key: id,
-              mode,
-              ...(seq ? { seq } : {}),
-              ...(stream ? { stream } : {}),
-              ...(extra?.timeout === undefined
-                ? {}
-                : {
-                    timeout: timeStr(
-                      extra.timeout,
-                      client[internalLoggerSymbol],
-                    ),
-                  }),
-              ...(extra?.attempt ? { attempt: extra.attempt } : {}),
-              ...(extra?.reader ? { reader: extra.reader } : {}),
-              ...(extra?.more?.length
-                ? {
-                    streams: extra.more.map(
-                      ({ stream: index, target: more }) => {
-                        return {
-                          stream: index,
-                          event: eventNameOf(more.event),
-                          ...(more.if ? { if: more.if } : {}),
-                        };
-                      },
-                    ),
-                  }
-                : {}),
-            },
-          });
-        });
-      },
-      id,
-      opts,
-      function read() {
-        return getAsyncCtxSync()?.execution?.subscriptionMessages?.(id) ?? [];
-      },
-      async function skip(stepId) {
-        await getAsyncCtxSync()?.execution?.skipStep?.(stepId);
-      },
-      function answerOf(stepId) {
-        return (
-          getAsyncCtxSync()?.execution?.stepAnswer?.(stepId) ?? {
-            found: false,
-          }
-        );
-      },
-      allowEmpty,
-    );
-  };
-
   const tools = {
     /**
-     * EXPERIMENTAL: a durable subscription. Opens a subscription to events
-     * and returns it; iterate it with `for await`. The executor keeps the
-     * subscription for the life of the run and saves every matching event as
-     * a numbered message, so nothing sent while the function is busy is lost.
+     * EXPERIMENTAL: opens an inbox inside the run. Every event that matches
+     * one of the sources and arrives afterwards becomes a message, saved once
+     * as its own step whether or not it is read. Read the inbox with `next()`.
+     *
+     * A source is written like a trigger: an event type (or its name), or an
+     * object with the event and an `if` expression, which sees the arriving
+     * event as `async`. Pass one source or an array.
+     *
+     * The inbox's messages are typed from the sources: the union of the shapes
+     * of the event types given. A source written as a name has no schema, so
+     * its messages stay the default message, whose `data` is `unknown`.
+     *
+     * @example
+     * ```ts
+     * await using inbox = step.subscribe("reviews", pr.reviewed);
+     * const review = await inbox.next();
+     * ```
      */
-    subscribe: ((
+    subscribe: <const S extends InboxSources>(
       idOrOptions: StepOptionsOrId,
-      opts: SubscribeOptions,
-    ): Promise<Subscription> => {
-      return openInbox(idOrOptions, opts, false);
-    }) as SubscribeTool<StepOptionsOrId>,
+      sources: S, // what the inbox receives
+    ): Inbox<InboxMessageOf<S>> => {
+      const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions.id;
+      const capabilities = getAsyncCtxSync()?.execution?.executorCapabilities;
 
-    /**
-     * EXPERIMENTAL: an inbox, a subscription that starts with the sources you
-     * give it (maybe none) and takes more with `listen()`. Its messages are one
-     * ordered sequence, read with `next()`, `unread()` and `for await`.
-     */
-    inbox: (
-      idOrOptions: StepOptionsOrId,
-      options?: { sources?: readonly SubscribeEvent[] },
-    ): Promise<Subscription> => {
-      return openInbox(idOrOptions, { events: options?.sources ?? [] }, true);
+      if (capabilities && !capabilities.includes(subscribeCapability)) {
+        throw new NonRetriableError(
+          "step.subscribe needs an executor that supports inboxes, and this one did not say it does. Upgrade the Dev Server (`npx inngest-cli@latest dev`) or use an Inngest Cloud environment with inboxes enabled.",
+        );
+      }
+
+      const prefix = getAsyncCtxSync()?.execution?.stepIdPrefix ?? "";
+
+      // What the user wrote for each read, learnt when the read is reported.
+      const statements = new Map<string, string>();
+      const statementOf = (op: string) => {
+        return op.endsWith(":read") ? op.slice(0, -":read".length) : op;
+      };
+
+      return new Inbox({
+        sources: sourcesOf(sources),
+        id,
+        open: async (_op, opened) => {
+          let opening: { id: string } | undefined;
+
+          await tools["~inboxOpen"](inboxStatement(id, "subscribe", id), {
+            sources: opened,
+            track: (op) => {
+              opening = op;
+            },
+          });
+
+          // The engine gives the op a suffix (`inbox:1`) when the run already
+          // has a step with its ID, after the op is made. Everything else
+          // about the inbox is named from the ID it settled with.
+          const final = opening?.id ?? `${prefix}${id}`;
+
+          return {
+            id: final.startsWith(prefix) ? final.slice(prefix.length) : final,
+            inbox: hashedStepId(final),
+          };
+        },
+        waitId: (op) => {
+          return hashedStepId(`${prefix}${op}`);
+        },
+        wait: (op, inbox, seen, timeout) => {
+          return tools["~inboxWait"](inboxStatement(op, "next", op), {
+            inbox,
+            seen,
+            ...(timeout === undefined
+              ? {}
+              : { timeout: timeStr(timeout, client[internalLoggerSymbol]) }),
+          });
+        },
+        read: (inbox, taken, wait) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.read(inbox, taken, wait) ?? {
+              found: "nothing",
+            }
+          );
+        },
+        unread: (inbox, taken, upTo) => {
+          return (
+            getAsyncCtxSync()?.execution?.inbox?.unread(inbox, taken, upTo) ??
+            []
+          );
+        },
+        batch: (op, read) => {
+          const name = read.drain ? "drain" : "nextBatch";
+          statements.set(op, name);
+
+          return tools["~inboxWait"](inboxStatement(op, name, op), {
+            inbox: read.inbox,
+            seen: read.seen,
+            ...(read.timeout === undefined
+              ? {}
+              : {
+                  timeout: timeStr(read.timeout, client[internalLoggerSymbol]),
+                }),
+            batch: {
+              ...(read.drain ? { drain: true } : {}),
+              ...(read.unread ? { unread: true } : {}),
+              ...(read.max === undefined ? {} : { max: read.max }),
+            },
+          });
+        },
+        answered: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
+          );
+        },
+        message: (messageId) => {
+          return getAsyncCtxSync()?.execution?.inbox?.message(messageId);
+        },
+        report: (op, inbox, messages, draw, row) => {
+          const runId = getAsyncCtxSync()?.execution?.ctx.runId;
+
+          if (
+            // A drawn read with no row and no messages is the read of a
+            // message that is not in the inbox, such as the trigger.
+            (messages.length === 0 && (!draw || row !== undefined)) ||
+            runId === undefined ||
+            !firstReport(runId, `${prefix}${op}`)
+          ) {
+            return;
+          }
+
+          const statement = statementOf(op);
+
+          void tools["~inboxRead"](
+            inboxStatement(statement, statements.get(statement) ?? "next", op),
+            {
+              inbox,
+              messages,
+              draw,
+              ...(row === undefined ? {} : { row }),
+            },
+          ).catch(() => undefined);
+        },
+        skip: async (op) => {
+          await getAsyncCtxSync()?.execution?.skipStep?.(`${prefix}${op}`);
+        },
+        lastSeen: () => {
+          return getAsyncCtxSync()?.execution?.inbox?.lastSeen() ?? "";
+        },
+        closed: (op) => {
+          return (
+            getAsyncCtxSync()?.execution?.stepAnswer?.(`${prefix}${op}`)
+              .found === true
+          );
+        },
+        close: (op, closing) => {
+          return tools["~inboxClose"](
+            inboxStatement(op, "close", op),
+            closing,
+          ) as Promise<Cut>;
+        },
+        place: async (id) => {
+          await getAsyncCtxSync()?.execution?.inbox?.place(id);
+        },
+      });
     },
 
     /**
-     * One op of a subscription. Used by `subscribe`.
+     * The op that opens an inbox. Used by `subscribe`.
      */
-    "~subscribeOp": createTool<
+    "~inboxOpen": createTool<
       (
         idOrOptions: StepOptionsOrId,
         opts: {
-          event: string;
-          if?: string;
-          subscribe: {
-            key: string;
-            mode: string;
-            seq?: number;
-            stream?: number;
-            timeout?: string;
-            attempt?: number;
-            reader?: string;
-            streams?: { stream: number; event: string; if?: string }[];
-          };
+          sources: { event: string; if?: string }[];
+
+          // Called with the op, which the engine gives its final ID later.
+          track?: (op: { id: string }) => void;
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      const op = {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.Subscribe,
+        name: id,
+        displayName: name ?? id,
+        opts: { sources: opts.sources },
+        userland: { id },
+      };
+
+      opts.track?.(op);
+
+      return op;
+    }),
+
+    /**
+     * The op that closes an inbox. Used by `subscribe`. It settles with the cut
+     * the executor saved: the last message the inbox had.
+     */
+    "~inboxClose": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { inbox: string },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeClose,
+        name: id,
+        displayName: name ?? id,
+        opts: { inbox: opts.inbox },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op of a read of an inbox that has nothing unread. Used by
+     * `subscribe`. It is never answered from state: the executor wakes the run
+     * and the read finds its message there.
+     */
+    "~inboxWait": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          seen: string;
+          timeout?: string;
+          batch?: { drain?: boolean; unread?: boolean; max?: number };
         },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
         id,
         mode: StepMode.Async,
-        op: StepOpCode.WaitForEvent,
-        name: opts.event,
+        op: StepOpCode.SubscribeWait,
+        name: id,
         displayName: name ?? id,
         opts: {
-          event: opts.event,
-          if: opts.if,
-          timeout: "",
-          subscribe: opts.subscribe,
+          inbox: opts.inbox,
+          seen: opts.seen,
+          ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+          ...(opts.batch === undefined ? {} : { batch: opts.batch }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The lazy op that reports the messages a read took. Used by `subscribe`.
+     * It rides on the next message to the executor and has no answer.
+     */
+    "~inboxRead": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          messages: string[];
+          draw: boolean;
+          row?: string;
+        },
+      ) => Promise<void>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.SubscribeRead,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          messages: opts.messages,
+          ...(opts.draw ? { draw: true } : {}),
+          ...(opts.row === undefined ? {} : { row: opts.row }),
         },
         userland: { id },
       };
@@ -1467,6 +1619,12 @@ const createDeferredTools = <T extends object>(
       }
 
       const tools = tryGetCurrentTools();
+
+      if (tools && !(prop in tools)) {
+        throw new Error(
+          `\`${name}.${prop}\` is not available in this run: add the middleware that provides it to the client's \`middleware\` option`,
+        );
+      }
 
       return tools ? tools[prop] : createStandIn([prop]);
     },

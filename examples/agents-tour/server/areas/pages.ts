@@ -102,8 +102,8 @@ export const area: AreaFactory = (ctx) => {
     }
 
     if ("agent" in start) {
-      await worker.send(start.agent, start.thread, start.text);
-      hub.info(`sent "${start.text}" to ${start.agent}`);
+      await worker.start(start.agent, start.thread, start.content);
+      hub.info(`started ${start.agent} with "${start.content}"`);
 
       return;
     }
@@ -140,7 +140,11 @@ export const area: AreaFactory = (ctx) => {
     }
   };
 
-  const run = (id: string, files: Record<string, string>) => {
+  const run = (
+    id: string,
+    files: Record<string, string>,
+    options: { start?: boolean } = {},
+  ) => {
     session += 1;
 
     const mine = session;
@@ -171,6 +175,14 @@ export const area: AreaFactory = (ctx) => {
         page.files.map((file) => {
           return file.name;
         }),
+        ctx.scriptedModel
+          ? {
+              TOUR_MODEL: "scripted",
+              TOUR_MODEL_SCRIPT: JSON.stringify(
+                page.manifest.verify?.model ?? [],
+              ),
+            }
+          : {},
       );
 
       if (stale()) {
@@ -208,7 +220,26 @@ export const area: AreaFactory = (ctx) => {
       hub.info(`started in ${Date.now() - started} ms`);
       hub.setStatus("live", "Live");
 
-      for (const start of page.manifest.start ?? []) {
+      const runsFile = page.files.some((file) => {
+        return file.name === "run.ts";
+      });
+
+      if (runsFile && options.start !== false) {
+        mayBeLive = true;
+
+        try {
+          await worker.run();
+          hub.info("ran run.ts");
+        } catch (error) {
+          if (!stale()) {
+            hub.emit({ type: "log", kind: "err", text: String(error) });
+          }
+        }
+      }
+
+      for (const start of options.start === false
+        ? []
+        : (page.manifest.start ?? [])) {
         if (stale()) {
           return;
         }
@@ -237,6 +268,8 @@ export const area: AreaFactory = (ctx) => {
 
     return task;
   };
+
+  ctx.runPage = run;
 
   const result: Area = {
     name: "pages",

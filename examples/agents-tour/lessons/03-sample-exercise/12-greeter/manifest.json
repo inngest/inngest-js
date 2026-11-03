@@ -1,0 +1,9 @@
+{
+  "readOnly": ["run.ts", "setup.ts"],
+  "exercise": {
+    "check": "check.ts",
+    "hint": "Wait for a message with inbox.next(), then return a string built from message.data.content.",
+    "stub": "stub",
+    "solution": "solution"
+  }
+}

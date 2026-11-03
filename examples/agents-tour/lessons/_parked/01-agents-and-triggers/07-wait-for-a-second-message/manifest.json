@@ -1,0 +1,30 @@
+{
+  "panels": ["message"],
+  "start": [
+    {
+      "agent": "echo",
+      "thread": "main",
+      "text": "Hi"
+    }
+  ],
+  "message": {
+    "agent": "echo",
+    "thread": "main"
+  },
+  "verify": {
+    "then": [
+      {
+        "agent": "echo",
+        "thread": "main",
+        "text": "Again"
+      }
+    ],
+    "runs": [
+      {
+        "fn": "echo",
+        "status": "COMPLETED",
+        "output": "First: Hi. Second: Again"
+      }
+    ]
+  }
+}

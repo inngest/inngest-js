@@ -17,12 +17,12 @@ import {
   type AnthropicReply,
   anthropic,
   anthropicPrices,
-} from "../../src/components/agent/anthropic.ts";
-import { priceOf } from "../../src/components/agent/cost.ts";
+} from "../../src/experimental/agents/loop/anthropic.ts";
+import { priceOf } from "../../src/experimental/agents/loop/cost.ts";
 import type {
-  AgentMessage,
   AgentModelRequest,
-} from "../../src/components/agent/loop.ts";
+  ModelMessage,
+} from "../../src/experimental/agents/loop/loop.ts";
 
 const model = "claude-haiku-5-5";
 
@@ -72,7 +72,7 @@ const main = async () => {
     maxTokens: 400,
     cache: { ttl: "5m" },
   });
-  const messages: AgentMessage[] = [
+  const messages: ModelMessage[] = [
     { role: "user", content: "What is 2 + 3? Use the add tool." },
   ];
   const request = (turn: number): AgentModelRequest => {

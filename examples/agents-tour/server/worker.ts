@@ -40,9 +40,14 @@ export class Worker {
 
   /**
    * Starts the app from `dir`, and switches to it when it serves. `files`
-   * are the page's files, in the folder, that the app imports.
+   * are the page's files, in the folder, that the app imports. `env` is
+   * added to the app's environment.
    */
-  async reload(dir: string, files: string[]): Promise<Started> {
+  async reload(
+    dir: string,
+    files: string[],
+    env: Record<string, string> = {},
+  ): Promise<Started> {
     const pending = this.pending;
     const port = await freePort();
     const errors: string[] = [];
@@ -61,6 +66,7 @@ export class Worker {
         INNGEST_DEV: "1",
         INNGEST_BASE_URL: this.env.devServerUrl,
         NODE_NO_WARNINGS: "1",
+        ...env,
       },
     });
 
@@ -174,16 +180,41 @@ export class Worker {
     }
   }
 
-  async send(agent: string, thread: string, message: string) {
-    const res = await fetch(`http://127.0.0.1:${this.port}/__tour/send`, {
+  /**
+   * Sends `content` to a thread of `agent` (its id or export name) as a plain
+   * `agent/message`: into the live run's inbox, or as the start of a run.
+   */
+  async send(agent: string, thread: string, content: string) {
+    await this.post("/__tour/send", { agent, thread, content });
+  }
+
+  /**
+   * Starts `agent` on `thread` with `content` through the app's `tour-start`
+   * function, which calls `agent.start()`. The run ends after its answer.
+   */
+  async start(agent: string, thread: string, content: string) {
+    await this.post("/__tour/start", { agent, thread, content });
+  }
+
+  /**
+   * Runs the page's `run.ts` through the app's `tour-start` function, which
+   * imports the file, so its top-level `start()` calls run inside the
+   * function.
+   */
+  async run() {
+    await this.post("/__tour/run", {});
+  }
+
+  private async post(path: string, body: Record<string, unknown>) {
+    const res = await fetch(`http://127.0.0.1:${this.port}${path}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent, thread, message }),
+      body: JSON.stringify(body),
     });
-    const body = (await res.json()) as { ok?: boolean; error?: string };
+    const answer = (await res.json()) as { ok?: boolean; error?: string };
 
     if (!res.ok) {
-      throw new Error(body.error ?? `Sending failed: ${res.status}`);
+      throw new Error(answer.error ?? `Sending failed: ${res.status}`);
     }
   }
 

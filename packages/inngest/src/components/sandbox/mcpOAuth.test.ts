@@ -3,20 +3,25 @@
  * Tests for per-user OAuth on `tool.mcp()`: the flow against a fake OAuth MCP
  * server, refresh and its races, revocation, and that no credential leaks.
  */
-import { describe, expect, test } from "vitest";
-import { memoryKvAdapter } from "../agent/kv.ts";
-import { kvOAuthStore } from "../agent/mcpOAuthStore.ts";
-import { fakeMcpFetch } from "../agent/testing/mcp.ts";
+import { beforeAll, describe, expect, test } from "vitest";
+import { memoryKvAdapter } from "../../experimental/agents/kv/kv.ts";
+import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
+import { getAsyncLocalStorage, runWithAsyncCtx } from "../execution/als.ts";
+import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
 import {
-  completeMcpAuthorization,
-  isMcpNeedsAuthorization,
   type McpAuthorizedData,
   type McpNeedsAuthorization,
   type McpOAuthStore,
+  mcpCallback,
 } from "./mcpOAuth.ts";
 import { secret } from "./secret.ts";
 import type { SandboxTool } from "./tools.ts";
 import { tool } from "./tools.ts";
+
+beforeAll(async () => {
+  // The async context store starts on first use.
+  await getAsyncLocalStorage();
+});
 
 const redirectUri = "https://app.example.test/oauth/hex/callback";
 
@@ -35,29 +40,6 @@ const tools = {
   },
 };
 
-const memoryStore = (): McpOAuthStore & { values: Map<string, string> } => {
-  const values = new Map<string, string>();
-
-  return {
-    values,
-    get: async (key) => {
-      return values.get(key) ?? null;
-    },
-    compareAndSet: async (key, expected, next) => {
-      if ((values.get(key) ?? null) !== expected) {
-        return false;
-      }
-
-      values.set(key, next);
-
-      return true;
-    },
-    delete: async (key) => {
-      values.delete(key);
-    },
-  };
-};
-
 const setup = (
   options: {
     ttl?: number;
@@ -74,7 +56,7 @@ const setup = (
       client: { id: "preset" },
     },
   });
-  const store = memoryStore();
+  const store = memoryOAuthStore();
   const needs: McpNeedsAuthorization[] = [];
   const hex = tool.mcp({
     id: "hex",
@@ -111,22 +93,73 @@ const run = async (entry: unknown, input: unknown = {}) => {
   );
 };
 
+type Fixture = ReturnType<typeof setup>;
+
+// What the person's browser does with the link the app was given: open it,
+// approve at the authorization server, come back with the same cookie.
+const browse = async (
+  fixture: Pick<Fixture, "server" | "store">,
+  link: string,
+  options: { code?: string; sent?: McpAuthorizedData[] } = {},
+) => {
+  const callback = mcpCallback({
+    store: fixture.store,
+    fetch: fixture.server.fetch,
+    send: async (event) => {
+      options.sent?.push(event.data);
+    },
+  });
+  const opened = await callback(new Request(link));
+  const cookie = (opened.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const returned = new URL(
+    await fixture.server.approve(opened.headers.get("location") ?? ""),
+  );
+
+  if (options.code !== undefined) {
+    returned.searchParams.set("code", options.code);
+  }
+
+  return callback(new Request(returned, { headers: { cookie } }));
+};
+
 const connectUser = async (
-  fixture: ReturnType<typeof setup>,
+  fixture: Fixture,
   info: McpNeedsAuthorization,
   sent: McpAuthorizedData[] = [],
 ) => {
-  const callback = new URL(await fixture.server.approve(info.authorizeUrl));
+  const response = await browse(fixture, info.url, { sent });
 
-  return completeMcpAuthorization({
-    store: fixture.store,
-    code: callback.searchParams.get("code") ?? "",
-    state: callback.searchParams.get("state") ?? "",
+  expect(response.status).toBe(200);
+
+  return sent.at(-1) as McpAuthorizedData;
+};
+
+// A sign-in for another user of the same server, as the app would be told.
+const nextLink = async (
+  fixture: Fixture,
+  user: string,
+): Promise<McpNeedsAuthorization> => {
+  const other = tool.mcp({
+    id: "hex",
+    url: fixture.server.url,
     fetch: fixture.server.fetch,
-    send: async (event) => {
-      sent.push(event.data);
+    auth: {
+      oauth: {
+        user,
+        redirectUri,
+        store: fixture.store,
+        onNeedsAuthorization: (info) => {
+          fixture.needs.push(info);
+        },
+      },
     },
   });
+
+  const built = await build(other);
+
+  await run(built.hex_create_thread ?? built.hex_connect, {});
+
+  return fixture.needs.at(-1) as McpNeedsAuthorization;
 };
 
 const pause = (ms: number) => {
@@ -135,10 +168,13 @@ const pause = (ms: number) => {
   });
 };
 
-const needsAuth = (value: unknown): McpNeedsAuthorization => {
-  expect(isMcpNeedsAuthorization(value)).toBe(true);
+// The sign-in the app was just told about. The tool's own result is a
+// message for the model and holds no link.
+const needsAuth = (fixture: Fixture, value: unknown): McpNeedsAuthorization => {
+  expect(String(value)).toMatch(/sign-in link/);
+  expect(String(value)).not.toContain("http");
 
-  return (value as { "~error": McpNeedsAuthorization })["~error"];
+  return fixture.needs.at(-1) as McpNeedsAuthorization;
 };
 
 describe("tool.mcp OAuth", () => {
@@ -149,22 +185,36 @@ describe("tool.mcp OAuth", () => {
     // Nothing is known about the server's tools yet.
     expect(Object.keys(built)).toEqual(["hex_connect"]);
 
-    const info = needsAuth(await run(built.hex_connect));
+    const info = needsAuth(fixture, await run(built.hex_connect));
 
     expect(fixture.needs).toHaveLength(1);
     expect(info).toMatchObject({ server: "hex", user: "U1" });
 
-    const url = new URL(info.authorizeUrl);
+    // The link opens on the app's own route, then goes on to the server.
+    expect(info.url.startsWith(redirectUri)).toBe(true);
+
+    const opened = await mcpCallback({
+      store: fixture.store,
+      fetch: fixture.server.fetch,
+    })(new Request(info.url));
+    const url = new URL(opened.headers.get("location") ?? "");
 
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("redirect_uri")).toBe(redirectUri);
     expect(url.searchParams.get("scope")).toBe("read offline_access");
     expect(url.searchParams.get("resource")).toContain("/mcp");
     // The verifier is not in the link.
-    expect(info.authorizeUrl).not.toContain("code_verifier");
+    expect(url.toString()).not.toContain("code_verifier");
+    expect(info.url).not.toContain("code_challenge");
 
+    // Opening the link above used it up for any other browser; the app is
+    // told about a new one when the model asks again.
     const sent: McpAuthorizedData[] = [];
-    const done = await connectUser(fixture, info, sent);
+    const done = await connectUser(
+      fixture,
+      needsAuth(fixture, await run(built.hex_connect)),
+      sent,
+    );
 
     expect(done).toMatchObject({ server: "hex", user: "U1" });
     expect(sent).toEqual([done]);
@@ -184,7 +234,10 @@ describe("tool.mcp OAuth", () => {
 
   test("a tool call for a user with no token returns the link, and tools are known once anyone connected", async () => {
     const first = setup();
-    const info = needsAuth(await run((await build(first.hex)).hex_connect));
+    const info = needsAuth(
+      first,
+      await run((await build(first.hex)).hex_connect),
+    );
 
     await connectUser(first, info);
     // The first successful listing is remembered for everyone.
@@ -195,13 +248,23 @@ describe("tool.mcp OAuth", () => {
       id: "hex",
       url: first.server.url,
       fetch: first.server.fetch,
-      auth: { oauth: { user: "U2", redirectUri, store: first.store } },
+      auth: {
+        oauth: {
+          user: "U2",
+          redirectUri,
+          store: first.store,
+          onNeedsAuthorization: (info) => {
+            first.needs.push(info);
+          },
+        },
+      },
     });
     const built = await build(other);
 
     expect(Object.keys(built)).toEqual(["hex_create_thread", "hex_get_thread"]);
 
     const result = needsAuth(
+      first,
       await run(built.hex_create_thread, { prompt: "x" }),
     );
 
@@ -222,11 +285,21 @@ describe("tool.mcp OAuth", () => {
     ).toHaveLength(1);
 
     const fixed = setup({ registration: false });
-    const info = needsAuth(await run((await build(fixed.hex)).hex_connect));
-
-    expect(new URL(info.authorizeUrl).searchParams.get("client_id")).toBe(
-      "preset",
+    const info = needsAuth(
+      fixed,
+      await run((await build(fixed.hex)).hex_connect),
     );
+
+    const opened = await mcpCallback({
+      store: fixed.store,
+      fetch: fixed.server.fetch,
+    })(new Request(info.url));
+
+    expect(
+      new URL(opened.headers.get("location") ?? "").searchParams.get(
+        "client_id",
+      ),
+    ).toBe("preset");
     expect(
       fixed.server.oauthCalls.filter((c) => c.path === "/oauth/register"),
     ).toHaveLength(0);
@@ -234,7 +307,10 @@ describe("tool.mcp OAuth", () => {
 
   test("an expired token refreshes on the host, once, however many calls race", async () => {
     const fixture = setup({ ttl: 1 });
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
 
     await connectUser(fixture, info);
 
@@ -256,7 +332,10 @@ describe("tool.mcp OAuth", () => {
 
   test("a rotated refresh token is kept and used next time", async () => {
     const fixture = setup({ ttl: 1 });
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
 
     await connectUser(fixture, info);
 
@@ -274,7 +353,10 @@ describe("tool.mcp OAuth", () => {
 
   test("a token the server stopped accepting is refreshed and the call is sent again", async () => {
     const fixture = setup();
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
 
     await connectUser(fixture, info);
 
@@ -293,7 +375,10 @@ describe("tool.mcp OAuth", () => {
 
   test("a revoked grant goes back to needing authorization", async () => {
     const fixture = setup({ ttl: 1 });
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
 
     await connectUser(fixture, info);
 
@@ -302,6 +387,7 @@ describe("tool.mcp OAuth", () => {
     fixture.server.revokeTokens();
 
     const result = needsAuth(
+      fixture,
       await run(built.hex_create_thread, { prompt: "p" }),
     );
 
@@ -320,61 +406,64 @@ describe("tool.mcp OAuth", () => {
     });
   });
 
-  test("a link works once, expires, and a denial is refused", async () => {
+  test("a link works once, an unknown link is refused, and a denial is refused", async () => {
     const fixture = setup();
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
-    const callback = new URL(await fixture.server.approve(info.authorizeUrl));
-    const params = {
-      store: fixture.store,
-      code: callback.searchParams.get("code") ?? "",
-      state: callback.searchParams.get("state") ?? "",
-      fetch: fixture.server.fetch,
-    };
-
-    await completeMcpAuthorization(params);
-    await expect(completeMcpAuthorization(params)).rejects.toThrow(
-      "already used",
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
     );
-    await expect(
-      completeMcpAuthorization({ ...params, state: "nope" }),
-    ).rejects.toThrow("expired or was already used");
-    await expect(
-      completeMcpAuthorization({ ...params, error: "access_denied" }),
-    ).rejects.toThrow("did not approve");
-  });
-
-  test("a link made for one user is refused for another, and still works for the right one", async () => {
-    const fixture = setup();
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
-    const callback = new URL(await fixture.server.approve(info.authorizeUrl));
-    const params = {
+    const callback = mcpCallback({
       store: fixture.store,
-      code: callback.searchParams.get("code") ?? "",
-      state: callback.searchParams.get("state") ?? "",
       fetch: fixture.server.fetch,
+    });
+    const opened = await callback(new Request(info.url));
+    const cookie = (opened.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const returned = await fixture.server.approve(
+      opened.headers.get("location") ?? "",
+    );
+    const back = () => {
+      return callback(new Request(returned, { headers: { cookie } }));
     };
 
-    await expect(
-      completeMcpAuthorization({ ...params, expectUser: "attacker" }),
-    ).rejects.toThrow("another user");
-    await expect(
-      completeMcpAuthorization({ ...params, expectUser: "U1" }),
-    ).resolves.toMatchObject({ user: "U1" });
+    expect((await back()).status).toBe(200);
+
+    const again = await back();
+
+    expect(again.status).toBe(400);
+    expect(await again.text()).toContain("expired or was already used");
+
+    const unknown = await callback(
+      new Request(`${redirectUri}?code=x&state=nope`, { headers: { cookie } }),
+    );
+
+    expect(unknown.status).toBe(400);
+
+    const denied = await nextLink(fixture, "U5");
+    const deniedOpen = await callback(new Request(denied.url));
+    const deniedCookie =
+      (deniedOpen.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const state = new URL(
+      deniedOpen.headers.get("location") ?? "",
+    ).searchParams.get("state");
+    const refused = await callback(
+      new Request(`${redirectUri}?error=access_denied&state=${state}`, {
+        headers: { cookie: deniedCookie },
+      }),
+    );
+
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("not approved");
   });
 
   test("a wrong code is refused by the server and stores nothing", async () => {
     const fixture = setup();
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
-    const callback = new URL(await fixture.server.approve(info.authorizeUrl));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
+    const response = await browse(fixture, info.url, { code: "forged" });
 
-    await expect(
-      completeMcpAuthorization({
-        store: fixture.store,
-        code: "forged",
-        state: callback.searchParams.get("state") ?? "",
-        fetch: fixture.server.fetch,
-      }),
-    ).rejects.toThrow("invalid_grant");
+    expect(response.status).toBeGreaterThanOrEqual(400);
     expect(
       [...fixture.store.values.keys()].some(
         (k) => k.startsWith("token:") && !k.endsWith(":lease"),
@@ -384,7 +473,10 @@ describe("tool.mcp OAuth", () => {
 
   test("users do not share tokens", async () => {
     const fixture = setup();
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
 
     await connectUser(fixture, info);
     await build(fixture.hex);
@@ -393,60 +485,58 @@ describe("tool.mcp OAuth", () => {
       id: "hex",
       url: fixture.server.url,
       fetch: fixture.server.fetch,
-      auth: { oauth: { user: "U2", redirectUri, store: fixture.store } },
+      auth: {
+        oauth: {
+          user: "U2",
+          redirectUri,
+          store: fixture.store,
+          onNeedsAuthorization: (next) => {
+            fixture.needs.push(next);
+          },
+        },
+      },
     });
     const built = await build(other);
 
-    expect(needsAuth(await run(built.hex_create_thread, {})).user).toBe("U2");
+    expect(
+      needsAuth(fixture, await run(built.hex_create_thread, {})).user,
+    ).toBe("U2");
   });
 
-  test("no credential reaches a result, an error or the stored link", async () => {
+  test("no credential reaches a result, an error, the link or the callback page", async () => {
     const fixture = setup({ ttl: 1 });
-    const info = needsAuth(await run((await build(fixture.hex)).hex_connect));
-    const callback = new URL(await fixture.server.approve(info.authorizeUrl));
-    const code = callback.searchParams.get("code") ?? "";
+    const result = await run((await build(fixture.hex)).hex_connect);
+    const info = needsAuth(fixture, result);
 
     await connectUser(fixture, info);
 
+    const code =
+      new URLSearchParams(
+        fixture.server.oauthCalls.find((call) => {
+          return call.path === "/oauth/token";
+        })?.body ?? "",
+      ).get("code") ?? "";
+
+    expect(code).not.toBe("");
+
     const built = await build(fixture.hex);
     const out = JSON.stringify([
-      info,
+      result,
       await run(built.hex_create_thread, { prompt: "p" }),
       await build(fixture.hex),
     ]);
 
     expect(out).not.toMatch(/access-\d|refresh-\d/);
     expect(out).not.toContain(code);
+    expect(out).not.toContain(info.url);
 
     // A failing exchange does not echo the code or verifier either.
-    const again = needsAuth(
-      await run(
-        (
-          await build(
-            tool.mcp({
-              id: "hex",
-              url: fixture.server.url,
-              fetch: fixture.server.fetch,
-              auth: {
-                oauth: { user: "U9", redirectUri, store: fixture.store },
-              },
-            }),
-          )
-        ).hex_create_thread,
-        {},
-      ),
-    );
-    const second = new URL(await fixture.server.approve(again.authorizeUrl));
-    const error = await completeMcpAuthorization({
-      store: fixture.store,
+    const failed = await browse(fixture, (await nextLink(fixture, "U9")).url, {
       code: "secret-code-1234",
-      state: second.searchParams.get("state") ?? "",
-      fetch: fixture.server.fetch,
-    }).catch((caught: Error) => {
-      return caught;
     });
 
-    expect(String((error as Error).stack)).not.toContain("secret-code-1234");
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    expect(await failed.text()).not.toContain("secret-code-1234");
   });
 
   test("kvOAuthStore encrypts at rest and swaps by plaintext", async () => {

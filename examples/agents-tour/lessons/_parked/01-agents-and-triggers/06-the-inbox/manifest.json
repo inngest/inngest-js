@@ -1,0 +1,18 @@
+{
+  "start": [
+    {
+      "agent": "echo",
+      "thread": "main",
+      "text": "Hi"
+    }
+  ],
+  "verify": {
+    "runs": [
+      {
+        "fn": "echo",
+        "status": "COMPLETED",
+        "output": "Hi"
+      }
+    ]
+  }
+}

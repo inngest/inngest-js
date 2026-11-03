@@ -12,6 +12,8 @@
   --warn: #e0b04a;
   --bad: #ff6b78;
   --code-bg: #1d2029;
+  --motion: 200ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 40%);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -75,10 +77,100 @@ body {
   letter-spacing: 0.01em;
 }
 
-.topbar nav {
-  margin-left: auto;
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.brand {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar nav {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.concepts-bar {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 180px;
+  padding: 2px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.concepts-bar:hover {
+  color: var(--text);
+}
+
+.concepts-track {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.concepts-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width var(--motion) var(--ease);
+}
+
+.stack-menu {
+  position: relative;
+}
+
+.stack-button {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+.stack-button:hover {
+  color: var(--text);
+}
+
+.stack-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.stack-popover a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.stack-popover a:hover {
+  background: var(--accent-soft);
 }
 
 .logo {
@@ -182,6 +274,7 @@ main.grid {
 .tracepane {
   background: var(--surface);
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 main.single {
@@ -191,6 +284,7 @@ main.single {
 
 .text {
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 32px 36px;
   max-width: 800px;
   outline: none;
@@ -221,6 +315,43 @@ code {
   background: var(--code-bg);
   border-radius: 5px;
   padding: 1px 5px;
+}
+
+code.code-link {
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+
+code.code-link:hover,
+code.code-link:focus-visible {
+  text-decoration-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+code.code-link:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.code-link-flash {
+  background: var(--accent-soft);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: code-link-fade 1.8s ease-out forwards;
+}
+
+@keyframes code-link-fade {
+  0%,
+  45% {
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
 }
 
 .work {
@@ -379,10 +510,6 @@ code {
   font-family: var(--mono);
 }
 
-.trace-keys {
-  font-size: 12px;
-}
-
 .wf-row {
   display: grid;
   grid-template-columns: minmax(190px, 34%) 1fr 72px;
@@ -517,6 +644,35 @@ code {
   background: var(--bad);
 }
 
+/* The stand-in row while the Trace is not sure what a run shows. */
+.wf-bar.pending {
+  left: 0;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2),
+    var(--accent-soft),
+    var(--surface-2)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.pending-row {
+  color: var(--muted);
+  cursor: default;
+}
+
+.run-head code {
+  margin-left: 0.4em;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -524,7 +680,8 @@ code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot {
+  .dot,
+  .wf-bar.pending {
     animation: none !important;
   }
 }
@@ -659,21 +816,6 @@ textarea {
   font-size: 16px;
 }
 
-.cheat table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.cheat td {
-  padding: 4px 8px 4px 0;
-  vertical-align: top;
-}
-
-.cheat td kbd {
-  margin-right: 4px;
-}
-
 @media (hover: none) {
   kbd {
     display: none;
@@ -716,21 +858,13 @@ textarea {
     border-top: 1px solid var(--border);
   }
 
-  .topbar nav button.ghost {
+  .topbar nav button.ghost:not(.stack-button) {
     display: none;
   }
 
   .pager button {
     padding: 12px 18px;
   }
-}
-
-.cheat table {
-  table-layout: fixed;
-}
-
-.cheat td:first-child {
-  width: 42%;
 }
 
 .run-output {
@@ -1159,6 +1293,37 @@ main.single .text {
   padding: 0;
 }
 
+.exercise {
+  margin: 18px 0;
+}
+
+.exercise .hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.exercise .verdict {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+}
+
+.exercise .pass {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.exercise .fail {
+  color: var(--bad);
+}
+
+.exercise .controls {
+  flex-wrap: wrap;
+}
+
+.exercise .controls button {
+  white-space: nowrap;
+}
+
 /* Progress: the left nav, the chips, the module-done banner and the pills. */
 .body {
   display: grid;
@@ -1402,6 +1567,26 @@ main.single .text {
   padding: 2px 10px;
 }
 
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.pill.api {
+  background: transparent;
+}
+
+.pill.api code {
+  font: inherit;
+  background: none;
+  padding: 0;
+}
+
 .pill.flying {
   position: fixed;
   z-index: 40;
@@ -1464,14 +1649,19 @@ main.single .text {
 
 @media (max-width: 900px) {
   .topbar {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr auto;
     gap: 4px 12px;
     padding: 8px 12px;
   }
 
   .topbar nav {
-    flex-wrap: wrap;
-    margin-left: 0;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .concepts-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .body > main {
@@ -1493,91 +1683,67 @@ main.single .text {
   display: inline-flex;
 }
 
-.speaker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0.55;
-}
-
-.speaker:hover,
-.speaker[aria-expanded="true"],
-.speaker.on {
-  opacity: 1;
-}
-
 .speaker.on {
   color: var(--accent);
-}
-
-.speaker svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.speaker kbd {
-  font-size: 9px;
-  padding: 1px 3px;
 }
 
 .sound-menu {
   position: absolute;
   right: 0;
   top: 100%;
-  margin-top: 6px;
-  width: 140px;
-  background: var(--surface);
+  padding-top: 6px;
+  z-index: 30;
+  animation: fade-in var(--motion) var(--ease) both;
+}
+
+.sound-menu::before {
+  content: "";
+  position: absolute;
+  inset: 6px 0 0;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  padding: 3px;
-  z-index: 30;
 }
 
 .sound-opt {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
+  gap: 8px;
+  width: 140px;
+  margin: 0 4px;
   border: 0;
   background: transparent;
   color: var(--text);
   text-align: left;
-  padding: 3px 6px;
-  border-radius: 5px;
+  padding: 6px 10px;
+  border-radius: 6px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
+  transition: background var(--motion) var(--ease);
+}
+
+.sound-menu .sound-opt:first-child {
+  margin-top: 4px;
+}
+
+.sound-menu .sound-opt:last-child {
+  margin-bottom: 4px;
+}
+
+.sound-opt:hover {
+  background: var(--accent-soft);
 }
 
 .sound-opt[aria-checked="true"] {
-  background: var(--accent-soft);
-}
-
-.sound-opt.cur,
-.sound-opt:hover {
-  background: var(--surface-2);
-}
-
-.sound-opt[aria-checked="true"].cur {
-  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .sound-opt kbd {
-  font-size: 9px;
-  padding: 1px 3px;
-}
-
-.sound-foot {
-  padding: 3px 6px 2px;
-  font-size: 9px;
-  color: var(--muted);
-  white-space: nowrap;
+  font-size: 10px;
+  padding: 1px 4px;
 }
 
 #sound-fx {
@@ -1665,6 +1831,56 @@ main.single .text {
 [data-sound-style="doom"] .module-done {
   border-color: #ffb347;
   box-shadow: 0 0 0 2px #55493e;
+}
+
+/* The centred concepts progress bar (id concepts-chip) follows the style too. */
+[data-sound-style="chip"] #concepts-chip .concepts-track {
+  border-radius: 0;
+  border-color: var(--ok);
+}
+
+[data-sound-style="chip"] #concepts-chip .concepts-fill {
+  border-radius: 0;
+  background: repeating-linear-gradient(90deg, var(--ok) 0 6px, transparent 6px 8px);
+}
+
+[data-sound-style="chip"] #concepts-chip .concepts-label {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+[data-sound-style="quest"] #concepts-chip .concepts-track {
+  border-color: var(--warn);
+}
+
+[data-sound-style="quest"] #concepts-chip .concepts-fill {
+  background: linear-gradient(90deg, var(--warn), #f3d27a);
+  box-shadow: 0 0 8px rgb(224 176 74 / 55%);
+}
+
+[data-sound-style="kalimba"] #concepts-chip .concepts-track {
+  background: transparent;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(124 124 255 / 14%);
+}
+
+[data-sound-style="doom"] #concepts-chip .concepts-track {
+  border-radius: 2px;
+  border-color: #6b5b4b;
+  background: #1a1613;
+}
+
+[data-sound-style="doom"] #concepts-chip .concepts-fill {
+  border-radius: 0;
+  background: linear-gradient(#ffb347, #c4651a);
+}
+
+[data-sound-style="doom"] #concepts-chip .concepts-label {
+  font-family: var(--mono);
+  color: #ffb347;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 html.dm-on #root {
@@ -1877,5 +2093,111 @@ html.dm-on #root {
 
   #doom-bar .arms {
     display: none;
+  }
+}
+
+/* Messages panel: the text box and its "another" control. */
+.message-box {
+  display: flex;
+  gap: 8px;
+}
+
+.message-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Motion: things that appear and disappear. Calm, quick, ease-out. */
+.reveal {
+  overflow: hidden;
+  transition:
+    height var(--motion) var(--ease),
+    opacity var(--motion) var(--ease);
+}
+
+.reveal-closed {
+  opacity: 0;
+}
+
+.reveal-inner {
+  display: flow-root;
+}
+
+/* The slot carries the gap the run's own margin used to. */
+.run-slot > .reveal-inner {
+  padding-top: 8px;
+}
+
+.run-slot .run {
+  margin: 0;
+}
+
+.fit {
+  overflow: hidden;
+  transition: height var(--motion) var(--ease);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.fade-in {
+  animation: fade-in var(--motion) var(--ease) both;
+}
+
+.run .status.fade-in,
+.run-output.fade-in {
+  animation-duration: 250ms;
+}
+
+.text > *,
+.pills > li,
+.exercise .pass,
+.exercise .fail,
+.sent {
+  animation: rise-in var(--motion) var(--ease) both;
+}
+
+.pills > li {
+  animation-delay: 60ms;
+}
+
+.wf-bar,
+.dot,
+.tabs button {
+  transition-property:
+    background-color, color, border-color, opacity, left, width;
+}
+
+.dot,
+.tabs button {
+  transition-duration: var(--motion);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .fit,
+  .wf-bar,
+  .dot,
+  .tabs button {
+    transition: none !important;
+  }
+
+  .fade-in,
+  .text > *,
+  .pills > li,
+  .exercise .pass,
+  .exercise .fail,
+  .sent {
+    animation: none !important;
   }
 }

@@ -2,13 +2,21 @@
  * @module
  * The Trace panel: a waterfall of the real spans the Dev Server returns, one
  * row per span, a bar on a shared timeline, indentation from group spans.
- * Housekeeping spans (inbox opens, KV reads, thread records) have no row;
- * "Show everything" lists the raw tree. Up and down move between rows, Enter opens one.
+ * By default a run shows only what the page has taught: the message that
+ * started it, the calls the reader's code makes (steps, `inbox.next()`) and
+ * Finalization, which every run has. What the SDK does on its own
+ * (subscribe, inbox, close, thread records, KV reads) is plumbing, shown only
+ * by "Show everything", which lists the raw tree.
+ *
+ * A row is never shown until the Trace is sure it belongs. The Dev Server
+ * first answers a new run with placeholder spans (`Execution`, `Attempt 0`)
+ * before the real ones exist; until those are replaced the run shows one
+ * calm "running" row instead.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
 import { api } from "./api.ts";
-import { Kbd } from "./keyboard.tsx";
+import { Fit, Reveal } from "./motion.tsx";
 
 const housekeepingName =
   /^(kv\.|thread:|inbox:\d+:(open|close|stop)$|executor\.(?!nonstep)|metadata)/;
@@ -29,13 +37,58 @@ const isFinalization = (step: TraceStep) => {
   return step.name === "executor.nonstep";
 };
 
+// The group span an `inbox.next()` call leaves (its child, `inbox:start`, is
+// plumbing). The reader's own call, so it is the one inbox span shown by default.
+const isNextCall = (step: TraceStep) => {
+  return step.id === 'span:["inbox:start"]';
+};
+
+// What the SDK does on its own. Only "Show everything" lists it. Spans are
+// decided by what the run recorded: an agent whose body never calls
+// `inbox.next()` has no `next` span, so nothing here guesses from the code.
+const isPlumbing = (step: TraceStep) => {
+  if (isNextCall(step)) {
+    return false;
+  }
+
+  return (
+    isHousekeeping(step) ||
+    /^span:\["inbox/.test(step.id) ||
+    /^(inbox|subscribe|close)\b/.test(step.name)
+  );
+};
+
+// The Dev Server lists these top-level spans for a run that has just been
+// queued or started, before its real spans exist. They say nothing about the
+// run, so they are never rows; while one is there the Trace is not sure what
+// the run will show.
+const isPlaceholder = (step: TraceStep) => {
+  return /^(Execution|Attempt \d+)$/.test(step.name);
+};
+
+// The run waits for a message only where the code called `inbox.next()`.
+const callsNext = (steps: TraceStep[]): boolean => {
+  return steps.some((step) => {
+    return isNextCall(step) || callsNext(step.children);
+  });
+};
+
 // A gap this long between two steps of a run is the run parked, waiting for
 // a message: the executor stores no span for a park, so the gap is the
 // `inbox.next()` row, whatever (even housekeeping) step ends it.
 const waitGapMs = 600;
 
+// `shown` is whether the row is on screen in the current mode. Every row is
+// built either way, so a row that "Show everything" adds or removes keeps its
+// key and can animate in or out instead of being swapped.
 type Row =
-  | { kind: "step"; key: string; step: TraceStep; depth: number }
+  | {
+      kind: "step";
+      key: string;
+      step: TraceStep;
+      depth: number;
+      shown: boolean;
+    }
   | {
       kind: "wait";
       key: string;
@@ -43,6 +96,7 @@ type Row =
       to: number;
       live: boolean;
       depth: number;
+      shown: boolean;
     };
 
 const time = (iso: string | null) => {
@@ -114,9 +168,13 @@ const Icon = ({ kind }: { kind: IconKind }) => {
   );
 };
 
-const label = (step: TraceStep) => {
+const label = (step: TraceStep, everything: boolean) => {
   if (isFinalization(step)) {
     return "Finalization";
+  }
+
+  if (!everything && isNextCall(step)) {
+    return "inbox.next()";
   }
 
   return step.name;
@@ -157,9 +215,13 @@ const rowsOf = (
   live: boolean,
   depth = 0,
   prefix = "",
+  parentShown = true,
 ) => {
   const rows: Row[] = [];
   let lastEnd: number | null = null;
+  let lastID = "";
+  // A park is an `inbox.next()` row only when the code called it.
+  const waitShown = everything || callsNext(steps);
 
   for (const step of steps) {
     const start = time(step.startedAt);
@@ -170,49 +232,72 @@ const rowsOf = (
       start !== null &&
       start - lastEnd > waitGapMs
     ) {
+      // Keyed by the step before the gap, so the live row and the row it
+      // becomes once the run goes on are one node.
       rows.push({
         kind: "wait",
-        key: `${prefix}w:${step.id}`,
+        key: `${prefix}w:after:${lastID}`,
         from: lastEnd,
         to: start,
         live: false,
         depth,
+        shown: waitShown,
       });
     }
 
-    if (everything || !isHousekeeping(step)) {
-      rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
-      rows.push(
-        ...rowsOf(
-          step.children,
-          everything,
-          now,
-          live,
-          depth + 1,
-          `${prefix}${step.id}/`,
-        ),
-      );
-    }
+    const shown =
+      parentShown &&
+      !(depth === 0 && isPlaceholder(step)) &&
+      (everything || !isPlumbing(step));
+
+    rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth, shown });
+    rows.push(
+      ...rowsOf(
+        step.children,
+        everything,
+        now,
+        live,
+        depth + 1,
+        `${prefix}${step.id}/`,
+        shown,
+      ),
+    );
 
     const end = endOf(step, now);
 
     if (end !== null && (lastEnd === null || end > lastEnd)) {
       lastEnd = end;
+      lastID = step.id;
     }
   }
 
   if (depth === 0 && lastEnd !== null && now - lastEnd > waitGapMs) {
     rows.push({
       kind: "wait",
-      key: `${prefix}w:live`,
+      key: `${prefix}w:after:${lastID}`,
       from: lastEnd,
       to: now,
       live,
       depth,
+      shown: waitShown,
     });
   }
 
-  return rows;
+  return depth === 0 ? uniqueKeys(rows) : rows;
+};
+
+// Two calls can leave spans with the same id (two `inbox.next()` in one run);
+// a repeated key would remount or merge rows, so later ones get a counter.
+const uniqueKeys = (rows: Row[]): Row[] => {
+  const seen = new Map<string, number>();
+
+  return rows.map((row) => {
+    const count = seen.get(row.key) ?? 0;
+
+    seen.set(row.key, count + 1);
+
+    return count === 0 ? row : { ...row, key: `${row.key}#${count}` };
+  });
 };
 
 // Text that is JSON is parsed, even when it is JSON inside a string.
@@ -302,25 +387,41 @@ const Detail = ({ outputID }: { outputID: string | null }) => {
       });
   }, [outputID]);
 
-  if (!out) {
-    return <pre className="step-detail">Loading...</pre>;
-  }
+  // One Fit around every state, so Loading... growing into the JSON is a
+  // height change, and the content fades in as it is swapped.
+  let body: React.ReactNode;
 
-  if ("error" in out) {
+  if (!out) {
+    body = (
+      <pre className="step-detail" key="loading">
+        Loading...
+      </pre>
+    );
+  } else if ("error" in out) {
     const stack = (out.error.stack ?? "").split("\n").slice(1, 4).join("\n");
 
-    return (
-      <pre className="step-detail error-detail">
+    body = (
+      <pre className="step-detail error-detail" key="error">
         {out.error.name ?? "Error"}: {out.error.message}
         {stack ? `\n${stack}` : ""}
       </pre>
     );
+  } else if (out.value === undefined) {
+    body = (
+      <pre className="step-detail" key="none">
+        No value
+      </pre>
+    );
+  } else {
+    body = <Json value={out.value} key="value" />;
   }
 
-  return out.value === undefined ? (
-    <pre className="step-detail">No value</pre>
-  ) : (
-    <Json value={out.value} />
+  return (
+    <Fit>
+      <div className="fade-in" key={out ? "loaded" : "loading"}>
+        {body}
+      </div>
+    </Fit>
   );
 };
 
@@ -353,7 +454,9 @@ const Result = ({ run }: { run: TraceRun }) => {
   }
 
   return (
-    <code className={text.error ? "run-output error" : "run-output"}>
+    <code
+      className={text.error ? "run-output error fade-in" : "run-output fade-in"}
+    >
       {text.error ? "failed: " : "returned "}
       {text.value}
     </code>
@@ -368,6 +471,7 @@ const Trigger = ({ run }: { run: TraceRun }) => {
   }
 
   const message = run.trigger.name === "agent/message";
+  const content = run.trigger.data.content;
 
   return (
     <div>
@@ -380,15 +484,62 @@ const Trigger = ({ run }: { run: TraceRun }) => {
       >
         <span className="wf-name">
           <Icon kind={message ? "inbox" : "event"} />
-          {message ? "inbox.next()" : run.trigger.name}
+          {message ? "message" : run.trigger.name}
+          {typeof content === "string" ? <em>{content}</em> : null}
         </span>
         <span className="wf-track">
           <i className="wf-bar completed" style={{ left: 0 }} />
         </span>
         <span className="wf-time" />
       </button>
-      {open ? <Json value={run.trigger} /> : null}
+      <Reveal show={open} appear>
+        <Json value={run.trigger} />
+      </Reveal>
     </div>
+  );
+};
+
+// The calm stand-in for rows the Trace is not sure of yet.
+const PendingRow = () => {
+  return (
+    <div className="wf-row pending-row" aria-label="Running">
+      <span className="wf-name">
+        <span className="dot running" aria-hidden="true" />
+        running
+      </span>
+      <span className="wf-track">
+        <i className="wf-bar pending" />
+      </span>
+      <span className="wf-time" />
+    </div>
+  );
+};
+
+export interface RunPressed {
+  // When Run was pressed.
+  at: number;
+  // What Run runs, when the page has a `run.ts`; null when it is not known.
+  label: string | null;
+}
+
+// How long a placeholder waits for a real run before it gives up.
+const pendingMs = 15_000;
+
+// The card for a run Run has started but the Dev Server has not listed yet.
+// It names only what is known: the file Run runs, never the agent.
+const PendingRun = ({ label }: { label: string | null }) => {
+  return (
+    <section className="run" aria-label="Starting a run">
+      <div className="run-head">
+        <span className="dot running" aria-hidden="true" />
+        <strong>Running{label ? <code>{label}</code> : null}...</strong>
+      </div>
+      <div className="wf" role="list">
+        <div role="listitem">
+          <PendingRow />
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -426,6 +577,22 @@ const Run = ({
   const rows = useMemo(() => {
     return rowsOf(run.steps, everything, clock, live && finish === null);
   }, [run.steps, everything, clock, live, finish]);
+  // Not sure yet what the run shows: placeholder spans are all there is, or
+  // nothing shows and the run is still going. One running row stands in.
+  const unsure = run.steps.some(isPlaceholder);
+  const pending =
+    live &&
+    (unsure ||
+      !rows.some((row) => {
+        return row.shown;
+      }));
+  // Rows present when the run first renders are not animated; ones that
+  // arrive later (or that Show everything adds) fade and grow in.
+  const initialRows = useRef<boolean>(true);
+
+  useEffect(() => {
+    initialRows.current = false;
+  }, []);
 
   const starts = [time(run.queuedAt), time(run.startedAt)].filter(
     (value): value is number => {
@@ -466,11 +633,15 @@ const Run = ({
           aria-hidden="true"
         />
         <strong>{run.fn}</strong>
-        <span className="status">{run.status.toLowerCase()}</span>
+        <span className="status fade-in" key={run.status}>
+          {run.status.toLowerCase()}
+        </span>
         {showResult ? null : <Result run={run} />}
         <span className="run-total">{rounded(t1 - t0)}</span>
       </button>
-      {showResult ? <Detail outputID={run.output} /> : null}
+      <Reveal show={showResult}>
+        <Detail outputID={run.output} />
+      </Reveal>
       <div className="wf" role="list">
         <Trigger run={run} />
         {rows.map((row) => {
@@ -478,7 +649,12 @@ const Run = ({
 
           if (row.kind === "wait") {
             return (
-              <div role="listitem" key={row.key}>
+              <Reveal
+                role="listitem"
+                key={row.key}
+                show={row.shown}
+                appear={!initialRows.current}
+              >
                 <div
                   className={`wf-row wait-row ${row.live ? "live" : ""}`}
                   title="The bar is the time the run spent waiting for a message"
@@ -498,7 +674,7 @@ const Run = ({
                   </span>
                   <span className="wf-time">{rounded(row.to - row.from)}</span>
                 </div>
-              </div>
+              </Reveal>
             );
           }
 
@@ -509,7 +685,12 @@ const Run = ({
           const attempts = step.attempts && step.attempts > 1;
 
           return (
-            <div role="listitem" key={row.key}>
+            <Reveal
+              role="listitem"
+              key={row.key}
+              show={row.shown}
+              appear={!initialRows.current}
+            >
               <button
                 type="button"
                 className={`wf-row ${step.children.length > 0 ? "group" : ""}`}
@@ -520,7 +701,7 @@ const Run = ({
               >
                 <span className="wf-name">
                   <Icon kind={kindOf(step)} />
-                  {label(step)}
+                  {label(step, everything)}
                   {attempts ? (
                     <em className="tries"> attempt {step.attempts}</em>
                   ) : null}
@@ -537,10 +718,15 @@ const Run = ({
                   {start !== null && end !== null ? rounded(end - start) : ""}
                 </span>
               </button>
-              {expanded ? <Detail outputID={step.outputID} /> : null}
-            </div>
+              <Reveal show={expanded}>
+                <Detail outputID={step.outputID} />
+              </Reveal>
+            </Reveal>
           );
         })}
+        <Reveal role="listitem" show={pending} appear={!initialRows.current}>
+          <PendingRow />
+        </Reveal>
       </div>
     </section>
   );
@@ -567,9 +753,8 @@ const Console = ({ lines }: { lines: Line[] }) => {
         <span className="wf-name">
           console, {lines.length} {lines.length === 1 ? "line" : "lines"}
         </span>
-        <Kbd action="rowOpen" />
       </button>
-      {open ? (
+      <Reveal show={open}>
         <pre className="step-detail">
           {lines
             .map((line) => {
@@ -577,7 +762,7 @@ const Console = ({ lines }: { lines: Line[] }) => {
             })
             .join("\n")}
         </pre>
-      ) : null}
+      </Reveal>
     </div>
   );
 };
@@ -587,14 +772,70 @@ export const TracePanel = ({
   lines,
   everything,
   onToggle,
+  pressed,
 }: {
   runs: TraceRun[];
   lines: Line[];
   everything: boolean;
   onToggle: () => void;
+  pressed: RunPressed | null;
 }) => {
   const [now, setNow] = useState(Date.now());
-  const box = useRef<HTMLDivElement>(null);
+  // Runs already listed when the panel first renders do not animate in.
+  const firstRuns = useRef(new Set(runs.map((run) => run.id)));
+  // The placeholder run card: from Run being pressed until a run that was not
+  // listed then appears, an error is logged, or the wait runs out.
+  const [waiting, setWaiting] = useState<{
+    label: string | null;
+    before: Set<string>;
+    errors: number;
+  } | null>(null);
+  const latest = useRef({ runs, errors: 0 });
+  const errors = lines.filter((line) => {
+    return line.kind === "err";
+  }).length;
+
+  latest.current = { runs, errors };
+
+  useEffect(() => {
+    if (!pressed) {
+      setWaiting(null);
+
+      return;
+    }
+
+    setWaiting({
+      label: pressed.label,
+      before: new Set(
+        latest.current.runs.map((run) => {
+          return run.id;
+        }),
+      ),
+      errors: latest.current.errors,
+    });
+
+    const timer = window.setTimeout(() => {
+      setWaiting(null);
+    }, pendingMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [pressed]);
+
+  const arrived = waiting
+    ? runs.some((run) => {
+        return !waiting.before.has(run.id);
+      })
+    : false;
+  const failed = waiting ? errors > waiting.errors : false;
+  const placeholder = waiting !== null && !arrived && !failed;
+  // Runs listed when Run was pressed fade out at once and stay out, so old
+  // and new cards are never side by side and the server clearing them later
+  // changes nothing on screen.
+  const superseded = (run: TraceRun) => {
+    return waiting !== null && !failed && waiting.before.has(run.id);
+  };
   const live = runs.some((run) => {
     return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
       run.status,
@@ -633,52 +874,20 @@ export const TracePanel = ({
     };
   }, [live]);
 
-  const move = (event: React.KeyboardEvent) => {
-    const rows = [
-      ...(box.current?.querySelectorAll<HTMLElement>("[data-row]") ?? []),
-    ];
-    const at = rows.indexOf(document.activeElement as HTMLElement);
-    let next: number | undefined;
-
-    if (event.key === "ArrowDown") {
-      next = Math.min(rows.length - 1, at + 1);
-    } else if (event.key === "ArrowUp") {
-      next = Math.max(0, at - 1);
-    } else if (event.key === "Home") {
-      next = 0;
-    } else if (event.key === "End") {
-      next = rows.length - 1;
-    }
-
-    if (next !== undefined) {
-      event.preventDefault();
-      rows[next]?.focus();
-    }
-  };
-
   return (
-    <div
-      className="trace"
-      ref={box}
-      aria-label="Trace"
-      onKeyDown={move}
-      tabIndex={-1}
-    >
+    <div className="trace" aria-label="Trace" tabIndex={-1}>
       <div className="trace-bar">
         <span>
           {runs.length} {runs.length === 1 ? "run" : "runs"}
         </span>
-        <span className="trace-keys">
-          <kbd>↑</kbd>
-          <kbd>↓</kbd> move <Kbd action="rowOpen" /> open
-        </span>
         <button
           type="button"
           className="ghost"
+          tabIndex={-1}
           onClick={onToggle}
           aria-pressed={everything}
         >
-          Show everything <Kbd action="everything" />
+          Show everything
         </button>
       </div>
       {lines
@@ -692,13 +901,25 @@ export const TracePanel = ({
             </p>
           );
         })}
-      {runs.length === 0 ? (
+      <Reveal show={runs.length === 0 && !placeholder} appear={false}>
         <p className="empty">
           Waiting for a run. Press Run, or send a message.
         </p>
-      ) : null}
+      </Reveal>
+      <Reveal className="run-slot" show={placeholder}>
+        <PendingRun label={waiting?.label ?? null} />
+      </Reveal>
       {[...runs].reverse().map((run) => {
-        return <Run run={run} everything={everything} now={now} key={run.id} />;
+        return (
+          <Reveal
+            className="run-slot"
+            key={run.id}
+            show={!superseded(run)}
+            appear={!firstRuns.current.has(run.id)}
+          >
+            <Run run={run} everything={everything} now={now} />
+          </Reveal>
+        );
       })}
       <Console
         lines={lines.filter((line) => {

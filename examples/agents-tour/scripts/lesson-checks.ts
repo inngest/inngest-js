@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { formatWithBiome } from "../server/biome.ts";
 import { type LoadedPage, loadLessons } from "../server/lessons.ts";
 import { actionNamed, hintTokens } from "../shared/hints.ts";
+import { inlineCodeSpans, resolveSpan } from "../shared/links.ts";
 import { loadKeyTable } from "./keytable.ts";
 import { root } from "./lib.ts";
 
@@ -158,4 +159,32 @@ export const checkLessons = async (options: CheckOptions = defaults) => {
   }
 
   return problems;
+};
+
+/**
+ * Warnings, one line per inline code span in a page's text that names nothing
+ * in that page's original files. Some spans legitimately are not in the code
+ * (an expected output, a value seen only in the Trace), so these never fail
+ * the check; the page writer decides.
+ */
+export const lessonWarnings = (lessonsDir: string = defaults.lessonsDir) => {
+  const warnings: string[] = [];
+
+  for (const page of loadLessons(lessonsDir).pages) {
+    if (page.manifest.code === false) {
+      continue;
+    }
+
+    const seen = new Set<string>();
+
+    for (const span of inlineCodeSpans(page.markdown)) {
+      if (!seen.has(span) && !resolveSpan(span, page.files)) {
+        warnings.push(`${page.id}: \`${span}\` is not in the page's code`);
+      }
+
+      seen.add(span);
+    }
+  }
+
+  return warnings;
 };

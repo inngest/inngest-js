@@ -7,6 +7,7 @@
 
 import { replaceHints } from "../../shared/hints.ts";
 import { hintOf } from "../../shared/keys.ts";
+import { type LinkFile, resolveSpan } from "../../shared/links.ts";
 import { keys } from "./keytable.ts";
 import { isMac } from "./platform.ts";
 
@@ -17,7 +18,21 @@ const escapeHtml = (text: string) => {
     .replaceAll(">", "&gt;");
 };
 
-const inline = (line: string) => {
+// Inline code that names code in the page's files is a link; `data-link`
+// says where it resolves, for the page check.
+const codeHtml = (code: string, files: readonly LinkFile[]) => {
+  const target = resolveSpan(code, files);
+
+  if (!target) {
+    return `<code>${escapeHtml(code)}</code>`;
+  }
+
+  const where = `${target.file}${target.line > 0 ? `:${target.line}` : ""}`;
+
+  return `<code class="code-link" role="link" tabindex="0" data-code="${escapeHtml(code).replaceAll('"', "&quot;")}" data-link="${where}">${escapeHtml(code)}</code>`;
+};
+
+const inline = (line: string, files: readonly LinkFile[]) => {
   const kept: string[] = [];
   const hold = (html: string) => {
     kept.push(html);
@@ -30,7 +45,7 @@ const inline = (line: string) => {
   });
 
   text = text.replace(/`([^`]+)`/g, (_all, code: string) => {
-    return hold(`<code>${escapeHtml(code)}</code>`);
+    return hold(codeHtml(code, files));
   });
   text = replaceHints(text, keys, (action) => {
     const spec = action.inField[0] ?? action.outside[0] ?? "";
@@ -48,11 +63,19 @@ const inline = (line: string) => {
   });
 };
 
-export const renderMarkdown = (markdown: string) => {
+export const renderMarkdown = (
+  markdown: string,
+  files: readonly LinkFile[] = [],
+) => {
   return markdown
     .split(/\n{2,}/)
     .map((paragraph) => {
-      const lines = paragraph.split("\n").map(inline).join("<br>");
+      const lines = paragraph
+        .split("\n")
+        .map((line) => {
+          return inline(line, files);
+        })
+        .join("<br>");
 
       return `<p>${lines}</p>`;
     })

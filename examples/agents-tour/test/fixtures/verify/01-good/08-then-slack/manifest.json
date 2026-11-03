@@ -1,0 +1,7 @@
+{
+  "start": [{ "agent": "echo", "thread": "t", "content": "hi" }],
+  "verify": {
+    "then": [{ "slack": { "channel": "C02ENG", "text": "hello" } }],
+    "runs": [{ "fn": "echo", "status": "COMPLETED", "output": "HI" }]
+  }
+}

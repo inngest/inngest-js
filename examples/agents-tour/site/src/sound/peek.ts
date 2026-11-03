@@ -3,7 +3,7 @@
  * The peek: with Doom picked but the sound muted, the face now and then
  * slides in from a screen edge, glances left and right, and ducks away.
  * Silent, rare (every one to three minutes), never while the reader is typing
- * or over a control, and off under reduced motion. `Shift+E` shows it now.
+ * or over a control, and off under reduced motion.
  */
 import { faceUrl } from "./faces.ts";
 

@@ -1,0 +1,8 @@
+{
+  "exercise": {
+    "check": "check.ts",
+    "hint": "Wait for a message with inbox.next(), then return a string.",
+    "stub": "stub",
+    "solution": "solution"
+  }
+}

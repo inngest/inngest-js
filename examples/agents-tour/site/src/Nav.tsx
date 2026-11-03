@@ -125,10 +125,9 @@ export const Nav = ({
           onClick={onToggle}
           title="Open the left nav"
           aria-label="Open the left nav"
-          aria-keyshortcuts={shortcutsOf("navToggle")}
+          tabIndex={-1}
         >
           &raquo;
-          <Kbd action="navToggle" short />
         </button>
         {index.modules.map((module, at) => {
           const row = moduleRow(module, progress.pages);
@@ -168,9 +167,9 @@ export const Nav = ({
           onClick={onToggle}
           title="Collapse the left nav"
           aria-label="Collapse the left nav"
-          aria-keyshortcuts={shortcutsOf("navToggle")}
+          tabIndex={-1}
         >
-          &laquo; <Kbd action="navToggle" />
+          &laquo;
         </button>
       </div>
       <div className="nav-scroll">
@@ -267,10 +266,9 @@ export const Nav = ({
           type="button"
           className="ghost"
           onClick={onReset}
-          aria-keyshortcuts={shortcutsOf("resetProgress")}
+          tabIndex={-1}
         >
-          {confirming ? "Press again to reset" : "Reset progress"}{" "}
-          <Kbd action="resetProgress" />
+          {confirming ? "Press again to reset" : "Reset progress"}
         </button>
       </div>
     </nav>

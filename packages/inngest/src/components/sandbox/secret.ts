@@ -78,6 +78,7 @@ export class SecretMissingError extends NonRetriableError {
  * @example
  * ```ts
  * tool.mcp({
+ *   id: "hex",
  *   url: "https://app.hex.tech/mcp",
  *   auth: { bearer: secret("HEX_TOKEN") },
  * });

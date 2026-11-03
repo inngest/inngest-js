@@ -280,15 +280,6 @@ export const swapTrack = () => {
 };
 
 /**
- * Shows the Doom peek now (it only shows with Doom picked and the sound muted).
- */
-export const peekNow = () => {
-  if (state.style === "doom" && state.muted) {
-    showPeek();
-  }
-};
-
-/**
  * Starts listening for `tour:moment` events, once.
  */
 let started = false;

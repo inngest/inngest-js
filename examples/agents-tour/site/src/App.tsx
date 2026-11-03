@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { coreKeys } from "../../shared/keys/core.ts";
 import type { ActionId } from "../../shared/keys.ts";
+import { resolveSpan } from "../../shared/links.ts";
 import type {
   Page,
   PageSummary,
@@ -18,33 +19,27 @@ import type {
 import { api } from "./api.ts";
 import { addTypes, Editor, type EditorApi, type Marker } from "./Editor.tsx";
 import { EventBlock } from "./EventBlock.tsx";
+import { Exercise } from "./Exercise.tsx";
 import { clearEdits, saveEdits, withEdits } from "./edits.ts";
 import { type Handlers, Kbd, shortcutsOf, useKeyboard } from "./keyboard.tsx";
 import { panelKeys } from "./keytable.ts";
 import { sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Nav } from "./Nav.tsx";
-import { Cheat, Concepts, Deeper, Search } from "./overlays.tsx";
+import { Concepts, Deeper, Search } from "./overlays.tsx";
 import { allPanels, type PanelDef, panelOf } from "./panels/index.ts";
 import { Divider } from "./panes.tsx";
 import { store } from "./platform.ts";
 import { flyConcepts, moment } from "./progress-effects.ts";
 import { deeperWaiting, moduleEnd } from "./progress-model.ts";
 import { DoomBar, GameOver, SoundButton } from "./Sound.tsx";
-import {
-  getState,
-  peekNow,
-  setMenu,
-  startSound,
-  swapTrack,
-  toggleMuted,
-} from "./sound/index.ts";
+import { startSound, swapTrack } from "./sound/index.ts";
 import { momentsOf } from "./sound/moments.ts";
 import { justPosted } from "./sound/own.ts";
 import { routeStreamEvent } from "./stream.ts";
-import { TracePanel } from "./trace.tsx";
+import { type RunPressed, TracePanel } from "./trace.tsx";
 
-type Overlay = "concepts" | "deeper" | "search" | "cheat" | null;
+type Overlay = "concepts" | "deeper" | "search" | null;
 
 const noProgress: ProgressSnapshot = {
   pages: {},
@@ -74,6 +69,8 @@ export const App = () => {
   const [ready, setReady] = useState(false);
   const [devServerUrl, setDevServerUrl] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBox = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [runs, setRuns] = useState<TraceRun[]>([]);
   const [status, setStatus] = useState<Status>({
@@ -82,12 +79,15 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
+  // Set the moment Run is pressed, so the Trace can show a placeholder run.
+  const [runSignal, setPressed] = useState<RunPressed | null>(null);
   const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
   const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
   const [rightRow, setRightRow] = useState(
     Number(store.get("tour:right")) || 56,
   );
   const [play, setPlay] = useState<string>("message");
+  const [edits, setEdits] = useState(0);
   const [progress, setProgress] = useState<ProgressSnapshot>(noProgress);
   const [rail, setRail] = useState(store.get("tour:rail") === "1");
   const [moduleDone, setModuleDone] = useState<string | null>(null);
@@ -350,6 +350,8 @@ export const App = () => {
     void api.resetProgress();
   };
 
+  const conceptCount = Object.keys(progress.concepts).length;
+
   const coreCount = flat.filter((entry) => {
     return entry.kind === "core";
   }).length;
@@ -394,12 +396,20 @@ export const App = () => {
     }
 
     moment("run");
+    setPressed({
+      at: Date.now(),
+      label: page.files.some((file) => file.name === "run.ts")
+        ? "run.ts"
+        : null,
+    });
     await formatAll();
 
     const values = editor.current?.values() ?? {};
 
     saveEdits(page, values, store);
-    void api.run(page.id, values);
+    void api.run(page.id, values).catch(() => {
+      setPressed(null);
+    });
 
     pressed.current = {
       page: page.id,
@@ -411,6 +421,38 @@ export const App = () => {
     };
 
     editor.current?.focus();
+  };
+
+  const checkExercise = async () => {
+    if (!page) {
+      return { pass: false as const, reason: "No page is open." };
+    }
+
+    await formatAll();
+
+    const values = editor.current?.values() ?? {};
+
+    saveEdits(page, values, store);
+
+    return api.check(page.id, values);
+  };
+
+  const showSolution = async () => {
+    if (!page) {
+      return;
+    }
+
+    const before = editor.current?.values() ?? {};
+
+    for (const file of await api.solution(page.id)) {
+      editor.current?.setValue(file.name, file.content);
+    }
+
+    setUndo(before);
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => {
+      setUndo(null);
+    }, 10_000);
   };
 
   const reset = () => {
@@ -452,6 +494,47 @@ export const App = () => {
       runButton.current?.focus();
     } else {
       editor.current?.focus();
+    }
+  };
+
+  // Opens the code a linked span of the text names, found in the editor's
+  // current content; nothing happens when it no longer matches.
+  const openCode = (span: string) => {
+    const values = editor.current?.values() ?? {};
+    const target = resolveSpan(
+      span,
+      files.map((file) => {
+        return { name: file.name, content: values[file.name] ?? file.content };
+      }),
+    );
+
+    if (!target) {
+      return;
+    }
+
+    setActive(target.file);
+
+    if (target.line > 0) {
+      editor.current?.reveal(target);
+    }
+  };
+
+  const onProseClick = (event: React.MouseEvent<HTMLElement>) => {
+    const link = (event.target as HTMLElement).closest<HTMLElement>(
+      "code.code-link",
+    );
+
+    if (link?.dataset.code) {
+      openCode(link.dataset.code);
+    }
+  };
+
+  const onProseKey = (event: React.KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+
+    if (event.key === "Enter" && target.matches("code.code-link")) {
+      event.preventDefault();
+      openCode(target.dataset.code ?? "");
     }
   };
 
@@ -549,9 +632,6 @@ export const App = () => {
     prev: () => {
       go(-1);
     },
-    cheat: () => {
-      setOverlay("cheat");
-    },
     contents: focusNav,
     search: () => {
       setOverlay("search");
@@ -563,24 +643,22 @@ export const App = () => {
       focusIn(".trace [data-row], .trace");
     },
     file: nextFile,
-    devserver: () => {
-      if (devServerUrl) {
-        window.open(devServerUrl, "_blank", "noopener");
-      }
-    },
-    rowDown: () => {},
-    rowUp: () => {},
-    rowOpen: () => {},
-    everything: () => {
-      setEverything((value) => {
-        return !value;
-      });
-    },
     editor: toggleEditor,
     undo: undoReset,
   };
+  // The exercise controls listen for these; see `Exercise.tsx`.
+  const exerciseHandlers: Handlers = {
+    check: () => {
+      sendAction("check");
+    },
+    hint: () => {
+      sendAction("hint");
+    },
+    solution: () => {
+      sendAction("solution");
+    },
+  };
   const progressHandlers: Handlers = {
-    navToggle: toggleRail,
     nextModule: () => {
       if (end?.nextModule) {
         open(end.nextModule.id);
@@ -594,9 +672,6 @@ export const App = () => {
     deeperList: () => {
       setOverlay("deeper");
     },
-    concepts: () => {
-      setOverlay("concepts");
-    },
     dismiss: () => {
       if (navOpen) {
         setNavOpen(false);
@@ -604,22 +679,17 @@ export const App = () => {
         setModuleDone(null);
       }
     },
-    resetProgress: askReset,
   };
 
   const soundHandlers: Handlers = {
-    soundToggle: toggleMuted,
-    soundMenu: () => {
-      setMenu(true);
-    },
     soundTrack: swapTrack,
-    soundPeek: peekNow,
   };
 
   const handlers: Handlers = {
     ...panelHandlers,
     ...progressHandlers,
     ...soundHandlers,
+    ...(page?.manifest.exercise ? exerciseHandlers : {}),
     ...core,
   };
 
@@ -627,8 +697,34 @@ export const App = () => {
 
   latest.current = handlers;
   useKeyboard(handlers, () => {
-    return overlay !== null || getState().menu;
+    return overlay !== null || menuOpen;
   });
+
+  // The stack menu closes on a click outside it or on Escape.
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const onDown = (event: MouseEvent) => {
+      if (!menuBox.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [menuOpen]);
 
   const markers: Marker[] = useMemo(() => {
     const out: Marker[] = [];
@@ -700,8 +796,39 @@ export const App = () => {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="logo" aria-hidden="true" />
-        <h1>Agents Tour</h1>
+        <div className="brand">
+          <span className="logo" aria-hidden="true" />
+          <h1>Agents Tour</h1>
+        </div>
+        <button
+          type="button"
+          className="concepts-bar"
+          id="concepts-chip"
+          tabIndex={-1}
+          onClick={() => {
+            setOverlay("concepts");
+          }}
+          title="Open the concepts you have collected"
+        >
+          <span
+            className="concepts-track"
+            role="progressbar"
+            aria-label="Concepts collected"
+            aria-valuemin={0}
+            aria-valuemax={progress.totalConcepts}
+            aria-valuenow={conceptCount}
+          >
+            <span
+              className="concepts-fill"
+              style={{
+                width: `${progress.totalConcepts ? Math.min(100, (conceptCount / progress.totalConcepts) * 100) : 0}%`,
+              }}
+            />
+          </span>
+          <span className="concepts-label">
+            {conceptCount} of {progress.totalConcepts} concepts
+          </span>
+        </button>
         <nav>
           {waiting.length > 0 ? (
             <button
@@ -719,18 +846,6 @@ export const App = () => {
           ) : null}
           <button
             type="button"
-            className="chip"
-            id="concepts-chip"
-            onClick={() => {
-              setOverlay("concepts");
-            }}
-            aria-keyshortcuts={shortcutsOf("concepts")}
-          >
-            {Object.keys(progress.concepts).length} of {progress.totalConcepts}{" "}
-            concepts <Kbd action="concepts" />
-          </button>
-          <button
-            type="button"
             className="ghost"
             onClick={() => {
               setOverlay("search");
@@ -739,26 +854,55 @@ export const App = () => {
           >
             Search <Kbd action="search" />
           </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setOverlay("cheat");
-            }}
-            aria-keyshortcuts={shortcutsOf("cheat")}
-          >
-            Keys <Kbd action="cheat" />
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={handlers.devserver}
-            title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
-            aria-keyshortcuts={shortcutsOf("devserver")}
-          >
-            Dev Server <Kbd action="devserver" />
-          </button>
           <SoundButton />
+          <div className="stack-menu" ref={menuBox}>
+            <button
+              type="button"
+              className="ghost stack-button"
+              tabIndex={-1}
+              aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => {
+                setMenuOpen((value) => {
+                  return !value;
+                });
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3 3 8l9 5 9-5-9-5Z" />
+                <path d="m3 12 9 5 9-5" />
+                <path d="m3 16 9 5 9-5" />
+              </svg>
+            </button>
+            {menuOpen ? (
+              <div className="stack-popover" role="menu">
+                <a
+                  role="menuitem"
+                  tabIndex={-1}
+                  href={devServerUrl || undefined}
+                  target="_blank"
+                  rel="noopener"
+                  title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
+                  onClick={() => {
+                    setMenuOpen(false);
+                  }}
+                >
+                  Dev Server
+                </a>
+              </div>
+            ) : null}
+          </div>
         </nav>
       </header>
 
@@ -816,16 +960,59 @@ export const App = () => {
               tabIndex={-1}
               aria-label="Lesson"
             >
-              <p className="crumb">{page.moduleTitle}</p>
-              <h2>{page.title}</h2>
+              <p className="crumb" key={`crumb-${page.id}`}>
+                {page.moduleTitle}
+              </p>
+              <h2 key={`title-${page.id}`}>{page.title}</h2>
               <div
+                key={`prose-${page.id}`}
                 className="prose"
+                onClick={onProseClick}
+                onKeyDown={onProseKey}
                 dangerouslySetInnerHTML={{
-                  __html: renderMarkdown(page.markdown),
+                  __html: renderMarkdown(page.markdown, page.files),
                 }}
               />
+              {page.manifest.apis?.length || page.manifest.concepts?.length ? (
+                <ul
+                  className="pills"
+                  key={`pills-${page.id}`}
+                  aria-label="New on this page"
+                >
+                  {(page.manifest.apis ?? []).map((api) => {
+                    return (
+                      <li key={`api-${api}`} className="pill api">
+                        <code>{api}</code>
+                      </li>
+                    );
+                  })}
+                  {(page.manifest.concepts ?? []).map((concept) => {
+                    return (
+                      <li key={`concept-${concept}`}>
+                        <button
+                          type="button"
+                          className="pill"
+                          title="Open the concepts you have collected"
+                          onClick={() => setOverlay("concepts")}
+                        >
+                          {concept}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {hasCode && page.manifest.exercise ? (
+                <Exercise
+                  key={page.id}
+                  hint={page.manifest.exercise.hint}
+                  check={checkExercise}
+                  showSolution={showSolution}
+                  edits={edits}
+                />
+              ) : null}
               {hasCode && page.manifest.start?.length ? (
-                <EventBlock starts={page.manifest.start} />
+                <EventBlock key={page.id} starts={page.manifest.start} />
               ) : null}
             </section>
             {hasCode && tabs.length > 0 ? (
@@ -929,6 +1116,9 @@ export const App = () => {
                     }}
                     onChange={(name, content) => {
                       saveEdits(page, { [name]: content }, store);
+                      setEdits((count) => {
+                        return count + 1;
+                      });
                     }}
                   />
                   <div className="controls">
@@ -996,8 +1186,11 @@ export const App = () => {
                     lines={lines}
                     everything={everything}
                     onToggle={() => {
-                      handlers.everything?.();
+                      setEverything((value) => {
+                        return !value;
+                      });
                     }}
+                    pressed={runSignal}
                   />
                 </section>
               </div>
@@ -1123,13 +1316,6 @@ export const App = () => {
         <Search
           index={index}
           onPick={pick}
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay === "cheat" ? (
-        <Cheat
           onClose={() => {
             setOverlay(null);
           }}

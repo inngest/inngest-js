@@ -1,10 +1,10 @@
 /**
  * @module
- * The Messages tab of the play pane. A button sends a random message as an
- * event, and the tab shows
- * each message as the event it became.
+ * The Messages tab of the play pane. A text box holds a message the reader can
+ * read and edit before sending it as an event, and the tab shows each message
+ * as the event it became.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { eventOfMessage } from "../../../shared/events.ts";
 import { api } from "../api.ts";
 import { Kbd } from "../keyboard.tsx";
@@ -19,16 +19,28 @@ export const MessagePanel = ({
   disabled: boolean;
 }) => {
   const [sent, setSent] = useState<string[]>([]);
+  const [draft, setDraft] = useState(() => pick(messages));
+  const field = useRef<HTMLInputElement>(null);
   const threads = target.threads ?? [];
 
+  const another = () => {
+    setDraft((current) => {
+      return pick(messages.filter((message) => message !== current));
+    });
+    field.current?.focus();
+  };
+
   const send = async (thread: string) => {
-    if (disabled) {
+    const content = draft.trim();
+
+    if (disabled || !content) {
       return;
     }
 
-    const event = eventOfMessage(target.agent, thread, pick(messages));
+    const event = eventOfMessage(target.agent, thread, content);
 
-    await api.send(target.agent, thread, event.data.text);
+    setDraft(pick(messages.filter((message) => message !== content)));
+    await api.send(target.agent, thread, content);
     setSent((previous) => {
       return [JSON.stringify(event, null, 2), ...previous].slice(0, 6);
     });
@@ -45,10 +57,28 @@ export const MessagePanel = ({
 
   return (
     <div className="message">
-      <p>
-        A message is an event: it reaches the inbox of{" "}
-        <code>{target.agent}</code> on a thread.
-      </p>
+      <p>A message is an event.</p>
+      <div className="message-box">
+        <input
+          ref={field}
+          type="text"
+          className="message-text"
+          aria-label="Message"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void send(threads[0] ?? target.thread);
+            }
+          }}
+        />
+        <button type="button" onClick={another}>
+          another
+        </button>
+      </div>
       <div className="message-buttons">
         {threads.length > 1 ? (
           threads.map((thread, at) => {
@@ -57,7 +87,7 @@ export const MessagePanel = ({
                 type="button"
                 className="primary"
                 key={thread}
-                disabled={disabled}
+                disabled={disabled || !draft.trim()}
                 onClick={() => {
                   void send(thread);
                 }}
@@ -71,7 +101,7 @@ export const MessagePanel = ({
           <button
             type="button"
             className="primary"
-            disabled={disabled}
+            disabled={disabled || !draft.trim()}
             onClick={() => {
               void send(target.thread);
             }}

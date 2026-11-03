@@ -1,0 +1,13 @@
+{
+  "start": [{ "agent": "which", "thread": "t", "content": "hi" }],
+  "verify": {
+    "model": [{ "say": "ok" }],
+    "runs": [
+      {
+        "fn": "which",
+        "status": "COMPLETED",
+        "output": "scripted:[{\"say\":\"ok\"}]"
+      }
+    ]
+  }
+}

@@ -1,75 +1,111 @@
 /**
  * @module
- * EXPERIMENTAL: `sandbox.tools.code()`, the tools a coding agent needs in a
- * sandbox: read, write, edit, search and run. Each call is one command step in
- * the sandbox, named after the command it runs. `run_code` runs a script whose
- * code can call tools and wait durably.
+ * EXPERIMENTAL: `sandbox.tools`, the tools a coding agent needs in a sandbox:
+ * `run`, `read`, `edit`, `search` and `runCode`, as ready-made tool values. List
+ * them in `sandbox({ tools })`. Each reads the sandbox it works on from
+ * `context.sandbox` when called, so the same value serves every sandbox. Each
+ * call is one command step in the sandbox, named after the command it runs.
+ * `runCode` runs a script whose code can call tools and wait durably.
  */
 import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
-import { createShell } from "./shell.ts";
-import { type SandboxTool, type SandboxTools, tool } from "./tools.ts";
 import {
-  type DurableSandbox,
+  bindSandbox,
+  type SandboxTool,
+  type SandboxTools,
+  tool,
+} from "./tools.ts";
+import {
   type SandboxDuration,
+  type SandboxHandle,
   SandboxValidationError,
 } from "./types.ts";
 
 /**
- * The names of the code tools a sandbox can bring: file `read`, `write`,
- * `edit` and `search`, a shell `run`, and `run_code` for a script that calls
- * tools.
+ * A built-in tool that takes options with `.with()`, which gives the tool
+ * made with them.
  */
-export type CodeToolName =
-  | "read"
-  | "write"
-  | "edit"
-  | "search"
-  | "run"
-  | "run_code";
+export type ConfiguredTool<TTool extends SandboxTool, TOptions> = TTool & {
+  /**
+   * The same tool with these options. They add to the options it already has.
+   */
+  with(options: TOptions): ConfiguredTool<TTool, TOptions>;
+};
 
 /**
- * Options of `sandbox.tools.code()`.
+ * Options of `run`, `read` and `search`.
  */
-export interface CodeToolsOptions<TName extends CodeToolName = CodeToolName> {
+export interface CommandToolOptions {
   /**
-   * Where relative paths and commands start. Default `/work`.
+   * The longest one command may run. Default 5 minutes.
    */
-  cwd?: string;
+  timeout?: SandboxDuration;
+}
 
+/**
+ * Options of `sandbox.tools.run`.
+ */
+export interface RunToolOptions extends CommandToolOptions {
   /**
-   * The longest one command may run. For `run_code` it is the longest one
-   * run of the script between waits: the clock starts again each time the
-   * script runs again after a wait. Default 5 minutes.
+   * Whether `run` keeps its working directory and exported environment
+   * between calls, like a terminal. Default `true`. With `false` every
+   * command starts fresh in the sandbox's `cwd`.
+   */
+  session?: boolean;
+}
+
+/**
+ * Options of `sandbox.tools.runCode`.
+ */
+export interface RunCodeToolOptions {
+  /**
+   * The longest one run of the script between waits: the clock starts again
+   * each time the script runs again after a wait. Default 5 minutes.
    */
   timeout?: SandboxDuration;
 
   /**
-   * Whether `run` keeps its working directory and exported environment
-   * between calls, like a terminal. Default `true`. With `false` every
-   * command starts fresh in `cwd`.
-   */
-  session?: boolean;
-
-  /**
-   * Only these tools. Default all of them, with `run_code` only when
-   * `tools` is given.
-   */
-  only?: TName[];
-
-  /**
-   * Tools the code of `run_code` can call as `tools.name(...)`, besides
-   * `tools.sleep({ duration })` and `tools.now()`. A tool declared with
-   * `waits` may wait for as long as it likes: the script exits meanwhile, and
-   * runs again from the top with its earlier calls answered from a journal.
-   * Anything the script does outside tool calls (writing files, starting
-   * processes) happens again on each run. `now` and `sleep` are taken.
+   * Tools the code can call as `tools.name(...)`, besides
+   * `tools.sleep({ duration })` and `tools.now()`. They are hidden from the
+   * model. A tool declared with `waits` may wait for as long as it likes: the
+   * script exits meanwhile, and runs again from the top with its earlier calls
+   * answered from a journal. Anything the script does outside tool calls
+   * (writing files, starting processes) happens again on each run. `now` and
+   * `sleep` are taken. A `tool.group()` among them gets the sandbox as its
+   * `context.sandbox`.
    */
   tools?: SandboxTools;
 }
+
+const configurable = <TTool extends SandboxTool, TOptions extends object>(
+  make: (options: TOptions) => TTool,
+  current: TOptions = {} as TOptions,
+): ConfiguredTool<TTool, TOptions> => {
+  return Object.assign(make(current), {
+    with: (options: TOptions) => {
+      return configurable(make, { ...current, ...options });
+    },
+  });
+};
+
+// A built-in tool has no sandbox of its own: it works on the one it is listed
+// on.
+const sandboxOf = (
+  name: string,
+  context: { sandbox?: SandboxHandle },
+): SandboxHandle => {
+  if (!context.sandbox) {
+    throw new NonRetriableError(
+      `${name} works on a sandbox: list it in sandbox({ tools })`,
+    );
+  }
+
+  return context.sandbox;
+};
 
 const scriptTools: SandboxTools = {
   now: tool.step({
@@ -105,200 +141,240 @@ const isFileNotFound = (error: unknown): boolean => {
   return cause?.status === 404 && cause.code !== "sandbox_not_found";
 };
 
+const exec = async (
+  sandbox: SandboxHandle,
+  id: string,
+  name: string,
+  command: string[],
+  timeout: SandboxDuration,
+  environment: Record<string, string> = {},
+): Promise<string> => {
+  // The shell may start in the thread's saved place or the checkout.
+  const current = await sandbox.shell();
+  const result = await sandbox.commands.run({ id, name }, command, {
+    cwd: current.cwd ?? sandbox.cwd,
+    environment,
+    timeout,
+  });
+  const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
+
+  return `exit ${result.exitCode}\n${result.stdout}${stderr}`;
+};
+
 /**
- * EXPERIMENTAL: Tools for a model to work on code in a sandbox: `read`,
- * `write`, `edit`, `search` and `run`. Hand them to `agent.loop()`.
- *
- * `edit` replaces exact text, like the text editor tools models are trained
- * on, and runs in your app: it reads the file, changes it and writes it back,
- * so the sandbox needs nothing installed. A command that exits non-zero is a
- * result the model sees, not an error.
+ * EXPERIMENTAL: `sandbox.tools.read`: reads a file with line numbers. List it
+ * in `sandbox({ tools })`.
+ */
+const read = configurable((options: CommandToolOptions) => {
+  const { timeout = "5m" } = options;
+
+  return tool.group({
+    description:
+      "Read a file with line numbers. Use from and to to read a range.",
+    input: z.object({
+      path: z.string(),
+      from: z.number().optional(),
+      to: z.number().optional(),
+    }),
+    run: ({ path, from = 1, to = 400 }, context) => {
+      return exec(
+        sandboxOf("read", context),
+        "read",
+        `sed -n ${from},${to}p ${path}`,
+        ["/bin/sh", "-c", 'nl -ba -- "$P" | sed -n "$A,$B p"'],
+        timeout,
+        { P: path, A: String(from), B: String(to) },
+      );
+    },
+  });
+});
+
+/**
+ * EXPERIMENTAL: `sandbox.tools.edit`: edits a file by replacing exact text,
+ * like the text editor tools models are trained on. It runs in your app: it
+ * reads the file, changes it and writes it back, so the sandbox needs nothing
+ * installed. List it in `sandbox({ tools })`.
+ */
+const edit = tool.group({
+  description:
+    "Edit a file by replacing exact text. old_string must match exactly once, or set replace_all to replace every match.",
+  input: z.object({
+    path: z.string(),
+    old_string: z.string(),
+    new_string: z.string(),
+    replace_all: z.boolean().optional(),
+  }),
+  run: async ({ path, ...change }, context) => {
+    const sandbox = sandboxOf("edit", context);
+    const file = path.startsWith("/")
+      ? path
+      : `${(await sandbox.shell()).cwd ?? sandbox.cwd}/${path}`;
+    const bytes = await sandbox.files
+      .read({ id: "edit:read", name: `read ${path}` }, file)
+      .catch((error: unknown) => {
+        throw isFileNotFound(error)
+          ? new Error(`File not found: ${path}`)
+          : error;
+      });
+    let text: string;
+
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error(`${path} is not a UTF-8 text file`);
+    }
+
+    await sandbox.files.write(
+      { id: "edit:write", name: `edit ${path}` },
+      { path: file, data: editText(path, text, change) },
+    );
+
+    return `edited ${path}`;
+  },
+});
+
+/**
+ * EXPERIMENTAL: `sandbox.tools.write`: writes a whole file, creating it and its
+ * parent directories if needed. It refuses empty content, so a model can't
+ * wipe a file by mistake. Use `edit` to change part of a file. List it in
+ * `sandbox({ tools })`.
+ */
+const write = tool.group({
+  description:
+    "Write a file with the complete contents given, creating it and its parent directories if needed and replacing it if it exists. To change part of a file, use edit.",
+  input: z.object({ path: z.string(), content: z.string() }),
+  run: async ({ path, content }, context) => {
+    if (content.trim() === "") {
+      throw new Error(
+        "content is empty; write needs the complete file contents",
+      );
+    }
+
+    const sandbox = sandboxOf("write", context);
+    const cwd = (await sandbox.shell()).cwd ?? sandbox.cwd;
+    const file = path.startsWith("/") ? path : `${cwd}/${path}`;
+    const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+
+    if (dir !== "") {
+      await sandbox.commands.run(
+        { id: "write:mkdir", name: `mkdir -p ${dir}` },
+        ["mkdir", "-p", dir],
+        { cwd },
+      );
+    }
+
+    await sandbox.files.write(
+      { id: "write:write", name: `write ${path}` },
+      { path: file, data: content },
+    );
+
+    return `wrote ${new TextEncoder().encode(content).length} bytes to ${path}`;
+  },
+});
+
+/**
+ * EXPERIMENTAL: `sandbox.tools.search`: searches file contents with a regular
+ * expression. List it in `sandbox({ tools })`.
+ */
+const search = configurable((options: CommandToolOptions) => {
+  const { timeout = "5m" } = options;
+
+  return tool.group({
+    description: "Search file contents with a regular expression.",
+    input: z.object({ pattern: z.string(), path: z.string().optional() }),
+    run: ({ pattern, path = "." }, context) => {
+      return exec(
+        sandboxOf("search", context),
+        "search",
+        `rg ${pattern} ${path}`,
+        ["/bin/sh", "-c", searchScript],
+        timeout,
+        { PAT: pattern, P: path },
+      );
+    },
+  });
+});
+
+/**
+ * EXPERIMENTAL: `sandbox.tools.run`: runs a shell command in the sandbox. The
+ * shell keeps its working directory and exported environment between calls,
+ * and `read`, `edit`, `write` and `search` start where it is. A command that exits
+ * non-zero is a result the model sees, not an error. Options with
+ * `run.with({ timeout, session })`.
  *
  * @example
  * ```ts
- * await agent.loop({
- *   model,
- *   prompt,
- *   tools: sandbox.tools.code({ cwd: "/work/app", only: ["read", "run"] }),
+ * const { run, read } = sandbox.tools;
+ *
+ * export const work = sandbox({
+ *   id: "work",
+ *   cwd: "/work/app",
+ *   tools: { run: run.with({ timeout: "10m" }), read },
  * });
  * ```
  */
-export const codeTools = <TName extends CodeToolName = CodeToolName>(
-  sandbox: Pick<DurableSandbox, "commands" | "files">,
-  options: CodeToolsOptions<TName> = {},
-): Record<TName, SandboxTool> => {
-  const { cwd = "/work", timeout = "5m", session: persist = true } = options;
-  let shell: ReturnType<typeof createShell> | undefined;
-  const session = () => {
-    if (!persist) {
-      return undefined;
-    }
+const run = configurable((options: RunToolOptions) => {
+  const { timeout = "5m", session: persist = true } = options;
 
-    shell ??= createShell(sandbox.commands.run, { cwd });
+  return tool.group({
+    description:
+      "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
+    input: z.object({ command: z.string() }),
+    run: async ({ command }, context) => {
+      const sandbox = sandboxOf("run", context);
 
-    return shell;
-  };
+      if (!persist) {
+        return exec(
+          sandbox,
+          "run",
+          command,
+          ["/bin/sh", "-c", command],
+          timeout,
+        );
+      }
+
+      const current = await sandbox.shell();
+      const before = current.cwd;
+      const result = await current.run({ id: "run", name: command }, command, {
+        timeout,
+      });
+      const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
+      const moved =
+        current.cwd !== before && current.cwd !== undefined
+          ? `\ncwd: ${current.cwd}`
+          : "";
+
+      return `exit ${result.exitCode}\n${result.stdout}${stderr}${moved}`;
+    },
+  });
+});
+
+/**
+ * EXPERIMENTAL: `sandbox.tools.runCode`: runs a Python or TypeScript script in
+ * the sandbox, whose code can call tools and wait durably. Give it tools with
+ * `runCode.with({ tools })`.
+ */
+const runCode = configurable((options: RunCodeToolOptions) => {
+  const { timeout = "5m" } = options;
 
   for (const name of Object.keys(scriptTools)) {
     if (options.tools && Object.hasOwn(options.tools, name)) {
       throw new SandboxValidationError(
-        `The tool name "${name}" is built in to run_code; give yours another name`,
+        `The tool name "${name}" is built in to runCode; give yours another name`,
       );
     }
   }
 
-  if (
-    options.tools &&
-    options.only &&
-    !options.only.includes("run_code" as TName)
-  ) {
-    throw new SandboxValidationError(
-      "tools are for run_code, but only leaves it out",
-    );
-  }
-
-  const exec = async (
-    id: CodeToolName,
-    name: string,
-    command: string[],
-    environment: Record<string, string> = {},
-  ): Promise<string> => {
-    const result = await sandbox.commands.run({ id, name }, command, {
-      cwd: shell?.cwd ?? cwd,
-      environment,
-      timeout,
-    });
-    const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
-
-    return `exit ${result.exitCode}\n${result.stdout}${stderr}`;
-  };
-
-  const tools: Record<Exclude<CodeToolName, "run_code">, SandboxTool> & {
-    run_code?: SandboxTool;
-  } = {
-    read: tool.group({
-      description:
-        "Read a file with line numbers. Use from and to to read a range.",
-      input: z.object({
-        path: z.string(),
-        from: z.number().optional(),
-        to: z.number().optional(),
-      }),
-      run: ({ path, from = 1, to = 400 }) => {
-        return exec(
-          "read",
-          `sed -n ${from},${to}p ${path}`,
-          ["/bin/sh", "-c", 'nl -ba -- "$P" | sed -n "$A,$B p"'],
-          { P: path, A: String(from), B: String(to) },
-        );
-      },
-    }),
-
-    write: tool.group({
-      description: "Create or overwrite a file with the given content.",
-      input: z.object({ path: z.string(), content: z.string() }),
-      run: ({ path, content }) => {
-        return exec(
-          "write",
-          `write ${path}`,
-          [
-            "/bin/sh",
-            "-c",
-            'mkdir -p "$(dirname "$P")" && printf "%s" "$C" > "$P"',
-          ],
-          { P: path, C: content },
-        );
-      },
-    }),
-
-    edit: tool.group({
-      description:
-        "Edit a file by replacing exact text. old_string must match exactly once, or set replace_all to replace every match.",
-      input: z.object({
-        path: z.string(),
-        old_string: z.string(),
-        new_string: z.string(),
-        replace_all: z.boolean().optional(),
-      }),
-      run: async ({ path, ...edit }) => {
-        const file = path.startsWith("/")
-          ? path
-          : `${shell?.cwd ?? cwd}/${path}`;
-        const bytes = await sandbox.files
-          .read({ id: "edit:read", name: `read ${path}` }, file)
-          .catch((error: unknown) => {
-            throw isFileNotFound(error)
-              ? new Error(`File not found: ${path}`)
-              : error;
-          });
-        let text: string;
-
-        try {
-          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-        } catch {
-          throw new Error(`${path} is not a UTF-8 text file`);
-        }
-
-        await sandbox.files.write(
-          { id: "edit:write", name: `edit ${path}` },
-          { path: file, data: editText(path, text, edit) },
-        );
-
-        return `edited ${path}`;
-      },
-    }),
-
-    search: tool.group({
-      description: "Search file contents with a regular expression.",
-      input: z.object({ pattern: z.string(), path: z.string().optional() }),
-      run: ({ pattern, path = "." }) => {
-        return exec(
-          "search",
-          `rg ${pattern} ${path}`,
-          ["/bin/sh", "-c", searchScript],
-          { PAT: pattern, P: path },
-        );
-      },
-    }),
-
-    run: tool.group({
-      description:
-        "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
-      input: z.object({ command: z.string() }),
-      run: async ({ command }) => {
-        const current = session();
-
-        if (!current) {
-          return exec("run", command, ["/bin/sh", "-c", command]);
-        }
-
-        const before = current.cwd;
-        const result = await current.run(
-          { id: "run", name: command },
-          command,
-          {
-            timeout,
-          },
-        );
-        const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
-        const moved =
-          current.cwd !== before && current.cwd !== undefined
-            ? `\ncwd: ${current.cwd}`
-            : "";
-
-        return `exit ${result.exitCode}\n${result.stdout}${stderr}${moved}`;
-      },
-    }),
-  };
-
-  tools.run_code = tool.group({
+  return tool.group({
     description:
       'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.',
     input: z.object({
       language: z.enum(["python", "typescript"]),
       code: z.string(),
     }),
-    run: async ({ language, code }, { idempotencyKey }) => {
+    run: async ({ language, code }, context) => {
+      const sandbox = sandboxOf("runCode", context);
+      const { idempotencyKey } = context;
       const base = `/tmp/inngest-run-code-${hashjs.sha256().update(idempotencyKey).digest("hex").slice(0, 16)}`;
       const resultPath = `${base}.result.json`;
       const plan = buildRunner({
@@ -307,6 +383,11 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
         payloadPath: `${base}.json`,
         resultPath,
       });
+      const scripted: SandboxTools = {};
+
+      for (const [name, entry] of Object.entries(options.tools ?? {})) {
+        scripted[name] = bindSandbox(entry, sandbox);
+      }
 
       if (plan.upload) {
         await sandbox.files.write(
@@ -320,9 +401,9 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
           { id: "run_code", name: "run code" },
           plan.command,
           {
-            cwd,
+            cwd: sandbox.cwd,
             timeout,
-            tools: { ...scriptTools, ...options.tools },
+            tools: { ...scriptTools, ...scripted },
           },
         );
         const stderr = result.stderr ? `\nstderr:\n${result.stderr}` : "";
@@ -346,22 +427,41 @@ export const codeTools = <TName extends CodeToolName = CodeToolName>(
           await sandbox.commands.run(
             { id: "run_code:cleanup", name: "remove files" },
             ["rm", "-f", resultPath, `${base}.json`],
-            { cwd },
+            { cwd: sandbox.cwd },
           );
         } catch {}
       }
     },
   });
+});
 
-  const names =
-    options.only ??
-    (Object.keys(tools).filter((name) => {
-      return name !== "run_code" || options.tools !== undefined;
-    }) as TName[]);
+/**
+ * EXPERIMENTAL: The built-in tools of a sandbox, ready-made: `run`, `read`,
+ * `edit`, `write`, `search` and `runCode`, plus `defaults`, the tools a sandbox with no
+ * `tools` brings (`run`). List them in `sandbox({ tools })`; the model sees
+ * them as `<sandbox key>_<tool key>`.
+ *
+ * @example
+ * ```ts
+ * const { run, read, edit } = sandbox.tools;
+ *
+ * export const work = sandbox({
+ *   id: "work",
+ *   cwd: "/work",
+ *   tools: { run, read, edit },
+ * });
+ * ```
+ */
+export const builtinTools = {
+  run,
+  read,
+  edit,
+  write,
+  search,
+  runCode,
 
-  return Object.fromEntries(
-    names.map((name) => {
-      return [name, tools[name]];
-    }),
-  ) as Record<TName, SandboxTool>;
+  /**
+   * What a sandbox with no `tools` brings: `run`.
+   */
+  defaults: { run } as { run: typeof run },
 };

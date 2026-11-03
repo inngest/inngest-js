@@ -1,0 +1,7 @@
+{
+  "readOnly": ["run.ts", "setup.ts"],
+  "apis": ["event"],
+  "concepts": ["event"],
+  "panels": ["message"],
+  "message": { "agent": "hello", "thread": "main" }
+}

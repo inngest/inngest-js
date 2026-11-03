@@ -4,7 +4,11 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
 import type { DeferFn, ReceivedEventMeta } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
-import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+  StaticTypeError,
+} from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
 type BasicDataUnknown = Record<string, unknown>;
@@ -28,15 +32,44 @@ type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
   ? unknown
   : T;
 
+type WildcardNameMessage =
+  StaticTypeError<"is() matches exact event names only: this event type has a wildcard name">;
+
 /**
- * Represents the structure of an event as received by function handlers.
- *
- * This is the runtime event shape that your function receives when triggered.
+ * Whether an event type, or any in a list of them, has a wildcard in its name.
+ * A name that is only known to be a `string` has none.
+ */
+type HasWildcardName<T> = T extends EventType<infer TName, any>
+  ? ContainsWildcard<TName>
+  : false;
+
+/**
+ * The event types `is()` accepts, which is the type given when none of them
+ * has a wildcard name and an error message otherwise: `is()` matches exact
+ * names, so no type passed to it can match by prefix.
+ */
+type ExactEventTypes<T> = true extends HasWildcardName<
+  T extends readonly (infer TItem)[] ? TItem : T
+>
+  ? WildcardNameMessage
+  : unknown;
+
+/**
+ * The `this` an event type needs to call `is()`: any, unless its name has a
+ * wildcard.
+ */
+export type ExactNameThis<TName extends string> =
+  ContainsWildcard<TName> extends true ? WildcardNameMessage : unknown;
+
+/**
+ * The data fields of an event, without the methods the SDK adds to the events
+ * it hands to user code. Exported mainly so declaration files can name inbox
+ * types.
  *
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
+export type EventShape<TName, TData extends BasicDataUnknown> = {
   data: TData;
   id: string;
   name: TName;
@@ -49,6 +82,54 @@ export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
   ts: number;
   v: string;
 };
+
+/**
+ * Narrows an event to the event types it was asked about. One type or many.
+ * Exported mainly so declaration files can name inbox types.
+ */
+export type EventIs = {
+  is<
+    const T extends
+      | EventTypeWithAnySchema<string>
+      | readonly EventTypeWithAnySchema<string>[],
+  >(
+    types: T & ExactEventTypes<T>, // event types without a wildcard name
+  ): this is EventTypesToShape<T>;
+};
+
+/**
+ * Represents the structure of an event as received by function handlers.
+ *
+ * This is the runtime event shape that your function receives when triggered.
+ *
+ * @template TName - The event name as a string literal type
+ * @template TData - The event data object type
+ */
+export type ReceivedEvent<TName, TData extends BasicDataUnknown> = EventShape<
+  TName,
+  TData
+> &
+  EventIs;
+
+/**
+ * Converts one event type, or a list of them, to the union of their shapes.
+ */
+export type EventTypesToShape<T> = T extends readonly (infer TItem)[]
+  ? EventTypeToShape<TItem>
+  : EventTypeToShape<T>;
+
+/**
+ * Converts an EventType instance to the shape of the events it describes.
+ * Exported mainly so declaration files can name inbox types.
+ */
+export type EventTypeToShape<TEventType> = TEventType extends EventType<
+  infer TName,
+  infer TSchema
+>
+  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+    ? EventShape<WildcardToUnknown<TName>, TData>
+    : EventShape<WildcardToUnknown<TName>, BasicDataAny>
+  : never;
 
 /**
  * Recursively checks if a trigger array contains an invoke trigger.

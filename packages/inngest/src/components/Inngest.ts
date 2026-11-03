@@ -665,7 +665,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   /**
    * EXPERIMENTAL: Runs an Insights SQL query. Rows come back as lists of values
-   * in the order of `columns`. Used by `agent.threads.list()`.
+   * in the order of `columns`.
    * @param sql The Insights query.
    */
   public queryInsights(
