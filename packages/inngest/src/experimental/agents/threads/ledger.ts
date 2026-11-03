@@ -2,9 +2,13 @@
  * @module
  * EXPERIMENTAL: the thread ledger, which keeps thread state with no KV store.
  *
- * One internal function per app (`agents-thread-ledger`) holds the resolved
- * state of a thread in its own run, one live run per thread key. The protocol
- * is plain events:
+ * Two internal functions per app keep a thread's state. `agents-thread-ledger`
+ * is a supervisor, one live run per thread key (a singleton that skips): it is
+ * started by the first message for a thread and then lives for as long as the
+ * thread's ledger does, invoking `agents-thread-ledger-run` to hold the
+ * resolved state in its run. Because the supervisor never ends between two
+ * ledger runs, a message cannot start a second, empty ledger while the state
+ * is moving from one run to the next. The protocol is plain events:
  *
  * - `agent/thread.write { thread, runId, seq, change }`: a write. `seq`
  *   numbers the writes of one writer, because delivery order is not
@@ -17,8 +21,10 @@
  * - `agent/thread.read { thread, runId }`: asks for the resolved state. The
  *   ledger answers with `agent/thread.state { thread, runId, version, state,
  *   seq }`.
- * - `agent/thread.handover { thread, version, state, last }`: starts a fresh
- *   ledger run carrying the state when the old one nears Inngest's step limit.
+ * - Handover: when a ledger run nears Inngest's step limit it returns its
+ *   state (`ThreadHandoverData`) to the function that invoked it, which
+ *   invokes the next run with it. No event carries a handover, so none can be
+ *   skipped, dropped or reach a run that is not listening.
  * - `agent/thread.ready { thread, app, epoch }`: sent once a ledger run's
  *   subscription is open. A reader whose `agent/thread.read` may have reached
  *   no live ledger asks again when it hears this.
@@ -59,7 +65,9 @@
  *   its next message for as long as the platform lets a run wait; it ends if it
  *   is cancelled or the platform ends it, and then its state is gone (the next
  *   message starts an empty ledger). Near Inngest's step limit it hands over
- *   its state to a fresh run: that is the only planned end.
+ *   its state to the next run, through the supervisor that invoked it: that is
+ *   the only planned end. The supervisor spends one step per run, so a thread
+ *   keeps its ledger for about 400,000 writes.
  * - Each write costs the writer one step and the ledger two, so a ledger hands
  *   over after roughly 400 writes. A state past 128 KB refuses writes.
  * - A write that reaches the ledger between its last read and its handover is
@@ -68,12 +76,12 @@
  *   and cannot, so such a write can be lost.
  */
 
-import { createDefer } from "../../../components/DeferredFunction.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
 import {
   eventType,
+  invoke,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import type { LastRun } from "../agent/recovery.ts";
@@ -161,9 +169,9 @@ export type ThreadChange =
   | { op: "indexRemove"; index: string; member: string }
   | {
       /**
-       * Sent by the ledger, never by a writer: replaces a copy's state after
-       * a handover reached a run that had already started empty. `last` is
-       * the last `seq` applied for each writer.
+       * Sent by the ledger, never by a writer: tells every copy the state a
+       * run took over by handover holds. `last` is the last `seq` applied for
+       * each writer.
        */
       op: "reset";
       state: ThreadLedgerState;
@@ -283,7 +291,9 @@ export type ThreadStateData = ThreadReadData & {
 };
 
 /**
- * The data of `agent/thread.handover`.
+ * What one ledger run hands the next when it nears the step limit. It goes
+ * through the supervisor's invocation, not through an event. The name is only
+ * what the signature covers.
  */
 export type ThreadHandoverData = LedgerSigned & {
   /**
@@ -370,9 +380,32 @@ export const threadChanged = eventType("agent/thread.changed", {
 export const threadStateReply = eventType("agent/thread.state", {
   schema: staticSchema<ThreadStateData>(),
 });
-export const threadHandover = eventType("agent/thread.handover", {
-  schema: staticSchema<ThreadHandoverData>(),
-});
+
+const handoverName = "agent/thread.handover";
+
+/**
+ * What the supervisor invokes a ledger run with: the message that started the
+ * thread's ledger (the first run) or the state the run before it handed over.
+ */
+export type LedgerRunInput = {
+  start?: {
+    id?: string;
+    name: string;
+    ts?: number;
+    data: Record<string, unknown>;
+  };
+  carried?: ThreadHandoverData;
+};
+
+/**
+ * What a ledger run returns to the supervisor: with `handover` the run hit the
+ * step limit and the next one takes over.
+ */
+export type LedgerRunResult = {
+  thread: string;
+  version: number;
+  handover?: ThreadHandoverData;
+};
 export const threadReady = eventType("agent/thread.ready", {
   schema: staticSchema<ThreadReadyData>(),
 });
@@ -539,6 +572,12 @@ const handoverAt = (): number => {
  */
 const gapWaitMs = 5000;
 
+/**
+ * How long the supervisor waits for a ledger run, which waits for its next
+ * message for as long as the platform lets a run wait.
+ */
+const invokeTimeout = "365d";
+
 const quoted = (value: string): string => {
   return JSON.stringify(value);
 };
@@ -569,43 +608,25 @@ export const createLedgerFunctions = (
 ): InngestFunction.Any[] => {
   ledgerApps.add(client.id);
 
-  // Runs after a ledger run ends and starts the next one with the state.
-  const handoverFn = createDefer(
-    client,
-    { id: "agents-thread-ledger-handover" },
-    async ({ event, step }) => {
-      await step.sendEvent(
-        "handover",
-        threadHandover.create(event.data as ThreadHandoverData),
-      );
-    },
-  );
-
-  const ledger = client.createFunction(
+  // Holds the state of one thread in its run and returns it to the supervisor
+  // near the step limit.
+  const run = client.createFunction(
     {
-      id: "agents-thread-ledger",
+      id: "agents-thread-ledger-run",
       retries: 0,
       optimizeParallelism: false,
-      triggers: [
-        threadWrite.name,
-        threadRead.name,
-        threadHandover.name,
-        runEnded.name,
-      ].map((event) => {
-        // A ledger function belongs to one app and takes only its events.
-        return { event, if: `event.data.app == ${quoted(client.id)}` };
-      }),
-      singleton: { key: "event.data.thread", mode: "skip" },
+      triggers: [invoke(staticSchema<LedgerRunInput>())],
     },
-    async ({ event, step, defer, logger, runId }) => {
-      const start = event as unknown as {
-        id?: string;
-        name: string;
-        ts?: number;
-        data: Record<string, unknown>;
-      };
-      const thread = String(start.data.thread);
-      const app = String(start.data.app);
+    async ({ event, step, logger, runId }) => {
+      const input = event.data as unknown as LedgerRunInput;
+      const origin = input.carried ?? input.start?.data;
+
+      if (!origin) {
+        return { thread: "", version: 0 } satisfies LedgerRunResult;
+      }
+
+      const thread = String(origin.thread);
+      const app = String(origin.app);
       const limit = handoverAt();
       const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
 
@@ -638,7 +659,7 @@ export const createLedgerFunctions = (
 
       // The time of the latest event taken in. Expiry is judged by it, so a
       // replay of the run reaches the same state.
-      let clock = start.ts ?? 0;
+      let clock = input.start?.ts ?? 0;
 
       // The last `seq` applied for each writer, and writes that came ahead of
       // their turn.
@@ -647,14 +668,15 @@ export const createLedgerFunctions = (
       const seen = new Set<string>();
       let steps = 0;
 
-      // A handover that starts the run carries the state the run before it
-      // left: the run is based on it from the start, and says so to the
-      // copies with a `reset`.
-      const startHandover = start.name === threadHandover.name && valid(start);
+      // A run that takes over carries the state the run before it left, and
+      // says so to the copies with a `reset`.
+      const carried =
+        input.carried && valid({ name: handoverName, data: input.carried })
+          ? input.carried
+          : undefined;
+      const start = carried ? undefined : input.start;
 
-      if (startHandover) {
-        const carried = start.data as unknown as ThreadHandoverData;
-
+      if (carried) {
         state = carried.state;
         version = carried.version;
 
@@ -663,23 +685,17 @@ export const createLedgerFunctions = (
         }
       }
 
-      // A run that started from a write or a read has not seen the state the
-      // run before it left, which a handover brings. Until then it keeps what
-      // it applies, to replay it on top of that state.
-      let based = startHandover;
-      const applied: ThreadWriteData[] = [];
-      const appliedMax = 500;
-
       logger.info(
-        { thread, started: start.name, version, based, epoch },
+        {
+          thread,
+          started: carried ? "handover" : start?.name,
+          version,
+          epoch,
+        },
         "thread ledger run started",
       );
 
       await using sub = step.subscribe("ledger", [
-        {
-          event: threadHandover.name,
-          if: mine,
-        },
         {
           event: threadWrite.name,
           if: mine,
@@ -764,10 +780,6 @@ export const createLedgerFunctions = (
         state = next;
         version += 1;
 
-        if (!based && applied.length < appliedMax) {
-          applied.push({ ...write, change });
-        }
-
         out.push(changedOf({ ...write, change }, {}));
       };
 
@@ -811,40 +823,6 @@ export const createLedgerFunctions = (
 
         if (typeof message.ts === "number") {
           clock = Math.max(clock, message.ts);
-        }
-
-        if (message.name === threadHandover.name) {
-          const carried = message.data as ThreadHandoverData;
-
-          if (based) {
-            return;
-          }
-
-          based = true;
-          state = carried.state;
-          version = carried.version;
-
-          for (const [writer, seq] of Object.entries(carried.last)) {
-            last.set(writer, Math.max(last.get(writer) ?? 0, seq));
-          }
-
-          // What this run applied before the handover came goes on top.
-          for (const write of applied) {
-            const next = structuredClone(state);
-
-            applyChange(next, write.change, clock);
-
-            if (stateSize(next) <= threadStateLimit) {
-              state = next;
-              version += 1;
-            }
-          }
-
-          applied.length = 0;
-          version += 1;
-          out.push(resetOf());
-
-          return;
         }
 
         if (message.name === runEnded.name) {
@@ -932,14 +910,10 @@ export const createLedgerFunctions = (
 
       // A ledger that took over by handover tells every copy what it holds and
       // which writes of theirs it applied.
-      if (startHandover) {
-        if (start.id) {
-          seen.add(start.id);
-        }
-
+      if (carried) {
         version += 1;
         out.push(resetOf());
-      } else {
+      } else if (start) {
         take(start);
         release(false);
       }
@@ -953,7 +927,7 @@ export const createLedgerFunctions = (
             thread,
             app,
             epoch,
-            ...(start.name === threadRead.name && {
+            ...(start?.name === threadRead.name && {
               answered: String(start.data.runId),
             }),
           }),
@@ -970,26 +944,27 @@ export const createLedgerFunctions = (
           out.length = 0;
         }
 
-        // Near the limit the ledger hands over to a fresh run. A write that
-        // reaches it between its last read and its end is lost to this run: its
-        // writer sends it again when the next run's `reset` arrives.
+        // Near the limit the ledger hands its state back to the supervisor,
+        // which invokes the next run with it. A write that reaches no run
+        // between the two is sent again by its writer when the next run's
+        // `reset` arrives.
         if (steps + 3 >= limit) {
           logger.info(
             { thread, version, steps },
             "thread ledger nears the step limit and hands over",
           );
-          defer("handover", {
-            function: handoverFn,
-            data: signed(threadHandover.name, {
+
+          return {
+            thread,
+            version,
+            handover: signed(handoverName, {
               thread,
               app,
               version,
               state,
               last: Object.fromEntries(last),
             }) satisfies ThreadHandoverData,
-          });
-
-          return { thread, version, handover: true };
+          } satisfies LedgerRunResult;
         }
 
         const batch =
@@ -1000,7 +975,7 @@ export const createLedgerFunctions = (
         steps += 1;
 
         if (batch === undefined) {
-          return { thread, version };
+          return { thread, version } satisfies LedgerRunResult;
         }
 
         if (batch === null) {
@@ -1024,5 +999,53 @@ export const createLedgerFunctions = (
     },
   );
 
-  return [ledger, handoverFn as unknown as InngestFunction.Any];
+  // The supervisor: one live run per thread, started by the first message for
+  // it. It invokes a ledger run and, when that hands over, the next one with the
+  // state, so the thread always has a live run and no message can start a
+  // second ledger from empty state while the state moves on.
+  const ledger = client.createFunction(
+    {
+      id: "agents-thread-ledger",
+      retries: 0,
+      triggers: [threadWrite.name, threadRead.name, runEnded.name].map(
+        (event) => {
+          // A ledger function belongs to one app and takes only its events.
+          return { event, if: `event.data.app == ${quoted(client.id)}` };
+        },
+      ),
+      singleton: { key: "event.data.thread", mode: "skip" },
+    },
+    async ({ event, step }) => {
+      const first = event as unknown as {
+        id?: string;
+        name: string;
+        ts?: number;
+        data: Record<string, unknown>;
+      };
+      let input: LedgerRunInput = {
+        start: {
+          id: first.id,
+          name: first.name,
+          ts: first.ts,
+          data: first.data,
+        },
+      };
+
+      for (let generation = 1; ; generation++) {
+        const result = (await step.invoke(`run:${generation}`, {
+          function: run,
+          data: input as Record<string, unknown>,
+          timeout: invokeTimeout,
+        })) as LedgerRunResult;
+
+        if (!result.handover) {
+          return result;
+        }
+
+        input = { carried: result.handover };
+      }
+    },
+  );
+
+  return [ledger, run as unknown as InngestFunction.Any];
 };

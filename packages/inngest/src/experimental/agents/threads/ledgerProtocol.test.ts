@@ -5,17 +5,24 @@
  * record a starter keeps of what its children owe, and the message a resend
  * keeps.
  */
+import { _internals } from "../../../components/execution/engine.ts";
 import { Inngest } from "../../../components/Inngest.ts";
-import { testClientId } from "../../../test/helpers.ts";
+import type { InngestFunction } from "../../../components/InngestFunction.ts";
+import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
+import { StepOpCode } from "../../../types.ts";
 import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
 import { freshKv } from "../agent/test-helpers.ts";
 import { flushOwes, noteOwes, owesRecord } from "../inbox/reports.ts";
 import { inflightOf } from "../inbox/threadInbox.ts";
 import {
   applyChange,
+  createLedgerFunctions,
   emptyThreadState,
+  type LedgerRunInput,
+  type LedgerRunResult,
   liveKey,
   resolveTtl,
+  type ThreadHandoverData,
 } from "./ledger.ts";
 
 describe("ledger signatures", () => {
@@ -134,5 +141,91 @@ describe("a failed turn's resend", () => {
       id: "evt-1",
       from: { kind: "agent", key: "p" },
     });
+  });
+});
+
+describe("ledger handover", () => {
+  const client = new Inngest({ id: "handover-app", isDev: true });
+  const supervisor = createLedgerFunctions(client).find((fn) => {
+    return fn.id("handover-app").endsWith("agents-thread-ledger");
+  }) as InngestFunction.Any;
+  const thread = "inngest:kv:thread:default:handover-app:t";
+  const write = {
+    id: "evt-1",
+    name: "agent/thread.write",
+    ts: 1,
+    data: signLedgerData(client, "agent/thread.write", {
+      thread,
+      app: "handover-app",
+      runId: "r1",
+      seq: 1,
+      change: { op: "set", key: "k", value: 1 },
+    }),
+  };
+  const step = (id: string, data: unknown) => {
+    const hashed = _internals.hashId(id);
+
+    return { [hashed]: { id: hashed, data } };
+  };
+  const next = async (memos: Record<string, unknown>) => {
+    const state = Object.assign(
+      {},
+      ...Object.entries(memos).map(([id, data]) => step(id, data)),
+    );
+
+    return runFnWithStack(supervisor, state, { event: write, events: [write] });
+  };
+  const invoked = (
+    result: Awaited<ReturnType<typeof next>>,
+  ): { id: string; input: LedgerRunInput } => {
+    if (result.type !== "steps-found") {
+      throw new Error(`expected a step, got ${result.type}`);
+    }
+
+    const op = result.steps[0];
+
+    expect(op?.op).toBe(StepOpCode.InvokeFunction);
+
+    return {
+      id: String(op?.userland?.id ?? op?.id),
+      input: (op?.opts as { payload: { data: LedgerRunInput } }).payload.data,
+    };
+  };
+
+  test("the first message starts the first run, which is not a handover", async () => {
+    const { id, input } = invoked(await next({}));
+
+    expect(id).toBe("run:1");
+    expect(input.carried).toBeUndefined();
+    expect(input.start?.name).toBe("agent/thread.write");
+    expect(input.start?.data).toEqual(write.data);
+  });
+
+  test("the state a run hands over goes to the next run, and the supervisor does not end between them", async () => {
+    const carried: ThreadHandoverData = signLedgerData(
+      client,
+      "agent/thread.handover",
+      {
+        thread,
+        app: "handover-app",
+        version: 7,
+        state: { keys: { k: { v: 1 } }, indexes: {} },
+        last: { r1: 1 },
+      },
+    ) as ThreadHandoverData;
+    const handed: LedgerRunResult = { thread, version: 7, handover: carried };
+
+    const { id, input } = invoked(await next({ "run:1": handed }));
+
+    expect(id).toBe("run:2");
+    expect(input.carried).toEqual(carried);
+    expect(input.start).toBeUndefined();
+  });
+
+  test("the supervisor ends when a run ends without handing over", async () => {
+    const ended: LedgerRunResult = { thread, version: 7 };
+    const result = await next({ "run:1": ended });
+
+    expect(result.type).toBe("function-resolved");
   });
 });
