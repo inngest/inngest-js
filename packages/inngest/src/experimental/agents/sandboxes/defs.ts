@@ -198,6 +198,24 @@ export interface SandboxDefinition<TTool extends string = string>
    * Marks the value as made by `sandbox()`.
    */
   readonly kind: "inngest/sandbox.definition";
+
+  /**
+   * Set by `with({ model })`: whether the model gets this sandbox's tools.
+   * Unset means `true`.
+   */
+  readonly model?: boolean;
+
+  /**
+   * A copy of this sandbox with options for the agent that uses it. `model:
+   * false` keeps it for code only: the model gets no tools on it, and the
+   * handler's `sandboxes.work` still works.
+   *
+   * @example
+   * ```ts
+   * sandboxes: { grader: grader.with({ model: false }) }
+   * ```
+   */
+  with(options: { model?: boolean }): SandboxDefinition<TTool>;
 }
 
 /**
@@ -275,7 +293,8 @@ export type SandboxesConfig<
 export type SandboxToolNames = Record<string, string>;
 
 /**
- * An agent's sandboxes by name, each a definition or a binding.
+ * An agent's sandboxes by name, each a definition (optionally from
+ * `sandbox.with()`) or a binding.
  */
 export type SandboxRecord<
   Ctx = never,
@@ -318,7 +337,18 @@ const defineSandbox = (
     );
   }
 
-  return Object.freeze({ ...options, kind: "inngest/sandbox.definition" });
+  const definition: SandboxDefinition = Object.freeze({
+    ...options,
+    kind: "inngest/sandbox.definition" as const,
+    with: (withOptions: { model?: boolean }) => {
+      return Object.freeze({
+        ...definition,
+        ...(withOptions.model !== undefined && { model: withOptions.model }),
+      });
+    },
+  });
+
+  return definition;
 };
 
 /**
@@ -559,7 +589,10 @@ const toBinding = (
   const options =
     typeof binding === "object" && binding && "sandbox" in binding
       ? binding
-      : { sandbox: binding };
+      : {
+          sandbox: binding,
+          ...(binding?.model !== undefined && { model: binding.model }),
+        };
 
   if (options.sandbox?.kind !== "inngest/sandbox.definition") {
     throw new SandboxValidationError(
@@ -573,9 +606,12 @@ const toBinding = (
     );
   }
 
-  if (options.model !== undefined && typeof options.model !== "boolean") {
+  // `{ sandbox, model }` wins; otherwise `sandbox.with({ model })` applies.
+  const model = options.model ?? options.sandbox.model;
+
+  if (model !== undefined && typeof model !== "boolean") {
     throw new SandboxValidationError(
-      `Sandbox "${name}" has model ${String(options.model)}: use true or false`,
+      `Sandbox "${name}" has model ${String(model)}: use true or false`,
     );
   }
 
@@ -589,7 +625,7 @@ const toBinding = (
     );
   }
 
-  return options;
+  return { ...options, model };
 };
 
 const setupContext = (
