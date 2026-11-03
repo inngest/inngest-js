@@ -74,6 +74,7 @@ describe.each([true, false])(
             stepId: "m",
             text: "x",
             toolCalls: [],
+            runs: [],
             usage: { input: 1, output: 1 },
           });
           await pause();

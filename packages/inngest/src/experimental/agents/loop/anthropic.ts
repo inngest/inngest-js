@@ -896,6 +896,10 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
         toolCalls,
         usage: usageOf(reply),
         model: current.model,
+        details: {
+          stopReason: reply.stop_reason ?? null,
+          model: current.model,
+        },
         ...costOf(current.model, usageOf(reply)),
       };
 

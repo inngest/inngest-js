@@ -32,6 +32,7 @@ import {
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import type { Json } from "../json.ts";
 import { kv } from "../kv/kv.ts";
 import {
   type AgentCompaction,
@@ -367,6 +368,13 @@ export interface AgentModelResponse {
    * known, and a dollar budget then needs a `price`.
    */
   usd?: number;
+
+  /**
+   * Anything else to report about the reply, such as its finish reason or
+   * provider. It is stored with the step and shows up as `turn.model` in
+   * `onTurn`. Default: none.
+   */
+  details?: Record<string, Json>;
 }
 
 /**
@@ -408,6 +416,18 @@ export interface AgentTurn {
    * The calls the reply asked for.
    */
   toolCalls: AgentToolCall[];
+
+  /**
+   * This turn's finished tool runs, in the order of `toolCalls`, with their
+   * `output` and `isError`. Empty when the reply asked for no calls.
+   */
+  runs: AgentToolRun[];
+
+  /**
+   * The `details` the model function returned for this call, `undefined` if
+   * it returned none.
+   */
+  model?: Record<string, Json>;
 
   /**
    * Tokens this call used.
@@ -1383,6 +1403,8 @@ const runLoop = async <TTools extends SandboxTools>(
           stepId: modelStep,
           text: priced.text ?? "",
           toolCalls: priced.toolCalls,
+          runs: [],
+          model: priced.details,
           usage: {
             ...(priced.usage ?? { input: 0, output: 0 }),
             ...(priced.usd !== undefined && { usd: priced.usd }),
@@ -1438,6 +1460,8 @@ const runLoop = async <TTools extends SandboxTools>(
       stepId: modelStep,
       text,
       toolCalls: reply.toolCalls,
+      runs: [],
+      model: reply.details,
       usage: { ...callUsage, ...(cost !== undefined && { usd: cost }) },
     };
 
@@ -1506,6 +1530,7 @@ const runLoop = async <TTools extends SandboxTools>(
     }
 
     toolRuns.push(...done.map(({ run: finished }) => finished));
+    turnInfo.runs = done.map(({ run: finished }) => finished) as AgentToolRun[];
     messages.push({ role: "tool", results: done.map(({ result }) => result) });
     onTurn(options.onTurn);
   }
