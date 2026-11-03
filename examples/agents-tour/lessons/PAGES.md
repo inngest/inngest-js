@@ -79,6 +79,8 @@ await hello.start("Hi");
 
 ## Prove it
 
+In a fresh worktree, start the tour (step 2) once first: that installs `node_modules`, which `pnpm tour:lessons` needs.
+
 1. Typecheck the page's code the way the editor will (a red squiggle counts as broken), and the manifest, hints and formatting:
 
    ```bash
