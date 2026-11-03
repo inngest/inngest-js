@@ -234,6 +234,45 @@ const edit = tool.group({
 });
 
 /**
+ * EXPERIMENTAL: `sandbox.tools.write`: writes a whole file, creating it and its
+ * parent directories if needed. It refuses empty content, so a model can't
+ * wipe a file by mistake. Use `edit` to change part of a file. List it in
+ * `sandbox({ tools })`.
+ */
+const write = tool.group({
+  description:
+    "Write a file with the complete contents given, creating it and its parent directories if needed and replacing it if it exists. To change part of a file, use edit.",
+  input: z.object({ path: z.string(), content: z.string() }),
+  run: async ({ path, content }, context) => {
+    if (content.trim() === "") {
+      throw new Error(
+        "content is empty; write needs the complete file contents",
+      );
+    }
+
+    const sandbox = sandboxOf("write", context);
+    const cwd = (await sandbox.shell()).cwd ?? sandbox.cwd;
+    const file = path.startsWith("/") ? path : `${cwd}/${path}`;
+    const dir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+
+    if (dir !== "") {
+      await sandbox.commands.run(
+        { id: "write:mkdir", name: `mkdir -p ${dir}` },
+        ["mkdir", "-p", dir],
+        { cwd },
+      );
+    }
+
+    await sandbox.files.write(
+      { id: "write:write", name: `write ${path}` },
+      { path: file, data: content },
+    );
+
+    return `wrote ${new TextEncoder().encode(content).length} bytes to ${path}`;
+  },
+});
+
+/**
  * EXPERIMENTAL: `sandbox.tools.search`: searches file contents with a regular
  * expression. List it in `sandbox({ tools })`.
  */
@@ -259,7 +298,7 @@ const search = configurable((options: CommandToolOptions) => {
 /**
  * EXPERIMENTAL: `sandbox.tools.run`: runs a shell command in the sandbox. The
  * shell keeps its working directory and exported environment between calls,
- * and `read`, `edit` and `search` start where it is. A command that exits
+ * and `read`, `edit`, `write` and `search` start where it is. A command that exits
  * non-zero is a result the model sees, not an error. Options with
  * `run.with({ timeout, session })`.
  *
@@ -398,7 +437,7 @@ const runCode = configurable((options: RunCodeToolOptions) => {
 
 /**
  * EXPERIMENTAL: The built-in tools of a sandbox, ready-made: `run`, `read`,
- * `edit`, `search` and `runCode`, plus `defaults`, the tools a sandbox with no
+ * `edit`, `write`, `search` and `runCode`, plus `defaults`, the tools a sandbox with no
  * `tools` brings (`run`). List them in `sandbox({ tools })`; the model sees
  * them as `<sandbox key>_<tool key>`.
  *
@@ -417,6 +456,7 @@ export const builtinTools = {
   run,
   read,
   edit,
+  write,
   search,
   runCode,
 

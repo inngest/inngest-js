@@ -170,9 +170,11 @@ describe("sandbox: the code tools are run, run_code, read, search and edit", () 
     expectTypeOf(bare).toEqualTypeOf<SandboxDefinition<never>>();
   });
 
-  test("write is not a built-in tool", () => {
-    // @ts-expect-error write was deleted: a heredoc in run writes a file
-    sandbox.tools.write;
+  test("write is a built-in tool, not a default", () => {
+    expectTypeOf(sandbox.tools.write).not.toBeAny();
+    expectTypeOf(sandbox.tools.defaults).toEqualTypeOf<{
+      run: typeof sandbox.tools.run;
+    }>();
   });
 });
 
