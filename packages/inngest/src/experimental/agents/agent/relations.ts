@@ -53,10 +53,26 @@ const secretsOf = (client: Inngest.Any): string[] => {
   return keys.length > 0 ? keys : [unsignedKey];
 };
 
+/**
+ * The app a thread key belongs to: the part of its agent address before the
+ * first slash. A tag is made by the app that owns the key it tags, so it is
+ * checked against that app, and a tag made for one app is refused by another.
+ */
+const appOfBody = (body: string): string => {
+  const slash = body.indexOf("/");
+
+  return slash < 0 ? "" : body.slice(0, slash);
+};
+
+/**
+ * The HMAC of `parts`, which are encoded as a JSON array, so no part can move
+ * a boundary into its neighbour (a starter address is URI-decoded and may hold
+ * any character, newlines included).
+ */
 const mac = (secret: string, ...parts: string[]): string => {
   return (
     hmac(sha256 as unknown as Parameters<typeof hmac>[0], secret)
-      .update(parts.join("\n"))
+      .update(JSON.stringify(parts))
       // 16 hex characters (64 bits) keep keys short.
       .digest("hex")
       .slice(0, 16)
@@ -101,6 +117,21 @@ const parseKey = (key: string): ParsedKey | undefined => {
 };
 
 /**
+ * The agent address a tagged key (one a start made) names, or `undefined` for
+ * a key of any other shape. A run of an agent whose own address is not this
+ * one must not act under the key: it would borrow the relations the key's
+ * tag proves.
+ * @param key A thread key.
+ */
+export const taggedKeyAddress = (key: string): string | undefined => {
+  const parsed = parseKey(key);
+
+  return parsed && /^[0-9a-f]{16}$/.test(parsed.tag)
+    ? key.slice(0, key.lastIndexOf(":"))
+    : undefined;
+};
+
+/**
  * The key of a thread a start opens, tagged with the thread that started it.
  * @param client The client, whose signing key makes the tags.
  * @param base `<address>:<runId>.<n>`.
@@ -115,16 +146,31 @@ export const relatedKey = (
   group?: string,
 ): string => {
   const [secret] = secretsOf(client) as [string];
-  const tag = mac(secret, "tag", starter.key, starter.address, base);
+  const app = client.id;
+  const tag = mac(secret, "tag", app, starter.key, starter.address, base);
   const escaped = encodeURIComponent(starter.address).replace(/\./g, "%2E");
 
   if (group === undefined) {
     return `${base}.${tag}.${escaped}`;
   }
 
-  const id = mac(secret, "group", starter.key, group);
+  const id = groupIdOf(secret, starter.key, starter.address, group);
 
-  return `${base}.${tag}.${id}.${mac(secret, "member", id, base)}.${escaped}`;
+  return `${base}.${tag}.${id}.${mac(secret, "member", app, id, base)}.${escaped}`;
+};
+
+/**
+ * The id of a group: bound to the starter's app (taken from its address, so
+ * peers started by one thread in different apps still share it), the
+ * starter's key and the group's name.
+ */
+const groupIdOf = (
+  secret: string,
+  starterKey: string,
+  starterAddress: string,
+  group: string,
+): string => {
+  return mac(secret, "group", appOfBody(starterAddress), starterKey, group);
 };
 
 /**
@@ -141,15 +187,17 @@ export const groupOf = (key: string): string | undefined => {
  * @param client The client.
  * @param starter The key of the thread that starts.
  * @param group The group's name.
+ * @param starterAddress The starting agent's address (empty for a function).
  */
 export const groupId = (
   client: Inngest.Any,
   starter: string,
   group: string,
+  starterAddress = "",
 ): string => {
   const [secret] = secretsOf(client) as [string];
 
-  return mac(secret, "group", starter, group);
+  return groupIdOf(secret, starter, starterAddress, group);
 };
 
 /**
@@ -179,13 +227,33 @@ export const relationOf = (
     });
   };
 
-  if (mine && valid(mine.tag, "tag", target, mine.starter, mine.body)) {
+  if (
+    mine &&
+    valid(
+      mine.tag,
+      "tag",
+      appOfBody(mine.body),
+      target,
+      mine.starter,
+      mine.body,
+    )
+  ) {
     return mine.starter === ""
       ? undefined
       : { relation: "parent", address: mine.starter };
   }
 
-  if (theirs && valid(theirs.tag, "tag", self, theirs.starter, theirs.body)) {
+  if (
+    theirs &&
+    valid(
+      theirs.tag,
+      "tag",
+      appOfBody(theirs.body),
+      self,
+      theirs.starter,
+      theirs.body,
+    )
+  ) {
     return { relation: "child" };
   }
 
@@ -193,8 +261,20 @@ export const relationOf = (
     mine?.group &&
     theirs?.group &&
     mine.group.id === theirs.group.id &&
-    valid(mine.group.tag, "member", mine.group.id, mine.body) &&
-    valid(theirs.group.tag, "member", theirs.group.id, theirs.body)
+    valid(
+      mine.group.tag,
+      "member",
+      appOfBody(mine.body),
+      mine.group.id,
+      mine.body,
+    ) &&
+    valid(
+      theirs.group.tag,
+      "member",
+      appOfBody(theirs.body),
+      theirs.group.id,
+      theirs.body,
+    )
   ) {
     return { relation: "peer" };
   }
@@ -208,11 +288,44 @@ export const relationOf = (
  * child or run.
  */
 const lentDigest = (
+  app: string,
   lent: object,
   parentRun: string,
   thread: string,
+  issuedAt: number,
 ): string => {
-  return JSON.stringify(["lent", parentRun, thread, canonical(lent)]);
+  return JSON.stringify([
+    "lent",
+    app,
+    parentRun,
+    thread,
+    issuedAt,
+    canonical(lent),
+  ]);
+};
+
+/**
+ * How long a lend stays good after the parent issued it. A child's run starts
+ * within seconds of the start event, but a function that is concurrency
+ * limited or backed up can queue it for a while; an hour covers that, and
+ * bounds how long a copied start event keeps working once the parent is gone.
+ */
+export const lentMaxAgeMs = 60 * 60 * 1000;
+
+/**
+ * Whether a lend issued at `issuedAt` (epoch milliseconds) is still within
+ * its window at `now`. A lend dated in the future is refused too.
+ */
+export const lentIsFresh = (
+  issuedAt: unknown,
+  now: number,
+): issuedAt is number => {
+  return (
+    typeof issuedAt === "number" &&
+    Number.isFinite(issuedAt) &&
+    issuedAt <= now + 60_000 &&
+    now - issuedAt <= lentMaxAgeMs
+  );
 };
 
 /**
@@ -247,30 +360,38 @@ const fullMac = (secret: string, data: string): string => {
 
 /**
  * Signs what a start lends, so the child can tell the lend came from a run of
- * this app and not from an event someone else sent.
+ * this app and not from an event someone else sent. The signature covers the
+ * app, the lending run, the child's thread, the time of issue and the machines.
  * @param client The client, whose signing key signs.
  * @param lent The lent machines, by name.
  * @param parentRun The lending run's ID.
  * @param thread The child's thread key.
+ * @param issuedAt When the lend was issued, in epoch milliseconds.
  */
 export const signLent = (
   client: Inngest.Any,
   lent: object,
   parentRun: string,
   thread: string,
+  issuedAt: number,
 ): string => {
   const [secret] = secretsOf(client) as [string];
 
-  return fullMac(secret, lentDigest(lent, parentRun, thread));
+  return fullMac(
+    secret,
+    lentDigest(client.id, lent, parentRun, thread, issuedAt),
+  );
 };
 
 /**
- * Whether a lend carries a signature made for this payload, run and thread.
+ * Whether a lend carries a signature made for this app, payload, run, thread
+ * and issue time. It does not check the age: see `lentIsFresh`.
  * @param client The client, whose signing key (or its fallback) signed.
  * @param lent The lent machines, by name.
  * @param signature The signature that came with them.
  * @param parentRun The lending run's ID that came with them.
  * @param thread The child's thread key.
+ * @param issuedAt The issue time that came with them.
  */
 export const lentIsSigned = (
   client: Inngest.Any,
@@ -278,12 +399,59 @@ export const lentIsSigned = (
   signature: unknown,
   parentRun: unknown,
   thread: string,
+  issuedAt: unknown,
 ): boolean => {
-  if (typeof signature !== "string" || typeof parentRun !== "string") {
+  if (
+    typeof signature !== "string" ||
+    typeof parentRun !== "string" ||
+    typeof issuedAt !== "number"
+  ) {
     return false;
   }
 
-  const data = lentDigest(lent, parentRun, thread);
+  const data = lentDigest(client.id, lent, parentRun, thread, issuedAt);
+
+  return secretsOf(client).some((secret) => {
+    return fullMac(secret, data) === signature;
+  });
+};
+
+/**
+ * Signs an app's announcement of its cards, so a reader can tell it was made
+ * by something that holds the environment's signing key and not by someone
+ * who can only send events. The signature covers the app ID and the cards
+ * (keys sorted at every level), so it cannot be moved to another app or edited.
+ * It does not tell one app of the environment from another: they share the key.
+ * @param client The announcing app's client.
+ * @param cards The cards announced.
+ */
+export const signCards = (client: Inngest.Any, cards: unknown): string => {
+  const [secret] = secretsOf(client) as [string];
+
+  return fullMac(
+    secret,
+    JSON.stringify(["cards", client.id, canonical(cards)]),
+  );
+};
+
+/**
+ * Whether an announcement of `app` carries a signature made over its cards.
+ * @param client The reading app's client, whose signing key (or fallback) checks.
+ * @param app The app the announcement names.
+ * @param cards The cards it lists.
+ * @param signature The signature that came with it.
+ */
+export const cardsAreSigned = (
+  client: Inngest.Any,
+  app: string,
+  cards: unknown,
+  signature: unknown,
+): boolean => {
+  if (typeof signature !== "string") {
+    return false;
+  }
+
+  const data = JSON.stringify(["cards", app, canonical(cards)]);
 
   return secretsOf(client).some((secret) => {
     return fullMac(secret, data) === signature;

@@ -270,10 +270,23 @@ export function startThread<TOutput>(
           ...(target.via && { via: target.via, target: target.address }),
           ...(reports && Object.keys(reports).length > 0 && { reports }),
           ...(attached && { parent_run: ctx.runId as string }),
-          ...(lent && {
-            lent,
-            lent_sig: signLent(target.client, lent, ctx.runId as string, key),
-          }),
+          ...(lent &&
+            (() => {
+              // The send step is memoized, so a replay's new time is unused.
+              const lentAt = Date.now();
+
+              return {
+                lent,
+                lent_at: lentAt,
+                lent_sig: signLent(
+                  target.client,
+                  lent,
+                  ctx.runId as string,
+                  key,
+                  lentAt,
+                ),
+              };
+            })()),
         },
       },
     );
@@ -304,7 +317,12 @@ export function startThread<TOutput>(
       : step.sendEvent(
           `group:${ctx.runId}.${nextCount(instance, "group")}:joined`,
           agentGroupJoined.create({
-            group: groupId(target.client, starter.key, target.group),
+            group: groupId(
+              target.client,
+              starter.key,
+              target.group,
+              starter.address,
+            ),
             name: target.group,
             agent: target.address,
             thread: key,

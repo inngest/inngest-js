@@ -20,7 +20,7 @@ import {
   lendableSandbox,
   lendableTool,
 } from "../sandboxes/defs.ts";
-import { lentIsSigned } from "./relations.ts";
+import { lentIsFresh, lentIsSigned } from "./relations.ts";
 
 /**
  * What a start lends and how long the child lives: the part of the start
@@ -209,6 +209,7 @@ export const lentOf = (
           from?: {
             lent?: Record<string, LentMachine>;
             lent_sig?: unknown;
+            lent_at?: unknown;
             parent_run?: unknown;
           };
         }
@@ -220,7 +221,14 @@ export const lentOf = (
   }
 
   if (
-    !lentIsSigned(client, from.lent, from.lent_sig, from.parent_run, thread)
+    !lentIsSigned(
+      client,
+      from.lent,
+      from.lent_sig,
+      from.parent_run,
+      thread,
+      from.lent_at,
+    )
   ) {
     throw new NonRetriableError(
       "The sandboxes lent to this run are unsigned or do not match: only a run of this app can lend",
@@ -228,6 +236,31 @@ export const lentOf = (
   }
 
   return from.lent;
+};
+
+/**
+ * The time (epoch milliseconds) a run's lend was issued, from its start event;
+ * only meaningful after `lentOf` accepted the lend.
+ */
+export const lentIssuedAt = (event: { data?: unknown }): number => {
+  const at = (event.data as { from?: { lent_at?: unknown } } | undefined)?.from
+    ?.lent_at;
+
+  return typeof at === "number" ? at : 0;
+};
+
+/**
+ * Throws, for good, when a lend is older than its window. A run reads the
+ * clock once, in a step, so a retry or a replay keeps the first verdict.
+ * @param issuedAt When the lend was issued.
+ * @param now The current time.
+ */
+export const refuseStaleLend = (issuedAt: number, now: number): void => {
+  if (!lentIsFresh(issuedAt, now)) {
+    throw new NonRetriableError(
+      "The sandboxes lent to this run were lent too long ago: a lend is good for an hour after the parent issues it",
+    );
+  }
 };
 
 /**

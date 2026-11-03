@@ -11,6 +11,7 @@ import { createFnRunner, testClientId } from "../../../test/helpers.ts";
 import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
 import { agentToolSet } from "../agent/agentTools.ts";
+import { signCards } from "../agent/relations.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import {
   type AgentCard,
@@ -30,6 +31,12 @@ import {
 } from "./discovery.ts";
 
 const client = new Inngest({ id: testClientId });
+
+// What an app's announcement carries: its cards and the signature over them.
+// The fake clients below have no signing key, like the real one in this file.
+const signedData = (app: string, cards: AgentCard[]) => {
+  return { app, cards, sig: signCards({ id: app } as Inngest.Any, cards) };
+};
 const agents = createAgents(client, { store: memoryKvAdapter() });
 
 const docs = agents.agent(
@@ -210,7 +217,7 @@ describe("reading the current cards", () => {
       id,
       internalId: id,
       name: agentsRegisteredEvent,
-      data: { app, cards },
+      data: signedData(app, cards),
       ts: ts ?? Date.now(),
     };
   };
@@ -293,7 +300,7 @@ describe("reading the current cards", () => {
       queryInsights: async () => {
         return {
           columns: ["data"],
-          rows: [[JSON.stringify({ app: "a", cards: [x] })]],
+          rows: [[JSON.stringify(signedData("a", [x]))]],
         };
       },
     });
@@ -323,7 +330,7 @@ describe("reading the current cards", () => {
     expect(broken.listEvents).not.toHaveBeenCalled();
   });
 
-  test("a full 1000-row answer is a readable error, never a short list", async () => {
+  test("a full 1000-row answer is read, not an error, and warns", async () => {
     const reader = fakeClient({
       queryInsights: async () => {
         return {
@@ -335,7 +342,7 @@ describe("reading the current cards", () => {
       },
     });
 
-    await expect(readCards(reader)).rejects.toThrow(/1000/);
+    await expect(readCards(reader)).resolves.toEqual([]);
   });
 });
 
@@ -349,7 +356,7 @@ describe("paused and gone agents", () => {
             id: "e",
             internalId: "e",
             name: agentsRegisteredEvent,
-            data: { app, cards },
+            data: signedData(app, cards),
             ts: Date.now(),
           },
         ];
@@ -501,7 +508,7 @@ describe("the tools", () => {
         id: "e1",
         internalId: "e1",
         name: agentsRegisteredEvent,
-        data: { app: "other-app", cards: registered },
+        data: signedData("other-app", registered),
         ts: Date.now(),
       },
     ]);

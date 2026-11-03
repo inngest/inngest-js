@@ -353,7 +353,7 @@ describe("message_agent", () => {
     const boss = `${plain.card.address}:boss.0`;
     const callerKey = relatedKey(
       client,
-      `${plain.card.address}:c-run.0`,
+      `${testClientId}/caller:c-run.0`,
       { key: boss, address: plain.card.address },
       "crew",
     );

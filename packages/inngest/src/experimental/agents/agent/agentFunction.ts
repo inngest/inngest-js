@@ -55,6 +55,7 @@ import {
   type AgentReport,
   handleAddressKey,
   type ReportBook,
+  reportSenderProblem,
   reportsOf,
   reportTool,
   sendReport,
@@ -132,7 +133,12 @@ import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
-import { lentOf, parentEndedCancel } from "./lending.ts";
+import {
+  lentIssuedAt,
+  lentOf,
+  parentEndedCancel,
+  refuseStaleLend,
+} from "./lending.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -144,7 +150,7 @@ import {
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
-import { groupOf } from "./relations.ts";
+import { groupOf, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
   idleMs,
@@ -418,6 +424,20 @@ export function createAgentFunction(
         return t.event === event.name;
       });
       const data = startData(ref, found, event);
+
+      // A message names its thread, and the thread's key can carry tags that
+      // prove relations (parent, child, peer). A key a start made for another
+      // agent is not this agent's thread: running under it would borrow its
+      // reach.
+      if (!found) {
+        const owner = taggedKeyAddress(data.thread);
+
+        if (owner !== undefined && owner !== ref) {
+          throw new NonRetriableError(
+            `The thread ${data.thread} belongs to ${owner}, not to ${ref}`,
+          );
+        }
+      }
       // Read by `agent.loop()` once the body's inbox exists.
       const questions = new QuestionBook();
       const bridge: AgentBridge = { questions };
@@ -704,6 +724,20 @@ export function createAgentFunction(
           )) ?? [],
         );
 
+        // A lend is signed and also dated: one that is too old is refused,
+        // so a copied start event cannot borrow the parent's machine once the
+        // parent is gone. The clock is read in a step, so the verdict holds
+        // for every retry and replay of the run.
+        const lent = lentOf(client, event, data.thread);
+
+        if (lent) {
+          const issuedAt = lentIssuedAt(event);
+
+          await step.run("lent-fresh", () => {
+            refuseStaleLend(issuedAt, Date.now());
+          });
+        }
+
         const { opened, closeAll, toolsOnly } = await openRunSandboxes({
           skills: runSkills,
           config,
@@ -717,7 +751,7 @@ export function createAgentFunction(
           logger,
           defer,
           cleanup,
-          lent: lentOf(client, event, data.thread),
+          lent,
         });
 
         const agentScore = createAgentScore(client);
@@ -744,6 +778,19 @@ export function createAgentFunction(
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
           async function problemOf(raw, started) {
+            // A report is taken only from a thread this thread started: the
+            // `from` of an event is whatever its sender wrote, and the key's
+            // tag is what proves it. Anything else is dropped.
+            const senderProblem = reportSenderProblem(
+              client,
+              data.thread,
+              resentAs(raw as UntypedInboxMessage),
+            );
+
+            if (senderProblem) {
+              return senderProblem;
+            }
+
             if (isOwnEvent(raw.name)) {
               return undefined;
             }

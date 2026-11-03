@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { Inngest } from "../../../components/Inngest.ts";
-import { lentOf, parentEndedCancel, planLend } from "./lending.ts";
+import {
+  lentIssuedAt,
+  lentOf,
+  parentEndedCancel,
+  planLend,
+  refuseStaleLend,
+} from "./lending.ts";
 import { signLent } from "./relations.ts";
 
 describe("lending", () => {
@@ -24,10 +30,18 @@ describe("lending", () => {
   test("a lend is refused unless it is signed for its run and thread", () => {
     const client = new Inngest({ id: "lend-sign", isDev: true });
     const lent = { work: { id: "sbx", cwd: "/tmp", code: true, tools: [] } };
-    const sig = signLent(client, lent, "run1", "app/a:run1.0");
+    const sig = signLent(client, lent, "run1", "app/a:run1.0", 1000);
     const event = (over: object) => {
       return {
-        data: { from: { lent, lent_sig: sig, parent_run: "run1", ...over } },
+        data: {
+          from: {
+            lent,
+            lent_sig: sig,
+            lent_at: 1000,
+            parent_run: "run1",
+            ...over,
+          },
+        },
       };
     };
 
@@ -47,6 +61,10 @@ describe("lending", () => {
     expect(() =>
       lentOf(client, event({ lent_sig: undefined }), "app/a:run1.0"),
     ).toThrow("unsigned");
+    // The issue time is signed: moving it to look fresh breaks the signature.
+    expect(() =>
+      lentOf(client, event({ lent_at: 2000 }), "app/a:run1.0"),
+    ).toThrow("unsigned");
     expect(() =>
       lentOf(
         client,
@@ -54,6 +72,18 @@ describe("lending", () => {
         "app/a:run1.0",
       ),
     ).toThrow("unsigned");
+  });
+
+  test("a lend is good for an hour, and not from the future", () => {
+    const hour = 60 * 60 * 1000;
+
+    expect(() => refuseStaleLend(1000, 1000 + hour)).not.toThrow();
+    expect(() => refuseStaleLend(1000, 1001 + hour)).toThrow("too long ago");
+    expect(() => refuseStaleLend(1000 + 10 * 60_000, 1000)).toThrow(
+      "too long ago",
+    );
+    expect(() => refuseStaleLend(0, 1000)).not.toThrow();
+    expect(lentIssuedAt({ data: {} })).toBe(0);
   });
 
   test("attached children are cancelled by the parent's run ID", () => {

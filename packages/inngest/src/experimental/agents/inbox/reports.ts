@@ -16,6 +16,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import { toolErrorOf } from "../../../components/sandbox/toolError.ts";
 import {
@@ -29,6 +30,7 @@ import {
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import { relationOf } from "../agent/relations.ts";
 import { senderOf } from "../agent/sender.ts";
 import { compileExpression, MissingPathError } from "../cel.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
@@ -48,6 +50,72 @@ export const reportEventPrefix = "agent/report/";
  * type in the data, and the receiver's inbox shows it as `agent/report/<type>`.
  */
 export const reportWireEvent = "agent/report";
+
+/**
+ * What is wrong with a report's data for the report type it is read as, or
+ * `undefined` when it fits (or the type has no schema to check). The check is
+ * the type's own Standard Schema, run synchronously: a schema that answers
+ * asynchronously cannot vouch for data here, so its data does not fit.
+ */
+export const reportDataProblem = (
+  type: { name: string; schema?: unknown },
+  data: unknown,
+): string | undefined => {
+  const standard = (type.schema as StandardSchemaV1 | undefined)?.["~standard"];
+
+  if (!standard) {
+    return undefined;
+  }
+
+  let result: ReturnType<typeof standard.validate>;
+
+  try {
+    result = standard.validate(data);
+  } catch (error) {
+    return `${type.name} data could not be checked: ${String(error)}`;
+  }
+
+  if (result instanceof Promise) {
+    // Settled so a rejection is not unhandled.
+    result.catch(() => {});
+
+    return `${type.name} data cannot be checked synchronously, so it is not taken as that report`;
+  }
+
+  return result.issues
+    ? `${type.name} data breaks its schema: ${result.issues
+        .map((issue) => {
+          return issue.message;
+        })
+        .join("; ")}`
+    : undefined;
+};
+
+/**
+ * Why a message is not a report this thread can take, or `undefined` when it
+ * is not a report or comes from a thread this one started. The `from` of an
+ * event is whatever its sender wrote; the tag in the sender's thread key is
+ * what proves this thread started it.
+ * @param client The client, whose signing key checks the tag.
+ * @param thread The receiving thread's key.
+ * @param message The message, as `resentAs` shows it.
+ */
+export const reportSenderProblem = (
+  client: Inngest.Any,
+  thread: string,
+  message: { name: string; from?: unknown },
+): string | undefined => {
+  if (!isReportEvent(message.name)) {
+    return undefined;
+  }
+
+  const key = (message.from as { key?: unknown } | undefined)?.key;
+
+  return typeof key === "string" &&
+    relationOf(client, thread, key)?.relation === "child"
+    ? undefined
+    : "its sender is not a thread this thread started, so it is not a report this thread can take";
+};
 
 /**
  * Whether an event is a report.

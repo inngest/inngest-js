@@ -11,7 +11,10 @@
 
 import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
-import type { Inngest } from "../../../components/Inngest.ts";
+import {
+  type Inngest,
+  internalLoggerSymbol,
+} from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import {
@@ -22,6 +25,7 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import type { Context } from "../../../types.ts";
 import { limitStateOf } from "../agent/limits.ts";
+import { cardsAreSigned, signCards } from "../agent/relations.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { type AppFunctions, readAppFunctions } from "./functions.ts";
 import {
@@ -251,6 +255,13 @@ export interface AgentsRegisteredData {
    * The cards of the app's agents.
    */
   cards: AgentCard[];
+
+  /**
+   * An HMAC with the environment's signing key over the app ID and the
+   * cards. An announcement without a signature that matches is ignored by
+   * readers, so a sender that only holds an event key cannot publish cards.
+   */
+  sig?: string;
 }
 
 /**
@@ -370,11 +381,13 @@ export const cardOf = (
  * The event of an app's announcement: its own agents' cards.
  */
 export const announcement = (
-  client: Pick<Inngest.Any, "id">,
+  client: Inngest.Any,
 ): { name: string; data: AgentsRegisteredData } => {
+  const cards = cardsOf(client.id);
+
   return {
     name: agentsRegisteredEvent,
-    data: { app: client.id, cards: cardsOf(client.id) },
+    data: { app: client.id, cards, sig: signCards(client, cards) },
   };
 };
 
@@ -397,19 +410,34 @@ const pageSize = 50;
 const maxPages = 20;
 
 /**
- * The cards in `agents/registered` data, each kept only when its address names
- * the app that announced it.
+ * The most cards one announcement is read for, and the most distinct agents
+ * one app can have in a read. A signed announcement can still be large, and a
+ * read must stay bounded whoever sent it.
  */
-const ownCardsOf = (data: unknown): AgentCard[] => {
+const maxCardsPerAnnouncement = 200;
+const maxCardsPerApp = 500;
+
+/**
+ * The cards in `agents/registered` data, each kept only when its address names
+ * the app that announced it, and only when the announcement is signed over its
+ * app and cards with the environment's signing key. Unsigned or altered ones
+ * give nothing.
+ */
+const ownCardsOf = (client: Inngest.Any, data: unknown): AgentCard[] => {
   const announced = data as Partial<AgentsRegisteredData> | undefined;
 
-  if (!announced?.app || !Array.isArray(announced.cards)) {
+  if (
+    typeof announced?.app !== "string" ||
+    announced.app === "" ||
+    !Array.isArray(announced.cards) ||
+    !cardsAreSigned(client, announced.app, announced.cards, announced.sig)
+  ) {
     return [];
   }
 
   const app = announced.app;
 
-  return announced.cards.filter((card) => {
+  return announced.cards.slice(0, maxCardsPerAnnouncement).filter((card) => {
     return (
       typeof card?.address === "string" &&
       card.address.includes("/") &&
@@ -417,6 +445,34 @@ const ownCardsOf = (data: unknown): AgentCard[] => {
       agentOf(card.address).length > 0
     );
   });
+};
+
+/**
+ * Keeps the newest card of each agent of one announcement, up to a cap per
+ * app, so the first (newest) announcements win and an app cannot take over the
+ * list.
+ */
+const keepCards = (
+  client: Inngest.Any,
+  latest: Map<string, AgentCard>,
+  perApp: Map<string, number>,
+  data: unknown,
+): void => {
+  for (const card of ownCardsOf(client, data)) {
+    if (latest.has(card.address)) {
+      continue;
+    }
+
+    const app = appOf(card.address);
+    const count = perApp.get(app) ?? 0;
+
+    if (count >= maxCardsPerApp) {
+      continue;
+    }
+
+    perApp.set(app, count + 1);
+    latest.set(card.address, card);
+  }
 };
 
 const is501 = (error: unknown): boolean => {
@@ -428,10 +484,13 @@ const is501 = (error: unknown): boolean => {
  * newest announcement of each app: a later announcement that lists fewer
  * agents does not hide the others. Cloud answers an Insights query; the Dev
  * Server answers 501 to it, so the read falls back to listing the events.
- * A failed or oversized read throws; it never gives an empty list.
+ * Only announcements signed with the environment's signing key are read. A
+ * failed read throws; it never gives an empty list. A flood of announcements
+ * cannot make it throw: it reads the newest 1000 and caps the cards per app.
  */
 export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
   const latest = new Map<string, AgentCard>();
+  const perApp = new Map<string, number>();
   const cutoff = Date.now() - windowMs;
 
   try {
@@ -439,9 +498,12 @@ export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
       `SELECT data FROM events WHERE name = '${agentsRegisteredEvent}' AND ts > ${cutoff} ORDER BY ts DESC LIMIT ${insightsRows}`,
     );
 
+    // Anyone with the event key can send announcements, signed or not, so a
+    // full page is no reason to fail the read for every caller: the newest
+    // rows are read and the rest are left, with a warning.
     if (result.rows.length >= insightsRows) {
-      throw new Error(
-        `Discovery found ${insightsRows} announcements in the last 24 hours, which is the most one read can see, so some agents may be missing. Try again later or announce less often.`,
+      client[internalLoggerSymbol]?.warn(
+        `Discovery found ${insightsRows} announcements in the last 24 hours, which is the most one read can see, so some agents may be missing.`,
       );
     }
 
@@ -449,13 +511,16 @@ export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
 
     for (const row of result.rows) {
       const raw = row[column];
-      const data = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+      let data: unknown;
 
-      for (const card of ownCardsOf(data)) {
-        if (!latest.has(card.address)) {
-          latest.set(card.address, card);
-        }
+      try {
+        data = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+      } catch {
+        // One malformed row must not fail the read for everyone.
+        continue;
       }
+
+      keepCards(client, latest, perApp, data);
     }
 
     return [...latest.values()];
@@ -481,11 +546,7 @@ export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
         break;
       }
 
-      for (const card of ownCardsOf(event.data)) {
-        if (!latest.has(card.address)) {
-          latest.set(card.address, card);
-        }
-      }
+      keepCards(client, latest, perApp, event.data);
     }
 
     if (reachedEnd) {

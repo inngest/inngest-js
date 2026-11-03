@@ -35,6 +35,7 @@ import type {
 import {
   isReportEvent,
   type ReportEnvelope,
+  reportDataProblem,
   reportEventPrefix,
   reportWireEvent,
 } from "./reports.ts";
@@ -264,6 +265,35 @@ export function threadInbox(
     }
 
     const unwrapped = resentAs(message);
+
+    // A report narrows to its type only when its data fits that type's own
+    // schema: the sender wrote the data, and it is not trusted until then.
+    if (isReportEvent(unwrapped.name)) {
+      const checkedIs = (unwrapped as { is: (types: unknown) => boolean }).is;
+
+      Object.defineProperty(unwrapped, "is", {
+        value: (types: { name: string } | readonly { name: string }[]) => {
+          const list = Array.isArray(types) ? types : [types];
+
+          return list.some((type: { name: string }) => {
+            if (!checkedIs([type])) {
+              return false;
+            }
+
+            const problem = reportDataProblem(type, unwrapped.data);
+
+            if (problem) {
+              warnOnce(message, problem);
+            }
+
+            return problem === undefined;
+          });
+        },
+        enumerable: false,
+        configurable: true,
+      });
+    }
+
     const sender = isReportEvent(unwrapped.name)
       ? (unwrapped as { from?: SenderData }).from
       : (unwrapped.data as { from?: SenderData } | undefined)?.from;
