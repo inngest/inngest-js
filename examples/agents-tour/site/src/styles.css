@@ -223,6 +223,43 @@ code {
   padding: 1px 5px;
 }
 
+code.code-link {
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+
+code.code-link:hover,
+code.code-link:focus-visible {
+  text-decoration-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+code.code-link:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.code-link-flash {
+  background: var(--accent-soft);
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: code-link-fade 1.8s ease-out forwards;
+}
+
+@keyframes code-link-fade {
+  0%,
+  45% {
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 .work {
   display: flex;
   flex-direction: column;

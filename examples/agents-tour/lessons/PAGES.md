@@ -18,6 +18,17 @@ How to add one page of the Agents Tour and prove it works. Written for someone w
 - First line of `page.md` is `# Title`. Supported markdown: paragraphs, `code`, **bold**, *italic*, `<kbd>`. Nothing else.
 - No em dashes, no arrows, plain sentences.
 
+## Links in the text
+
+Inline code in the text is a link when it names code in the page's files. A click opens the tab, scrolls the line to the middle of the editor and flashes the token; Tab then Enter does the same. It looks up the editor's current content, so a link still finds `hello` after the reader edits, and does nothing when nothing matches.
+
+- A span equal to a tab's file name (`run.ts`) opens that tab.
+- Any other span is looked up in the files in tab order (editable files, then `run.ts`, then the rest): a declaration first (`export const hello`, `function hello`, a property key such as `id:`), then any whole-token occurrence.
+- A quoted value (`"Hi"`) matches the string literal in either quote style. A call or dotted name (`agents.agent`, `inbox.next()`) matches with or without the `()`.
+- A span that resolves to nothing is plain code.
+
+Every name of code in the text should resolve, so the prose provably matches the code. `pnpm tour:lessons` prints a warning, page by page, for each span that resolves to nothing in the page's original files. A warning is fine for an expected output (`"Hello, Ada!"`) or a value seen only in the Trace; otherwise fix the text or the code. `pnpm tour:page-check` lists each span and where it resolved (`file:line`, or `unresolved`).
+
 ## Files
 
 ```text

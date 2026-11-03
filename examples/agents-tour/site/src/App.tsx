@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { coreKeys } from "../../shared/keys/core.ts";
 import type { ActionId } from "../../shared/keys.ts";
+import { resolveSpan } from "../../shared/links.ts";
 import type {
   Page,
   PageSummary,
@@ -457,6 +458,47 @@ export const App = () => {
     }
   };
 
+  // Opens the code a linked span of the text names, found in the editor's
+  // current content; nothing happens when it no longer matches.
+  const openCode = (span: string) => {
+    const values = editor.current?.values() ?? {};
+    const target = resolveSpan(
+      span,
+      files.map((file) => {
+        return { name: file.name, content: values[file.name] ?? file.content };
+      }),
+    );
+
+    if (!target) {
+      return;
+    }
+
+    setActive(target.file);
+
+    if (target.line > 0) {
+      editor.current?.reveal(target);
+    }
+  };
+
+  const onProseClick = (event: React.MouseEvent<HTMLElement>) => {
+    const link = (event.target as HTMLElement).closest<HTMLElement>(
+      "code.code-link",
+    );
+
+    if (link?.dataset.code) {
+      openCode(link.dataset.code);
+    }
+  };
+
+  const onProseKey = (event: React.KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+
+    if (event.key === "Enter" && target.matches("code.code-link")) {
+      event.preventDefault();
+      openCode(target.dataset.code ?? "");
+    }
+  };
+
   const nextFile = () => {
     const at = files.findIndex((file) => {
       return file.name === active;
@@ -824,8 +866,10 @@ export const App = () => {
               <h2>{page.title}</h2>
               <div
                 className="prose"
+                onClick={onProseClick}
+                onKeyDown={onProseKey}
                 dangerouslySetInnerHTML={{
-                  __html: renderMarkdown(page.markdown),
+                  __html: renderMarkdown(page.markdown, page.files),
                 }}
               />
               {page.manifest.apis?.length || page.manifest.concepts?.length ? (

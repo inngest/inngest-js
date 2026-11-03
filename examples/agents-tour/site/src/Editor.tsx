@@ -7,6 +7,7 @@ import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import type { CodeTarget } from "../../shared/links.ts";
 import type { PageFile } from "../../shared/types.ts";
 import { type Handlers, registerEditorCommands } from "./keyboard.tsx";
 
@@ -23,6 +24,8 @@ export interface EditorApi {
   hasFocus(): boolean;
   // Replaces a file's text as one edit, so undo still works.
   replace(name: string, content: string): void;
+  // Shows a file's line in the middle and flashes the token at the target.
+  reveal(target: CodeTarget): void;
   values(): Record<string, string>;
   setValue(name: string, content: string): void;
 }
@@ -94,6 +97,8 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const latest = useRef(props);
+  const flash = useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
+  const flashTimer = useRef(0);
 
   latest.current = props;
 
@@ -115,6 +120,41 @@ export const Editor = forwardRef<EditorApi, Props>(function Editor(props, ref) {
             () => null,
           );
         }
+      },
+      reveal: (target) => {
+        const model = monaco.editor.getModel(uriOf(target.file));
+        const shown = editor.current;
+
+        if (!model || !shown) {
+          return;
+        }
+
+        if (shown.getModel() !== model) {
+          shown.setModel(model);
+          shown.updateOptions({
+            readOnly: !latest.current.files.find((file) => {
+              return file.name === target.file;
+            })?.editable,
+          });
+        }
+
+        const range = new monaco.Range(
+          target.line,
+          target.column,
+          target.line,
+          target.column + target.length,
+        );
+
+        shown.revealLineInCenter(target.line);
+        shown.setSelection(range);
+        flash.current?.clear();
+        flash.current = shown.createDecorationsCollection([
+          { range, options: { inlineClassName: "code-link-flash" } },
+        ]);
+        window.clearTimeout(flashTimer.current);
+        flashTimer.current = window.setTimeout(() => {
+          flash.current?.clear();
+        }, 1800);
       },
       values: () => {
         const out: Record<string, string> = {};

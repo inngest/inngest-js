@@ -145,6 +145,13 @@ try {
     page<string>(`document.getElementById("concepts-chip")?.textContent ?? ""`),
   );
   show("nav state", navState());
+  console.log("code in the text:");
+
+  for (const span of page<{ text: string; link: string }[]>(
+    `Array.from(document.querySelectorAll(".prose code")).map((code) => ({ text: code.textContent, link: code.dataset.link ?? "" }))`,
+  )) {
+    console.log(`  ${span.text}: ${span.link || "unresolved"}`);
+  }
 
   // The editor's TypeScript worker needs a moment to load the SDK's types.
   await sleep(4000);
