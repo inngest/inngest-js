@@ -50,10 +50,28 @@ describe("narrowLimits", () => {
     ).toEqual({ depth: 2 });
   });
 
-  test("mayCall keeps every list of the chain", () => {
-    const narrowed = narrowLimits({ mayCall: ["a/*"] }, { mayCall: [["a/x"]] });
+  test("discovery keeps every list of the chain, with self resolved", () => {
+    const narrowed = narrowLimits(
+      undefined,
+      { discovery: { agents: [["a/x"]] } },
+      { appId: "b", agents: [{ app: "self" }, { address: "c/y" }] },
+    );
 
-    expect(narrowed.mayCall).toEqual([["a/x"], ["a/*"]]);
+    expect(narrowed.discovery).toEqual({
+      agents: [["a/x"], [{ app: "b" }, "c/y"]],
+    });
+  });
+
+  test("an agent that sets no discovery list adds none to the chain", () => {
+    expect(narrowLimits(undefined, undefined, { appId: "b" }).discovery).toBe(
+      undefined,
+    );
+  });
+
+  test("depth takes the lowest of the chain and the agent's own", () => {
+    expect(narrowLimits({ depth: 9 }, { depth: 0 }).depth).toBe(0);
+    expect(narrowLimits({ depth: 0 }, { depth: 4 }).depth).toBe(0);
+    expect(narrowLimits({ depth: 3 }, { depth: 4 }).depth).toBe(3);
   });
 });
 
@@ -65,12 +83,12 @@ describe("readInheritedLimits", () => {
       readInheritedLimits({
         limits: {
           depth: "2",
-          mayCall: [["a/*", 3], "b"],
+          discovery: { agents: [["a/x", 3, { tags: [1] }, { app: "b" }], "b"] },
         },
       }),
     ).toEqual({
       depth: 0,
-      mayCall: [["a/*"], []],
+      discovery: { agents: [["a/x", { app: "b" }], []] },
     });
   });
 });
@@ -84,29 +102,6 @@ describe("checkInvoke", () => {
     expect(error).toBeInstanceOf(AgentLimitError);
     expect(error.limit).toBe("depth");
     expect(error.message).toContain("app/leaf was not started");
-  });
-
-  test("refuses a target outside any mayCall list", () => {
-    const limits = { mayCall: [["app/a", "app/c"], ["app/a"]] };
-
-    checkInvoke(state(limits), "app/a");
-
-    const error = refusal(() => {
-      checkInvoke(state(limits), "app/b");
-    });
-
-    expect(error.limit).toBe("mayCall");
-    expect(error.message).toContain("app/a");
-  });
-
-  test("mayCall takes exact addresses: a * is not a pattern", () => {
-    const limits = { mayCall: [["app/*"]] };
-
-    expect(
-      refusal(() => {
-        checkInvoke(state(limits), "app/a");
-      }).limit,
-    ).toBe("mayCall");
   });
 
   test("refuses once the budget is spent", () => {
@@ -157,27 +152,34 @@ describe("budget", () => {
   test("a child gets one less depth and no budget", () => {
     const child = childLimits(
       state(
-        { depth: 2, mayCall: [["a/*"]] },
+        { depth: 2, discovery: { agents: [["a/x"]] } },
         { input: 30, output: 20 },
         { tokens: 100 },
       ),
     );
 
-    expect(child).toEqual({ depth: 1, mayCall: [["a/*"]] });
+    expect(child).toEqual({ depth: 1, discovery: { agents: [["a/x"]] } });
   });
 });
 
 describe("hardening", () => {
   test("a present but malformed container closes the limit", () => {
-    expect(readInheritedLimits({ limits: { mayCall: "x" } })).toEqual({
-      mayCall: [[]],
+    expect(
+      readInheritedLimits({ limits: { discovery: { agents: "x" } } }),
+    ).toEqual({
+      discovery: { agents: [[]] },
+    });
+    expect(readInheritedLimits({ limits: { discovery: 1 } })).toEqual({
+      discovery: { agents: [[]], tools: [[]] },
     });
   });
 
   test("starting a thread again with the same limits adds no duplicate list", () => {
-    const limits = { mayCall: [["a/*"]] };
+    const limits = { discovery: { agents: [["a/x", { app: "b" }]] } };
 
-    expect(narrowInherited(limits, limits)?.mayCall).toEqual([["a/*"]]);
+    expect(narrowInherited(limits, limits)?.discovery?.agents).toEqual([
+      ["a/x", { app: "b" }],
+    ]);
   });
 });
 

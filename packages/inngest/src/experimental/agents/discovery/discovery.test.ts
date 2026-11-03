@@ -22,9 +22,11 @@ import {
   discoveryToolSet,
   discoveryToolsFor,
   matchCards,
+  matchesDiscovery,
   mayUse,
   prepareInput,
   readCards,
+  validateDiscoveryList,
 } from "./discovery.ts";
 
 const client = new Inngest({ id: testClientId });
@@ -413,8 +415,16 @@ describe("the tools", () => {
       share: "team",
       description: "Docs",
       input: { type: "object" },
+      effects: "read",
     }),
     card({ address: "other-app/hidden", share: "private" }),
+    card({ address: "other-app/writer", share: "team", tags: ["sdk"] }),
+    card({
+      address: "other-app/special",
+      share: "team",
+      effects: "read",
+      explicit: true,
+    }),
   ];
   let reads = 0;
 
@@ -519,6 +529,46 @@ describe("the tools", () => {
       ]),
     );
     expect(listed(result)).not.toContain("other-app/hidden");
+  });
+
+  const everyone = async () => {
+    return new Map(
+      ["docs", "hidden", "writer", "special"].map((id) => {
+        return [id, { paused: false, archived: false }] as const;
+      }),
+    );
+  };
+
+  test("by default other apps show only read-only agents, and never an explicit one", async () => {
+    const result = await runTools([{ name: "list_agents", input: {} }], {
+      functions: everyone,
+    });
+
+    expect(listed(result)).toContain("other-app/docs");
+    expect(listed(result)).not.toContain("other-app/writer");
+    expect(listed(result)).not.toContain("other-app/special");
+  });
+
+  test("discovery.agents decides what is listed and described", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        { name: "describe_agent", input: { address: "other-app/docs" } },
+        { name: "describe_agent", input: { address: "other-app/writer" } },
+      ],
+      {
+        functions: everyone,
+        discovery: { agents: [{ tags: ["sdk"] }, "other-app/special"] },
+      },
+    );
+    const [, refused, allowed] = (result as { data: unknown[] }).data;
+
+    expect(listed(result).sort()).toEqual([
+      "other-app/special",
+      "other-app/writer",
+    ]);
+    expect(JSON.stringify(refused)).toMatch(/is shared with you/);
+    expect(JSON.stringify(allowed)).toMatch(/other-app\/writer/);
   });
 
   test("describe_agent gives the whole card; an unshared address reads like an unknown one", async () => {
@@ -640,5 +690,63 @@ describe("discovery on the definition", () => {
     expect(
       await prepareInput({}, { card: card({ address: "a/b" }), input }),
     ).toBe(input);
+  });
+});
+
+describe("matchesDiscovery", () => {
+  const entry = card({
+    address: "platform/reviewer",
+    tags: ["sdk", "ci"],
+    owner: "platform",
+    effects: "read",
+  });
+  const as = { appId: "x" };
+
+  test("a filter needs every field; a list needs one entry; self is the caller's app", () => {
+    const both = [{ app: "platform", effects: "read" as const }];
+    const wrong = [{ app: "platform", effects: "write" as const }];
+
+    expect(matchesDiscovery(entry, both, as)).toBe(true);
+    expect(matchesDiscovery(entry, wrong, as)).toBe(false);
+    expect(matchesDiscovery(entry, [{ tags: ["sdk", "ci"] }, "o/a"], as)).toBe(
+      true,
+    );
+    expect(matchesDiscovery(entry, [{ tags: ["sdk", "no"] }], as)).toBe(false);
+    expect(
+      matchesDiscovery(entry, [{ app: "self" }], { appId: "platform" }),
+    ).toBe(true);
+    expect(matchesDiscovery(entry, [{ app: "self" }], as)).toBe(false);
+    expect(matchesDiscovery(entry, [], as)).toBe(false);
+  });
+
+  test("a card without effects counts as write", () => {
+    expect(
+      matchesDiscovery({ address: "a/b" }, [{ effects: "write" }], as),
+    ).toBe(true);
+  });
+
+  test("an explicit card matches only an agent or its address", () => {
+    const hidden = { ...entry, explicit: true };
+
+    expect(matchesDiscovery(hidden, [{ app: "platform" }], as)).toBe(false);
+    expect(matchesDiscovery(hidden, ["platform/reviewer"], as)).toBe(true);
+    expect(
+      matchesDiscovery(hidden, [{ address: "platform/reviewer" }], as),
+    ).toBe(true);
+  });
+
+  test("a malformed list is refused when validated", () => {
+    expect(() => validateDiscoveryList("a", "agents", [{}])).toThrow(
+      /empty filter/,
+    );
+    expect(() => validateDiscoveryList("a", "agents", ["nope"])).toThrow(
+      /app\/name/,
+    );
+    expect(() => validateDiscoveryList("a", "tools", [{ tag: ["x"] }])).toThrow(
+      /"tag"/,
+    );
+    expect(() =>
+      validateDiscoveryList("a", "agents", [{ app: "self" }, "a/b"]),
+    ).not.toThrow();
   });
 });

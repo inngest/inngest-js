@@ -372,9 +372,11 @@ export type {
   AgentShare,
   AgentSummary,
   AgentsRegisteredData,
+  DiscoveryEntry,
+  DiscoveryFilter,
   DiscoveryToolSet,
 } from "../discovery/discovery.ts";
-export { addressOf } from "../discovery/discovery.ts";
+export { addressOf, matchesDiscovery } from "../discovery/discovery.ts";
 export type {
   AgentAnswerData,
   AgentFinishedData,

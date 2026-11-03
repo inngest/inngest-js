@@ -45,13 +45,7 @@ import { type StartedThread, startThread } from "./startThread.ts";
 /**
  * Options of the agent tools.
  */
-export interface AgentToolSetOptions extends DiscoveryToolSetOptions {
-  /**
-   * The definition's `discovery` field, whose `prepare` fills part of the
-   * input of a call to another agent.
-   */
-  discovery?: AgentDiscovery;
-}
+export interface AgentToolSetOptions extends DiscoveryToolSetOptions {}
 
 /**
  * The tools that start, message and stop agents.
@@ -120,7 +114,7 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
   return async ({ address, input }: { address: string; input?: Json }) => {
     const execution = executionOf();
     const client = clientOf();
-    const card = await findCard(address, options);
+    const card = await findCard(address, options, "start");
     const prepared = card.input
       ? await prepareInput(options.discovery, {
           card,
@@ -366,7 +360,7 @@ export const agentToolsFor = (
   }
 
   return {
-    ...discoveryToolSet(),
+    ...discoveryToolSet({ discovery }),
     ...agentToolSet({ discovery }),
   };
 };

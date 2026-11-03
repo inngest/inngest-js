@@ -47,6 +47,7 @@ import type {
   AgentUserContent,
   ModelValue,
 } from "../loop/loop.ts";
+import type { AgentScoreFn } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -63,7 +64,6 @@ import type {
 import type { AgentToolSet } from "./agentTools.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
-import type { AgentScoreFn } from "../loop/scores.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 import type { StartedThreadPromise } from "./startThread.ts";
@@ -227,7 +227,8 @@ export interface AgentFunctionConfig<
    * `describe_agent` and the tools that start or reach other agents).
    * `false` removes them, and the agent's own card is still published.
    * `{ prepare }` fills part of the input of a call to another agent from the
-   * host, in the run.
+   * host, in the run. `{ agents, tools }` filter what the model can see and
+   * may start; agents it starts never see more than it was allowed.
    */
   discovery?: AgentDiscovery;
 
@@ -362,9 +363,9 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * What this agent may start: `depth` (default 1, so it may start
-   * sub-agents and they may not) and `mayCall`. Sub-agents inherit them
-   * narrowed.
+   * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 1,
+   * so it may start sub-agents and they may not). The lowest `depth` in the
+   * chain wins. What the model may start is set by `discovery.agents`.
    */
   limits?: AgentLimits;
 

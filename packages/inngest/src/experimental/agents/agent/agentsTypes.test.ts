@@ -238,7 +238,7 @@ test("agents: budget, price and limits fields take their types", () => {
       triggers: [created],
       budget: { usd: 1, tokens: 100 },
       price: { "*": { input: 1, output: 2 } },
-      limits: { depth: 2, mayCall: ["a/b"] },
+      limits: { depth: 2 },
     });
 
     agents.agent({
@@ -260,26 +260,47 @@ test("agents: budget, price and limits fields take their types", () => {
   });
 });
 
-test("agents: limits.mayCall takes a list of exact addresses", () => {
+test("agents: discovery.agents takes imported agents, addresses and filters", () => {
+  typesOnly(() => {
+    const other = agents.agent({ id: "other", triggers: [created] });
+
+    agents.agent({
+      id: "discovery-list-1",
+      triggers: [created],
+      discovery: {
+        agents: [
+          other,
+          "research/coder",
+          { app: "self", effects: "read" },
+          { tags: ["sdk"] },
+        ],
+        tools: [{ tags: ["social"] }],
+      },
+    });
+
+    agents.agent({
+      id: "discovery-list-2",
+      triggers: [created],
+      // @ts-expect-error an entry is not a number
+      discovery: { agents: [1] },
+    });
+
+    agents.agent({
+      id: "discovery-list-3",
+      triggers: [created],
+      // @ts-expect-error effects is read or write
+      discovery: { agents: [{ effects: "maybe" }] },
+    });
+  });
+});
+
+test("agents: limits.mayCall is gone", () => {
   typesOnly(() => {
     agents.agent({
-      id: "may-call-1",
+      id: "may-call-gone",
       triggers: [created],
-      limits: { depth: 2, mayCall: ["research/coder"] },
-    });
-
-    agents.agent({
-      id: "may-call-2",
-      triggers: [created],
-      // @ts-expect-error mayCall is a list of addresses, not one address
-      limits: { mayCall: "research/coder" },
-    });
-
-    agents.agent({
-      id: "may-call-3",
-      triggers: [created],
-      // @ts-expect-error an address is text
-      limits: { mayCall: [1] },
+      // @ts-expect-error mayCall moved to discovery.agents
+      limits: { mayCall: ["research/coder"] },
     });
   });
 });

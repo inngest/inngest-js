@@ -21,8 +21,26 @@ import {
   triggerSchema,
 } from "../../../components/sandbox/tools.ts";
 import type { Context } from "../../../types.ts";
+import { limitStateOf } from "../agent/limits.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { type AppFunctions, readAppFunctions } from "./functions.ts";
+import {
+  type DiscoveryEntry,
+  defaultDiscovery,
+  matchesDiscovery,
+} from "./match.ts";
+
+export type {
+  DiscoveryEntry,
+  DiscoveryFilter,
+  NormalizedDiscoveryEntry,
+} from "./match.ts";
+export {
+  defaultDiscovery,
+  matchesDiscovery,
+  normalizeDiscoveryList,
+  validateDiscoveryList,
+} from "./match.ts";
 
 /**
  * The name of the event an app sends with its cards.
@@ -89,6 +107,13 @@ export interface AgentCard {
   tags?: string[];
 
   /**
+   * EXPERIMENTAL: set when the card says `explicit: true`. Filter entries in
+   * `discovery.agents` never match the card; only an imported agent or its
+   * exact address does.
+   */
+  explicit?: boolean;
+
+  /**
    * Who may find the agent. `"private"` unless the card says `"team"`.
    */
   share: AgentShare;
@@ -132,6 +157,13 @@ export interface AgentCardConfig {
   tags?: string[];
 
   /**
+   * EXPERIMENTAL: when `true`, broad `discovery` filters (objects such as
+   * `{ app: "platform" }`) never match this agent. Only an agent that imports
+   * it, or names its exact address, can find or start it. Default `false`.
+   */
+  explicit?: boolean;
+
+  /**
    * Who may find the agent. Default `"private"`.
    */
   share?: AgentShare;
@@ -153,10 +185,11 @@ export interface AgentCardConfig {
 }
 
 /**
- * The `discovery` field of an agent's definition: `false` turns off
- * `list_agents`, `describe_agent` and the tools that start or reach other
- * agents (the agent's own card is still published), and `{ prepare }` fills
- * part of the input of a call to another agent from the host.
+ * EXPERIMENTAL: the `discovery` field of an agent's definition: `false` turns
+ * off `list_agents`, `describe_agent` and the tools that start or reach other
+ * agents (the agent's own card is still published). `{ prepare }` fills part
+ * of the input of a call to another agent from the host, and `agents` and
+ * `tools` filter what the model can see and may start.
  */
 export type AgentDiscovery =
   | false
@@ -172,6 +205,22 @@ export type AgentDiscovery =
         event: Context.Any["event"];
         thread: { key: string };
       }) => Record<string, Json> | Promise<Record<string, Json>>;
+
+      /**
+       * EXPERIMENTAL: the agents the model can see (`list_agents`,
+       * `describe_agent`) and may start (`start_agent`). Any entry may match;
+       * the fields of one filter object must all match. Default: the agent's
+       * own app plus read-only agents of other apps,
+       * `[{ app: "self" }, { effects: "read" }]` (still subject to `share`).
+       * A started agent never sees more than its starter allowed. Code that
+       * calls `agent.start()` directly is not filtered.
+       */
+      agents?: DiscoveryEntry[];
+
+      /**
+       * EXPERIMENTAL: the same filter for shared tools. Same default.
+       */
+      tools?: DiscoveryEntry[];
     };
 
 /**
@@ -296,6 +345,7 @@ export const cardOf = (
     ...(input && { input }),
     ...(parts.skills && parts.skills.length > 0 && { skills: parts.skills }),
     ...(config.tags && config.tags.length > 0 && { tags: config.tags }),
+    ...(config.explicit === true && { explicit: true }),
     share: config.share ?? "private",
     ...(config.owner !== undefined && { owner: config.owner }),
     effects: config.effects ?? "write",
@@ -590,6 +640,12 @@ const readsByRun = new WeakMap<
  */
 export interface DiscoveryToolSetOptions {
   /**
+   * The definition's `discovery` field: its `agents` filter decides what the
+   * tools show and start.
+   */
+  discovery?: AgentDiscovery;
+
+  /**
    * Reads the functions of an app. For tests; defaults to the platform.
    */
   functions?: ReadFunctions;
@@ -623,13 +679,37 @@ export const discoverCards = async (
 };
 
 /**
+ * Whether the caller's `discovery.agents` filter lets it find a card: the
+ * lists that the chain of starting agents passed down (every one must match),
+ * and the agent's own list or the default.
+ */
+export const allowsAgent = (
+  card: AgentCard,
+  options: DiscoveryToolSetOptions = {},
+): boolean => {
+  const { appId } = callerOf();
+  const instance = getAsyncCtxSync()?.execution?.instance;
+  const state = instance ? limitStateOf(instance, undefined) : undefined;
+  const chain = state?.limits.discovery?.agents ?? [];
+  const own =
+    options.discovery === false ? undefined : options.discovery?.agents;
+  const lists = [...chain, own ?? defaultDiscovery];
+
+  return lists.every((list) => {
+    return matchesDiscovery(card, list, { appId });
+  });
+};
+
+/**
  * The card of `address` if the caller may find it, else an error that tells
- * the model to list again. An address that is unknown and one that is not
- * shared with the caller read the same.
+ * the model to list again. An address that is unknown, one that is not shared
+ * with the caller and one that its `discovery.agents` filter rejects read the
+ * same, unless `purpose` is `"start"`, which says the filter refused it.
  */
 export const findCard = async (
   address: string,
   options: DiscoveryToolSetOptions = {},
+  purpose: "describe" | "start" = "describe",
 ): Promise<AgentCard> => {
   const { appId } = callerOf();
   const cards = await discoverCards(false, options);
@@ -640,6 +720,14 @@ export const findCard = async (
   if (!found || !mayUse(found, appId)) {
     throw new Error(
       `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
+    );
+  }
+
+  if (!allowsAgent(found, options)) {
+    throw new Error(
+      purpose === "start"
+        ? `Refused: ${address} was not started. This agent may not start it (discovery.agents). Use list_agents to see the agents you may start.`
+        : `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
     );
   }
 
@@ -724,7 +812,7 @@ export const discoveryToolSet = (
         return {
           agents: matchCards(
             cards.filter((card) => {
-              return mayUse(card, appId);
+              return mayUse(card, appId) && allowsAgent(card, options);
             }),
             query,
           ).map(summaryOf),
@@ -753,5 +841,5 @@ export const discoveryToolSet = (
 export const discoveryToolsFor = (
   discovery: AgentDiscovery | undefined,
 ): Partial<DiscoveryToolSet> => {
-  return discovery === false ? {} : discoveryToolSet();
+  return discovery === false ? {} : discoveryToolSet({ discovery });
 };

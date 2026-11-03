@@ -40,7 +40,7 @@ import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { compileKey, toAsync } from "../cel.ts";
-import { cardOf } from "../discovery/discovery.ts";
+import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
@@ -297,6 +297,11 @@ export function createAgentFunction(
     typeof config.skills === "function" || config.skills === undefined
       ? []
       : collectSkills(config.skills);
+  if (config.discovery) {
+    validateDiscoveryList(config.id, "agents", config.discovery.agents);
+    validateDiscoveryList(config.id, "tools", config.discovery.tools);
+  }
+
   // A source written as just an event is placed by the agent's `thread`.
   const inboxSources = (config.inbox ?? []).map((source): InboxSource => {
     if (typeof source !== "string" && "event" in source) {
@@ -477,6 +482,13 @@ export function createAgentFunction(
           narrowLimits(
             config.limits,
             narrowInherited(started.inherited, passed),
+            {
+              appId: client.id,
+              ...(config.discovery && {
+                agents: config.discovery.agents,
+                tools: config.discovery.tools,
+              }),
+            },
           ),
           { ...started.usage },
           started.budget,

@@ -1,15 +1,22 @@
 /**
  * @module
  * EXPERIMENTAL: what an agent may start and spend. An agent declares `limits`
- * (`depth` and `mayCall`) and a `budget` in its config. Calls to other agents
- * enforce `depth` and `mayCall`, and an agent it starts inherits those
- * narrowed, so a sub-agent is never allowed more than its parent. The budget
+ * (`depth`) and a `budget` in its config. Calls to other agents enforce
+ * `depth`, and an agent it starts inherits it narrowed, along with the
+ * `discovery` lists the chain set, so a sub-agent is never allowed more than
+ * its parent. The `discovery` lists are enforced where a model finds and
+ * starts agents, not here. The budget
  * is the agent's own: each thread has the budget of its own agent's
  * definition, which the loop always enforces, and it is never handed down.
  *
  * Limits gate calls made through the SDK only. A raw `step.invoke` or
  * `sendEvent` to another agent is not checked.
  */
+import type {
+  DiscoveryEntry,
+  NormalizedDiscoveryEntry,
+} from "../discovery/match.ts";
+import { normalizeDiscoveryList } from "../discovery/match.ts";
 import type { AgentUsage } from "../loop/loop.ts";
 
 /**
@@ -46,18 +53,12 @@ export interface AgentBudget {
  */
 export interface AgentLimits {
   /**
-   * How many levels of sub-agents may start below this agent. Default 1: the
-   * agent may start sub-agents and they may not start any. A sub-agent gets
-   * this minus one at most.
+   * EXPERIMENTAL: how many levels of sub-agents may start below this agent.
+   * Default 1: the agent may start sub-agents and they may not start any. The
+   * tightest cap wins: a sub-agent gets this or one less than its parent's
+   * remaining depth, whichever is lower.
    */
   depth?: number;
-
-  /**
-   * The agents this agent may start, as exact `"appId/functionId"`
-   * addresses (`"research/coder"`). Default: any. A sub-agent may
-   * start only agents that match its parent's list and its own.
-   */
-  mayCall?: string[];
 }
 
 /**
@@ -72,10 +73,14 @@ export interface EffectiveLimits {
   depth?: number;
 
   /**
-   * One list per agent in the chain that set `mayCall`. A target must match
-   * every list.
+   * One list per agent in the chain that set `discovery.agents` or
+   * `discovery.tools`, with `"self"` already replaced by that agent's app. A
+   * card must match every list of a kind.
    */
-  mayCall?: string[][];
+  discovery?: {
+    agents?: NormalizedDiscoveryEntry[][];
+    tools?: NormalizedDiscoveryEntry[][];
+  };
 }
 
 /**
@@ -83,7 +88,7 @@ export interface EffectiveLimits {
  * which limit and why, so a model reading it as a tool error can react.
  */
 export class AgentLimitError extends Error {
-  public readonly limit: "depth" | "mayCall" | "budget";
+  public readonly limit: "depth" | "budget";
 
   constructor(
     /**
@@ -139,6 +144,28 @@ const spentOf = (used: AgentUsage) => {
   };
 };
 
+const isNormalizedEntry = (
+  value: unknown,
+): value is NormalizedDiscoveryEntry => {
+  if (typeof value === "string") {
+    return true;
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const { app, tags, owner, effects } = value;
+
+  return (
+    (app === undefined || typeof app === "string") &&
+    (owner === undefined || typeof owner === "string") &&
+    (effects === undefined || effects === "read" || effects === "write") &&
+    (tags === undefined ||
+      (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")))
+  );
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
@@ -182,16 +209,63 @@ export const narrowLimits = (
    * What the agent that started it passed down.
    */
   inherited: EffectiveLimits | undefined,
+
+  /**
+   * The agent's own `discovery.agents` and `discovery.tools` lists, if set, and
+   * the app `"self"` means.
+   */
+  discovery?: {
+    agents?: readonly DiscoveryEntry[];
+    tools?: readonly DiscoveryEntry[];
+    appId: string;
+  },
 ): EffectiveLimits => {
-  const mayCall = [
-    ...(inherited?.mayCall ?? []),
-    ...(own?.mayCall ? [own.mayCall] : []),
+  const agents = [
+    ...(inherited?.discovery?.agents ?? []),
+    ...(discovery?.agents
+      ? [normalizeDiscoveryList(discovery.agents, discovery.appId)]
+      : []),
+  ];
+  const tools = [
+    ...(inherited?.discovery?.tools ?? []),
+    ...(discovery?.tools
+      ? [normalizeDiscoveryList(discovery.tools, discovery.appId)]
+      : []),
   ];
 
   return {
     depth: lower(own?.depth, inherited?.depth) ?? 1,
-    ...(mayCall.length > 0 && { mayCall }),
+    ...((agents.length > 0 || tools.length > 0) && {
+      discovery: {
+        ...(agents.length > 0 && { agents }),
+        ...(tools.length > 0 && { tools }),
+      },
+    }),
   };
+};
+
+/**
+ * The lists of `a` and `b`, without one that repeats another.
+ */
+const mergeLists = (
+  a: NormalizedDiscoveryEntry[][] | undefined,
+  b: NormalizedDiscoveryEntry[][] | undefined,
+): NormalizedDiscoveryEntry[][] => {
+  const seen = new Set<string>();
+
+  return [...(a ?? []), ...(b ?? [])].filter((list) => {
+    const key = JSON.stringify(
+      list.map((entry) => JSON.stringify(entry)).sort(),
+    );
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
+  });
 };
 
 /**
@@ -213,23 +287,17 @@ export const narrowInherited = (
     return a ?? b;
   }
 
-  const seen = new Set<string>();
-  const mayCall = [...(a.mayCall ?? []), ...(b.mayCall ?? [])].filter(
-    (list) => {
-      const key = JSON.stringify([...list].sort());
+  const agents = mergeLists(a.discovery?.agents, b.discovery?.agents);
+  const tools = mergeLists(a.discovery?.tools, b.discovery?.tools);
 
-      if (seen.has(key)) {
-        return false;
-      }
-
-      seen.add(key);
-
-      return true;
-    },
-  );
   return {
     depth: lower(a.depth, b.depth),
-    ...(mayCall.length > 0 && { mayCall }),
+    ...((agents.length > 0 || tools.length > 0) && {
+      discovery: {
+        ...(agents.length > 0 && { agents }),
+        ...(tools.length > 0 && { tools }),
+      },
+    }),
   };
 };
 
@@ -262,20 +330,38 @@ export const readInheritedLimits = (
 
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
   };
-  const mayCall =
-    raw.mayCall !== undefined && !Array.isArray(raw.mayCall)
-      ? [[]]
-      : (raw.mayCall ?? []).map((list: unknown) => {
-          return Array.isArray(list)
-            ? list.filter((pattern): pattern is string => {
-                return typeof pattern === "string";
-              })
-            : [];
-        });
+  const rawDiscovery = isRecord(raw.discovery) ? raw.discovery : undefined;
+
+  // A present but malformed container closes the limit: a list that matches
+  // nothing. A malformed entry is dropped, which only narrows the list.
+  const lists = (value: unknown): NormalizedDiscoveryEntry[][] => {
+    if (value === undefined) {
+      return [];
+    }
+
+    if (!Array.isArray(value)) {
+      return [[]];
+    }
+
+    return value.map((list: unknown) => {
+      return Array.isArray(list) ? list.filter(isNormalizedEntry) : [];
+    });
+  };
+
+  const agents = lists(rawDiscovery?.agents);
+  const tools = lists(rawDiscovery?.tools);
+  const closed = raw.discovery !== undefined && !rawDiscovery;
 
   return {
     depth: number(raw.depth),
-    ...(mayCall.length > 0 && { mayCall }),
+    ...((agents.length > 0 || tools.length > 0 || closed) && {
+      discovery: closed
+        ? { agents: [[]], tools: [[]] }
+        : {
+            ...(agents.length > 0 && { agents }),
+            ...(tools.length > 0 && { tools }),
+          },
+    }),
   };
 };
 
@@ -323,22 +409,13 @@ export const checkInvoke = (
    */
   target: string,
 ): void => {
-  const { depth, mayCall } = state.limits;
+  const { depth } = state.limits;
 
   if (depth !== undefined && depth < 1) {
     throw new AgentLimitError(
       "depth",
       `Refused: ${target} was not started. This agent is too deep in a chain of agents to start another (limits.depth).`,
     );
-  }
-
-  for (const list of mayCall ?? []) {
-    if (!list.includes(target)) {
-      throw new AgentLimitError(
-        "mayCall",
-        `Refused: ${target} was not started. This agent may only start: ${list.join(", ") || "no agents"} (limits.mayCall).`,
-      );
-    }
   }
 
   const reason = budgetReason(state);
@@ -361,11 +438,11 @@ export const childLimits = (
    */
   state: LimitState,
 ): EffectiveLimits => {
-  const { depth, mayCall } = state.limits;
+  const { depth, discovery } = state.limits;
 
   return {
     ...(depth !== undefined && { depth: depth - 1 }),
-    ...(mayCall && { mayCall }),
+    ...(discovery && { discovery }),
   };
 };
 

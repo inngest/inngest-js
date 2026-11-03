@@ -20,6 +20,7 @@ describe("discovery types", () => {
       input?: JsonSchema;
       skills?: { name: string; description: string }[];
       tags?: string[];
+      explicit?: boolean;
       share: "private" | "team";
       owner?: string;
       effects: "read" | "write";
