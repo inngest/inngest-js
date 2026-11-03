@@ -66,6 +66,14 @@ describe("Dev Server retries", { skip: binary === undefined }, () => {
       logFile: `${process.env.TMPDIR ?? "/tmp"}/tour-retry-test-${appPort}.log`,
     });
     await devServer.start();
+
+    // Register the app before the first event, as the tour does: the Dev
+    // Server's own sync of `-u` can come after the event under load.
+    const synced = await fetch(`http://127.0.0.1:${appPort}/api/inngest`, {
+      method: "PUT",
+    });
+
+    assert.ok(synced.ok, `registering the app failed: ${synced.status}`);
   });
 
   after(async () => {

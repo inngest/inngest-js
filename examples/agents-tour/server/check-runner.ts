@@ -145,8 +145,11 @@ export const createCheckApi = (
   };
 
   const api: CheckApi = {
-    send: async (agent, thread, text) => {
-      await ctx.worker.send(agent, thread, text);
+    send: async (agent, thread, content) => {
+      await ctx.worker.send(agent, thread, content);
+    },
+    start: async (agent, thread, content) => {
+      await ctx.worker.start(agent, thread, content);
     },
     event: async (name, data = {}) => {
       await ctx.devServer.send(name, data);

@@ -1,5 +1,5 @@
 {
-  "start": [{ "agent": "which", "thread": "t", "text": "hi" }],
+  "start": [{ "agent": "which", "thread": "t", "content": "hi" }],
   "verify": {
     "model": [{ "say": "ok" }],
     "runs": [

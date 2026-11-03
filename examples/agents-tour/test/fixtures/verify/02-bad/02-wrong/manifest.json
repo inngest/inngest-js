@@ -1,5 +1,5 @@
 {
-  "start": [{ "agent": "echo", "thread": "t", "text": "hi" }],
+  "start": [{ "agent": "echo", "thread": "t", "content": "hi" }],
   "verify": {
     "runs": [{ "fn": "echo", "status": "COMPLETED", "output": "NOPE" }]
   }

@@ -1,7 +1,10 @@
 import { agents } from "./setup";
 
 export const greeter = agents.agent(
-  { id: "greeter", on: { event: "tour/greet", thread: "event.data.name" } },
+  {
+    id: "greeter",
+    triggers: [{ event: "tour/greet", thread: "event.data.name" }],
+  },
   async ({ inbox }) => {
     const message = await inbox.next();
 
@@ -12,7 +15,10 @@ export const greeter = agents.agent(
 );
 
 export const other = agents.agent(
-  { id: "other", on: { event: "tour/other", thread: "event.data.name" } },
+  {
+    id: "other",
+    triggers: [{ event: "tour/other", thread: "event.data.name" }],
+  },
   async ({ inbox }) => {
     await inbox.next();
 
