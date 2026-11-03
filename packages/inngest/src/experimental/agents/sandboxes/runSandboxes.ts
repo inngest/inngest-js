@@ -60,6 +60,18 @@ export const openRunSandboxes = async (options: {
             run: (id, fn) => {
               return step.run(id, fn) as ReturnType<typeof fn>;
             },
+            // With no store nothing is kept, but a run that ends without
+            // closing a sandbox (cancelled, or failed for good) still has it
+            // destroyed. A defer ID is used once per run, so a recycled
+            // sandbox's cleanup has its own.
+            guard: (name, sandbox, epoch) => {
+              const suffix = epoch > 0 ? `:g${epoch}` : "";
+
+              return defer(`${name}:run:cleanup${suffix}`, {
+                function: cleanup,
+                data: { runId, sandbox: { name, sandboxId: sandbox.id } },
+              });
+            },
           },
           store &&
             threadSandboxOwner({

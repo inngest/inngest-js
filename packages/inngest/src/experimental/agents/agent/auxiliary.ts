@@ -51,8 +51,18 @@ export const createCleanupFunction = (
         sandbox?: ThreadSandboxCleanup;
       };
 
-      // With no store a run touches no KV: its sandboxes die with it.
+      // With no store nothing is kept: a sandbox the run did not close is
+      // destroyed.
       if (!store) {
+        if (sandbox) {
+          await step.run(`${sandbox.name}:run:destroy`, async () => {
+            const found = await client.sandboxes.get(sandbox.sandboxId);
+            await found?.destroy();
+
+            return null;
+          });
+        }
+
         return;
       }
 

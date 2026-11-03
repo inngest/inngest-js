@@ -203,6 +203,13 @@ export interface SandboxRuntime {
    * Runs `fn` once per run, such as `(id, fn) => step.run(id, fn)`.
    */
   run: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
+
+  /**
+   * Registers the cleanup that destroys a sandbox if the run ends without
+   * closing it. Used when there's no thread owner (no KV store); an owner
+   * guards its own sandboxes.
+   */
+  guard?: (name: string, sandbox: DurableSandbox, epoch: number) => DeferHandle;
 }
 
 /**
@@ -773,7 +780,9 @@ const lazySandbox = (
   // It saves the sandbox only once `owner.ready()` says its setup has
   // finished.
   const arm = (sandbox: DurableSandbox) => {
-    guard = owner?.guard(name, sandbox, epoch, idle);
+    guard =
+      owner?.guard(name, sandbox, epoch, idle) ??
+      runtime?.guard?.(name, sandbox, epoch);
   };
 
   // The bare sandbox: restored from the thread's newest snapshot when it has
@@ -1166,7 +1175,9 @@ const lazySandbox = (
         const rearm = () => {
           const old = guard;
 
-          guard = owner?.guard(name, sandbox, epoch, idle);
+          guard =
+            owner?.guard(name, sandbox, epoch, idle) ??
+            runtime?.guard?.(name, sandbox, epoch);
           old?.abort();
         };
 

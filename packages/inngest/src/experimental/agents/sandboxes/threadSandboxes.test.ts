@@ -5,6 +5,7 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { StepError } from "../../../components/StepError.ts";
+import type { DeferHandle } from "../../../types.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -1660,19 +1661,54 @@ describe("recycling a lazy sandbox", () => {
     expect((await opened.work?.get())?.id).toBe("sb-2");
   });
 
-  test("a sandbox that belongs to no thread cannot be recycled", async () => {
+  test("a sandbox that belongs to no thread is destroyed by a recycle, and the next get starts a fresh one", async () => {
     const w = world();
+    const create = vi.fn(async () => {
+      return w.durable(`sb-${create.mock.calls.length}`);
+    });
     const opened = openSandboxes({ work: box }, {
-      create: vi.fn(async () => {
-        return w.durable("sb-1");
-      }),
+      create,
     } as unknown as DurableSandboxTools);
 
     await opened.work?.get();
+    await opened.work?.recycle();
 
-    await expect(opened.work?.recycle()).rejects.toThrow(
-      /doesn't belong to a thread/,
+    expect([...w.live]).toEqual([]);
+
+    await opened.work?.get();
+
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  test("with no thread owner, the run's guard arms a cleanup that a close gives up", async () => {
+    const w = world();
+    const abort = vi.fn();
+    const guard = vi.fn(() => {
+      return { abort } as unknown as DeferHandle;
+    });
+    const opened = openSandboxes(
+      { work: box },
+      {
+        create: vi.fn(async () => {
+          return w.durable("sb-1");
+        }),
+      } as unknown as DurableSandboxTools,
+      {
+        run: (_id, fn) => {
+          return fn();
+        },
+        guard,
+      },
     );
+
+    await opened.work?.get();
+
+    expect(guard).toHaveBeenCalledWith("work", expect.anything(), 0);
+
+    await opened.work?.close();
+
+    expect(abort).toHaveBeenCalledOnce();
+    expect([...w.live]).toEqual([]);
   });
 
   test("a close during a recycle waits for it", async () => {
