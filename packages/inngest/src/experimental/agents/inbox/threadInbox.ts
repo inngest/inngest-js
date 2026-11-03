@@ -85,7 +85,16 @@ export const inflightOf = (event: {
   if (event.name === agentMessageEvent) {
     const data = event.data as Partial<AgentMessageData>;
 
-    return data.content === undefined ? undefined : { content: data.content };
+    // The message's ID and sender are kept with its text, so a resend is the
+    // same message: its sender hears how the run ended, and the run that takes
+    // it up knows who sent it.
+    return data.content === undefined
+      ? undefined
+      : {
+          content: data.content,
+          ...(event.id !== undefined && { id: event.id }),
+          ...(data.from !== undefined && { from: data.from }),
+        };
   }
 
   return { event: { id: event.id, name: event.name, data: event.data } };

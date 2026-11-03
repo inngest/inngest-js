@@ -52,7 +52,7 @@ describe("run end", () => {
     expect(finishedNotice(data({ ...from, via: undefined }))).toBeUndefined();
   });
 
-  test("owed reports: the required ones not yet sent, from the record when there is one", async () => {
+  test("owed reports: the required ones the run has not sent", async () => {
     const spec = {
       a: { required: true as const, to: [] },
       b: { to: [] },
@@ -61,13 +61,6 @@ describe("run end", () => {
 
     expect(requiredReports(spec)).toEqual(["a", "c"]);
     expect(await owedReports({ spec, sent: new Set(["a"]) })).toEqual(["c"]);
-    expect(
-      await owedReports({
-        spec,
-        sent: new Set(),
-        record: { add: async () => {}, sent: async () => ["c"] },
-      }),
-    ).toEqual(["a"]);
   });
 
   test("agent/finished reads out the reports it never sent", () => {

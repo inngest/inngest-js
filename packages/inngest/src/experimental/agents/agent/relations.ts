@@ -40,10 +40,18 @@ const { hmac, sha256 } = hashjs;
 const unsignedKey = "inngest-agents-unsigned";
 
 /**
+ * What the HMACs need of a client: its signing key and its fallback.
+ */
+interface SigningKeys {
+  signingKey?: string;
+  signingKeyFallback?: string;
+}
+
+/**
  * The HMAC keys to check a tag against: the signing key and its fallback, or
  * the fixed key when there is none. The first one makes new tags.
  */
-const secretsOf = (client: Inngest.Any): string[] => {
+const secretsOf = (client: SigningKeys): string[] => {
   const keys = [client.signingKey, client.signingKeyFallback]
     .filter((key): key is string => {
       return Boolean(key);
@@ -541,5 +549,80 @@ export const cardsAreSigned = (
 
   return secretsOf(client).some((secret) => {
     return fullMac(secret, data) === signature;
+  });
+};
+
+/**
+ * What signs an event of the thread ledger: the app that made it and the HMAC
+ * of its data.
+ */
+export type LedgerSignature = {
+  by: string;
+  sig: string;
+};
+
+const ledgerDigest = (
+  name: string,
+  by: string,
+  data: Record<string, unknown>,
+): string => {
+  const { sig: _sig, ...rest } = data;
+
+  return JSON.stringify(["ledger", name, by, canonical({ ...rest, by })]);
+};
+
+/**
+ * Signs the data of a ledger event with the signing key and the app ID of the
+ * signer. The signature covers the event's name and all of its data (keys
+ * sorted at every level), so it cannot be moved to another event or edited.
+ * Any app of the environment may sign, because they share the key; what the
+ * signature proves is that the sender holds it, which a model and a holder of
+ * only an event key do not.
+ * @param client The signer's client: its app ID and signing key.
+ * @param name The event's name.
+ * @param data The event's data, without `by` and `sig`.
+ * @returns The data with `by` and `sig` added.
+ */
+export const signLedgerData = <T extends Record<string, unknown>>(
+  client: SigningKeys & { id: string },
+  name: string,
+  data: T,
+): T & LedgerSignature => {
+  const [secret] = secretsOf(client) as [string];
+
+  return {
+    ...data,
+    by: client.id,
+    sig: fullMac(secret, ledgerDigest(name, client.id, data)),
+  };
+};
+
+/**
+ * Whether the data of a ledger event carries a signature made by a holder of
+ * this environment's signing key (or its fallback).
+ * @param client The checking app's client.
+ * @param name The event's name.
+ * @param data The event's data, with `by` and `sig`.
+ */
+export const ledgerDataIsSigned = (
+  client: SigningKeys,
+  name: string,
+  data: unknown,
+): boolean => {
+  const given = data as Record<string, unknown> | null | undefined;
+
+  if (
+    typeof given !== "object" ||
+    given === null ||
+    typeof given.sig !== "string" ||
+    typeof given.by !== "string"
+  ) {
+    return false;
+  }
+
+  const digest = ledgerDigest(name, given.by, given);
+
+  return secretsOf(client).some((secret) => {
+    return fullMac(secret, digest) === given.sig;
   });
 };

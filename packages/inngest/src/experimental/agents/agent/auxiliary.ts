@@ -10,11 +10,11 @@ import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import {
+  agentFinished,
   agentMessageResult,
   agentRecover,
   type MessageOutcome,
 } from "../inbox/events.ts";
-import { reportsOf, requiredReports } from "../inbox/reports.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { type Kv, kvHash } from "../kv/kv.ts";
@@ -22,7 +22,7 @@ import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
 } from "../sandboxes/threadSandboxes.ts";
-import { threadEnded } from "../threads/ledger.ts";
+import { runEnded } from "../threads/ledger.ts";
 import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
   agentMessageEvent,
@@ -32,7 +32,8 @@ import {
 import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
 import { finishedNotice } from "./finishedRelay.ts";
-import { finishedOf, lastRunOf, turnInFlight } from "./recovery.ts";
+import { finishedOf, turnInFlight } from "./recovery.ts";
+import { signLedgerData } from "./relations.ts";
 import { startData, startInflight } from "./startEvent.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -140,9 +141,10 @@ const senderIdsOf = (start: RawEvent): string[] => {
  * The function that runs when the executor reports that a run of the agent
  * ended. It writes the thread's `lastRun` for the agent and, with `recovery`
  * on, resends the turn that was in flight. The senders of the messages the run
- * took hear how it ended. With the ledger KV store it also sends the ledger the
- * end of a run `start_agent` began, so the ledger tells the starter which owed
- * reports never came.
+ * took hear how it ended. With the ledger KV store the ledger stores the record
+ * of the end (`agent/run.ended`), and the end of a run `start_agent` began goes
+ * to its starter as `agent/finished`, which the starter's SDK completes with
+ * `missing`. With another store the `agents-finished` relay sends the latter.
  */
 export const createFinishedFunction = (
   client: Inngest.Any,
@@ -185,17 +187,24 @@ export const createFinishedFunction = (
       const runId = String(data.run_id);
 
       // How the run ended is written first and whatever else happens next.
-      const { last, record } = await recordEnd(store, ref, message.thread, {
-        runId,
-        at: event.ts ?? 0,
-        finished: ended,
-        inflight: started,
-        turn: started !== undefined,
-        resume:
-          ended.status === "failed" && recovery
-            ? !ended.error?.nonRetriable
-            : undefined,
-      });
+      const { last, record } = await recordEnd(
+        store,
+        ref,
+        message.thread,
+        {
+          runId,
+          at: event.ts ?? 0,
+          finished: ended,
+          inflight: started,
+          turn: started !== undefined,
+          resume:
+            ended.status === "failed" && recovery
+              ? !ended.error?.nonRetriable
+              : undefined,
+        },
+        // With the ledger the ledger stores it, from `agent/run.ended`.
+        { persist: !onLedger() },
+      );
 
       // Only a run that `recordEnd` marked as resumed is resumed: a late report
       // for an older run, after a newer one has ended, is not.
@@ -231,15 +240,15 @@ export const createFinishedFunction = (
         );
       }
 
-      // With the ledger the end of a run `start_agent` began also goes to the
-      // thread's ledger, which knows which owed reports the run sent.
-      const notice = onLedger() ? finishedNotice(data) : undefined;
+      // With the ledger the end of a run goes to the thread's ledger, which
+      // stores how it ended, and a run `start_agent` began is reported to its
+      // starter, which knows which owed reports it took. One send for both.
+      if (onLedger() && last) {
+        const notice = finishedNotice(data);
 
-      if (notice) {
-        await step.sendEvent(
-          "run-ended",
-          threadEnded.create(
-            {
+        await step.sendEvent("run-ended", [
+          runEnded.create(
+            signLedgerData(client, runEnded.name, {
               thread: kvHash("thread", {
                 env: client.env ?? "default",
                 app: client.id,
@@ -248,12 +257,19 @@ export const createFinishedFunction = (
               app: client.id,
               agent: ref,
               runId,
-              required: requiredReports(reportsOf(start)),
-              notice,
-            },
+              last,
+            }),
             { id: `ended-${runId}` },
           ),
-        );
+          ...(notice
+            ? [
+                agentFinished.create(notice, {
+                  id: `finished-${runId}`,
+                  meta: { sessions: threadSessions(notice.thread) },
+                }),
+              ]
+            : []),
+        ]);
       }
 
       if (!resumed) {
@@ -284,11 +300,13 @@ export const createFinishedFunction = (
             agent: ref,
             thread: message.thread,
             event: inflight.event ?? {
+              ...(inflight.id !== undefined && { id: inflight.id }),
               name: agentMessageEvent,
               data: {
                 agent: ref,
                 thread: message.thread,
                 content: inflight.content,
+                ...(inflight.from !== undefined && { from: inflight.from }),
               },
             },
           },

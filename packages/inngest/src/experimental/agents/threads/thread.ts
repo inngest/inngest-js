@@ -189,7 +189,16 @@ export interface ThreadRecord {
  * `agent/message`, or any other event as it came.
  */
 export type Inflight =
-  | { content: Json; event?: undefined }
+  | {
+      content: Json;
+      event?: undefined;
+
+      /**
+       * The message's ID, whose sender waits for its result, and who sent it.
+       */
+      id?: string;
+      from?: unknown;
+    }
   | { event: { id?: string; name: string; data: unknown }; text?: undefined };
 
 /**

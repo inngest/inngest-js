@@ -54,13 +54,15 @@ import { QuestionBook } from "../inbox/questionBook.ts";
 import {
   type AgentReport,
   handleAddressKey,
+  isReportEvent,
+  owesRecord,
   type ReportBook,
+  reportEventPrefix,
   reportSenderProblem,
   reportsOf,
   reportsSigOf,
   reportTool,
   sendReport,
-  threadReportRecord,
 } from "../inbox/reports.ts";
 import { senderFrom } from "../inbox/sender.ts";
 import {
@@ -110,6 +112,7 @@ import {
 } from "../skills/skills.ts";
 import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
+  agentFinishedEvent,
   agentMessageEvent,
   agentQuestionEvent,
   agentRecoverEvent,
@@ -762,6 +765,55 @@ export function createAgentFunction(
 
         bridge.handleOpened = openedByHandle;
 
+        // The starter keeps what each child it started owes in its own thread
+        // state: a report that comes is noted, and a child's `agent/finished`
+        // is given the `missing` that follows from the two. Nothing the
+        // sender wrote in `missing` is believed.
+        const owes = owesRecord(kv.thread, ref);
+        const owesChecked = new WeakSet<object>();
+        const noteOwed = async (raw: UntypedInboxMessage) => {
+          const as = resentAs(raw);
+
+          try {
+            if (isReportEvent(as.name)) {
+              const child = (as as { from?: { key?: unknown } }).from?.key;
+
+              if (typeof child === "string") {
+                await owes.received(
+                  child,
+                  as.name.slice(reportEventPrefix.length),
+                );
+              }
+
+              return;
+            }
+
+            if (as.name === agentFinishedEvent && !owesChecked.has(raw)) {
+              owesChecked.add(raw);
+
+              const data = as.data as {
+                from?: { key?: unknown };
+                missing?: string[];
+              };
+              const missing =
+                typeof data.from?.key === "string"
+                  ? await owes.missing(data.from.key)
+                  : undefined;
+
+              if (missing === undefined) {
+                delete data.missing;
+              } else {
+                data.missing = missing;
+              }
+            }
+          } catch (error) {
+            logger.warn(
+              { error: error instanceof Error ? error.message : String(error) },
+              "could not read or write what a started child owes",
+            );
+          }
+        };
+
         const { inbox, view } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
@@ -779,6 +831,8 @@ export function createAgentFunction(
             if (senderProblem) {
               return senderProblem;
             }
+
+            await noteOwed(raw as UntypedInboxMessage);
 
             if (isOwnEvent(raw.name)) {
               return undefined;
@@ -845,16 +899,10 @@ export function createAgentFunction(
         // them it has sent.
         const reportSpec = reportsOf({ name: event.name, data: event.data });
         const grantSig = reportsSigOf({ name: event.name, data: event.data });
-        // With the ledger KV store the run notes each report it sends in its own
-        // thread state, which is local to it at once: the thread's ledger
-        // holds it when the run ends, to tell the starter what never came.
         const reportBook: ReportBook | undefined = reportSpec && {
           spec: reportSpec,
           sent: new Set(),
           ...(grantSig !== undefined && { grantSig }),
-          ...(onLedger() && {
-            record: threadReportRecord(kv.thread, ref, runId),
-          }),
         };
 
         bridge.reports = reportBook;

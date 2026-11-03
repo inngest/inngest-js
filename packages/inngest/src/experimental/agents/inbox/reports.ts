@@ -36,7 +36,6 @@ import { compileExpression, MissingPathError } from "../cel.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { type Kv, typedKey } from "../kv/kv.ts";
-import { type ReportsRecord, reportsRecordKey } from "../threads/ledger.ts";
 import type { SenderData } from "./events.ts";
 
 /**
@@ -470,33 +469,13 @@ export const resolveReports = (
 };
 
 /**
- * Where a run keeps which of its reports it has sent when the KV is the
- * ledger: its own thread's state, which is local to the run at once and which
- * the thread's ledger holds when the run ends.
- */
-export interface ReportRecord {
-  /**
-   * Notes that a report was sent.
-   */
-  add(type: string): Promise<void>;
-
-  /**
-   * The report types this run has sent.
-   */
-  sent(): Promise<string[]>;
-}
-
-/**
  * The reports a run was started with and which it has sent. The routing is
- * read from the start event. With the ledger KV store the sent types are also
- * kept in the thread's state (`record`) and read from there; with another
- * store they are rebuilt on every replay, since each report goes out in a step
- * the run runs again.
+ * read from the start event; the sent types are the run's own: each report
+ * goes out in a step the run runs again on a replay, so the set is rebuilt.
  */
 export interface ReportBook {
   readonly spec: ReportSpec;
   readonly sent: Set<string>;
-  readonly record?: ReportRecord;
 
   /**
    * The signature of the routing in `spec`, from the start event.
@@ -505,35 +484,97 @@ export interface ReportBook {
 }
 
 /**
- * The reports a run has sent, kept in the thread's state under
- * `reportsRecordKey`. The record belongs to one run: a run that finds another
- * run's record starts its own.
- * @param thread The thread state to keep it in.
- * @param agent The agent, as `"appId/functionId"`: the record is its own.
- * @param runId The run.
+ * The thread-state key of what an agent's runs on a thread expect of the
+ * children they started with `start_agent`. It is the agent's own: two agents
+ * may share a thread key. The `__` prefix hides it from `state().keys`.
+ * @param agent The agent, as `"appId/functionId"`.
  */
-export const threadReportRecord = (
-  thread: Kv["thread"],
-  agent: string,
-  runId: string,
-) => {
-  const key = typedKey<ReportsRecord>(reportsRecordKey(agent));
-  const record: ReportRecord = {
-    async add(type) {
-      await thread.update(key, (current) => {
-        const sent = current?.run === runId ? current.sent : [];
+export const owesKey = (agent: string): string => {
+  return `__owes:${agent}`;
+};
 
-        return { run: runId, sent: [...new Set([...sent, type])] };
-      });
-    },
-    async sent() {
-      const current = await thread.get(key);
+/**
+ * What a starter expects of each child it started with owed reports, by the
+ * child's thread key: the report types owed, and those that came.
+ */
+export type Owes = Record<string, { required: string[]; got: string[] }>;
 
-      return current?.run === runId ? current.sent : [];
-    },
+/**
+ * What the starter of children with owed reports keeps in its thread state: it
+ * set the owed reports and receives them, so when a child's `agent/finished`
+ * arrives it knows which never came. It is a plain set of a record the starter
+ * alone writes.
+ * @param thread The starter's thread state.
+ * @param agent The starter, as `"appId/functionId"`.
+ */
+export const owesRecord = (thread: Kv["thread"], agent: string) => {
+  const key = typedKey<Owes>(owesKey(agent));
+  const change = async (edit: (owes: Owes) => boolean) => {
+    const owes = structuredClone((await thread.get(key)) ?? {}) as Owes;
+
+    if (edit(owes)) {
+      await thread.set(key, owes);
+    }
   };
 
-  return record;
+  return {
+    /**
+     * Notes the report types a child just started owes.
+     */
+    async expect(child: string, required: string[]) {
+      if (required.length === 0) {
+        return;
+      }
+
+      await change((owes) => {
+        owes[child] = { required, got: [] };
+
+        return true;
+      });
+    },
+
+    /**
+     * Notes that a report of `type` came from `child`, if the child owes any.
+     */
+    async received(child: string, type: string) {
+      await change((owes) => {
+        const entry = owes[child];
+
+        if (!entry || entry.got.includes(type)) {
+          return false;
+        }
+
+        entry.got.push(type);
+
+        return true;
+      });
+    },
+
+    /**
+     * What `child` owed and never sent, when it ended, or `undefined` when it
+     * owed nothing. The child is forgotten.
+     */
+    async missing(child: string): Promise<string[] | undefined> {
+      let missing: string[] | undefined;
+
+      await change((owes) => {
+        const entry = owes[child];
+
+        if (!entry) {
+          return false;
+        }
+
+        missing = entry.required.filter((type) => {
+          return !entry.got.includes(type);
+        });
+        delete owes[child];
+
+        return true;
+      });
+
+      return missing;
+    },
+  };
 };
 
 /**
@@ -586,16 +627,14 @@ export const requiredReports = (spec: ReportSpec | undefined): string[] => {
 };
 
 /**
- * The types the run still owes, in the order they were listed. It reads the
- * thread's state when the run keeps one, which is a local read.
+ * The types the run still owes, in the order they were listed: the run knows
+ * what it sent.
  */
 export const owedReports = async (
   book: ReportBook | undefined,
 ): Promise<string[]> => {
-  const sent = book?.record ? new Set(await book.record.sent()) : book?.sent;
-
   return requiredReports(book?.spec).filter((type) => {
-    return !sent?.has(type);
+    return !book?.sent.has(type);
   });
 };
 
@@ -657,8 +696,6 @@ export const sendReport = async (
   book.sent.add(type);
 
   if (destinations.length === 0) {
-    await book.record?.add(type);
-
     return;
   }
 
@@ -699,10 +736,6 @@ export const sendReport = async (
       );
     }),
   );
-
-  // Written after the send, so a run cut off before it never claims a report
-  // it did not send.
-  await book.record?.add(type);
 };
 
 /**

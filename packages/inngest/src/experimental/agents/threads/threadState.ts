@@ -420,6 +420,13 @@ export const recordEnd = async (
      */
     resume?: boolean;
   },
+  options: {
+    /**
+     * Whether to write the record. Default: yes. With `false` the record is
+     * only worked out and returned.
+     */
+    persist?: boolean;
+  } = {},
 ) => {
   const scope = store.scope("thread", thread);
 
@@ -427,7 +434,7 @@ export const recordEnd = async (
   // cleanup, and the run's ending goes under a key of its own, so none of
   // the writes can lose another's.
   const record = (await scope.get(recordKey(agent))) ?? emptyRecord();
-  const last = await scope.update(lastRunKey(agent), (found) => {
+  const decided = (found: LastRun | undefined | null): LastRun => {
     if (
       found &&
       found.runId !== end.runId &&
@@ -458,7 +465,7 @@ export const recordEnd = async (
       next =
         end.resume === undefined
           ? { ...next, error, fingerprint: print }
-          : decide(found, {
+          : decide(found ?? undefined, {
               runId: end.runId,
               at: end.at,
               error,
@@ -469,7 +476,14 @@ export const recordEnd = async (
     }
 
     return next;
-  });
+  };
+
+  // With the ledger the ledger stores the record: the caller sends it in
+  // `agent/run.ended`.
+  const last =
+    options.persist === false
+      ? decided(await scope.get(lastRunKey(agent)))
+      : await scope.update(lastRunKey(agent), decided);
 
   return { last, record };
 };

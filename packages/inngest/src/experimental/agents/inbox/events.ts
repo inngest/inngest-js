@@ -172,9 +172,10 @@ export type AgentFinishedData = AgentRouting & {
 
   /**
    * The names of the reports the run owed (`report.required()`) and finished
-   * without sending. An empty list means every owed report was sent. Set when
-   * the app has no KV store, where the thread's ledger knows what the run
-   * sent; with a store it is not set.
+   * without sending. An empty list means every owed report was sent. The
+   * starter's SDK sets it when the message reaches the starter's inbox: it
+   * subtracts the reports it took from that child from the ones it owed. It
+   * is not set when the child owed none.
    */
   missing?: string[];
 } & (

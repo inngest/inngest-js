@@ -11,10 +11,11 @@
  * It is driven by the platform's own terminal event, so no run's ending goes
  * unreported. There is one per app, whatever agent the run belonged to.
  *
- * It is served only when the app has a KV store. With none, the thread's
- * ledger sends `agent/finished` itself (see `ledger.ts`), because it holds
- * which owed reports the run sent, and this function would send a second,
- * different message for the same ending.
+ * It is served only when the app has a KV store. With the ledger, each
+ * agent's finished function sends `agent/finished` (see `auxiliary.ts`), and
+ * this function would send a second message for the same ending.
+ *
+ * Neither sets `missing`: the starter's SDK does, from the reports it took.
  */
 
 import type { Inngest } from "../../../components/Inngest.ts";
@@ -50,8 +51,8 @@ export const startOfFinished = (
 
 /**
  * The `agent/finished` a run `start_agent` began ends with, from its
- * `inngest/function.finished` data, or `undefined` for any other run. It is
- * complete except for `missing`, which only the thread's own state knows.
+ * `inngest/function.finished` data, or `undefined` for any other run. The
+ * starter's SDK adds `missing` when it takes the message in.
  * @param data The data of the `inngest/function.finished` event.
  */
 export const finishedNotice = (

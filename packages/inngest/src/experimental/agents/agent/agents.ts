@@ -393,9 +393,9 @@ export const createAgents = <TClient extends Inngest.Any>(
 
       const stored = !usesLedger(client.id);
 
-      // With the ledger KV store the ledger function also sends
-      // `agent/finished` (it knows which owed reports the run sent), so the
-      // relay that sends it is served only with another store.
+      // With the ledger KV store each agent's finished function sends
+      // `agent/finished`, so the relay that sends it is served only with
+      // another store.
       const ledger = stored
         ? []
         : (ledgers.get(client) ??

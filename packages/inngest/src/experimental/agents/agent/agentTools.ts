@@ -35,8 +35,13 @@ import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { agentAskTimeout, agentQuestion } from "../inbox/events.ts";
-import type { ReportSpec } from "../inbox/reports.ts";
+import {
+  owesRecord,
+  type ReportSpec,
+  requiredReports,
+} from "../inbox/reports.ts";
 import type { Json, JsonSchema } from "../json.ts";
+import { kv } from "../kv/kv.ts";
 import { threadHandle, threadSessions } from "../threads/thread.ts";
 import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -234,6 +239,17 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
 
     if (via === "start_agent") {
       trackChild(execution.instance, started.key);
+
+      // What the child owes is kept in this thread's state, which the
+      // child's `agent/finished` is read against.
+      const self = execution.agent;
+
+      if (self?.ref && resolved) {
+        await owesRecord(kv.thread, self.ref).expect(
+          started.key,
+          requiredReports(resolved),
+        );
+      }
     }
 
     if (via === undefined) {

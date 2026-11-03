@@ -24,6 +24,12 @@
  * A conditional write is the one place a run asks the ledger something after
  * its start: the ledger applies it only if the key is as expected, and says
  * which. It costs one round trip.
+ *
+ * Nothing here waits on a timer. A reader whose read found no live ledger asks
+ * again when a ledger run says it is listening (`agent/thread.ready`). A copy
+ * that sees a `reset` (a ledger run took over) or another epoch (a ledger
+ * started over) sends its unechoed writes again or reloads. Every event this
+ * module sends is signed, and every one it takes in must be.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
@@ -33,6 +39,7 @@ import {
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
+import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
 import type { Json } from "../json.ts";
 import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";
 import {
@@ -40,6 +47,7 @@ import {
   emptyThreadState,
   liveKey,
   overLimitMessage,
+  resolveTtl,
   stateSize,
   type ThreadChange,
   type ThreadChangedData,
@@ -47,19 +55,28 @@ import {
   type ThreadStateData,
   threadChanged,
   threadRead,
+  threadReady,
   threadStateLimit,
   threadStateReply,
   threadWrite,
 } from "./ledger.ts";
 
 /**
- * What a script needs to write to the ledger: a client.
+ * What signs the ledger events of a client: its app ID and signing key.
  */
-export interface LedgerSender {
+export interface LedgerSigner {
   /**
    * The app ID: a ledger function takes the events of its own app.
    */
   id: string;
+  signingKey?: string;
+  signingKeyFallback?: string;
+}
+
+/**
+ * What a script needs to write to the ledger: a client.
+ */
+export interface LedgerSender extends LedgerSigner {
   send(payload: unknown): Promise<unknown>;
 }
 
@@ -73,8 +90,32 @@ interface Copy {
   thread: string;
   app: string;
   runId: string;
+  signer: LedgerSigner;
   confirmed: ThreadLedgerState;
   version: number;
+
+  /**
+   * The ledger run the state came from. A change from another one means the
+   * ledger started over, and the copy reloads.
+   */
+  epoch?: string;
+
+  /**
+   * The time of the latest event the copy took in (or the run's start event),
+   * in milliseconds. Expiry is judged by it, so a replay sees what the first
+   * run saw.
+   */
+  clock: number;
+  stale: boolean;
+  resend: boolean;
+  heardReady: boolean;
+  justLoaded: boolean;
+
+  /**
+   * How many reads and resends this copy sent, which number their steps.
+   */
+  reads: number;
+  resends: number;
   pending: Array<{ seq: number; change: ThreadChange }>;
   future: Map<number, ThreadChangedData>;
 
@@ -91,13 +132,6 @@ interface Copy {
 
 const copies = new WeakMap<object, Map<string, Copy>>();
 
-/**
- * How long a read of the ledger waits for its answer before asking again, and
- * how many times it asks.
- */
-const readWait = "20s";
-const readAttempts = 3;
-
 const quoted = (value: string): string => {
   return JSON.stringify(value);
 };
@@ -105,7 +139,11 @@ const quoted = (value: string): string => {
 const storeFix =
   "Configure a store adapter with createAgents(client, { store }) to do this.";
 
-const copyOf = (thread: string, write: boolean, fallbackApp?: string): Copy => {
+const copyOf = (
+  thread: string,
+  write: boolean,
+  fallback?: LedgerSigner,
+): Copy => {
   const als = getAsyncCtxSync();
   const execution = als?.execution;
 
@@ -129,12 +167,27 @@ const copyOf = (thread: string, write: boolean, fallbackApp?: string): Copy => {
       );
     }
 
+    const signer =
+      (als?.app as unknown as LedgerSigner | undefined) ?? fallback;
+
+    if (!signer) {
+      throw new Error("The ledger KV store needs a client to sign with");
+    }
+
     found = {
       thread,
-      app: (als?.app as { id?: string } | undefined)?.id ?? fallbackApp ?? "",
+      app: signer.id,
       runId: String(execution.ctx.runId),
+      signer,
       confirmed: emptyThreadState(),
       version: 0,
+      clock: (execution.ctx.event as { ts?: number } | undefined)?.ts ?? 0,
+      stale: false,
+      resend: false,
+      heardReady: false,
+      justLoaded: false,
+      reads: 0,
+      resends: 0,
       pending: [],
       future: new Map(),
       echoes: new Map(),
@@ -156,7 +209,7 @@ const viewOf = (copy: Copy): ThreadLedgerState => {
     const view = structuredClone(copy.confirmed);
 
     for (const { change } of copy.pending) {
-      applyChange(view, change, Date.now());
+      applyChange(view, resolveTtl(change, copy.clock), copy.clock);
     }
 
     copy.view = view;
@@ -166,34 +219,94 @@ const viewOf = (copy: Copy): ThreadLedgerState => {
 };
 
 /**
+ * Says an event was dropped, in the logs of the function that runs this copy.
+ */
+const dropped = (copy: Copy, name: string): void => {
+  const logger = (
+    getAsyncCtxSync()?.execution?.ctx as unknown as
+      | { logger?: { warn: (fields: object, message: string) => void } }
+      | undefined
+  )?.logger;
+
+  logger?.warn(
+    { thread: copy.thread, event: name },
+    "dropped a ledger event with no valid signature",
+  );
+};
+
+const signedBy = <T extends Record<string, unknown>>(
+  copy: Copy,
+  name: string,
+  data: T,
+) => {
+  return signLedgerData(copy.signer, name, data);
+};
+
+const writeOf = (copy: Copy, seq: number, change: ThreadChange) => {
+  return threadWrite.create(
+    signedBy(copy, threadWrite.name, {
+      thread: copy.thread,
+      app: copy.app,
+      runId: copy.runId,
+      seq,
+      change,
+    }),
+  );
+};
+
+/**
  * Takes in one `agent/thread.changed`, in version order. A change ahead of
  * the next version waits for the ones before it.
  */
 const takeChange = (copy: Copy, data: ThreadChangedData): void => {
   if (data.change.op === "reset") {
+    // A ledger run took over (or started over) and says what it holds. What it
+    // holds is the state from then on, and the writes of this copy that it did
+    // not apply are for this copy to send again.
+    if (data.epoch === copy.epoch && data.version <= copy.version) {
+      return;
+    }
+
     const { state, last } = data.change;
 
     copy.confirmed = state;
-    copy.version = Math.max(copy.version, data.version - 1);
-    copy.future.clear();
+    copy.version = data.version;
+    copy.epoch = data.epoch;
     copy.pending = copy.pending.filter((p) => {
       return p.seq > (last[copy.runId] ?? 0);
     });
-    copy.view = undefined;
-  } else if (data.runId === copy.runId) {
-    copy.pending = copy.pending.filter((p) => {
-      return p.seq !== data.seq;
-    });
-    copy.echoes.set(data.seq, data);
-    copy.view = undefined;
-  }
+    copy.resend = copy.pending.length > 0;
+    copy.stale = false;
 
-  if (data.rejected !== undefined || data.conflict !== undefined) {
-    return;
-  }
+    for (const version of [...copy.future.keys()]) {
+      if (version <= data.version) {
+        copy.future.delete(version);
+      }
+    }
 
-  if (data.version > copy.version) {
-    copy.future.set(data.version, data);
+    copy.view = undefined;
+  } else {
+    if (copy.epoch !== undefined && data.epoch !== copy.epoch) {
+      copy.stale = true;
+
+      return;
+    }
+
+    if (data.runId === copy.runId) {
+      copy.pending = copy.pending.filter((p) => {
+        return p.seq !== data.seq;
+      });
+      copy.echoes.set(data.seq, data);
+      copy.view = undefined;
+    }
+
+    if (data.rejected !== undefined || data.conflict !== undefined) {
+      return;
+    }
+
+    if (data.version > copy.version) {
+      copy.future.set(data.version, data);
+    }
   }
 
   while (true) {
@@ -210,23 +323,48 @@ const takeChange = (copy: Copy, data: ThreadChangedData): void => {
     }
 
     copy.future.delete(next.version);
-    applyChange(copy.confirmed, next.change, Date.now());
+    applyChange(copy.confirmed, next.change, copy.clock);
     copy.version = next.version;
     copy.view = undefined;
   }
 };
 
+/**
+ * Takes in the messages of the copy's inbox: changes in version order, and
+ * the news that a ledger run is listening. An event with no valid signature is
+ * dropped. What the messages call for (a reload, writes sent again) is done by
+ * `settle`.
+ */
 const takeMessages = (copy: Copy, messages: UntypedInboxMessage[]): void => {
-  const changes = messages
-    .filter((m) => {
-      return m.name === threadChanged.name;
-    })
-    .map((m) => {
-      return m.data as ThreadChangedData;
-    })
-    .sort((a, b) => {
-      return a.version - b.version;
-    });
+  const changes: ThreadChangedData[] = [];
+
+  for (const message of messages) {
+    if (
+      message.name !== threadChanged.name &&
+      message.name !== threadReady.name
+    ) {
+      continue;
+    }
+
+    if (!ledgerDataIsSigned(copy.signer, message.name, message.data)) {
+      dropped(copy, message.name);
+      continue;
+    }
+
+    if (typeof message.ts === "number") {
+      copy.clock = Math.max(copy.clock, message.ts);
+    }
+
+    if (message.name === threadReady.name) {
+      copy.heardReady = true;
+    } else {
+      changes.push(message.data as ThreadChangedData);
+    }
+  }
+
+  changes.sort((a, b) => {
+    return a.version - b.version;
+  });
 
   for (const data of changes) {
     takeChange(copy, data);
@@ -234,9 +372,131 @@ const takeMessages = (copy: Copy, messages: UntypedInboxMessage[]): void => {
 };
 
 /**
- * Subscribes, then asks the ledger once. Changes that arrive before the answer
- * are held; those at or below the answer's version are discarded and the rest
- * are applied.
+ * Sends the writes the ledger has not echoed again, with the `seq` they had:
+ * a ledger that already applied one drops the copy it gets.
+ */
+const resendPending = async (copy: Copy): Promise<void> => {
+  copy.resend = false;
+  copy.heardReady = false;
+
+  if (copy.pending.length === 0) {
+    return;
+  }
+
+  copy.resends += 1;
+  await step.sendEvent(
+    `ledger-resend:${copy.thread}:${copy.resends}`,
+    copy.pending.map((p) => {
+      return writeOf(copy, p.seq, p.change);
+    }),
+  );
+};
+
+/**
+ * Reads the ledger's state: asks, and asks again each time a ledger run says
+ * it is listening, until the answer comes. Changes that arrive meanwhile are
+ * held; those at or below the answer's version are discarded and the rest are
+ * applied.
+ */
+const fetchState = async (copy: Copy): Promise<void> => {
+  const sub = copy.sub as Inbox;
+  const { thread, runId, app } = copy;
+  const buffered: UntypedInboxMessage[] = [];
+  const first = copy.reads + 1;
+  const ask = async () => {
+    copy.reads += 1;
+    await step.sendEvent(
+      `ledger-read:${thread}:${copy.reads}`,
+      threadRead.create(
+        signedBy(copy, threadRead.name, { thread, app, runId, n: copy.reads }),
+      ),
+    );
+  };
+
+  await ask();
+
+  while (true) {
+    const message = await sub.next();
+
+    if (message === undefined) {
+      throw new Error(`Ledger state of "${thread}": the inbox closed early`);
+    }
+
+    if (message.name === threadReady.name) {
+      if (ledgerDataIsSigned(copy.signer, message.name, message.data)) {
+        // The ledger run that started with this reader's request answers it.
+        if ((message.data as { answered?: string }).answered !== runId) {
+          await ask();
+        }
+      } else {
+        dropped(copy, message.name);
+      }
+
+      continue;
+    }
+
+    if (message.name !== threadStateReply.name) {
+      buffered.push(message);
+      continue;
+    }
+
+    const reply = message.data as ThreadStateData & { n?: number };
+
+    if (!ledgerDataIsSigned(copy.signer, message.name, reply)) {
+      dropped(copy, message.name);
+      continue;
+    }
+
+    // An answer to a read of an earlier load is older than what this one
+    // asked for.
+    if ((reply.n ?? 0) < first) {
+      continue;
+    }
+
+    if (typeof message.ts === "number") {
+      copy.clock = Math.max(copy.clock, message.ts);
+    }
+
+    copy.confirmed = reply.state;
+    copy.version = reply.version;
+    copy.epoch = reply.epoch;
+    copy.stale = false;
+    copy.future.clear();
+    copy.pending = copy.pending.filter((p) => {
+      return p.seq > reply.seq;
+    });
+    copy.view = undefined;
+
+    const mine = buffered.filter((m) => {
+      return (
+        m.name === threadChanged.name &&
+        (m.data as ThreadChangedData).epoch === reply.epoch &&
+        (m.data as ThreadChangedData).version > reply.version
+      );
+    });
+
+    // A change from another ledger run than the answer's: the copy reloads
+    // when it next looks.
+    copy.stale = buffered.some((m) => {
+      return (
+        m.name === threadChanged.name &&
+        (m.data as ThreadChangedData).epoch !== reply.epoch
+      );
+    });
+    takeMessages(copy, [
+      ...mine,
+      ...buffered.filter((m) => {
+        return m.name === threadReady.name;
+      }),
+    ]);
+    copy.heardReady = false;
+
+    return;
+  }
+};
+
+/**
+ * Subscribes, then asks the ledger once.
  */
 const load = async (copy: Copy): Promise<void> => {
   const { thread, runId, app } = copy;
@@ -247,6 +507,10 @@ const load = async (copy: Copy): Promise<void> => {
       if: mine,
     },
     {
+      event: threadReady.name,
+      if: mine,
+    },
+    {
       event: threadStateReply.name,
       if: `${mine} && async.data.runId == ${quoted(runId)}`,
     },
@@ -254,54 +518,9 @@ const load = async (copy: Copy): Promise<void> => {
 
   copy.sub = sub;
   await inboxOpenedPromise(sub);
-
-  const buffered: UntypedInboxMessage[] = [];
-
-  for (let attempt = 0; attempt < readAttempts; attempt++) {
-    await step.sendEvent(
-      `ledger-read:${thread}:${attempt}`,
-      threadRead.create({ thread, app, runId }),
-    );
-
-    while (true) {
-      const message = await sub.next({ timeout: readWait });
-
-      if (message === undefined) {
-        throw new Error(`Ledger state of "${thread}": the inbox closed early`);
-      }
-
-      if (message === null) {
-        break;
-      }
-
-      if (message.name !== threadStateReply.name) {
-        buffered.push(message);
-        continue;
-      }
-
-      const reply = message.data as ThreadStateData;
-
-      copy.confirmed = reply.state;
-      copy.version = reply.version;
-      copy.pending = copy.pending.filter((p) => {
-        return p.seq > reply.seq;
-      });
-      copy.view = undefined;
-      takeMessages(
-        copy,
-        buffered.filter((m) => {
-          return (m.data as ThreadChangedData).version > reply.version;
-        }),
-      );
-      copy.ready = true;
-
-      return;
-    }
-  }
-
-  throw new Error(
-    `Ledger state of "${thread}": the ledger did not answer. Serve agents.functions() so the ledger function runs. ${storeFix}`,
-  );
+  await fetchState(copy);
+  copy.ready = true;
+  copy.justLoaded = true;
 };
 
 /**
@@ -317,30 +536,64 @@ const ensure = async (copy: Copy): Promise<void> => {
 };
 
 /**
- * Takes in the changes that arrived since the last access.
+ * Does what the messages taken in call for: reloads when the ledger started
+ * over, and sends the writes the ledger lacks again after a handover (`reset`)
+ * or when a ledger run says it is listening.
+ */
+const settle = async (copy: Copy): Promise<void> => {
+  if (copy.stale) {
+    await fetchState(copy);
+    await resendPending(copy);
+
+    return;
+  }
+
+  if (copy.resend || (copy.heardReady && copy.pending.length > 0)) {
+    await resendPending(copy);
+  }
+
+  copy.heardReady = false;
+};
+
+/**
+ * Takes in the changes that arrived since the last access. Right after the
+ * load there is nothing new to take in.
  */
 const sync = async (copy: Copy): Promise<void> => {
   await ensure(copy);
 
+  if (copy.justLoaded) {
+    copy.justLoaded = false;
+
+    if (copy.stale) {
+      await settle(copy);
+    }
+
+    return;
+  }
+
   if (copy.sub) {
     takeMessages(copy, await copy.sub.drain());
+    await settle(copy);
   }
 };
 
 /**
- * Sends a write and returns its `seq`. The write is in the copy at once.
+ * Sends a write and returns its `seq`. The write is in the copy at once. A
+ * run that has not loaded the state sends it without loading: the ledger
+ * enforces the size limit.
  */
 const write = async (copy: Copy, change: ThreadChange): Promise<number> => {
-  await ensure(copy);
+  if (copy.ready) {
+    const next = structuredClone(viewOf(copy));
 
-  const next = structuredClone(viewOf(copy));
+    applyChange(next, resolveTtl(change, copy.clock), copy.clock);
 
-  applyChange(next, change, Date.now());
+    const size = stateSize(next);
 
-  const size = stateSize(next);
-
-  if (size > threadStateLimit) {
-    throw new Error(overLimitMessage(copy.thread, size));
+    if (size > threadStateLimit) {
+      throw new Error(overLimitMessage(copy.thread, size));
+    }
   }
 
   copy.seq += 1;
@@ -352,16 +605,34 @@ const write = async (copy: Copy, change: ThreadChange): Promise<number> => {
 
   await step.sendEvent(
     `ledger-write:${copy.thread}:${seq}`,
-    threadWrite.create({
-      thread: copy.thread,
-      app: copy.app,
-      runId: copy.runId,
-      seq,
-      change,
-    }),
+    writeOf(copy, seq, change),
   );
 
   return seq;
+};
+
+/**
+ * What a conditional write did, from the state, for a verdict that did not
+ * arrive because a ledger run took over before its echo was sent.
+ */
+const inferred = (copy: Copy, change: ThreadChange): ThreadChangedData => {
+  const key = (change as { key: string }).key;
+  const live = liveKey(copy.confirmed, key, copy.clock)?.v ?? null;
+  const applied =
+    change.op === "casDelete"
+      ? live !== change.expected
+      : live === (change as { value: Json }).value;
+
+  return {
+    thread: copy.thread,
+    app: copy.app,
+    runId: copy.runId,
+    seq: 0,
+    change,
+    epoch: copy.epoch ?? "",
+    version: copy.version,
+    ...(!applied && { conflict: { current: live } }),
+  };
 };
 
 /**
@@ -373,29 +644,25 @@ const conditional = async (
   copy: Copy,
   change: ThreadChange,
 ): Promise<{ applied: boolean; current: Json | null }> => {
+  await ensure(copy);
+
   const seq = await write(copy, change);
-  let attempts = 0;
 
   while (!copy.echoes.has(seq)) {
-    const batch = await copy.sub?.nextBatch({ timeout: readWait });
+    // A reload took the write into the state without a verdict.
+    if (!copy.pending.some((p) => p.seq === seq)) {
+      copy.echoes.set(seq, inferred(copy, change));
+      break;
+    }
 
-    if (batch === undefined) {
+    const batch = await copy.sub?.nextBatch();
+
+    if (batch === undefined || batch === null) {
       throw new Error(`Ledger state of "${copy.thread}": the inbox closed`);
     }
 
-    if (batch === null) {
-      attempts += 1;
-
-      if (attempts >= readAttempts) {
-        throw new Error(
-          `Ledger state of "${copy.thread}": the ledger did not answer a conditional write. ${storeFix}`,
-        );
-      }
-
-      continue;
-    }
-
     takeMessages(copy, batch);
+    await settle(copy);
   }
 
   const echo = copy.echoes.get(seq) as ThreadChangedData;
@@ -410,23 +677,24 @@ const conditional = async (
     return { applied: true, current: null };
   }
 
-  // The write that won came before this verdict: wait for it, a few times,
-  // so the caller's next read is not stale.
-  for (let tries = 0; tries < 3 && copy.version < echo.version; tries++) {
-    const batch = await copy.sub?.nextBatch({ timeout: "3s" });
+  // The write that won came before this verdict: wait for it, so the caller's
+  // next read is not stale. A reload of the state (another epoch) has it.
+  while (copy.version < echo.version && copy.epoch === echo.epoch) {
+    const batch = await copy.sub?.nextBatch();
 
     if (!batch) {
       break;
     }
 
     takeMessages(copy, batch);
+    await settle(copy);
   }
 
   return { applied: false, current: echo.conflict.current };
 };
 
-const expiry = (ttl?: number): { exp?: number } => {
-  return ttl === undefined ? {} : { exp: Date.now() + ttl * 1000 };
+const expiry = (ttl?: number): { ttl?: number } => {
+  return ttl === undefined ? {} : { ttl };
 };
 
 const members = (
@@ -506,7 +774,9 @@ const outsideSeq = new Map<string, number>();
  *   write past it throws.
  * - A ledger lives as a function run: it holds its state for as long as the
  *   platform lets a run wait, and hands over to a fresh run near Inngest's step
- *   limit (about 400 writes). A write sent during a handover can be lost.
+ *   limit (about 400 writes). A write sent during a handover is sent again by
+ *   its writer when the next ledger run's `reset` arrives; a script, or a run
+ *   that never reads, has no copy to do it, so its write can be lost.
  * - A ledger belongs to one app: `kv.env` is shared by the functions of one app,
  *   not across apps.
  * - Writing inside a step's callback, reading outside a function, and a
@@ -538,13 +808,15 @@ export const ledgerKvAdapter = (
 
     outsideSeq.set(hash, seq);
     await client.send(
-      threadWrite.create({
-        thread: hash,
-        app: client.id,
-        runId: outsideWriter,
-        seq,
-        change,
-      }),
+      threadWrite.create(
+        signLedgerData(client, threadWrite.name, {
+          thread: hash,
+          app: client.id,
+          runId: outsideWriter,
+          seq,
+          change,
+        }),
+      ),
     );
   };
 
@@ -556,7 +828,7 @@ export const ledgerKvAdapter = (
 
   // The copy a read uses: synced between steps, as it stands inside one.
   const live = async (hash: string) => {
-    const copy = copyOf(hash, false, options.client?.id);
+    const copy = copyOf(hash, false, options.client);
 
     if (getAsyncCtxSync()?.execution?.executingStep) {
       if (!copy.ready) {
@@ -578,7 +850,7 @@ export const ledgerKvAdapter = (
       return;
     }
 
-    await write(copyOf(hash, true, options.client?.id), op);
+    await write(copyOf(hash, true, options.client), op);
   };
 
   const decide = async (hash: string, op: ThreadChange) => {
@@ -586,7 +858,7 @@ export const ledgerKvAdapter = (
       return noOutside();
     }
 
-    return conditional(copyOf(hash, true, options.client?.id), op);
+    return conditional(copyOf(hash, true, options.client), op);
   };
 
   return {
@@ -596,8 +868,8 @@ export const ledgerKvAdapter = (
         return noOutside();
       }
 
-      const { view } = await live(hash);
-      const found = liveKey(view, field, Date.now())?.v;
+      const { copy, view } = await live(hash);
+      const found = liveKey(view, field, copy.clock)?.v;
 
       return found === undefined ? null : String(found);
     },
@@ -636,12 +908,11 @@ export const ledgerKvAdapter = (
         return noOutside();
       }
 
-      const { view } = await live(hash);
-      const now = Date.now();
+      const { copy, view } = await live(hash);
 
       return Object.fromEntries(
         Object.keys(view.keys).flatMap((key) => {
-          const found = liveKey(view, key, now);
+          const found = liveKey(view, key, copy.clock);
 
           return found ? [[key, String(found.v)]] : [];
         }),
