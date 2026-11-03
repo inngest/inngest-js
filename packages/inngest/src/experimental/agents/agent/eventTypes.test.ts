@@ -127,6 +127,7 @@ describe("triggers", () => {
       expect.objectContaining({ event: "agent/question" }),
       expect.objectContaining({ event: "agent/answer" }),
       expect.objectContaining({ event: "agent/finished" }),
+      expect.objectContaining({ event: "agent/report" }),
       { event: order, if: "event.data.total > 5" },
       { event: ping },
     ]);
@@ -186,7 +187,7 @@ describe("triggers", () => {
     );
     const options = fnOptions(agent.fn);
 
-    expect(options.triggers[5]).toEqual({ cron: "0 3 * * *" });
+    expect(options.triggers[6]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.data.thread',
     );

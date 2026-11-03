@@ -97,6 +97,7 @@ describe("agent function", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -465,6 +466,7 @@ describe("inbox sources", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
       "ci/status",
       "ci/status",
     ]);
@@ -844,6 +846,7 @@ describe("agent cleanup", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
   });
 });

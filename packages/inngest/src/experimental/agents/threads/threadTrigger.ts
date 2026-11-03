@@ -265,6 +265,7 @@ const reservedEvents: string[] = [
   agentQuestionEvent,
   agentAnswerEvent,
   agentFinishedEvent,
+  "agent/report",
 ];
 
 /**

@@ -15,6 +15,7 @@ import {
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import type { Json } from "../json.ts";
+import type { ReportSpec } from "./reports.ts";
 
 /**
  * What every event sent to a thread carries, to route it.
@@ -58,6 +59,12 @@ export type SenderData = (
   thread?: string;
   limits?: unknown;
   typed?: boolean;
+
+  /**
+   * On the message `start()` sends: the reports the agent owes the starter
+   * and others, by type, with the JSON Schema of each and where it goes.
+   */
+  reports?: ReportSpec;
 };
 
 /**

@@ -38,6 +38,7 @@ import {
   agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
+import { handleAddressKey } from "../inbox/reports.ts";
 import type { Json } from "../json.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
@@ -425,7 +426,7 @@ export function threadHandle<TOutput = unknown>(
 ): ThreadHandle<TOutput> {
   const meta = { sessions: threadSessions(key) };
 
-  return {
+  const handle: ThreadHandle<TOutput> = {
     key,
     message(content) {
       return sendMessage<TOutput>(client, agent, key, content);
@@ -495,4 +496,9 @@ export function threadHandle<TOutput = unknown>(
       }
     },
   };
+
+  // The agent's address rides on the handle, so a report can be routed to it.
+  return Object.assign(handle, {
+    [handleAddressKey]: { agent, thread: key },
+  });
 }

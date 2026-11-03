@@ -51,11 +51,20 @@ import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
+import {
+  type AgentReport,
+  handleAddressKey,
+  type ReportBook,
+  reportsOf,
+  reportTool,
+  sendReport,
+} from "../inbox/reports.ts";
 import { senderFrom } from "../inbox/sender.ts";
 import {
   eventNameOf,
   inboxFilter,
   inflightOf,
+  isOwnEvent,
   missingThreadFilter,
   ownEvents,
   quote,
@@ -63,6 +72,7 @@ import {
   resentAs,
   threadInbox,
 } from "../inbox/threadInbox.ts";
+import type { Json } from "../json.ts";
 import { hasKvStore, kv } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
@@ -719,7 +729,7 @@ export function createAgentFunction(
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
           async function problemOf(raw, started) {
-            if (ownEvents.includes(raw.name)) {
+            if (isOwnEvent(raw.name)) {
               return undefined;
             }
 
@@ -780,9 +790,20 @@ export function createAgentFunction(
           },
         );
 
+        // What the run owes: the reports its start event carries, and which of
+        // them it has sent.
+        const reportSpec = reportsOf({ name: event.name, data: event.data });
+        const reportBook: ReportBook | undefined = reportSpec && {
+          spec: reportSpec,
+          sent: new Set(),
+        };
+
+        bridge.reports = reportBook;
+
         // The loop reads this when it runs, inside the agent, whichever way
         // the app made it.
         bridge.wiring = createLoopWiring({
+          reports: reportBook,
           config,
           inbox,
           view,
@@ -815,7 +836,11 @@ export function createAgentFunction(
           config,
           fields,
           skills: runSkills,
-          listenTools: { ...sandboxTools(opened), ...listenTools },
+          listenTools: {
+            ...sandboxTools(opened),
+            ...listenTools,
+            ...(reportBook && { report: reportTool(reportBook) }),
+          },
         });
 
         let result: unknown;
@@ -834,7 +859,34 @@ export function createAgentFunction(
             // Slot: me. The handle to the run's own thread.
             me: {
               key: data.thread,
-              message: async (content) => {
+              ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
+              report: async (
+                type: AgentReport,
+                reported: Record<string, unknown>,
+              ) => {
+                if (!reportBook) {
+                  throw new Error(
+                    "This run was not started with reports, so it has none to send.",
+                  );
+                }
+
+                await sendReport(
+                  reportBook,
+                  type.type,
+                  reported,
+                  async (value) => {
+                    const checked =
+                      await type.schema["~standard"].validate(value);
+
+                    return checked.issues
+                      ?.map((issue) => {
+                        return issue.message;
+                      })
+                      .join("; ");
+                  },
+                );
+              },
+              message: async (content: Json) => {
                 const execution = getAsyncCtxSync()?.execution;
 
                 if (!execution) {
@@ -955,6 +1007,7 @@ export function createAgentFunction(
           }),
           ...(options?.thread !== undefined && { thread: options.thread }),
           ...(options?.group !== undefined && { group: options.group }),
+          ...(options?.reports && { reports: options.reports }),
         },
         input,
       );

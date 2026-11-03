@@ -4,6 +4,7 @@
  * the messages of its inbox and the agent function it makes.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { GetFunctionInput, Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -36,6 +37,7 @@ import type {
   AgentMessageData,
   AgentQuestionData,
 } from "../inbox/events.ts";
+import type { AgentReport, AgentReportRoute } from "../inbox/reports.ts";
 import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
@@ -452,6 +454,34 @@ export type ModelFieldOf<TEvent> =
   | ((context: RunFieldContext<TEvent>) => AgentModel | Promise<AgentModel>);
 
 /**
+ * EXPERIMENTAL: the options of `agent.start()`.
+ */
+export interface StartOptions {
+  /**
+   * The key of the thread to start the run on. Default: a new thread with a
+   * generated key.
+   */
+  thread?: string;
+
+  /**
+   * The name of the group the new thread joins, together with every thread the
+   * same starter put in a group of that name. Needs a generated key, so it
+   * cannot be set with `thread`.
+   */
+  group?: string;
+
+  /**
+   * What the started agent owes back, as typed reports: each line is a
+   * report type with `.to(...threads)` (where it goes; with no thread, back
+   * to the starter) and `.required()` (it is owed: the agent's loop reminds
+   * its model before it may finish). The lines of one type merge. The
+   * routing travels in the start event, so the agent needs no prior
+   * knowledge of the types.
+   */
+  reports?: readonly AgentReportRoute[];
+}
+
+/**
  * The handle to a run's own thread.
  */
 export interface Me {
@@ -466,6 +496,22 @@ export interface Me {
    * replay sends it once.
    */
   message(content: Json): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: sends a typed report to the destinations the run's starter
+   * listed for its type (every one whose `if` passes). The data is checked
+   * against the report's schema first and a bad report throws, sending
+   * nothing. It throws when the run was not started with this report type.
+   * Counts toward a required report. Sent from a step, so a replay sends it
+   * once.
+   */
+  report<
+    TName extends string,
+    TSchema extends StandardSchemaV1<Record<string, unknown>>,
+  >(
+    type: AgentReport<TName, TSchema>,
+    data: StandardSchemaV1.InferInput<TSchema>,
+  ): Promise<void>;
 }
 
 /**
@@ -806,11 +852,11 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * thread started with the same group name can `message_agent` and
    * `ask_agent` each other, and the live ones hear of each join. A group needs
    * a generated key, so it cannot be set with `thread`.
+   * `reports`: the typed reports the agent may send back, where each goes and
+   * which it owes, made with `report.to(...)` and `report.required()`. The
+   * agent's model gets a `report` tool, and its handler `me.report()`.
    */
-  start(
-    input: TInput,
-    options?: { thread?: string; group?: string },
-  ): StartedThreadPromise<TOutput>;
+  start(input: TInput, options?: StartOptions): StartedThreadPromise<TOutput>;
 
   /**
    * The handle of a thread of this agent.

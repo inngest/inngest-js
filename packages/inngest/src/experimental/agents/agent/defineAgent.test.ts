@@ -253,7 +253,7 @@ describe("the handler's event, me and inbox", () => {
     expect(
       (seen.event as { data: Record<string, unknown> }).data,
     ).not.toHaveProperty("agent");
-    expect(Object.keys(seen.me as object)).toEqual(["key", "message"]);
+    expect(Object.keys(seen.me as object)).toEqual(["key", "report", "message"]);
   });
 });
 

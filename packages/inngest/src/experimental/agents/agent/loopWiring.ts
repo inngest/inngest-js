@@ -6,6 +6,7 @@
 
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import type { QuestionBook } from "../inbox/questionBook.ts";
+import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
@@ -49,6 +50,11 @@ export const createLoopWiring = (options: {
    * itself: the handler passes it, or passes its own input instead.
    */
   triggerId?: string;
+
+  /**
+   * The reports the run was started with, if any.
+   */
+  reports?: ReportBook;
 }): AgentLoopWiring => {
   const {
     config,
@@ -61,6 +67,7 @@ export const createLoopWiring = (options: {
     questions,
     remember,
     triggerId,
+    reports,
   } = options;
 
   return {
@@ -82,6 +89,9 @@ export const createLoopWiring = (options: {
       return taken.filter((event) => {
         return questions.admit(event);
       });
+    },
+    owed() {
+      return owedReports(reports);
     },
     answered(id: string) {
       return questions.isReplied(id);

@@ -431,6 +431,11 @@ export {
   agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
+export type {
+  AgentReportRoute,
+  ReportToOptions,
+} from "../inbox/reports.ts";
+export { AgentReport, agentReport } from "../inbox/reports.ts";
 export type { Sender } from "../inbox/sender.ts";
 export type {
   Kv,

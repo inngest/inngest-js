@@ -50,6 +50,7 @@ describe("thread key from a trigger", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
     expect(opts.singleton.key).toBe("event.data.thread");
   });
@@ -81,6 +82,7 @@ describe("thread key from a trigger", () => {
       expect.objectContaining({ event: "agent/question" }),
       expect.objectContaining({ event: "agent/answer" }),
       expect.objectContaining({ event: "agent/finished" }),
+      expect.objectContaining({ event: "agent/report" }),
       { event: "chat/message", if: "event.data.bot != true" },
       { event: "gh/comment" },
     ]);
@@ -137,10 +139,11 @@ describe("thread key from a trigger", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
       "chat/message",
     ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[5]?.if).toBe(
+    expect(opened[6]?.if).toBe(
       `(event.data.bot != true) && (${chatThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",

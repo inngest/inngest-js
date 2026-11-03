@@ -34,7 +34,8 @@ import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { agentAskTimeout, agentQuestion } from "../inbox/events.ts";
-import type { Json } from "../json.ts";
+import type { ReportSpec } from "../inbox/reports.ts";
+import type { Json, JsonSchema } from "../json.ts";
 import { threadHandle, threadSessions } from "../threads/thread.ts";
 import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -100,6 +101,27 @@ const executionOf = () => {
  */
 const startedBySandbox = new WeakMap<object, Map<string, StartedThread>>();
 
+const reportsInput = z
+  .array(
+    z.object({
+      type: z.string().describe("The report's type name, such as `milestone`."),
+      schema: z
+        .any()
+        .optional()
+        .describe("A JSON Schema of the report's data."),
+      required: z
+        .boolean()
+        .optional()
+        .describe(
+          "True when the agent must send this report before it finishes.",
+        ),
+    }),
+  )
+  .optional()
+  .describe(
+    "Typed reports the agent should send back to you. They arrive in your inbox as `agent/report/<type>` messages.",
+  );
+
 const startInput = z.object({
   address: z.string().describe("The agent's address, `app/agent`."),
   input: z
@@ -114,6 +136,7 @@ const startInput = z.object({
     .describe(
       "A group name. Agents you start with the same group name can message and ask each other, and each hears when another joins.",
     ),
+  reports: reportsInput,
 });
 
 const stopInput = z.object({
@@ -125,10 +148,12 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
     address,
     input,
     group,
+    reports,
   }: {
     address: string;
     input?: Json;
     group?: string;
+    reports?: { type: string; schema?: JsonSchema; required?: boolean }[];
   }) => {
     const execution = executionOf();
     const client = clientOf();
@@ -159,6 +184,30 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
       throw new Error(status.reason);
     }
 
+    // The model's reports go back to the model: the starter's own thread.
+    let resolved: ReportSpec | undefined;
+
+    if (reports && reports.length > 0) {
+      const self = senderOf(execution);
+
+      if (self.kind !== "agent") {
+        throw new Error("Only an agent can ask for reports");
+      }
+
+      resolved = Object.fromEntries(
+        reports.map((report) => {
+          return [
+            report.type,
+            {
+              ...(report.schema && { schema: report.schema }),
+              ...(report.required && { required: true as const }),
+              to: [{ agent: self.address, thread: self.key }],
+            },
+          ];
+        }),
+      );
+    }
+
     const slash = address.indexOf("/");
     const started = await startThread(
       {
@@ -168,6 +217,7 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
         typed: card.input !== undefined,
         via,
         ...(group !== undefined && { group }),
+        ...(resolved && { resolved }),
       },
       card.input ? prepared : (prepared ?? ""),
     );

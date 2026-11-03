@@ -82,6 +82,11 @@ type Sender =
   | { kind: "function"; id?: string; key?: string };
 
 // Who sent a message, as the model reads it.
+/**
+ * How many times a model that stops while it owes a report is reminded.
+ */
+const maxOwedReminders = 2;
+
 const whoOf = (from: Sender | undefined): string => {
   if (from?.kind === "function") {
     return `function ${from.id ?? "unknown"}`;
@@ -107,6 +112,7 @@ const textOfJson = (value: unknown): string => {
  *   output or the error.
  * - `agent/group.joined`: who joined the group and the thread key to reach it
  *   with.
+ * - `agent/report/<type>`: `Report "<type>" from <address> (thread <key>): <data>`.
  * - `agent/answer`: the answer next to the question it answers (`questions`
  *   maps a question's id to its text); `refused` and `timed_out` read as a
  *   plain "no answer" line.
@@ -120,7 +126,12 @@ export const formatEvent = (
   questions?: ReadonlyMap<string, string>,
 ): string => {
   const data = (event.data ?? {}) as Record<string, unknown>;
-  const from = data.from as Sender | undefined;
+  // A report's data is its own, so its sender is beside it.
+  const from = (
+    event.name.startsWith("agent/report/")
+      ? (event as { from?: unknown }).from
+      : data.from
+  ) as Sender | undefined;
   const where = from?.key === undefined ? "" : ` (thread ${from.key})`;
 
   if (event.name === "agent/message") {
@@ -179,6 +190,12 @@ export const formatEvent = (
     }
 
     return `Answer to ${about} from ${whoOf(from)}: ${textOfJson(data.text)}`;
+  }
+
+  if (event.name.startsWith("agent/report/")) {
+    const type = event.name.slice("agent/report/".length);
+
+    return `Report "${type}" from ${whoOf(from)}${where}: ${JSON.stringify(event.data)}`;
   }
 
   return JSON.stringify({ event: event.name, data: event.data });
@@ -906,6 +923,12 @@ export interface AgentLoopWiring {
   remember?: boolean;
 
   /**
+   * The report types the run still owes. A model that tries to finish while
+   * this is not empty is reminded and the loop continues.
+   */
+  owed?: () => string[];
+
+  /**
    * Whether a question already has a reply, so the model spends no turn on it.
    * Filled by the messaging work.
    */
@@ -1261,6 +1284,8 @@ const runLoop = async <TTools extends SandboxTools>(
   let steered = 0;
   // Replies with no tool call that were asked again.
   let noToolCallTurns = 0;
+  // Times the model was reminded of a report it owes.
+  let owedReminders = 0;
   // The summary of the conversation's start, once there is one.
   let compaction: AgentCompaction | undefined = stored?.compaction;
   const compactWith = compactionFor(options.compaction, model.contextWindow);
@@ -1549,6 +1574,23 @@ const runLoop = async <TTools extends SandboxTools>(
           content: "Use the tools: every reply must be a tool call.",
         });
         turn -= 1;
+        continue;
+      }
+
+      // A model that stops while a report is owed is reminded, up to a few
+      // times, and the loop goes on within `maxTurns` and the budget.
+      const owed = wiring?.owed?.() ?? [];
+
+      if (
+        owed.length > 0 &&
+        owedReminders < maxOwedReminders &&
+        turn < maxTurns
+      ) {
+        owedReminders += 1;
+        messages.push({
+          role: "user",
+          content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
+        });
         continue;
       }
 

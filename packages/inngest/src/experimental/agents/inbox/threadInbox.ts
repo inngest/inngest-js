@@ -32,6 +32,12 @@ import type {
   AgentRecoverData,
   SenderData,
 } from "./events.ts";
+import {
+  isReportEvent,
+  type ReportEnvelope,
+  reportEventPrefix,
+  reportWireEvent,
+} from "./reports.ts";
 
 /**
  * The messages whose drop was already logged, so a replay does not log it
@@ -48,7 +54,16 @@ export const ownEvents: string[] = [
   agentQuestionEvent,
   agentAnswerEvent,
   agentFinishedEvent,
+  reportWireEvent,
 ];
+
+/**
+ * Whether an event is one the agent layer sends to a thread, including a
+ * typed report.
+ */
+export const isOwnEvent = (name: string): boolean => {
+  return ownEvents.includes(name) || isReportEvent(name);
+};
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
@@ -123,6 +138,27 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
         }
       : {}),
   };
+  // A report is sent with its routing around it; the message is the report's
+  // own data, with the sender beside it as `from`.
+  if (as.name === reportWireEvent || isReportEvent(as.name)) {
+    const envelope = as.data as Partial<ReportEnvelope> | undefined;
+
+    if (
+      as.name === reportWireEvent &&
+      envelope?.report !== undefined &&
+      envelope.type !== undefined
+    ) {
+      return addEventIs({
+        ...as,
+        name: `${reportEventPrefix}${envelope.type}`,
+        data: envelope.report,
+        ...(envelope.from !== undefined && { from: envelope.from }),
+      } as UntypedInboxMessage);
+    }
+
+    return addEventIs(as);
+  }
+
   const data = as.data as
     | { content?: unknown; from?: { typed?: boolean } }
     | undefined;
@@ -228,9 +264,15 @@ export function threadInbox(
     }
 
     const unwrapped = resentAs(message);
-    const sender = (unwrapped.data as { from?: SenderData } | undefined)?.from;
+    const sender = isReportEvent(unwrapped.name)
+      ? (unwrapped as { from?: SenderData }).from
+      : (unwrapped.data as { from?: SenderData } | undefined)?.from;
 
-    if (sender && senderFor && senderMessages.includes(unwrapped.name)) {
+    if (
+      sender &&
+      senderFor &&
+      (senderMessages.includes(unwrapped.name) || isReportEvent(unwrapped.name))
+    ) {
       Object.assign(unwrapped, { from: senderFor(sender) });
     }
 

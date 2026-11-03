@@ -13,6 +13,11 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import type { SenderData } from "../inbox/events.ts";
 import { agentGroupJoined } from "../inbox/events.ts";
+import {
+  type AgentReportRoute,
+  type ReportSpec,
+  resolveReports,
+} from "../inbox/reports.ts";
 import type { Json } from "../json.ts";
 import {
   sendMessage,
@@ -90,6 +95,18 @@ export interface StartTarget {
    * cannot be set with `thread`.
    */
   group?: string;
+
+  /**
+   * The typed reports the agent is started to owe. Lines are routes made with
+   * `report.to()`; a line already in wire form (from `start_agent`) is passed
+   * as `resolved`.
+   */
+  reports?: readonly AgentReportRoute[];
+
+  /**
+   * Reports already resolved into what travels in the start event.
+   */
+  resolved?: ReportSpec;
 }
 
 /**
@@ -165,6 +182,16 @@ export function startThread<TOutput>(
       starter,
       target.group,
     );
+  const reports =
+    target.resolved ??
+    (target.reports && target.reports.length > 0
+      ? resolveReports(
+          target.reports,
+          sender.kind === "agent"
+            ? { agent: sender.address, thread: sender.key }
+            : undefined,
+        )
+      : undefined);
   const sessions = {
     agent_session: currentSessions(ctx).agent_session ?? (ctx.runId as string),
     agent_thread: key,
@@ -185,6 +212,7 @@ export function startThread<TOutput>(
         ...(limits && { limits: childLimits(limits) }),
         ...(target.typed && { typed: true }),
         ...(target.via && { via: target.via, target: target.address }),
+        ...(reports && Object.keys(reports).length > 0 && { reports }),
       },
     },
   );
