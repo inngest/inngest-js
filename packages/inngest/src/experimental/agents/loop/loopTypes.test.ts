@@ -22,7 +22,7 @@ import type {
   AgentUsage,
   ModelMessage,
 } from "./loop.ts";
-import { agent, formatEvent } from "./loop.ts";
+import { agent, agentModel, formatEvent } from "./loop.ts";
 
 const lookup = tool.step({
   description: "Looks a ticket up",
@@ -33,9 +33,9 @@ const lookup = tool.step({
   },
 });
 
-const model: AgentModel = async () => {
+const model = agentModel(async () => {
   return { message: { role: "assistant", content: [] }, toolCalls: [] };
-};
+}) satisfies AgentModel;
 
 test("loop: the result has text, end, turns, usage, history, toolCalls and unread", () => {
   const check = async () => {

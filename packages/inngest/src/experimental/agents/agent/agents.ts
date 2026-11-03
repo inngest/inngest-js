@@ -34,6 +34,9 @@ import type {
   AgentFunction,
   AgentFunctionConfig,
   InboxSource,
+  InboxSourceInput,
+  ModelField,
+  ModelFieldOf,
   StartInput,
 } from "./types.ts";
 
@@ -57,7 +60,7 @@ interface NoHandler {
  * What `result()` gives: the body's return type; without a body, the model's
  * final text for an agent with a `model` and `undefined` for one with neither.
  */
-type OutputOf<TOutput, TModel extends AgentModel | undefined> = [
+type OutputOf<TOutput, TModel extends ModelField | undefined> = [
   TOutput,
 ] extends [NoHandler]
   ? [TModel] extends [undefined]
@@ -77,8 +80,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
-    const TModel extends AgentModel | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
+    TModel extends ModelFieldOf<ThreadTriggerEventOf<TType>> | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
@@ -87,8 +90,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }
-    > & { model?: TModel },
+    >,
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TType>;
@@ -108,8 +112,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
-    const TModel extends AgentModel | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
+    TModel extends ModelFieldOf<ThreadTriggerListEvent<TTypes>> | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
@@ -118,8 +122,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }
-    > & { model?: TModel },
+    >,
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TTypes>;
@@ -139,8 +144,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
-    const TModel extends AgentModel | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
+    TModel extends ModelFieldOf<ThreadTriggerEventOf<TOne>> | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
@@ -149,8 +154,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }
-    > & { model?: TModel },
+    >,
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerEventOf<TOne>;
@@ -169,8 +175,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
-    const TModel extends AgentModel | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
+    TModel extends ModelFieldOf<ThreadCronEvent> | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadCronTrigger,
@@ -179,8 +185,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }
-    > & { model?: TModel },
+    >,
     body?: (
       context: AgentBodyContext<{
         event: ThreadCronEvent;
@@ -197,8 +204,8 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TOutput = NoHandler,
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TSources extends readonly InboxSource[] | undefined = undefined,
-    const TModel extends AgentModel | undefined = undefined,
+    const TSources extends readonly InboxSourceInput[] | undefined = undefined,
+    TModel extends ModelFieldOf<ThreadTriggerListEvent<TMany>> | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,
@@ -207,8 +214,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
         sandboxes: TSandboxes;
         middleware: TMiddleware;
         sources: TSources;
+        model: TModel;
       }
-    > & { model?: TModel },
+    >,
     body?: (
       context: AgentBodyContext<{
         event: ThreadTriggerListEvent<TMany>;
@@ -431,6 +439,8 @@ export type {
   AgentTypes,
   AgentTypesOf,
   InboxSource,
+  InboxSourceInput,
+  ModelField,
   OpenedInbox,
   StartInput,
 } from "./types.ts";

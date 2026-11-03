@@ -5,12 +5,12 @@
  */
 
 import type { Json } from "../json.ts";
-import type { AgentModelResponse } from "../loop/loop.ts";
+import { type AgentModelResponse, agentModel } from "../loop/loop.ts";
 import { agents, created, typesOnly } from "./typeFixtures.ts";
 
-const model = async (): Promise<AgentModelResponse> => {
+const model = agentModel(async (): Promise<AgentModelResponse> => {
   return { message: { role: "assistant", content: [] }, toolCalls: [] };
-};
+});
 
 describe("messaging types", () => {
   test("messaging: the agent tools narrow in a loop result with typed input and output", () => {

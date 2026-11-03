@@ -8,11 +8,11 @@ import { invoke } from "../../../components/triggers/triggers.ts";
 import { agents, typesOnly } from "../agent/typeFixtures.ts";
 import type * as entry from "../index.ts";
 import type { RunHandle, StartedThread, ThreadHandle } from "../index.ts";
-import type { AgentModelResponse } from "../loop/loop.ts";
+import { type AgentModelResponse, agentModel } from "../loop/loop.ts";
 
-const modelFn = async (): Promise<AgentModelResponse> => {
+const modelFn = agentModel(async (): Promise<AgentModelResponse> => {
   return { message: { role: "assistant", content: [] }, toolCalls: [] };
-};
+});
 
 describe("messaging types", () => {
   test("messaging: the three handle types have the members of lead's call L66", () => {

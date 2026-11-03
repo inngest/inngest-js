@@ -64,6 +64,7 @@ import {
   type AgentModel,
   addTools,
   buildHandlerLoop,
+  isAgentModel,
 } from "../loop/loop.ts";
 import { createAgentScore } from "../loop/scores.ts";
 import {
@@ -216,7 +217,31 @@ const createHandlerLoop = async (options: {
     config.tools as RunField<SandboxTools | undefined>,
   );
 
-  if (!config.model) {
+  // A function that is not marked as a model is a function of the run's start.
+  // A model function someone forgot to mark gets called with `{ event, thread }`
+  // instead of a request: say so, rather than fail inside it.
+  const unmarked = `Agent "${config.id}": its \`model\` is a function not marked as a model, so it was called with \`{ event, thread }\` and didn't return a model. Wrap a model function in \`agentModel()\`, or return a model from the function`;
+  let model: AgentModel | undefined;
+
+  if (config.model && isAgentModel(config.model)) {
+    model = config.model;
+  } else if (config.model) {
+    let made: unknown;
+
+    try {
+      made = await fields.get("model", config.model as RunField<unknown>);
+    } catch (error) {
+      throw new Error(unmarked, { cause: error });
+    }
+
+    if (made !== undefined && typeof made !== "function") {
+      throw new Error(unmarked);
+    }
+
+    model = made as AgentModel | undefined;
+  }
+
+  if (!model) {
     return (() => {
       throw new Error(
         `Agent "${config.id}" has no \`model\`, so it has no loop: set \`model\` in its definition`,
@@ -226,7 +251,7 @@ const createHandlerLoop = async (options: {
 
   return buildHandlerLoop({
     ...config.loop,
-    model: config.model,
+    model,
     ...(system !== undefined && { system }),
     tools: addTools(
       {
@@ -269,6 +294,20 @@ export function createAgentFunction(
     typeof config.skills === "function" || config.skills === undefined
       ? []
       : collectSkills(config.skills);
+  // A source written as just an event is placed by the agent's `thread`.
+  const inboxSources = (config.inbox ?? []).map((source): InboxSource => {
+    if (typeof source !== "string" && "event" in source) {
+      return source as InboxSource;
+    }
+
+    if (!config.thread) {
+      throw new Error(
+        `Agent "${config.id}" has an inbox source (${eventNameOf(source)}) with no \`thread\` or \`if\` of its own and no agent-level \`thread\` to place it: set \`thread\` on the agent or on the source`,
+      );
+    }
+
+    return { event: source, thread: config.thread };
+  });
   const body: AgentBody<{ model: AgentModel }> =
     bodyOrDefault ?? (config.model ? defaultModelBody : async () => undefined);
   const ref = `${client.id}/${config.id}`;
@@ -444,7 +483,7 @@ export function createAgentFunction(
           }
         };
 
-        for (const source of config.inbox ?? []) {
+        for (const source of inboxSources) {
           noteSource(source);
         }
 
@@ -471,7 +510,7 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
-          ...(config.inbox ?? []).flatMap((source) => {
+          ...inboxSources.flatMap((source) => {
             const missing = missingThreadFilter(source, config.thread);
 
             return [

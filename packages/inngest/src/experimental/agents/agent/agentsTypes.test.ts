@@ -7,7 +7,7 @@ import { z } from "zod";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import * as entry from "../index.ts";
 import type { Json } from "../json.ts";
-import type { AgentModelResponse } from "../loop/loop.ts";
+import { type AgentModelResponse, agentModel } from "../loop/loop.ts";
 import { agents, closed, created, typesOnly } from "./typeFixtures.ts";
 
 const deletedValues = [
@@ -216,9 +216,9 @@ test("agents: loop is in the handler argument only for an agent with a model", (
       {
         id: "with-model",
         triggers: [created],
-        model: async (): Promise<AgentModelResponse> => {
+        model: agentModel(async (): Promise<AgentModelResponse> => {
           return { message: { role: "assistant", content: [] }, toolCalls: [] };
-        },
+        }),
       },
       async ({ loop }) => {
         expectTypeOf(loop).toBeFunction();

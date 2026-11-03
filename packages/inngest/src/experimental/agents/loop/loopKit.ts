@@ -14,14 +14,16 @@ import {
   type AgentLoopResult,
   type AgentLoopWiring,
   type AgentModel,
+  type ModelValue,
   agent,
+  agentModel,
 } from "./loop.ts";
 
 /**
  * Types a model function.
  */
-export const model = (fn: AgentModel): AgentModel => {
-  return fn;
+export const model = (fn: AgentModel): AgentModel & ModelValue => {
+  return agentModel(fn);
 };
 
 /**
@@ -70,7 +72,7 @@ export const runLoop = <TTools extends SandboxTools>(
 export const failsOnceWithRetryAfter = (
   answer: AgentModel,
   seconds = 2,
-): AgentModel => {
+): AgentModel & ModelValue => {
   let failed = false;
 
   return model(async (request) => {

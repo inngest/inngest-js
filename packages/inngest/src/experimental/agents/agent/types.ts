@@ -44,6 +44,7 @@ import type {
   AgentLoop,
   AgentLoopOptions,
   AgentModel,
+  ModelValue,
 } from "../loop/loop.ts";
 import type {
   AgentSandbox,
@@ -115,13 +116,13 @@ export interface AgentTypes {
   /**
    * The `inbox` sources of the agent's config.
    */
-  sources?: readonly InboxSource[] | undefined;
+  sources?: readonly InboxSourceInput[] | undefined;
 
   /**
-   * The agent's `model`, if it has one: only an agent with a model gets a
-   * `loop` in its handler.
+   * The agent's `model`, if it has one, as a value or a function: only an
+   * agent with a model gets a `loop` in its handler.
    */
-  model?: AgentModel | undefined;
+  model?: ModelField | undefined;
 }
 
 /**
@@ -184,11 +185,11 @@ export type AgentTypesOf<TTypes extends AgentTypes> = {
     ? V
     : AgentTypeDefaults["middleware"];
   sources: TTypes extends {
-    sources: infer V extends readonly InboxSource[] | undefined;
+    sources: infer V extends readonly InboxSourceInput[] | undefined;
   }
     ? V
     : AgentTypeDefaults["sources"];
-  model: TTypes extends { model: infer V extends AgentModel | undefined }
+  model: TTypes extends { model: infer V extends ModelField | undefined }
     ? V
     : AgentTypeDefaults["model"];
 };
@@ -245,12 +246,16 @@ export interface AgentFunctionConfig<
 
   /**
    * The model the agent's loop calls: an adapter such as
-   * `anthropic({ model })`, or any function of the model's shape. With a
-   * `model` and no handler, the agent runs one the SDK writes: each batch of
-   * messages goes to the model, the model's history carries on across batches
-   * and the final answer is the run's output.
+   * `anthropic({ model })`, or a function of `{ event, thread }` returning one,
+   * read once at the start of each run. A function of the model's own shape
+   * (`(request) => response`) is a model, not a run field, only when wrapped
+   * with `agentModel()`. With a `model` and no handler, the agent runs one the
+   * SDK writes: each batch of messages goes to the model, the model's history
+   * carries on across batches and the final answer is the run's output.
    */
-  model?: AgentModel;
+  model?: AgentTypesOf<TTypes>["model"] extends ModelField
+    ? AgentTypesOf<TTypes>["model"]
+    : ModelFieldOf<AgentTypesOf<TTypes>["event"]>;
 
   /**
    * The model's system prompt: a value, or a function of `{ event, thread }`
@@ -289,11 +294,13 @@ export interface AgentFunctionConfig<
    * Event sources that reach a live run of the thread they map to and never
    * start one, and read through the one `inbox`.
    * `triggers` still starts and wakes runs. Each source maps its own events to the
-   * thread key with its `thread` expression.
+   * thread key with its `thread` expression. A source written as just an event
+   * type or name (`inbox: [ciPassed]`) is placed by the agent's own `thread`;
+   * an agent with no `thread` can't have one.
    */
-  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSource[]
+  inbox?: AgentTypesOf<TTypes>["sources"] extends readonly InboxSourceInput[]
     ? AgentTypesOf<TTypes>["sources"]
-    : readonly InboxSource[];
+    : readonly InboxSourceInput[];
 
   /**
    * The event types the model may start watching while it works, with its
@@ -389,6 +396,33 @@ export type InboxSource = {
    */
   event: string | EventTypeWithAnySchema<string>;
 } & ({ thread: string; if?: string } | { if: string; thread?: string });
+
+/**
+ * What an `inbox` takes for a source: an `InboxSource`, or just the event (a
+ * name or an `eventType()`), which the agent's own `thread` places.
+ */
+export type InboxSourceInput =
+  | InboxSource
+  | string
+  | EventTypeWithAnySchema<string>;
+
+/**
+ * An agent's `model`: a model marked with `agentModel()` (the adapters are), or
+ * a function of `{ event, thread }` returning one. The marked side has no call
+ * signature, so the function's `{ event, thread }` is typed from the agent's
+ * triggers. `Function` here, since that event is only known per agent and a
+ * call signature would hide it from the function's parameter.
+ */
+// biome-ignore lint/complexity/noBannedTypes: no call signature, so it adds no contextual type
+export type ModelField = ModelValue | Function;
+
+/**
+ * The `model` of an agent whose triggers give `TEvent`: its function takes
+ * the run's `{ event, thread }`.
+ */
+export type ModelFieldOf<TEvent> =
+  | ModelValue
+  | ((context: RunFieldContext<TEvent>) => AgentModel | Promise<AgentModel>);
 
 /**
  * The handle to a run's own thread.
@@ -511,11 +545,13 @@ type MessageOf<TData, TName extends string> = Omit<
  * narrows the agent's own messages.
  */
 type SourceMessages<TSources> = TSources extends readonly (infer TItem)[]
-  ? TItem extends { event: infer TEvent }
-    ? TEvent extends EventTypeWithAnySchema<string>
-      ? InboxMessageOf<{ event: TEvent }>
+  ? TItem extends EventTypeWithAnySchema<string>
+    ? InboxMessageOf<{ event: TItem }>
+    : TItem extends { event: infer TEvent }
+      ? TEvent extends EventTypeWithAnySchema<string>
+        ? InboxMessageOf<{ event: TEvent }>
+        : never
       : never
-    : never
   : never;
 
 /**
@@ -633,7 +669,7 @@ export type AgentFunctionInput<TTypes extends AgentTypes = AgentTypes> = Omit<
 export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
   AgentFunctionInput<TTypes> &
     AgentBodyFields<TTypes> &
-    (AgentTypesOf<TTypes>["model"] extends AgentModel
+    (AgentTypesOf<TTypes>["model"] extends ModelField
       ? {
           /**
            * The agent's own loop, made from its definition: `model`, `system`
@@ -641,7 +677,7 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
            * when the agent has `listen`. `loop(batch)` folds the messages that
            * arrive meanwhile into the very next model call and posts nothing.
            * `loop.with(options)` derives another from it. Only an agent with a
-           * `model` has one.
+           * `model` has one, as a value or a function.
            */
           loop: AgentHandlerLoop<AgentToolSet>;
         }

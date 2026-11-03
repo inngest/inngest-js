@@ -393,6 +393,37 @@ export interface AgentModel {
   contextWindow?: number;
 }
 
+const modelBrand: unique symbol = Symbol.for("inngest.agents.model");
+
+/**
+ * What marks a model function as a model, as opposed to a function of the
+ * run's start that returns one. See `agentModel()`.
+ */
+export interface ModelValue {
+  readonly [modelBrand]: true;
+}
+
+/**
+ * Marks a function of the model's shape as a model. An agent's `model` is a
+ * value or a function of `{ event, thread }`, and only a marked function (the
+ * adapters, such as `anthropic()`, are) is used as the model itself.
+ * @param fn The model function.
+ */
+export function agentModel<T extends AgentModel>(fn: T): T & ModelValue {
+  return Object.assign(fn, { [modelBrand]: true as const });
+}
+
+/**
+ * Whether a function was marked with `agentModel()`.
+ * @param value Anything.
+ */
+export function isAgentModel(value: unknown): value is AgentModel & ModelValue {
+  return (
+    typeof value === "function" &&
+    (value as unknown as Record<symbol, unknown>)[modelBrand] === true
+  );
+}
+
 /**
  * One finished model call, as `onTurn` receives it.
  */

@@ -6,11 +6,11 @@
 
 import { agents, created, typesOnly } from "../agent/typeFixtures.ts";
 import type { AgentCard, AgentSummary, Json, JsonSchema } from "../index.ts";
-import type { AgentModelResponse } from "../loop/loop.ts";
+import { type AgentModelResponse, agentModel } from "../loop/loop.ts";
 
-const model = async (): Promise<AgentModelResponse> => {
+const model = agentModel(async (): Promise<AgentModelResponse> => {
   return { message: { role: "assistant", content: [] }, toolCalls: [] };
-};
+});
 
 describe("discovery types", () => {
   test("discovery: a card has the documented fields and no others", () => {

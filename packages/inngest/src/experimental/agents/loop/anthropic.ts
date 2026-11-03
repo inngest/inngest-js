@@ -26,7 +26,9 @@ import type {
   AgentToolCall,
   AgentUsage,
   ModelMessage,
+  ModelValue,
 } from "./loop.ts";
+import { agentModel } from "./loop.ts";
 import { sortModelError } from "./modelErrors.ts";
 
 /**
@@ -284,7 +286,7 @@ export type AnthropicOutputResponse<TOutput extends StandardSchemaV1> =
  * The model `anthropic()` returns. Hand it to `agent.loop({ model })` as it is,
  * or call it inside a `step.run` for a single reply.
  */
-export interface AnthropicModel {
+export interface AnthropicModel extends ModelValue {
   /**
    * One reply with a structured `output`.
    */
@@ -928,7 +930,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
       return { ...response, toolCalls: [], output: checked.value } as never;
     };
 
-    return Object.assign(call, {
+    return Object.assign(agentModel(call as unknown as AgentModel), {
       contextWindow: current.contextWindow ?? defaultContextWindow,
       with: (overrides: AnthropicOverrides) => {
         return make({
