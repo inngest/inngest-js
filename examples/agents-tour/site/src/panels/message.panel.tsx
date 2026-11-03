@@ -8,7 +8,7 @@ import { registerPanel } from "./registry.ts";
 registerPanel({
   id: "message",
   label: "Messages",
-  focus: ".message button",
+  focus: ".message-text",
   component: ({ page, live }) => {
     const target = page.manifest.message;
 

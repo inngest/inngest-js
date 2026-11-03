@@ -1574,3 +1574,14 @@ main.single .text {
     flex-wrap: wrap;
   }
 }
+
+/* Messages panel: the text box and its "another" control. */
+.message-box {
+  display: flex;
+  gap: 8px;
+}
+
+.message-text {
+  flex: 1;
+  min-width: 0;
+}
