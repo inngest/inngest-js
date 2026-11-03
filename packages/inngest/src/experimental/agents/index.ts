@@ -92,6 +92,8 @@ export type {
   SandboxSetupContext,
   SandboxStart,
   SandboxToolNames,
+  SandboxToolRecord,
+  SandboxToolsOf,
 } from "./sandboxes/defs.ts";
 export {
   agentTools,

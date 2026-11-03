@@ -270,11 +270,11 @@ describe("validation", () => {
 
     const a = sandbox({
       id: "a",
-      tools: () => ({ b_c: tool.step({ run: () => 1 }) }),
+      tools: { b_c: tool.step({ run: () => 1 }) },
     });
     const b = sandbox({
       id: "b",
-      tools: () => ({ c: tool.step({ run: () => 1 }) }),
+      tools: { c: tool.step({ run: () => 1 }) },
     });
 
     expect(() => {

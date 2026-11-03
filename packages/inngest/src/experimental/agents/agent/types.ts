@@ -52,6 +52,7 @@ import type {
   AgentSandboxWithRepo,
   SandboxesConfig,
   SandboxToolNames,
+  SandboxToolsOf,
 } from "../sandboxes/defs.ts";
 import type { SkillSources } from "../skills/skills.ts";
 import type { ThreadHandle, TriggerEvent } from "../threads/thread.ts";
@@ -505,7 +506,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    */
   sandboxes: {
     [K in keyof AgentTypesOf<TTypes>["sandboxes"] &
-      string]: "~repo" extends AgentTypesOf<TTypes>["sandboxes"][K]
+      string]: "~repo" extends keyof AgentTypesOf<TTypes>["sandboxes"][K]
       ? AgentSandboxWithRepo
       : AgentSandbox;
   };
@@ -704,9 +705,12 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
            * when the agent has `listen`. `loop(batch)` folds the messages that
            * arrive meanwhile into the very next model call and posts nothing.
            * `loop.with(options)` derives another from it. Only an agent with a
-           * `model` has one, as a value or a function.
+           * `model` has one, as a value or a function. Its result's runs
+           * know the sandboxes' tools by name (`work_finish`), with their types.
            */
-          loop: AgentHandlerLoop<AgentToolSet>;
+          loop: AgentHandlerLoop<
+            AgentToolSet & SandboxToolsOf<AgentTypesOf<TTypes>["sandboxes"]>
+          >;
         }
       : Record<never, never>);
 

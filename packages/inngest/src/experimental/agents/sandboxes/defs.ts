@@ -66,7 +66,9 @@ import {
  * Options of `sandbox()`: the sandbox's ID, image, size, environment, tools
  * and setup.
  */
-export interface SandboxDefinitionOptions<TTool extends string = string> {
+export interface SandboxDefinitionOptions<
+  TTools extends SandboxToolRecord = SandboxToolRecord,
+> {
   /**
    * Names the sandbox. Letters, digits, underscores and hyphens.
    */
@@ -109,7 +111,7 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
    * `<key>` sandbox." to its description. Without `tools` the sandbox brings
    * `sandbox.tools.defaults` (`run`).
    */
-  tools?: Record<TTool, SandboxToolEntry>;
+  tools?: TTools;
 
   /**
    * Where relative paths and commands start, and where the shell starts: the
@@ -206,8 +208,9 @@ export interface SandboxRuntime {
 /**
  * A sandbox defined with `sandbox()`. Nothing exists until an agent uses it.
  */
-export interface SandboxDefinition<TTool extends string = string>
-  extends SandboxDefinitionOptions<TTool> {
+export interface SandboxDefinition<
+  TTools extends SandboxToolRecord = SandboxToolRecord,
+> extends SandboxDefinitionOptions<TTools> {
   /**
    * Marks the value as made by `sandbox()`.
    */
@@ -229,7 +232,7 @@ export interface SandboxDefinition<TTool extends string = string>
    * sandboxes: { grader: grader.with({ model: false }) }
    * ```
    */
-  with(options: { model?: boolean }): SandboxDefinition<TTool>;
+  with(options: { model?: boolean }): SandboxDefinition<TTools>;
 }
 
 /**
@@ -245,7 +248,7 @@ export type SandboxStart = "lazy" | "eager";
  */
 export interface SandboxBinding<
   TStart = SandboxStart,
-  TTool extends string = string,
+  TTools extends SandboxToolRecord = SandboxToolRecord,
 > {
   /**
    * The definition's `repo` as this run resolved it. Set by the SDK.
@@ -255,7 +258,7 @@ export interface SandboxBinding<
   /**
    * The sandbox to use, made with `sandbox()`.
    */
-  sandbox: SandboxDefinition<TTool>;
+  sandbox: SandboxDefinition<TTools>;
 
   /**
    * `"lazy"` (default) creates the sandbox on the first call that needs it.
@@ -299,12 +302,16 @@ export type SandboxesConfig<
 > = RunField<SandboxRecord<Ctx, TSandboxes>, Ctx>;
 
 /**
- * For each sandbox of an agent, by name, the names of the tools its definition
- * brings (`sandbox.tools.defaults` brings `run`).
- * An agent's config is generic over it, so `sandboxes` and `sandboxTools` in
- * its body know their names.
+ * The tools a sandbox brings, by name.
  */
-export type SandboxToolNames = Record<string, string>;
+export type SandboxToolRecord = Record<string, SandboxToolEntry>;
+
+/**
+ * For each sandbox of an agent, by name, the tools its definition brings
+ * (`sandbox.tools.defaults` brings `run`). An agent's config is generic over
+ * it, so its body knows its sandboxes and the loop result knows their tools.
+ */
+export type SandboxToolNames = Record<string, SandboxToolRecord>;
 
 /**
  * An agent's sandboxes by name, each a definition (optionally from
@@ -319,28 +326,43 @@ export type SandboxRecord<
     | SandboxBinding<RunField<SandboxStart, Ctx>, TSandboxes[K]>;
 };
 
+type UnionToIntersection<U> = (
+  U extends unknown
+    ? (x: U) => void
+    : never
+) extends (x: infer I) => void
+  ? I
+  : never;
+
 /**
- * The tools of an agent's sandboxes, keyed `<sandbox>_<tool>` (`work_run`).
+ * The tools of an agent's sandboxes, keyed `<sandbox>_<tool>` (`work_run`),
+ * with their own types, so a loop result's runs narrow by name.
  */
-export type SandboxToolsOf<TSandboxes extends SandboxToolNames> = {
-  [K in keyof TSandboxes &
-    string as `${K}_${Exclude<TSandboxes[K], "~repo">}`]: SandboxToolEntry;
-};
+export type SandboxToolsOf<TSandboxes extends SandboxToolNames> =
+  UnionToIntersection<
+    {
+      [K in keyof TSandboxes & string]: {
+        [T in Exclude<keyof TSandboxes[K], "~repo"> &
+          string as `${K}_${T}`]: TSandboxes[K][T];
+      };
+    }[keyof TSandboxes & string]
+  > &
+    Record<never, never>;
 
 const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 /**
- * The names a `repo` adds to a definition's tool names: a marker that the
- * sandbox has a repo (`"~repo"`, never a model tool), and `"push"` unless the
- * repo is written with `push: false`.
+ * What a `repo` adds to a definition's tools: a marker that the sandbox has a
+ * repo (`"~repo"`, never a model tool), and `push` unless the repo is written
+ * with `push: false`.
  */
 export type RepoMarker<TRepo> = [TRepo] extends [undefined]
-  ? never
+  ? Record<never, never>
   : TRepo extends { push: false }
-    ? "~repo"
-    : "~repo" | "push";
+    ? { "~repo": SandboxToolEntry }
+    : { "~repo": SandboxToolEntry; push: SandboxToolEntry };
 
 const defineSandbox = (
   options: SandboxDefinitionOptions,
@@ -381,12 +403,15 @@ const defineSandbox = (
  */
 export const sandbox = Object.assign(
   defineSandbox as {
-    <TTool extends string = never>(
-      options: SandboxDefinitionOptions<TTool> & { repo?: undefined },
-    ): SandboxDefinition<TTool>;
-    <TTool extends string = never, const TRepo extends RepoValue = RepoValue>(
-      options: SandboxDefinitionOptions<TTool> & { repo: TRepo },
-    ): SandboxDefinition<TTool | RepoMarker<TRepo>>;
+    <TTools extends SandboxToolRecord = (typeof builtinTools)["defaults"]>(
+      options: SandboxDefinitionOptions<TTools> & { repo?: undefined },
+    ): SandboxDefinition<TTools>;
+    <
+      TTools extends SandboxToolRecord = (typeof builtinTools)["defaults"],
+      const TRepo extends RepoValue = RepoValue,
+    >(
+      options: SandboxDefinitionOptions<TTools> & { repo: TRepo },
+    ): SandboxDefinition<TTools & RepoMarker<TRepo>>;
   },
   {
     image,

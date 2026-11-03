@@ -144,8 +144,8 @@ describe("sandbox: the handle runs commands and moves files like the core sandbo
 describe("sandbox: the model's tool names come from the sandbox", () => {
   test("each tool is <sandbox>_<tool>, from what the definition brings", () => {
     type Names = keyof SandboxToolsOf<{
-      work: "run";
-      view: "read" | "search";
+      work: { run: typeof sandbox.tools.run };
+      view: { read: typeof sandbox.tools.read; search: typeof sandbox.tools.search };
     }>;
 
     expectTypeOf<Names>().toEqualTypeOf<
@@ -156,18 +156,19 @@ describe("sandbox: the model's tool names come from the sandbox", () => {
 
 describe("sandbox: the code tools are run, run_code, read, search and edit", () => {
   test("the default is run, and run_code appears only with tools to call", () => {
-    expectTypeOf(workbench).toEqualTypeOf<SandboxDefinition<"run">>();
-    expectTypeOf(reader).toEqualTypeOf<SandboxDefinition<"read" | "search">>();
-    expectTypeOf(coder).toEqualTypeOf<
-      SandboxDefinition<"run" | "read" | "search" | "edit">
+    type ToolNames<T> = T extends SandboxDefinition<infer R> ? keyof R : never;
+
+    expectTypeOf<ToolNames<typeof workbench>>().toEqualTypeOf<"run">();
+    expectTypeOf<ToolNames<typeof reader>>().toEqualTypeOf<"read" | "search">();
+    expectTypeOf<ToolNames<typeof coder>>().toEqualTypeOf<
+      "run" | "read" | "search" | "edit"
     >();
-    expectTypeOf(
-      sandbox({
-        id: "c",
-        tools: { run: sandbox.tools.run, runCode: sandbox.tools.runCode },
-      }),
-    ).toEqualTypeOf<SandboxDefinition<"run" | "runCode">>();
-    expectTypeOf(bare).toEqualTypeOf<SandboxDefinition<never>>();
+    const withCode = sandbox({
+      id: "c",
+      tools: { run: sandbox.tools.run, runCode: sandbox.tools.runCode },
+    });
+    expectTypeOf<ToolNames<typeof withCode>>().toEqualTypeOf<"run" | "runCode">();
+    expectTypeOf<ToolNames<typeof bare>>().toEqualTypeOf<"run">();
   });
 
   test("write is a built-in tool, not a default", () => {
