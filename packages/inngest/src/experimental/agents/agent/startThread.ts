@@ -10,7 +10,9 @@
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
+import { step } from "../../../components/InngestStepTools.ts";
 import type { SenderData } from "../inbox/events.ts";
+import { agentGroupJoined } from "../inbox/events.ts";
 import type { Json } from "../json.ts";
 import {
   sendMessage,
@@ -24,7 +26,9 @@ import {
   limitStateOf,
   readInheritedLimits,
 } from "./limits.ts";
+import { groupId, relatedKey } from "./relations.ts";
 import type { ResultOptions } from "./runResults.ts";
+import { senderOf } from "./sender.ts";
 import { currentSessions } from "./sessions.ts";
 
 /**
@@ -79,6 +83,13 @@ export interface StartTarget {
    * The thread to start the run on. Default: a new thread with a generated key.
    */
   thread?: string;
+
+  /**
+   * The name of the group the new thread joins, together with every thread the
+   * same starter put in a group of that name. Needs a generated key, so it
+   * cannot be set with `thread`.
+   */
+  group?: string;
 }
 
 /**
@@ -131,9 +142,29 @@ export function startThread<TOutput>(
   }
 
   const n = nextCount(instance, "start");
+  if (target.group !== undefined && target.thread !== undefined) {
+    throw new Error(
+      "A start can join a group or use its own thread key, not both: a group is carried by the generated key.",
+    );
+  }
+
   // The address leads a generated key, so a tool that is given only the key
-  // can tell which agent the thread belongs to.
-  const key = target.thread ?? `${target.address}:${ctx.runId}.${n}`;
+  // can tell which agent the thread belongs to. The key also carries a tag of
+  // the thread that starts it (and of the group), which is how a model's
+  // `message_agent` tells a parent, a child and a peer from a stranger.
+  const sender = senderOf(execution);
+  const starter = {
+    key: sender.key,
+    address: sender.kind === "agent" ? sender.address : "",
+  };
+  const key =
+    target.thread ??
+    relatedKey(
+      target.client,
+      `${target.address}:${ctx.runId}.${n}`,
+      starter,
+      target.group,
+    );
   const sessions = {
     agent_session: currentSessions(ctx).agent_session ?? (ctx.runId as string),
     agent_thread: key,
@@ -157,6 +188,19 @@ export function startThread<TOutput>(
       },
     },
   );
+  // One event tells every live member of the group about the new one.
+  const joined =
+    target.group === undefined
+      ? undefined
+      : step.sendEvent(
+          `group:${ctx.runId}.${nextCount(instance, "group")}:joined`,
+          agentGroupJoined.create({
+            group: groupId(target.client, starter.key, target.group),
+            name: target.group,
+            agent: target.address,
+            thread: key,
+          }),
+        );
   const thread = threadHandle<TOutput>(target.client, target.address, key);
   const handle: StartedThread<TOutput> = {
     ...thread,
@@ -164,7 +208,7 @@ export function startThread<TOutput>(
       return call.result(options);
     },
   };
-  const started = call.then(() => {
+  const started = Promise.all([call, joined]).then(() => {
     return handle;
   });
 

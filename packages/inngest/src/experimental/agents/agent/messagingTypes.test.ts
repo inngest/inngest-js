@@ -29,6 +29,7 @@ describe("messaging types", () => {
               expectTypeOf(call.call.input).toEqualTypeOf<{
                 address: string;
                 input?: Json;
+                group?: string;
               }>();
               expectTypeOf(call.output).toEqualTypeOf<{ thread: string }>();
             }

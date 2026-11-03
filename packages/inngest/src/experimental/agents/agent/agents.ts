@@ -380,6 +380,7 @@ export { addressOf, matchesDiscovery } from "../discovery/discovery.ts";
 export type {
   AgentAnswerData,
   AgentFinishedData,
+  AgentGroupJoinedData,
   AgentMessageData,
   AgentQuestionData,
   AgentRecoverData,
@@ -388,6 +389,7 @@ export type {
 export {
   agentAnswer,
   agentFinished,
+  agentGroupJoined,
   agentMessage,
   agentQuestion,
   agentRecover,

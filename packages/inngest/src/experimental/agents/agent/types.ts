@@ -802,10 +802,14 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * an op nothing awaited), so `await` it there.
    * @param input What the agent is asked to do.
    * @param options `thread`: the key of the thread to start the run on.
+   * `group`: the name of a group the new thread joins. Threads that the same
+   * thread started with the same group name can `message_agent` and
+   * `ask_agent` each other, and the live ones hear of each join. A group needs
+   * a generated key, so it cannot be set with `thread`.
    */
   start(
     input: TInput,
-    options?: { thread?: string },
+    options?: { thread?: string; group?: string },
   ): StartedThreadPromise<TOutput>;
 
   /**

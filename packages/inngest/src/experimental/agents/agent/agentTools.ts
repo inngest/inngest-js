@@ -38,6 +38,7 @@ import type { Json } from "../json.ts";
 import { threadHandle, threadSessions } from "../threads/thread.ts";
 import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
+import { relationOf } from "./relations.ts";
 import { AgentStoppedError } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
 import { type StartedThread, startThread } from "./startThread.ts";
@@ -51,7 +52,10 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {}
  * The tools that start, message and stop agents.
  */
 type AgentActionToolSet = {
-  start_agent: AgentTool<{ address: string; input?: Json }, { thread: string }>;
+  start_agent: AgentTool<
+    { address: string; input?: Json; group?: string },
+    { thread: string }
+  >;
   message_agent: AgentTool<{ thread: string; content: Json }, { ok: true }>;
   ask_agent: AgentTool<{ thread: string; question: string }, { id: string }>;
   stop_agent: AgentTool<{ thread: string }, { ok: true }>;
@@ -104,6 +108,12 @@ const startInput = z.object({
     .describe(
       "What to give the agent: the input its card describes, or the text or JSON to send it as a message.",
     ),
+  group: z
+    .string()
+    .optional()
+    .describe(
+      "A group name. Agents you start with the same group name can message and ask each other, and each hears when another joins.",
+    ),
 });
 
 const stopInput = z.object({
@@ -111,7 +121,15 @@ const stopInput = z.object({
 });
 
 const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
-  return async ({ address, input }: { address: string; input?: Json }) => {
+  return async ({
+    address,
+    input,
+    group,
+  }: {
+    address: string;
+    input?: Json;
+    group?: string;
+  }) => {
     const execution = executionOf();
     const client = clientOf();
     const card = await findCard(address, options, "start");
@@ -149,6 +167,7 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
         address,
         typed: card.input !== undefined,
         via,
+        ...(group !== undefined && { group }),
       },
       card.input ? prepared : (prepared ?? ""),
     );
@@ -168,7 +187,31 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
   };
 };
 
+/**
+ * Refuses a thread the calling agent may not reach: only its parent (the
+ * thread that started it), its children (threads it started, in any run) and
+ * the members of its group. The relation is read from the thread keys alone.
+ */
+const checkReach = (tool: string, thread: string): string | undefined => {
+  const self = executionOf().agent;
+
+  if (!self?.ref) {
+    throw new Error(`${tool} can only be used by an agent`);
+  }
+
+  const reach = relationOf(clientOf(), self.thread, thread);
+
+  if (reach === undefined) {
+    throw new Error(
+      `You can't reach thread "${thread}" with ${tool}. You can reach the thread that started you, threads you started with start_agent, and members of your group, by the thread key start_agent or a group message gave you.`,
+    );
+  }
+
+  return reach.address;
+};
+
 const stopAgent = async ({ thread }: { thread: string }) => {
+  checkReach("stop_agent", thread);
   await threadHandle(clientOf(), executionOf().agent?.ref ?? "", thread).stop();
 
   return { ok: true as const };
@@ -215,9 +258,12 @@ const messageAgent = async ({
   thread: string;
   content: Json;
 }) => {
-  await threadHandle(clientOf(), addressOfThread(thread), thread).message(
-    content,
-  );
+  // A parent's address comes from the key that names it; any other thread's
+  // agent leads its key.
+  const address =
+    checkReach("message_agent", thread) ?? addressOfThread(thread);
+
+  await threadHandle(clientOf(), address, thread).message(content);
 
   return { ok: true as const };
 };
@@ -229,7 +275,7 @@ const askAgent = async ({
   thread: string;
   question: string;
 }) => {
-  const agent = addressOfThread(thread);
+  const agent = checkReach("ask_agent", thread) ?? addressOfThread(thread);
   const execution = executionOf();
   const self = execution.agent;
 
@@ -278,7 +324,8 @@ const replyTo = async ({ to, text }: { to: string; text: string }) => {
 
 const startDescription =
   "Starts another agent on a new thread and returns at once with the thread's key. It does not wait. Use describe_agent to see what input it takes.";
-const stopDescription = "Stops the run of an agent you started.";
+const stopDescription =
+  "Stops the run of an agent you started, the agent that started you, or a member of your group.";
 
 /**
  * `start_agent` and `stop_agent` for a model.
@@ -309,7 +356,7 @@ export const agentToolSet = (
     message_agent: tool({
       id: "message_agent",
       description:
-        "Sends a message to an agent you started. It does not wait for a reply.",
+        "Sends a message to an agent you started, the agent that started you, or a member of your group. It does not wait for a reply.",
       group: true,
       input: messageInput,
       run: messageAgent,
@@ -317,7 +364,7 @@ export const agentToolSet = (
     ask_agent: tool({
       id: "ask_agent",
       description:
-        "Asks an agent you started a question and returns the question's ID at once. The answer arrives later as a message that names the ID; if there is none within an hour, you get a message that says so.",
+        "Asks an agent you started, the agent that started you, or a member of your group a question and returns the question's ID at once. The answer arrives later as a message that names the ID; if there is none within an hour, you get a message that says so.",
       group: true,
       input: askInput,
       run: askAgent,

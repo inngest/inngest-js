@@ -43,7 +43,7 @@ import { compileKey, toAsync } from "../cel.ts";
 import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
-import { agentMessage } from "../inbox/events.ts";
+import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import { senderFrom } from "../inbox/sender.ts";
 import {
@@ -124,6 +124,7 @@ import {
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
+import { groupOf } from "./relations.ts";
 import {
   createRunFields,
   idleMs,
@@ -552,6 +553,16 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
+          // A thread in a group hears of each new member. It is an inbox
+          // source of its own: the event never starts a run.
+          ...(groupOf(data.thread) === undefined
+            ? []
+            : [
+                {
+                  event: agentGroupJoined.name,
+                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
+                },
+              ]),
           ...inboxSources.flatMap((source) => {
             const missing = missingThreadFilter(source, config.thread);
 
@@ -920,6 +931,7 @@ export function createAgentFunction(
             return trigger.event === internalEvents.FunctionInvoked;
           }),
           ...(options?.thread !== undefined && { thread: options.thread }),
+          ...(options?.group !== undefined && { group: options.group }),
         },
         input,
       );

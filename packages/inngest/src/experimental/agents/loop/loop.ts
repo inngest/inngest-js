@@ -105,6 +105,8 @@ const textOfJson = (value: unknown): string => {
  *   `reply` tool.
  * - `agent/finished`: which agent and thread finished, the outcome, then the
  *   output or the error.
+ * - `agent/group.joined`: who joined the group and the thread key to reach it
+ *   with.
  * - `agent/answer`: the answer next to the question it answers (`questions`
  *   maps a question's id to its text); `refused` and `timed_out` read as a
  *   plain "no answer" line.
@@ -151,6 +153,16 @@ export const formatEvent = (
     }
 
     return `${who} finished: stopped.`;
+  }
+
+  if (event.name === "agent/group.joined") {
+    const joined = data as {
+      name?: unknown;
+      agent?: unknown;
+      thread?: unknown;
+    };
+
+    return `${String(joined.agent)} (thread ${String(joined.thread)}) joined your group "${String(joined.name)}". You can reach it with message_agent or ask_agent.`;
   }
 
   if (event.name === "agent/answer") {
