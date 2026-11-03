@@ -53,9 +53,9 @@ test("loop: the result has text, end, turns, usage, history, toolCalls and unrea
   expectTypeOf(check).toBeFunction();
 });
 
-test("loop: end is the four-value union", () => {
+test("loop: end is the five-value union", () => {
   expectTypeOf<AgentLoopEnd>().toEqualTypeOf<
-    "done" | "maxTurns" | "stop" | "budget"
+    "done" | "maxTurns" | "stop" | "budget" | "noToolCall"
   >();
   expectTypeOf<AgentLoopResult["end"]>().toEqualTypeOf<AgentLoopEnd>();
 });

@@ -316,11 +316,13 @@ export interface AgentModelRequest {
   maxTurns: number;
 
   /**
-   * `"none"` on the last turn when the loop has a `wrapUp` text: keep
-   * `tools` in the request, since the conversation uses them, but forbid
-   * calling one (Anthropic: `tool_choice: { type: "none" }`).
+   * Whether the model may, must or must not call a tool. `"none"` on the
+   * last turn when the loop has a `wrapUp` text: keep `tools` in the request,
+   * since the conversation uses them, but forbid calling one. Otherwise the
+   * loop's `toolChoice` option (Anthropic: `tool_choice`). Absent means
+   * `"auto"`.
    */
-  toolChoice?: "none";
+  toolChoice?: AgentToolChoice;
 
   /**
    * The tools in the shape model APIs take. Pass them straight to your SDK.
@@ -502,6 +504,12 @@ interface AgentToolRunOf<
 export const defaultMaxTurns = 40;
 
 /**
+ * Whether the model may call a tool (`"auto"`), must call one (`"required"`),
+ * must not (`"none"`), or must call the named one (`{ tool }`).
+ */
+export type AgentToolChoice = "auto" | "required" | "none" | { tool: string };
+
+/**
  * What goes into a loop call: a batch of messages (events), or text or content
  * blocks as they are.
  */
@@ -509,10 +517,16 @@ export type AgentLoopInput = AgentInput | readonly AgentEvent[];
 
 /**
  * How a loop ended: the model finished (`"done"`), it ran out of turns
- * (`"maxTurns"`), the `stop` option asked to end it (`"stop"`), or the budget
- * was spent (`"budget"`).
+ * (`"maxTurns"`), the `stop` option asked to end it (`"stop"`), the budget
+ * was spent (`"budget"`), or it kept replying without a tool call under
+ * `toolChoice: "required"` past `maxNoToolCall` (`"noToolCall"`).
  */
-export type AgentLoopEnd = "done" | "maxTurns" | "stop" | "budget";
+export type AgentLoopEnd =
+  | "done"
+  | "maxTurns"
+  | "stop"
+  | "budget"
+  | "noToolCall";
 
 /**
  * Options of `agent.loop()`. A loop made on its own has only what its options
@@ -578,6 +592,23 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * The most model calls to make. Default 40.
    */
   maxTurns?: number;
+
+  /**
+   * Whether the model may call a tool: `"auto"` (it decides, and a reply
+   * without a tool call ends the loop), `"required"` (every reply must call
+   * a tool), `"none"`, or `{ tool }` (every reply must call that tool).
+   * Under `"required"` or `{ tool }` a reply with no tool call ends nothing:
+   * the loop asks again, without using a turn of `maxTurns`. Default
+   * `"auto"`.
+   */
+  toolChoice?: AgentToolChoice;
+
+  /**
+   * The most replies without a tool call to tolerate under `toolChoice:
+   * "required"` or `{ tool }`. Past it the loop ends with `end:
+   * "noToolCall"`. Default 4.
+   */
+  maxNoToolCall?: number;
 
   /**
    * The `history` of an earlier result, to continue its conversation.
@@ -648,13 +679,19 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
 /**
  * What a call of a loop can set for itself: more `tools` (added to the loop's;
  * the same name twice is an error), and its own `steer`, `onTurn`, `maxTurns`,
- * `maxToolOutput` and `wrapUp`.
+ * `maxToolOutput`, `wrapUp`, `toolChoice` and `maxNoToolCall`.
  */
 export interface AgentLoopCallOptions<
   TTools extends SandboxTools = Record<never, never>,
 > extends Pick<
     AgentLoopOptions,
-    "steer" | "onTurn" | "maxTurns" | "maxToolOutput" | "wrapUp"
+    | "steer"
+    | "onTurn"
+    | "maxTurns"
+    | "maxToolOutput"
+    | "wrapUp"
+    | "toolChoice"
+    | "maxNoToolCall"
   > {
   /**
    * Tools to add to the loop's own for this call.
@@ -695,6 +732,13 @@ export interface AgentLoopResultBase<TTools extends SandboxTools = AnyTools> {
    * How many model calls the loop made.
    */
   turns: number;
+
+  /**
+   * How many replies came with no tool call under `toolChoice: "required"`
+   * (or `{ tool }`) and were asked again. They do not count against
+   * `maxTurns`.
+   */
+  noToolCallTurns: number;
 
   /**
    * The whole conversation. Pass it as `history` to continue.
@@ -1087,7 +1131,10 @@ const runLoop = async <TTools extends SandboxTools>(
     maxTurns = defaultMaxTurns,
     maxToolOutput = 100_000,
     parallelTools = true,
+    toolChoice = "auto",
+    maxNoToolCall = 4,
   } = options;
+  const forcesTool = toolChoice !== "auto" && toolChoice !== "none";
   const wiring = bridgedWiring();
   const price = options.price ?? wiring?.price;
   const id = uniqueLoopId(options.id ?? "agent");
@@ -1146,6 +1193,8 @@ const runLoop = async <TTools extends SandboxTools>(
   let text = "";
   // Messages folded in since the last model call.
   let steered = 0;
+  // Replies with no tool call that were asked again.
+  let noToolCallTurns = 0;
   // The summary of the conversation's start, once there is one.
   let compaction: AgentCompaction | undefined = stored?.compaction;
   const compactWith = compactionFor(options.compaction, model.contextWindow);
@@ -1169,6 +1218,7 @@ const runLoop = async <TTools extends SandboxTools>(
       end,
       ...(reason !== undefined && { reason }),
       turns,
+      noToolCallTurns,
       history: messages,
       usage,
       toolCalls: toolRuns,
@@ -1233,7 +1283,10 @@ const runLoop = async <TTools extends SandboxTools>(
       });
     }
 
-    const modelStep = `${id}:model:${turn}`;
+    const modelStep =
+      noToolCallTurns > 0
+        ? `${id}:model:${turn}.${noToolCallTurns}`
+        : `${id}:model:${turn}`;
     const reply = (await step.run(
       {
         id: modelStep,
@@ -1282,7 +1335,9 @@ const runLoop = async <TTools extends SandboxTools>(
             tools: definitions,
             turn,
             maxTurns,
-            ...(last && { toolChoice: "none" as const }),
+            ...(last
+              ? { toolChoice: "none" as const }
+              : toolChoice !== "auto" && { toolChoice }),
           });
         } catch (error) {
           throw sortModelError(error);
@@ -1411,6 +1466,22 @@ const runLoop = async <TTools extends SandboxTools>(
     if (reply.toolCalls.length === 0) {
       onTurn(options.onTurn);
 
+      // Under a forced tool choice a text reply is not an answer: ask again
+      // without using up a turn.
+      if (forcesTool && !(turn === maxTurns && options.wrapUp !== undefined)) {
+        if (noToolCallTurns >= maxNoToolCall) {
+          return finish("noToolCall", turn);
+        }
+
+        noToolCallTurns += 1;
+        messages.push({
+          role: "user",
+          content: "Use the tools: every reply must be a tool call.",
+        });
+        turn -= 1;
+        continue;
+      }
+
       return finish("done", turn);
     }
 
@@ -1458,6 +1529,10 @@ const withCall = <TTools extends SandboxTools>(
       maxToolOutput: call.maxToolOutput,
     }),
     ...(call?.wrapUp !== undefined && { wrapUp: call.wrapUp }),
+    ...(call?.toolChoice !== undefined && { toolChoice: call.toolChoice }),
+    ...(call?.maxNoToolCall !== undefined && {
+      maxNoToolCall: call.maxNoToolCall,
+    }),
     tools: addTools(options.tools, call?.tools) as TTools,
   };
 };

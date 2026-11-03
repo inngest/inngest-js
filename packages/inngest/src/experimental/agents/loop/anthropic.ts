@@ -21,6 +21,7 @@ import { type AgentPriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
+  AgentToolChoice,
   AgentModelResponse,
   AgentToolCall,
   AgentUsage,
@@ -242,12 +243,15 @@ export interface AnthropicCall {
   tools?: ToolJsonDefinition[];
 
   /**
+   * What the loop asks for (`AgentModelRequest.toolChoice`) maps to the API:
+   * `"auto"` to `{ type: "auto" }`, `"required"` to `{ type: "any" }`,
+   * `"none"` to `{ type: "none" }` and `{ tool }` to `{ type: "tool", name }`.
    * `"none"` keeps `tools` in the request but forbids calling one. `{ name }`
    * asks for a call of that tool: the request stays on `auto` (the newest
    * models refuse a forced `tool_choice`) and the text after the cached prefix
    * says to reply only by calling it.
    */
-  toolChoice?: "none" | { name: string };
+  toolChoice?: AgentToolChoice | { name: string };
 
   /**
    * A schema (Zod 4, or any library with Standard JSON Schema) for a
@@ -537,6 +541,18 @@ const outputTool = (schema: StandardSchemaV1): ToolJsonDefinition => {
   };
 };
 
+const apiToolChoice = (choice: AgentToolChoice): Record<string, unknown> => {
+  if (choice === "required") {
+    return { type: "any" };
+  }
+
+  if (typeof choice === "object") {
+    return { type: "tool", name: choice.tool };
+  }
+
+  return { type: choice };
+};
+
 /**
  * The Messages API request for one call.
  */
@@ -572,6 +588,7 @@ const buildBody = (
 
   if (
     typeof call.toolChoice === "object" &&
+    "name" in call.toolChoice &&
     !call.tools?.some((tool) => {
       return tool.name === (call.toolChoice as { name: string }).name;
     })
@@ -590,12 +607,15 @@ const buildBody = (
     tools: call.tools ?? [],
     turn: call.turn ?? 1,
     maxTurns: call.maxTurns ?? 1,
-    ...(call.toolChoice === "none" && { toolChoice: "none" as const }),
+    ...(call.toolChoice !== undefined &&
+      !(typeof call.toolChoice === "object" && "name" in call.toolChoice) && {
+        toolChoice: call.toolChoice,
+      }),
   };
   const named =
     call.output !== undefined
       ? outputToolName
-      : typeof call.toolChoice === "object"
+      : typeof call.toolChoice === "object" && "name" in call.toolChoice
         ? call.toolChoice.name
         : undefined;
   // After the breakpoint, so asking for a tool never changes the cached prefix.
@@ -636,8 +656,8 @@ const buildBody = (
     }),
     ...(tools && { tools }),
     ...(tools &&
-      request.toolChoice === "none" && {
-        tool_choice: { type: "none" },
+      request.toolChoice !== undefined && {
+        tool_choice: apiToolChoice(request.toolChoice),
       }),
     ...(options.thinking && { thinking: options.thinking }),
     ...(options.effort && { output_config: { effort: options.effort } }),
