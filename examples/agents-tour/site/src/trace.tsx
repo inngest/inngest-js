@@ -830,6 +830,12 @@ export const TracePanel = ({
     : false;
   const failed = waiting ? errors > waiting.errors : false;
   const placeholder = waiting !== null && !arrived && !failed;
+  // Runs listed when Run was pressed fade out at once and stay out, so old
+  // and new cards are never side by side and the server clearing them later
+  // changes nothing on screen.
+  const superseded = (run: TraceRun) => {
+    return waiting !== null && !failed && waiting.before.has(run.id);
+  };
   const live = runs.some((run) => {
     return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
       run.status,
@@ -908,6 +914,7 @@ export const TracePanel = ({
           <Reveal
             className="run-slot"
             key={run.id}
+            show={!superseded(run)}
             appear={!firstRuns.current.has(run.id)}
           >
             <Run run={run} everything={everything} now={now} />
