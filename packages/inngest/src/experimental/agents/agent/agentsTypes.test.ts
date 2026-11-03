@@ -170,9 +170,7 @@ test("agents: the handler argument is event, inbox, me, sandboxes and score", ()
         expectTypeOf(inbox).toHaveProperty("next");
         expectTypeOf(me).toHaveProperty("key");
         expectTypeOf(sandboxes).toBeObject();
-        expectTypeOf(score).toEqualTypeOf<
-          (name: string, value: number | boolean) => Promise<void>
-        >();
+        expectTypeOf(score).toBeFunction();
       },
     );
   });

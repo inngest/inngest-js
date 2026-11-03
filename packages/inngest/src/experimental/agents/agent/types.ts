@@ -60,6 +60,7 @@ import type {
 import type { AgentToolSet } from "./agentTools.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
+import type { AgentScoreFn } from "../loop/scores.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 import type { StartedThreadPromise } from "./startThread.ts";
@@ -458,10 +459,12 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   };
 
   /**
-   * Scores the run: `score("quality", 1)`. Written once wherever it is
-   * called. The value is a finite number or a boolean.
+   * Scores the run: `score("quality", 1)`, or a record of scores in one step:
+   * `score({ a: 1, b: 0.5 })`. Written once wherever it is called. The value
+   * is a finite number or a boolean. Inside a `group.experiment()` variant it
+   * credits that variant; elsewhere, only `{ experiment }` from the options.
    */
-  score: (name: string, value: number | boolean) => Promise<void>;
+  score: AgentScoreFn;
 
   /**
    * Messages sent to the thread, one per delivery, in order. The first is the

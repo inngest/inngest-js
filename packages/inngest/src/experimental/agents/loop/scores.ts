@@ -17,6 +17,7 @@ import {
 import { scoreMetadataKind } from "../../../components/InngestMetadata.ts";
 import { validateStepScoreOptions } from "../../../components/InngestScore.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import type { ExperimentRef } from "../../../types.ts";
 
 /**
  * The names of the scores the framework writes. Your own scores may not start
@@ -92,35 +93,133 @@ export const scoreThisStep = (
 };
 
 /**
+ * Options of `score()`.
+ */
+export interface AgentScoreOptions {
+  /**
+   * Credits the scores to this experiment variant, as
+   * `inngest.score.experiment()` does. Inside a `group.experiment()` variant
+   * the variant is picked up on its own and this is not needed.
+   */
+  experiment?: ExperimentRef;
+}
+
+/**
+ * The call forms of `score()`: one name and value, or a record of them.
+ */
+export interface AgentScoreFn {
+  (
+    name: string,
+    value: number | boolean,
+    options?: AgentScoreOptions,
+  ): Promise<void>;
+  (
+    scores: Record<string, number | boolean>,
+    options?: AgentScoreOptions,
+  ): Promise<void>;
+}
+
+const parseScoreArgs = (
+  args: [
+    string | Record<string, number | boolean>,
+    (number | boolean | AgentScoreOptions)?,
+    AgentScoreOptions?,
+  ],
+) => {
+  const [first, second, third] = args;
+  const entries: [string, number | boolean][] =
+    typeof first === "string"
+      ? [[first, second as number | boolean]]
+      : Object.entries(first ?? {});
+  const options = (typeof first === "string" ? third : second) as
+    | AgentScoreOptions
+    | undefined;
+
+  if (typeof first !== "string" && (typeof first !== "object" || !first)) {
+    throw new Error("score needs a name and a value, or a record of scores");
+  }
+
+  for (const [name, value] of entries) {
+    validateStepScoreOptions({ name, value });
+
+    if (name.startsWith(frameworkPrefix)) {
+      throw new Error(
+        `score name "${name}" starts with "${frameworkPrefix}", which is kept for the scores the framework writes`,
+      );
+    }
+  }
+
+  return { entries, options };
+};
+
+/**
+ * The variant to credit: the one whose `group.experiment()` callback is
+ * running, else the one the caller named. Undefined when neither.
+ */
+const experimentToCredit = (
+  options: AgentScoreOptions | undefined,
+): ExperimentRef | undefined => {
+  const inVariant = getAsyncCtxSync()?.execution?.experimentContext;
+
+  if (inVariant) {
+    return {
+      experimentName: inVariant.experimentName,
+      variant: inVariant.variant,
+    };
+  }
+
+  return options?.experiment;
+};
+
+/**
+ * Writes scores run-scoped to an experiment variant. Best effort.
+ */
+const writeToExperiment = async (
+  client: Inngest.Any,
+  entries: [string, number | boolean][],
+  experiment: ExperimentRef,
+) => {
+  const runId = getAsyncCtxSync()?.execution?.ctx?.runId;
+
+  for (const [name, value] of entries) {
+    try {
+      await client.score.experiment({ name, value, experiment, runId });
+    } catch (error) {
+      client[internalLoggerSymbol].warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        "Could not record an agent score for an experiment; the server may not support scores. Scores are skipped when they fail.",
+      );
+    }
+  }
+};
+
+/**
  * The `score` of one agent run, and the `flush` that waits for the scores
  * still being written.
  */
 export interface AgentScore {
   /**
-   * EXPERIMENTAL: Scores the run: `score("quality", 1)`. Written once wherever
-   * it is called. Inside a step (a tool, or the model function) it rides on
-   * that step's result, with no extra step. Outside a step it is a memoized
-   * step whose id comes from the name, so a replay does not write it again.
-   * It is best effort: a score the server refuses logs a warning and the run
-   * goes on. An un-awaited call is still written before the run ends.
+   * EXPERIMENTAL: Scores the run: `score("quality", 1)`, or several at once
+   * with a record: `score({ "train.pass_rate": 0.9, "holdout.pass_rate": 0.88 })`.
+   * Written once wherever it is called. Inside a step (a tool, or the model
+   * function) it rides on that step's result, with no extra step. Outside a
+   * step it is a memoized step, one for the whole record, whose id comes from
+   * the names, so a replay does not write it again. It is best effort: a score
+   * the server refuses logs a warning and the run goes on. An un-awaited call
+   * is still written before the run ends.
+   *
+   * Inside a `group.experiment()` variant the scores also credit that variant,
+   * written run-scoped (a score made inside a step still rides on the step).
+   * Outside a variant they credit only the `experiment` in `options`.
    *
    * @example
    * ```ts
    * await score("support.escalated", ticket.escalated);
+   * await score({ "train.pass_rate": 0.9, "holdout.pass_rate": 0.88 });
+   * await score("quality", 1, { experiment: ref });
    * ```
    */
-  score(
-    /**
-     * Any name without control characters or single quotes, 128 bytes at
-     * most, and not starting with `agent.`, which the framework keeps for its
-     * own scores.
-     */
-    name: string,
-    /**
-     * A finite number, or a boolean.
-     */
-    value: number | boolean,
-  ): Promise<void>;
+  score: AgentScoreFn;
 
   /**
    * Waits for every score called so far, awaited or not. The run calls it
@@ -135,22 +234,24 @@ export interface AgentScore {
  * await. Elsewhere it rides on the running step, or does nothing. It checks
  * the name and value either way.
  */
-export const toolScore: AgentScore["score"] = async (name, value) => {
+export const toolScore: AgentScoreFn = async (
+  ...args: [
+    string | Record<string, number | boolean>,
+    (number | boolean | AgentScoreOptions)?,
+    AgentScoreOptions?,
+  ]
+) => {
   const bridged = getAsyncCtxSync()?.execution?.agentBridge?.score;
 
   if (bridged) {
-    return bridged(name, value);
+    return (bridged as (...a: typeof args) => Promise<void>)(...args);
   }
 
-  validateStepScoreOptions({ name, value });
+  const { entries } = parseScoreArgs(args);
 
-  if (name.startsWith(frameworkPrefix)) {
-    throw new Error(
-      `score name "${name}" starts with "${frameworkPrefix}", which is kept for the scores the framework writes`,
-    );
+  for (const [name, value] of entries) {
+    addStepScore(name, value);
   }
-
-  addStepScore(name, value);
 };
 
 /**
@@ -160,45 +261,75 @@ export const toolScore: AgentScore["score"] = async (name, value) => {
 export const createAgentScore = (client: Inngest.Any): AgentScore => {
   const pending = new Set<Promise<void>>();
 
-  const write = async (name: string, value: number | boolean) => {
+  const write = async (
+    entries: [string, number | boolean][],
+    experiment: ExperimentRef | undefined,
+  ) => {
     // The step answers whether or not the server took the score, so a refused
     // score is never retried and never fails the run.
-    await step.run(`score:${name}`, async () => {
-      try {
-        await client.score({ name, value });
-      } catch (error) {
-        client[internalLoggerSymbol].warn(
-          { error: error instanceof Error ? error.message : String(error) },
-          "Could not record an agent score; the server may not support scores. Scores are skipped when they fail.",
-        );
+    await step.run(`score:${entries.map(([n]) => n).join(",")}`, async () => {
+      if (experiment) {
+        await writeToExperiment(client, entries, experiment);
+        return;
+      }
+
+      for (const [name, value] of entries) {
+        try {
+          await client.score({ name, value });
+        } catch (error) {
+          client[internalLoggerSymbol].warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            "Could not record an agent score; the server may not support scores. Scores are skipped when they fail.",
+          );
+        }
       }
     });
   };
 
+  const run = async (
+    entries: [string, number | boolean][],
+    options: AgentScoreOptions | undefined,
+  ) => {
+    const experiment = experimentToCredit(options);
+
+    if (entries.map(([n, v]) => addStepScore(n, v)).every(Boolean)) {
+      if (experiment) {
+        // Run scoped, so the experiment view reads it, even from inside a step.
+        await writeToExperiment(client, entries, experiment);
+      }
+
+      return;
+    }
+
+    await write(entries, experiment);
+  };
+
+  const score: AgentScoreFn = async (
+    ...args: [
+      string | Record<string, number | boolean>,
+      (number | boolean | AgentScoreOptions)?,
+      AgentScoreOptions?,
+    ]
+  ) => {
+    const { entries, options } = parseScoreArgs(args);
+
+    if (entries.length === 0) {
+      return;
+    }
+
+    const written = run(entries, options);
+
+    pending.add(written);
+
+    try {
+      await written;
+    } finally {
+      pending.delete(written);
+    }
+  };
+
   return {
-    async score(name, value) {
-      validateStepScoreOptions({ name, value });
-
-      if (name.startsWith(frameworkPrefix)) {
-        throw new Error(
-          `score name "${name}" starts with "${frameworkPrefix}", which is kept for the scores the framework writes`,
-        );
-      }
-
-      if (addStepScore(name, value)) {
-        return;
-      }
-
-      const written = write(name, value);
-
-      pending.add(written);
-
-      try {
-        await written;
-      } finally {
-        pending.delete(written);
-      }
-    },
+    score,
     async flush() {
       await Promise.allSettled([...pending]);
     },

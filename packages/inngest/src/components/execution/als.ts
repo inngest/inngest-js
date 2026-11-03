@@ -1,4 +1,5 @@
 import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.ts";
+import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
 import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
@@ -19,7 +20,7 @@ export interface AgentBridge {
    * The run's `score`, which a tool's context shares so that the run waits
    * for a score a tool did not await.
    */
-  score?: (name: string, value: number | boolean) => Promise<void>;
+  score?: AgentScoreFn;
 
   /**
    * The questions this run received, answered and asked, which the model's
