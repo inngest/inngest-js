@@ -116,7 +116,7 @@ In a fresh worktree, start the tour (step 2) once first: that installs `node_mod
    | Reset (code and runs) | Reset | `Alt+Shift+R` |
    | Next, Previous | Next, Previous (footer) | `Alt+]`, `Alt+[` |
    | Next file tab | Next file, or a tab | `Alt+Shift+L` |
-   | Raw trace | Show everything | `Alt+Shift+H` |
+   | Raw trace | Show everything (mouse only, skipped by Tab) | |
    | Concepts, Search, Keys, Dev Server | top bar buttons | `Alt+Shift+O`, `Alt+Shift+P`, `Alt+/`, `Alt+Shift+.` |
    | Focus lesson, trace, editor | | `Alt+Shift+1`, `Alt+Shift+T`, `Alt+Shift+E` |
 
@@ -130,6 +130,6 @@ In a fresh worktree, start the tour (step 2) once first: that installs `node_mod
 - agent-browser key names: write `Alt+[` and `Alt+]`, not `Alt+BracketLeft`, which sends nothing useful.
 - Monaco's suggest box can cover the buttons after typing in the editor; `press Escape` before clicking.
 - Reset progress needs two presses of the same button within a few seconds ("Press again to reset").
-- The Trace's first row for a run started by a message is `message`, with the content beside it; open it for the event as sent. By default the Trace shows only that row and the calls the code makes: a `next` span (the reader's `inbox.next()`, labelled so) and the reader's own steps. The SDK's own `subscribe`, `inbox`, `close`, `inbox:close`, Thread state and Finalization rows, and the wait bar between messages when the code never calls `inbox.next()`, show only under Show everything. The rule is in `site/src/trace.tsx` (`isPlumbing`), decided from the run's own spans.
+- The Trace's first row for a run started by a message is `message`, with the content beside it; open it for the event as sent. By default the Trace shows only that row and the calls the code makes: a `next` span (the reader's `inbox.next()`, labelled so), the reader's own steps and Finalization, which every run has. The SDK's own `subscribe`, `inbox`, `close`, `inbox:close`, and Thread state rows, and the wait bar between messages when the code never calls `inbox.next()`, show only under Show everything. The rule is in `site/src/trace.tsx` (`isPlumbing`), decided from the run's own spans. While a run has only the Dev Server's placeholder spans (`Execution`, `Attempt 0`), the Trace shows one shimmering running row, and pressing Run shows a placeholder card ("Running run.ts...") until the real run is listed.
 - Progress is saved per worktree in `.tour-cache/progress.json`, so your checks never touch anyone else's.
 - An agent with no body (`agents.agent({ id })`) is valid: the run reads its first message and ends with no output.

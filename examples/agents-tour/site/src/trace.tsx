@@ -3,15 +3,19 @@
  * The Trace panel: a waterfall of the real spans the Dev Server returns, one
  * row per span, a bar on a shared timeline, indentation from group spans.
  * By default a run shows only what the page has taught: the message that
- * started it and the calls the reader's code makes (steps, `inbox.next()`).
- * What the SDK does on its own (subscribe, inbox, close, thread records, KV
- * reads, Finalization) is plumbing, shown only by "Show everything", which
- * lists the raw tree. Up and down move between rows, Enter opens one.
+ * started it, the calls the reader's code makes (steps, `inbox.next()`) and
+ * Finalization, which every run has. What the SDK does on its own
+ * (subscribe, inbox, close, thread records, KV reads) is plumbing, shown only
+ * by "Show everything", which lists the raw tree.
+ *
+ * A row is never shown until the Trace is sure it belongs. The Dev Server
+ * first answers a new run with placeholder spans (`Execution`, `Attempt 0`)
+ * before the real ones exist; until those are replaced the run shows one
+ * calm "running" row instead.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
 import { api } from "./api.ts";
-import { Kbd } from "./keyboard.tsx";
 import { Fit, Reveal } from "./motion.tsx";
 
 const housekeepingName =
@@ -49,10 +53,17 @@ const isPlumbing = (step: TraceStep) => {
 
   return (
     isHousekeeping(step) ||
-    isFinalization(step) ||
     /^span:\["inbox/.test(step.id) ||
     /^(inbox|subscribe|close)\b/.test(step.name)
   );
+};
+
+// The Dev Server lists these top-level spans for a run that has just been
+// queued or started, before its real spans exist. They say nothing about the
+// run, so they are never rows; while one is there the Trace is not sure what
+// the run will show.
+const isPlaceholder = (step: TraceStep) => {
+  return /^(Execution|Attempt \d+)$/.test(step.name);
 };
 
 // The run waits for a message only where the code called `inbox.next()`.
@@ -234,7 +245,10 @@ const rowsOf = (
       });
     }
 
-    const shown = parentShown && (everything || !isPlumbing(step));
+    const shown =
+      parentShown &&
+      !(depth === 0 && isPlaceholder(step)) &&
+      (everything || !isPlumbing(step));
 
     rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth, shown });
     rows.push(
@@ -485,6 +499,52 @@ const Trigger = ({ run }: { run: TraceRun }) => {
   );
 };
 
+// The calm stand-in for rows the Trace is not sure of yet.
+const PendingRow = () => {
+  return (
+    <div className="wf-row pending-row" aria-label="Running">
+      <span className="wf-name">
+        <span className="dot running" aria-hidden="true" />
+        running
+      </span>
+      <span className="wf-track">
+        <i className="wf-bar pending" />
+      </span>
+      <span className="wf-time" />
+    </div>
+  );
+};
+
+export interface RunPressed {
+  // When Run was pressed.
+  at: number;
+  // What Run runs, when the page has a `run.ts`; null when it is not known.
+  label: string | null;
+}
+
+// How long a placeholder waits for a real run before it gives up.
+const pendingMs = 15_000;
+
+// The card for a run Run has started but the Dev Server has not listed yet.
+// It names only what is known: the file Run runs, never the agent.
+const PendingRun = ({ label }: { label: string | null }) => {
+  return (
+    <section className="run" aria-label="Starting a run">
+      <div className="run-head">
+        <span className="dot running" aria-hidden="true" />
+        <strong>
+          Running{label ? <code>{label}</code> : null}...
+        </strong>
+      </div>
+      <div className="wf" role="list">
+        <div role="listitem">
+          <PendingRow />
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const Run = ({
   run,
   everything,
@@ -519,6 +579,15 @@ const Run = ({
   const rows = useMemo(() => {
     return rowsOf(run.steps, everything, clock, live && finish === null);
   }, [run.steps, everything, clock, live, finish]);
+  // Not sure yet what the run shows: placeholder spans are all there is, or
+  // nothing shows and the run is still going. One running row stands in.
+  const unsure = run.steps.some(isPlaceholder);
+  const pending =
+    live &&
+    (unsure ||
+      !rows.some((row) => {
+        return row.shown;
+      }));
   // Rows present when the run first renders are not animated; ones that
   // arrive later (or that Show everything adds) fade and grow in.
   const initialRows = useRef<boolean>(true);
@@ -657,6 +726,13 @@ const Run = ({
             </Reveal>
           );
         })}
+        <Reveal
+          role="listitem"
+          show={pending}
+          appear={!initialRows.current}
+        >
+          <PendingRow />
+        </Reveal>
       </div>
     </section>
   );
@@ -683,7 +759,6 @@ const Console = ({ lines }: { lines: Line[] }) => {
         <span className="wf-name">
           console, {lines.length} {lines.length === 1 ? "line" : "lines"}
         </span>
-        <Kbd action="rowOpen" />
       </button>
       <Reveal show={open}>
         <pre className="step-detail">
@@ -703,16 +778,64 @@ export const TracePanel = ({
   lines,
   everything,
   onToggle,
+  pressed,
 }: {
   runs: TraceRun[];
   lines: Line[];
   everything: boolean;
   onToggle: () => void;
+  pressed: RunPressed | null;
 }) => {
   const [now, setNow] = useState(Date.now());
-  const box = useRef<HTMLDivElement>(null);
   // Runs already listed when the panel first renders do not animate in.
   const firstRuns = useRef(new Set(runs.map((run) => run.id)));
+  // The placeholder run card: from Run being pressed until a run that was not
+  // listed then appears, an error is logged, or the wait runs out.
+  const [waiting, setWaiting] = useState<{
+    label: string | null;
+    before: Set<string>;
+    errors: number;
+  } | null>(null);
+  const latest = useRef({ runs, errors: 0 });
+  const errors = lines.filter((line) => {
+    return line.kind === "err";
+  }).length;
+
+  latest.current = { runs, errors };
+
+  useEffect(() => {
+    if (!pressed) {
+      setWaiting(null);
+
+      return;
+    }
+
+    setWaiting({
+      label: pressed.label,
+      before: new Set(
+        latest.current.runs.map((run) => {
+          return run.id;
+        }),
+      ),
+      errors: latest.current.errors,
+    });
+
+    const timer = window.setTimeout(() => {
+      setWaiting(null);
+    }, pendingMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [pressed]);
+
+  const arrived = waiting
+    ? runs.some((run) => {
+        return !waiting.before.has(run.id);
+      })
+    : false;
+  const failed = waiting ? errors > waiting.errors : false;
+  const placeholder = waiting !== null && !arrived && !failed;
   const live = runs.some((run) => {
     return !["COMPLETED", "FAILED", "CANCELLED", "SKIPPED"].includes(
       run.status,
@@ -751,52 +874,24 @@ export const TracePanel = ({
     };
   }, [live]);
 
-  const move = (event: React.KeyboardEvent) => {
-    const rows = [
-      ...(box.current?.querySelectorAll<HTMLElement>("[data-row]") ?? []),
-    ];
-    const at = rows.indexOf(document.activeElement as HTMLElement);
-    let next: number | undefined;
-
-    if (event.key === "ArrowDown") {
-      next = Math.min(rows.length - 1, at + 1);
-    } else if (event.key === "ArrowUp") {
-      next = Math.max(0, at - 1);
-    } else if (event.key === "Home") {
-      next = 0;
-    } else if (event.key === "End") {
-      next = rows.length - 1;
-    }
-
-    if (next !== undefined) {
-      event.preventDefault();
-      rows[next]?.focus();
-    }
-  };
-
   return (
     <div
       className="trace"
-      ref={box}
       aria-label="Trace"
-      onKeyDown={move}
       tabIndex={-1}
     >
       <div className="trace-bar">
         <span>
           {runs.length} {runs.length === 1 ? "run" : "runs"}
         </span>
-        <span className="trace-keys">
-          <kbd>↑</kbd>
-          <kbd>↓</kbd> move <Kbd action="rowOpen" /> open
-        </span>
         <button
           type="button"
           className="ghost"
+          tabIndex={-1}
           onClick={onToggle}
           aria-pressed={everything}
         >
-          Show everything <Kbd action="everything" />
+          Show everything
         </button>
       </div>
       {lines
@@ -810,10 +905,13 @@ export const TracePanel = ({
             </p>
           );
         })}
-      <Reveal show={runs.length === 0} appear={false}>
+      <Reveal show={runs.length === 0 && !placeholder} appear={false}>
         <p className="empty">
           Waiting for a run. Press Run, or send a message.
         </p>
+      </Reveal>
+      <Reveal className="run-slot" show={placeholder}>
+        <PendingRun label={waiting?.label ?? null} />
       </Reveal>
       {[...runs].reverse().map((run) => {
         return (

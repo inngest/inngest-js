@@ -32,7 +32,7 @@ import { store } from "./platform.ts";
 import { flyConcepts, moment } from "./progress-effects.ts";
 import { deeperWaiting, moduleEnd } from "./progress-model.ts";
 import { routeStreamEvent } from "./stream.ts";
-import { TracePanel } from "./trace.tsx";
+import { type RunPressed, TracePanel } from "./trace.tsx";
 
 type Overlay = "concepts" | "deeper" | "search" | "cheat" | null;
 
@@ -72,6 +72,8 @@ export const App = () => {
     text: "Connecting...",
   });
   const [everything, setEverything] = useState(false);
+  // Set the moment Run is pressed, so the Trace can show a placeholder run.
+  const [runSignal, setPressed] = useState<RunPressed | null>(null);
   const [cols, setCols] = useState(Number(store.get("tour:cols")) || 42);
   const [leftRow, setLeftRow] = useState(Number(store.get("tour:left")) || 58);
   const [rightRow, setRightRow] = useState(
@@ -365,12 +367,20 @@ export const App = () => {
       return;
     }
 
+    setPressed({
+      at: Date.now(),
+      label: page.files.some((file) => file.name === "run.ts")
+        ? "run.ts"
+        : null,
+    });
     await formatAll();
 
     const values = editor.current?.values() ?? {};
 
     saveEdits(page, values, store);
-    void api.run(page.id, values);
+    void api.run(page.id, values).catch(() => {
+      setPressed(null);
+    });
 
     pressed.current = {
       page: page.id,
@@ -611,14 +621,6 @@ export const App = () => {
       if (devServerUrl) {
         window.open(devServerUrl, "_blank", "noopener");
       }
-    },
-    rowDown: () => {},
-    rowUp: () => {},
-    rowOpen: () => {},
-    everything: () => {
-      setEverything((value) => {
-        return !value;
-      });
     },
     editor: toggleEditor,
     undo: undoReset,
@@ -1088,8 +1090,11 @@ export const App = () => {
                     lines={lines}
                     everything={everything}
                     onToggle={() => {
-                      handlers.everything?.();
+                      setEverything((value) => {
+                        return !value;
+                      });
                     }}
+                    pressed={runSignal}
                   />
                 </section>
               </div>

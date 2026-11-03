@@ -420,10 +420,6 @@ code.code-link:focus-visible {
   font-family: var(--mono);
 }
 
-.trace-keys {
-  font-size: 12px;
-}
-
 .wf-row {
   display: grid;
   grid-template-columns: minmax(190px, 34%) 1fr 72px;
@@ -558,6 +554,35 @@ code.code-link:focus-visible {
   background: var(--bad);
 }
 
+/* The stand-in row while the Trace is not sure what a run shows. */
+.wf-bar.pending {
+  left: 0;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2),
+    var(--accent-soft),
+    var(--surface-2)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.pending-row {
+  color: var(--muted);
+  cursor: default;
+}
+
+.run-head code {
+  margin-left: 0.4em;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -565,7 +590,8 @@ code.code-link:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot {
+  .dot,
+  .wf-bar.pending {
     animation: none !important;
   }
 }
