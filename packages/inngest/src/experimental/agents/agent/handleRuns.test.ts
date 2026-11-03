@@ -40,12 +40,12 @@ const waited = (ops: { op: string; opts: unknown }[]) => {
 };
 
 describe("a run opened through a handle", () => {
-  const make = (read: "inbox" | "batches") => {
+  const make = (read: "inbox" | "batches", idle?: string) => {
     freshKv();
 
     return createAgentFunction(
       new Inngest({ id: testClientId }),
-      { id: "bot", idle: "1m" },
+      { id: "bot", ...(idle && { idle }) },
       async ({ inbox }) => {
         const seen: unknown[] = [];
 
@@ -81,9 +81,24 @@ describe("a run opened through a handle", () => {
   );
 
   test.each(["inbox", "batches"] as const)(
+    "an explicit idle keeps a handle-opened run waiting (%s)",
+    async (read) => {
+      const agent = make(read, "1m");
+      const { output, ops } = await run(agent.fn, {
+        event: message("first", { from: sender }),
+        saved: [message("second")],
+        timeouts: 1,
+      });
+
+      expect(output).toEqual(["first", "second"]);
+      expect(waited(ops).length).toBeGreaterThan(0);
+    },
+  );
+
+  test.each(["inbox", "batches"] as const)(
     "a run a trigger started with the same handler waits idle (%s)",
     async (read) => {
-      const agent = make(read);
+      const agent = make(read, "1m");
       const { output, ops } = await run(agent.fn, {
         event: message("first"),
         saved: [message("second")],

@@ -657,12 +657,16 @@ export function createAgentFunction(
 
         // A run opened through a handle (`start()`, `message()`, `ask()`, or a
         // model's agent tools) has a sender, and ends once it has answered and
-        // nothing is unread; a run a trigger started waits `idle`.
+        // nothing is unread, unless the agent sets `idle`: then, like a run a
+        // trigger started, it waits `idle` for more, keeping its sandboxes.
         const openedByHandle =
           (runEvent.name === agentMessageEvent ||
             runEvent.name === agentQuestionEvent) &&
           (runEvent.data as { from?: unknown } | undefined)?.from !== undefined;
-        const idle = openedByHandle ? 0 : await idleMs(fields, config.idle);
+        const idle =
+          openedByHandle && config.idle === undefined
+            ? 0
+            : await idleMs(fields, config.idle);
 
         bridge.handleOpened = openedByHandle;
 
