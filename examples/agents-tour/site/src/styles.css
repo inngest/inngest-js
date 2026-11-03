@@ -1841,7 +1841,11 @@ main.single .text {
 
 [data-sound-style="chip"] #concepts-chip .concepts-fill {
   border-radius: 0;
-  background: repeating-linear-gradient(90deg, var(--ok) 0 6px, transparent 6px 8px);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ok) 0 6px,
+    transparent 6px 8px
+  );
 }
 
 [data-sound-style="chip"] #concepts-chip .concepts-label {
