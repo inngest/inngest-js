@@ -417,6 +417,80 @@ export const lentIsSigned = (
 };
 
 /**
+ * Where each report type of a start may go: the destinations by type, which a
+ * start signs for the child so a receiver that is not the starter can tell the
+ * starter granted it.
+ */
+export type ReportGrantTable = Record<
+  string,
+  { agent: string; thread: string; if?: string }[]
+>;
+
+const grantDigest = (
+  app: string,
+  child: string,
+  table: ReportGrantTable,
+): string => {
+  return JSON.stringify(["grant", app, child, canonical(table)]);
+};
+
+/**
+ * Signs the routing of a start's reports for the child thread `child`.
+ * @param client The client of the child's app, whose signing key signs.
+ * @param child The child's thread key.
+ * @param table The destinations by report type.
+ */
+export const signGrant = (
+  client: Inngest.Any,
+  child: string,
+  table: ReportGrantTable,
+): string => {
+  const [secret] = secretsOf(client) as [string];
+
+  return fullMac(secret, grantDigest(client.id, child, table));
+};
+
+/**
+ * Whether a report the thread `child` sent carries a grant, signed at its
+ * start, that names `receiver` for report type `type`.
+ * @param client The receiving app's client, whose signing key checks.
+ * @param child The sender's thread key.
+ * @param grant The routing table and signature the report carries.
+ * @param receiver The receiving thread's key.
+ * @param type The report type.
+ */
+export const grantNames = (
+  client: Inngest.Any,
+  child: string,
+  grant: unknown,
+  receiver: string,
+  type: string,
+): boolean => {
+  const given = grant as { to?: unknown; sig?: unknown } | undefined;
+
+  if (
+    typeof given?.sig !== "string" ||
+    typeof given.to !== "object" ||
+    given.to === null
+  ) {
+    return false;
+  }
+
+  const table = given.to as ReportGrantTable;
+  const data = grantDigest(appOfBody(child), child, table);
+  const signed = secretsOf(client).some((secret) => {
+    return fullMac(secret, data) === given.sig;
+  });
+
+  return (
+    signed &&
+    (Array.isArray(table[type]) ? table[type] : []).some((place) => {
+      return place?.thread === receiver;
+    })
+  );
+};
+
+/**
  * Signs an app's announcement of its cards, so a reader can tell it was made
  * by something that holds the environment's signing key and not by someone
  * who can only send events. The signature covers the app ID and the cards

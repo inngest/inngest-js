@@ -30,7 +30,7 @@ import {
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import { nextCount } from "../agent/executionCounter.ts";
-import { relationOf } from "../agent/relations.ts";
+import { grantNames, relationOf } from "../agent/relations.ts";
 import { senderOf } from "../agent/sender.ts";
 import { compileExpression, MissingPathError } from "../cel.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
@@ -93,7 +93,8 @@ export const reportDataProblem = (
 
 /**
  * Why a message is not a report this thread can take, or `undefined` when it
- * is not a report or comes from a thread this one started. The `from` of an
+ * is not a report or comes from a thread this one started, or one whose
+ * start granted this thread (a signed routing table the report carries). The `from` of an
  * event is whatever its sender wrote; the tag in the sender's thread key is
  * what proves this thread started it.
  * @param client The client, whose signing key checks the tag.
@@ -103,7 +104,7 @@ export const reportDataProblem = (
 export const reportSenderProblem = (
   client: Inngest.Any,
   thread: string,
-  message: { name: string; from?: unknown },
+  message: { name: string; from?: unknown; grant?: unknown },
 ): string | undefined => {
   if (!isReportEvent(message.name)) {
     return undefined;
@@ -112,7 +113,14 @@ export const reportSenderProblem = (
   const key = (message.from as { key?: unknown } | undefined)?.key;
 
   return typeof key === "string" &&
-    relationOf(client, thread, key)?.relation === "child"
+    (relationOf(client, thread, key)?.relation === "child" ||
+      grantNames(
+        client,
+        key,
+        message.grant,
+        thread,
+        message.name.slice(reportEventPrefix.length),
+      ))
     ? undefined
     : "its sender is not a thread this thread started, so it is not a report this thread can take";
 };
@@ -204,6 +212,12 @@ export type ReportEnvelope = {
    */
   type: string;
   from?: SenderData;
+
+  /**
+   * The routing the starter signed for the sender, so a receiver that did
+   * not start the sender can tell it was named.
+   */
+  grant?: { to: Record<string, ReportDestination[]>; sig: string };
   report: Record<string, unknown>;
 };
 
@@ -483,6 +497,11 @@ export interface ReportBook {
   readonly spec: ReportSpec;
   readonly sent: Set<string>;
   readonly record?: ReportRecord;
+
+  /**
+   * The signature of the routing in `spec`, from the start event.
+   */
+  readonly grantSig?: string;
 }
 
 /**
@@ -510,6 +529,23 @@ export const threadReportRecord = (thread: Kv["thread"], runId: string) => {
   };
 
   return record;
+};
+
+/**
+ * The signature of the routing a start event carries for its reports, if any.
+ * @param start The event that started the run, as saved.
+ */
+export const reportsSigOf = (start: {
+  name: string;
+  data?: unknown;
+}): string | undefined => {
+  const data = start.data as
+    | { from?: SenderData; event?: { data?: { from?: SenderData } } }
+    | undefined;
+  const from =
+    start.name === "agent/recover" ? data?.event?.data?.from : data?.from;
+
+  return from?.reports_sig;
 };
 
 /**
@@ -635,6 +671,16 @@ export const sendReport = async (
           thread: destination.thread,
           type,
           from,
+          ...(book.grantSig !== undefined && {
+            grant: {
+              to: Object.fromEntries(
+                Object.entries(book.spec).map(([name, spec]) => {
+                  return [name, spec.to];
+                }),
+              ),
+              sig: book.grantSig,
+            },
+          }),
           report: data as Record<string, unknown>,
         },
         {

@@ -57,6 +57,7 @@ import {
   type ReportBook,
   reportSenderProblem,
   reportsOf,
+  reportsSigOf,
   reportTool,
   sendReport,
   threadReportRecord,
@@ -855,12 +856,14 @@ export function createAgentFunction(
         // What the run owes: the reports its start event carries, and which of
         // them it has sent.
         const reportSpec = reportsOf({ name: event.name, data: event.data });
+        const grantSig = reportsSigOf({ name: event.name, data: event.data });
         // With no KV store the run notes each report it sends in its own
         // thread state, which is local to it at once: the thread's ledger
         // holds it when the run ends, to tell the starter what never came.
         const reportBook: ReportBook | undefined = reportSpec && {
           spec: reportSpec,
           sent: new Set(),
+          ...(grantSig !== undefined && { grantSig }),
           ...(!store && { record: threadReportRecord(kv.thread, runId) }),
         };
 

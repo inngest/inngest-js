@@ -154,6 +154,7 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
         name: `${reportEventPrefix}${envelope.type}`,
         data: envelope.report,
         ...(envelope.from !== undefined && { from: envelope.from }),
+        ...(envelope.grant !== undefined && { grant: envelope.grant }),
       } as UntypedInboxMessage);
     }
 

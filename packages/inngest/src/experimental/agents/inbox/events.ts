@@ -68,6 +68,12 @@ export type SenderData = (
   reports?: ReportSpec;
 
   /**
+   * An HMAC over the destinations of `reports`, the child's thread and its
+   * app, so a report can prove the starter granted its destination.
+   */
+  reports_sig?: string;
+
+  /**
    * On the message `start()` or `start_agent` sends to an attached child:
    * the run ID of the parent. The child is cancelled by the `agent/parent.ended`
    * event of that run.

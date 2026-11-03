@@ -24,6 +24,7 @@ import {
   lentIsSigned,
   relatedKey,
   relationOf,
+  signGrant,
   signLent,
   taggedKeyAddress,
 } from "./relations.ts";
@@ -228,6 +229,63 @@ describe("reach: thread-key tags", () => {
 
     expect(taggedKeyAddress(key)).toBe("a/worker");
     expect(taggedKeyAddress("some-custom-thread")).toBeUndefined();
+  });
+});
+
+describe("reports: grants", () => {
+  const appA = new Inngest({ id: "a", signingKey: envSigningKey });
+  const boss = "a/boss:run1.0";
+  const ledger = "a/ledger:run2.0";
+  const child = relatedKey(appA, "a/worker:runX.0", {
+    key: boss,
+    address: "a/boss",
+  });
+  const to = {
+    milestone: [
+      { agent: "a/boss", thread: boss },
+      { agent: "a/ledger", thread: ledger },
+    ],
+  };
+  const sent = (grant: unknown, name = "agent/report/milestone") => {
+    return { name, from: { kind: "agent", key: child }, grant };
+  };
+  const grant = { to, sig: signGrant(appA, child, to) };
+
+  test("a destination the starter named takes the child's report", () => {
+    expect(reportSenderProblem(appA, ledger, sent(grant))).toBeUndefined();
+  });
+
+  test("a thread the grant does not name still drops it", () => {
+    expect(
+      reportSenderProblem(appA, "a/other:run3.0", sent(grant)),
+    ).toBeDefined();
+    expect(
+      reportSenderProblem(appA, ledger, sent(grant, "agent/report/other")),
+    ).toBeDefined();
+  });
+
+  test("a tampered or foreign grant drops it", () => {
+    const widened = {
+      to: {
+        milestone: [...to.milestone, { agent: "a/x", thread: "a/x:run4.0" }],
+      },
+      sig: grant.sig,
+    };
+
+    expect(
+      reportSenderProblem(appA, "a/x:run4.0", sent(widened)),
+    ).toBeDefined();
+    expect(
+      reportSenderProblem(appA, ledger, sent({ to, sig: "00" })),
+    ).toBeDefined();
+    expect(reportSenderProblem(appA, ledger, sent(undefined))).toBeDefined();
+    // The same grant, from a child thread it was not signed for.
+    expect(
+      reportSenderProblem(appA, ledger, {
+        ...sent(grant),
+        from: { kind: "agent", key: "a/worker:runZ.0" },
+      }),
+    ).toBeDefined();
   });
 });
 

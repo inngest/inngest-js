@@ -34,7 +34,7 @@ import {
   limitStateOf,
   readInheritedLimits,
 } from "./limits.ts";
-import { groupId, relatedKey, signLent } from "./relations.ts";
+import { groupId, relatedKey, signGrant, signLent } from "./relations.ts";
 import type { ResultOptions } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
 import { currentSessions } from "./sessions.ts";
@@ -268,7 +268,19 @@ export function startThread<TOutput>(
           ...(limits && { limits: childLimits(limits) }),
           ...(target.typed && { typed: true }),
           ...(target.via && { via: target.via, target: target.address }),
-          ...(reports && Object.keys(reports).length > 0 && { reports }),
+          ...(reports &&
+            Object.keys(reports).length > 0 && {
+              reports,
+              reports_sig: signGrant(
+                target.client,
+                key,
+                Object.fromEntries(
+                  Object.entries(reports).map(([type, entry]) => {
+                    return [type, entry.to];
+                  }),
+                ),
+              ),
+            }),
           ...(attached && { parent_run: ctx.runId as string }),
           ...(lent &&
             (() => {
