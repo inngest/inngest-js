@@ -544,12 +544,31 @@ const quoted = (value: string): string => {
 };
 
 /**
+ * The apps (by ID) whose ledger functions were made in this process, which is
+ * what `agents.functions()` does. A run of an app that is not in it would wait
+ * for a ledger no function serves.
+ */
+const ledgerApps = new Set<string>();
+
+/**
+ * Whether this process made the ledger functions of an app (it called
+ * `agents.functions()`), so a run's first use of the ledger can tell a missing
+ * ledger from a slow one with no timer.
+ * @param app The app ID.
+ */
+export const ledgerIsServed = (app: string): boolean => {
+  return ledgerApps.has(app);
+};
+
+/**
  * The ledger of an app: a function per thread key whose run holds the thread's
  * state. Served with the app's agents.
  */
 export const createLedgerFunctions = (
   client: Inngest.Any,
 ): InngestFunction.Any[] => {
+  ledgerApps.add(client.id);
+
   // Runs after a ledger run ends and starts the next one with the state.
   const handoverFn = createDefer(
     client,

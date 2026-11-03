@@ -34,6 +34,7 @@
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import {
   type Inbox,
   inboxOpenedPromise,
@@ -45,6 +46,7 @@ import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";
 import {
   applyChange,
   emptyThreadState,
+  ledgerIsServed,
   liveKey,
   overLimitMessage,
   resolveTtl,
@@ -172,6 +174,15 @@ const copyOf = (
 
     if (!signer) {
       throw new Error("The ledger KV store needs a client to sign with");
+    }
+
+    // The ledger is a function this app serves. An app that never called
+    // `agents.functions()` has none, and a read would wait for it for ever:
+    // say so now, once, with no timer.
+    if (!ledgerIsServed(signer.id)) {
+      throw new NonRetriableError(
+        `The app "${signer.id}" uses the ledger KV store (the default) but does not serve its ledger function: pass agents.functions() to serve() or connect(), or configure a store adapter with createAgents(client, { store }).`,
+      );
     }
 
     found = {

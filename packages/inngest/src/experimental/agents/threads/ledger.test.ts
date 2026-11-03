@@ -1,7 +1,10 @@
 import { expect, test } from "vitest";
+import { Inngest } from "../../../components/Inngest.ts";
 import {
   applyChange,
+  createLedgerFunctions,
   emptyThreadState,
+  ledgerIsServed,
   liveKey,
   overLimitMessage,
   stateSize,
@@ -75,4 +78,12 @@ test("ledger: a conditional change says whether it applied", () => {
   expect(apply({ op: "casDelete", key: "a", expected: "1" })).toBe(false);
   expect(apply({ op: "casDelete", key: "a", expected: "2" })).toBe(true);
   expect(liveKey(state, "a", 0)).toBeUndefined();
+});
+
+test("ledger: an app is served only once its ledger functions are made", () => {
+  const client = new Inngest({ id: "ledger-served-probe", isDev: true });
+
+  expect(ledgerIsServed(client.id)).toBe(false);
+  createLedgerFunctions(client);
+  expect(ledgerIsServed(client.id)).toBe(true);
 });
