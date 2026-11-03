@@ -2,8 +2,11 @@
  * @module
  * The Trace panel: a waterfall of the real spans the Dev Server returns, one
  * row per span, a bar on a shared timeline, indentation from group spans.
- * Housekeeping spans (inbox opens, KV reads, thread records) have no row;
- * "Show everything" lists the raw tree. Up and down move between rows, Enter opens one.
+ * By default a run shows only what the page has taught: the message that
+ * started it and the calls the reader's code makes (steps, `inbox.next()`).
+ * What the SDK does on its own (subscribe, inbox, close, thread records, KV
+ * reads, Finalization) is plumbing, shown only by "Show everything", which
+ * lists the raw tree. Up and down move between rows, Enter opens one.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TourEvent, TraceRun, TraceStep } from "../../shared/types.ts";
@@ -27,6 +30,35 @@ const isHousekeeping = (step: TraceStep) => {
 
 const isFinalization = (step: TraceStep) => {
   return step.name === "executor.nonstep";
+};
+
+// The group span an `inbox.next()` call leaves (its child, `inbox:start`, is
+// plumbing). The reader's own call, so it is the one inbox span shown by default.
+const isNextCall = (step: TraceStep) => {
+  return step.id === 'span:["inbox:start"]';
+};
+
+// What the SDK does on its own. Only "Show everything" lists it. Spans are
+// decided by what the run recorded: an agent whose body never calls
+// `inbox.next()` has no `next` span, so nothing here guesses from the code.
+const isPlumbing = (step: TraceStep) => {
+  if (isNextCall(step)) {
+    return false;
+  }
+
+  return (
+    isHousekeeping(step) ||
+    isFinalization(step) ||
+    /^span:\["inbox/.test(step.id) ||
+    /^(inbox|subscribe|close)\b/.test(step.name)
+  );
+};
+
+// The run waits for a message only where the code called `inbox.next()`.
+const callsNext = (steps: TraceStep[]): boolean => {
+  return steps.some((step) => {
+    return isNextCall(step) || callsNext(step.children);
+  });
 };
 
 // A gap this long between two steps of a run is the run parked, waiting for
@@ -114,9 +146,13 @@ const Icon = ({ kind }: { kind: IconKind }) => {
   );
 };
 
-const label = (step: TraceStep) => {
+const label = (step: TraceStep, everything: boolean) => {
   if (isFinalization(step)) {
     return "Finalization";
+  }
+
+  if (!everything && isNextCall(step)) {
+    return "inbox.next()";
   }
 
   return step.name;
@@ -160,11 +196,14 @@ const rowsOf = (
 ) => {
   const rows: Row[] = [];
   let lastEnd: number | null = null;
+  // A park is an `inbox.next()` row only when the code called it.
+  const waits = everything || callsNext(steps);
 
   for (const step of steps) {
     const start = time(step.startedAt);
 
     if (
+      waits &&
       depth === 0 &&
       lastEnd !== null &&
       start !== null &&
@@ -180,7 +219,7 @@ const rowsOf = (
       });
     }
 
-    if (everything || !isHousekeeping(step)) {
+    if (everything || !isPlumbing(step)) {
       rows.push({ kind: "step", key: `${prefix}${step.id}`, step, depth });
       rows.push(
         ...rowsOf(
@@ -201,7 +240,7 @@ const rowsOf = (
     }
   }
 
-  if (depth === 0 && lastEnd !== null && now - lastEnd > waitGapMs) {
+  if (waits && depth === 0 && lastEnd !== null && now - lastEnd > waitGapMs) {
     rows.push({
       kind: "wait",
       key: `${prefix}w:live`,
@@ -368,6 +407,7 @@ const Trigger = ({ run }: { run: TraceRun }) => {
   }
 
   const message = run.trigger.name === "agent/message";
+  const content = run.trigger.data.content;
 
   return (
     <div>
@@ -380,7 +420,8 @@ const Trigger = ({ run }: { run: TraceRun }) => {
       >
         <span className="wf-name">
           <Icon kind={message ? "inbox" : "event"} />
-          {message ? "inbox.next()" : run.trigger.name}
+          {message ? "message" : run.trigger.name}
+          {typeof content === "string" ? <em>{content}</em> : null}
         </span>
         <span className="wf-track">
           <i className="wf-bar completed" style={{ left: 0 }} />
@@ -520,7 +561,7 @@ const Run = ({
               >
                 <span className="wf-name">
                   <Icon kind={kindOf(step)} />
-                  {label(step)}
+                  {label(step, everything)}
                   {attempts ? (
                     <em className="tries"> attempt {step.attempts}</em>
                   ) : null}
