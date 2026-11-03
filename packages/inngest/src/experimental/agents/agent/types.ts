@@ -304,8 +304,11 @@ export interface AgentFunctionConfig<
 
   /**
    * Whether the loop remembers the model's history across runs of a thread.
-   * Default `true`; `false` starts each run clean. A value, or a function of
-   * `{ event, thread }` read once at the start of each run.
+   * Default `true` with a KV store, `false` without one; `false` starts each
+   * run clean. Setting `true` with no store is an error when the agent is
+   * defined. A value, or a function of `{ event, thread }` read once at the
+   * start of each run. Needs a store: `createAgents(client, { store })` or
+   * `INNGEST_EXPERIMENTAL_KV_URL`.
    */
   remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
 
@@ -371,7 +374,9 @@ export interface AgentFunctionConfig<
    * the thread's first run starts. The loop always enforces it, ending with
    * `end: "budget"` before its next model call once it is spent. The budget
    * is kept on the thread and belongs to this agent's own definition: it is
-   * never handed down by the agent that started the thread.
+   * never handed down by the agent that started the thread. Needs a KV store
+   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
+   * with none, setting it is an error when the agent is defined.
    */
   budget?: RunField<
     AgentBudget,
@@ -396,7 +401,9 @@ export interface AgentFunctionConfig<
    * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
-   * is kept either way: see `previousRun`.
+   * is kept either way: see `previousRun`. Needs a KV store
+   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
+   * with none, `recovery: true` is an error when the agent is defined.
    */
   recovery?: boolean;
 }

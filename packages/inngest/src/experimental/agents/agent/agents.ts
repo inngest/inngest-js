@@ -274,6 +274,12 @@ export interface CreateAgentsOptions {
    * `INNGEST_EXPERIMENTAL_KV_URL`. The guarantees of a store are on
    * `KvStore`. One store per app ID: a second `createAgents` for the same
    * client ID replaces the first's.
+   *
+   * Optional. Without a store (and no `INNGEST_EXPERIMENTAL_KV_URL`) a run
+   * touches no KV: sandboxes last only for the run and are destroyed when it
+   * ends, nothing is remembered between runs, thread state is not recorded
+   * and `previousRun` is `undefined`. `remember: true`, `budget`,
+   * `recovery: true`, `kv.thread`/`kv.app` and `thread.state()` need one.
    */
   store?: KvStore;
 }

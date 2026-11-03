@@ -57,7 +57,7 @@ import {
   resentAs,
   threadInbox,
 } from "../inbox/threadInbox.ts";
-import { kv } from "../kv/kv.ts";
+import { hasKvStore, kv } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
   type AgentLoop,
@@ -317,7 +317,32 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  const store = kv;
+  // With no store, a run touches KV nowhere.
+  const stored = hasKvStore(client.id);
+  const storeFix =
+    "give createAgents(client, { store }) a store, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL";
+
+  if (!stored) {
+    if (config.remember === true) {
+      throw new Error(
+        `Agent "${config.id}" sets \`remember: true\`, which needs a KV store: ${storeFix}`,
+      );
+    }
+
+    if (config.budget !== undefined) {
+      throw new Error(
+        `Agent "${config.id}" sets \`budget\`, which needs a KV store: ${storeFix}`,
+      );
+    }
+
+    if (config.recovery === true) {
+      throw new Error(
+        `Agent "${config.id}" sets \`recovery: true\`, which needs a KV store: ${storeFix}`,
+      );
+    }
+  }
+
+  const store = stored ? kv : undefined;
 
   const cleanup = createCleanupFunction(client, config, ref, store);
   const finished = createFinishedFunction(client, config, ref, store, triggers);
@@ -403,7 +428,9 @@ export function createAgentFunction(
               inStep,
               ownBudget,
             ),
-            previousRun: (await readLastRun(store, inStep)) ?? null,
+            previousRun: store
+              ? ((await readLastRun(store, inStep)) ?? null)
+              : null,
           };
         };
 
@@ -718,6 +745,7 @@ export function createAgentFunction(
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
           remember:
+            store !== undefined &&
             (await fields.get(
               "remember",
               config.remember as RunField<boolean | undefined>,

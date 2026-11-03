@@ -1155,12 +1155,8 @@ const lazySandbox = (
           return;
         }
 
-        if (!owner) {
-          throw new SandboxValidationError(
-            `Sandbox "${name}" can't be recycled: it doesn't belong to a thread, so nothing would keep its files`,
-          );
-        }
-
+        // With no owner (no KV store) nothing is kept: the sandbox is
+        // destroyed and the next `get()` starts a fresh one.
         let saved = false;
 
         // The sandbox stays running when a recycle fails after a save, so its
@@ -1170,17 +1166,17 @@ const lazySandbox = (
         const rearm = () => {
           const old = guard;
 
-          guard = owner.guard(name, sandbox, epoch, idle);
+          guard = owner?.guard(name, sandbox, epoch, idle);
           old?.abort();
         };
 
         let paused = false;
 
-        if (used || fromPause) {
+        if (owner && (used || fromPause)) {
           await keepPlace();
         }
 
-        if ((used || fromPause) && idle === "pause") {
+        if (owner && (used || fromPause) && idle === "pause") {
           paused = await owner.pause(name, sandbox, epoch);
 
           // A pause that worked took its generation.
@@ -1191,7 +1187,7 @@ const lazySandbox = (
 
         if (paused) {
           saved = true;
-        } else if (used || fromPause) {
+        } else if (owner && (used || fromPause)) {
           const ok = await owner.save(name, sandbox, epoch);
 
           // A save took its generation whether or not it worked.
@@ -1256,7 +1252,7 @@ const lazySandbox = (
         // If forgetting the ready mark fails for good, the mark stays and the
         // new sandbox looks ready while its setup runs. A run cancelled in
         // that window would save it half set up.
-        await owner.release(name);
+        await owner?.release(name);
       });
 
       recycling = next.catch(() => {});

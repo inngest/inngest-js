@@ -39,7 +39,7 @@ export const createCleanupFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: Kv,
+  store: Kv | undefined,
 ): ReturnType<typeof createDefer> => {
   return createDefer(
     client,
@@ -50,6 +50,11 @@ export const createCleanupFunction = (
         thread?: string;
         sandbox?: ThreadSandboxCleanup;
       };
+
+      // With no store a run touches no KV: its sandboxes die with it.
+      if (!store) {
+        return;
+      }
 
       // A sandbox the run created and did not close: save it for the
       // thread's next run and destroy it.
@@ -108,7 +113,7 @@ export const createFinishedFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: Kv,
+  store: Kv | undefined,
   triggers: CompiledTrigger[],
 ): InngestFunction.Any => {
   const recovery = config.recovery === true;
@@ -142,6 +147,33 @@ export const createFinishedFunction = (
       const started = startInflight(found, start);
       const ended = finishedOf(data);
       const runId = String(data.run_id);
+
+      if (!store) {
+        // Nothing is recorded; the senders still hear how the run ended.
+        const ids = senderIdsOf(start);
+
+        if (ids.length > 0) {
+          await step.sendEvent(
+            "message-results",
+            ids.map((id) => {
+              return agentMessageResult.create({
+                id,
+                run_id: runId,
+                ...(ended.status === "completed"
+                  ? { status: "completed", output: data.result as Json }
+                  : ended.status === "failed"
+                    ? {
+                        status: "failed",
+                        error: ended.error?.message ?? "unknown error",
+                      }
+                    : { status: "stopped" }),
+              } as Parameters<typeof agentMessageResult.create>[0]);
+            }),
+          );
+        }
+
+        return undefined;
+      }
 
       // How the run ended is written first and whatever else happens next.
       const { last, record } = await recordEnd(store, message.thread, {

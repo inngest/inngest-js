@@ -33,7 +33,7 @@ export const openRunSandboxes = async (options: {
   context: RunFieldContext<TriggerEvent>;
   thread: string;
   runId: string;
-  store: Kv;
+  store: Kv | undefined;
   step: typeof step;
   logger: Logger;
   defer: Context.Any["defer"];
@@ -61,27 +61,28 @@ export const openRunSandboxes = async (options: {
               return step.run(id, fn) as ReturnType<typeof fn>;
             },
           },
-          threadSandboxOwner({
-            client: client as unknown as Parameters<
-              typeof threadSandboxOwner
-            >[0]["client"],
-            ref,
-            thread: thread,
-            runId,
-            scope: store.thread,
-            warn: (data, message) => {
-              logger.warn(data, message);
-            },
-            run: (id, fn) => {
-              return step.run(id, fn) as ReturnType<typeof fn>;
-            },
-            defer: (id, sandbox) => {
-              return defer(id, {
-                function: cleanup,
-                data: { runId, thread: thread, sandbox },
-              });
-            },
-          }),
+          store &&
+            threadSandboxOwner({
+              client: client as unknown as Parameters<
+                typeof threadSandboxOwner
+              >[0]["client"],
+              ref,
+              thread: thread,
+              runId,
+              scope: store.thread,
+              warn: (data, message) => {
+                logger.warn(data, message);
+              },
+              run: (id, fn) => {
+                return step.run(id, fn) as ReturnType<typeof fn>;
+              },
+              defer: (id, sandbox) => {
+                return defer(id, {
+                  function: cleanup,
+                  data: { runId, thread: thread, sandbox },
+                });
+              },
+            }),
         )
       : {};
 

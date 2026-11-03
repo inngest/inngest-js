@@ -86,12 +86,14 @@ export const threadRecorder = (
   /**
    * KV store of the thread state.
    */
-  store: Kv,
+  store: Kv | undefined,
   /**
    * The live run, stamped on every write.
    */
   runId: string,
 ) => {
+  // With no store the record lives in this process only.
+  let local: ThreadRecord | undefined;
   // How many times this run has continued in another process, as the latest
   // write saw it. Every write is a memoized step, so a replay reads the same
   // number at the same point of the body.
@@ -104,8 +106,12 @@ export const threadRecorder = (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
     thread?: string,
   ) => {
-    const scope = thread ? store.scope("thread", thread) : store.thread;
-    const written = await scope.update(recordKey, (found) => {
+    const scope = store
+      ? thread
+        ? store.scope("thread", thread)
+        : store.thread
+      : undefined;
+    const apply = (found: ThreadRecord | undefined) => {
       const current = found ?? emptyRecord();
       const mine = current.runId === runId;
       const moved =
@@ -118,7 +124,10 @@ export const threadRecorder = (
         host: bootId,
         restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
       });
-    });
+    };
+    const written = scope
+      ? await scope.update(recordKey, apply)
+      : (local = apply(local));
 
     restarts = written.restarts ?? 0;
 

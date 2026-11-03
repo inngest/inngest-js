@@ -1334,6 +1334,21 @@ export function setAppKvStore(app: string, store: KvStore): void {
 }
 
 /**
+ * Whether an app has a store: one given to `createAgents(client, { store })`,
+ * or `INNGEST_EXPERIMENTAL_KV_URL`. Never throws.
+ * @param app The app ID of the client, if known.
+ */
+export function hasKvStore(app?: string): boolean {
+  if (app && appStores.has(app)) {
+    return true;
+  }
+
+  return (
+    typeof process !== "undefined" && !!process.env.INNGEST_EXPERIMENTAL_KV_URL
+  );
+}
+
+/**
  * The store an app's KV uses: the one the app gave `createAgents`, else Redis
  * at `INNGEST_EXPERIMENTAL_KV_URL`. Direct calls, not steps, so other parts of
  * the SDK that run inside a step (such as MCP OAuth tokens) can share it.
