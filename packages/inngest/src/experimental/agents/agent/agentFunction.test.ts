@@ -1455,7 +1455,7 @@ describe("inherited limits persist on the thread", () => {
 });
 
 describe("eager sandboxes", () => {
-  const work = sandbox({ id: "work", tools: sandbox.tools.code() });
+  const work = sandbox({ id: "work", tools: sandbox.tools.defaults });
   const make = (use: boolean) => {
     const warnings: string[] = [];
     const brokenSandboxes = class extends Middleware.BaseMiddleware {

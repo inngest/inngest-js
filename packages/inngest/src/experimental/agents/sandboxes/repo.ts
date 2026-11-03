@@ -14,7 +14,7 @@
  * ```ts
  * const work = sandbox({
  *   id: "work",
- *   tools: sandbox.tools.code(),
+ *   tools: sandbox.tools.defaults,
  *   repo: {
  *     url: "acme/app",
  *     auth: { read: mintReadToken, write: mintWriteToken },
@@ -32,7 +32,7 @@ import type { GitPolicy } from "../../../components/sandbox/gitPush.ts";
 import { Secret } from "../../../components/sandbox/secret.ts";
 import type {
   DurableSandbox,
-  SandboxHandle,
+  SandboxIO,
 } from "../../../components/sandbox/types.ts";
 import { type HostPushOptions, pushBranch } from "./gitPush.ts";
 
@@ -396,10 +396,7 @@ export const checkoutRepo = async (
  * remote-tracking branch moved on to what was pushed, so a later checkout
  * doesn't call the pushed commits local work.
  */
-export const createRepo = (
-  sandbox: SandboxHandle,
-  config: ResolvedRepo,
-): Repo => {
+export const createRepo = (sandbox: SandboxIO, config: ResolvedRepo): Repo => {
   const remote = urlOf(config.url).replace(/\.git$/, "");
 
   return {

@@ -80,15 +80,15 @@ const auth = {
 describe("the model's push tool", () => {
   test("work_push appears only with a repo, and not with push: false", () => {
     const env = fakeEnvironment();
-    const plain = sandbox({ id: "plain", tools: sandbox.tools.code() });
+    const plain = sandbox({ id: "plain", tools: sandbox.tools.defaults });
     const withRepo = sandbox({
       id: "w",
-      tools: sandbox.tools.code(),
+      tools: sandbox.tools.defaults,
       repo: { url: "acme/app", auth },
     });
     const noPush = sandbox({
       id: "n",
-      tools: sandbox.tools.code(),
+      tools: sandbox.tools.defaults,
       repo: { url: "acme/app", push: false },
     });
     const opened = openSandboxes(

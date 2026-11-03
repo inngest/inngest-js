@@ -6,8 +6,10 @@
  */
 
 export type {
-  CodeToolName,
-  CodeToolsOptions,
+  CommandToolOptions,
+  ConfiguredTool,
+  RunCodeToolOptions,
+  RunToolOptions,
 } from "../../components/sandbox/codeTools.ts";
 export type {
   GitPolicy,
@@ -85,7 +87,6 @@ export type {
   SandboxSetupContext,
   SandboxStart,
   SandboxToolNames,
-  SandboxToolsFactory,
 } from "./sandboxes/defs.ts";
 export {
   agentTools,

@@ -837,7 +837,7 @@ const importClient = async (
  *
  * const { text, usage } = await agent.loop({
  *   model: claude,
- *   tools: sandbox.tools.code(),
+ *   tools: sandbox.tools.defaults,
  * })("Fix the failing test");
  *
  * // One structured reply, outside any loop.

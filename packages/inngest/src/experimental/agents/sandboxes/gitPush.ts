@@ -29,7 +29,7 @@ import {
 } from "../../../components/sandbox/gitPush.ts";
 import { isSecret, type Secret } from "../../../components/sandbox/secret.ts";
 import {
-  type SandboxHandle,
+  type SandboxIO,
   SandboxValidationError,
 } from "../../../components/sandbox/types.ts";
 
@@ -315,7 +315,7 @@ const fail = (error: string): PushBranchResult => {
  * ```
  */
 export const pushBranch = async (
-  sandbox: SandboxHandle,
+  sandbox: SandboxIO,
   options: HostPushOptions,
   branch: string,
   context: {

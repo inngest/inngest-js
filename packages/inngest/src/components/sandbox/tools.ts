@@ -31,6 +31,7 @@ import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import {
   type Sandbox,
   type SandboxDuration,
+  type SandboxHandle,
   SandboxValidationError,
 } from "./types.ts";
 
@@ -54,7 +55,7 @@ export const byteLength = (text: string): number => {
 /**
  * What a tool receives besides its arguments.
  */
-export interface SandboxToolContext {
+export interface SandboxToolContext<TSandbox = Sandbox> {
   /**
    * Aborts when the tool times out.
    */
@@ -83,12 +84,20 @@ export interface SandboxToolContext {
   score(name: string, value: number | boolean): Promise<void>;
 
   /**
-   * The sandbox the command runs in, for reading and writing its files and
-   * running commands while the command waits for this call. Not set for
-   * tools made with `tool.group()`. Calls on it aren't steps of their own:
-   * they belong to the step that answers the call, so a retry repeats them.
+   * The sandbox the tool works on, for reading and writing its files and
+   * running commands.
+   *
+   * A tool listed on a sandbox (`sandbox({ tools })`) always has it, whether
+   * the model or sandbox code calls it. In `tool.group()` it is the durable
+   * `SandboxHandle`: its calls are memoized steps with scoped IDs. In
+   * `tool.step()` it is the raw `Sandbox`, set when sandbox code calls the
+   * tool; calls on it aren't steps of their own, they belong to the step that
+   * answers the call, so a retry repeats them.
+   *
+   * A tool listed on an agent's `tools` has none when the model calls it, and
+   * the calling sandbox (a `tool.step()` only) when sandbox code does.
    */
-  sandbox?: Sandbox;
+  sandbox?: TSandbox;
 }
 
 /**
@@ -315,6 +324,7 @@ export interface ToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
   TReturn = unknown,
+  TSandbox = Sandbox,
 > {
   /**
    * What the tool does, for the people reading the code.
@@ -351,11 +361,11 @@ export interface ToolDefinition<
   run: TInput extends ToolInput
     ? (
         input: ToolInputOf<TInput>,
-        ctx: SandboxToolContext,
+        ctx: SandboxToolContext<TSandbox>,
       ) => ToolRunReturn<TOutput, TReturn>
     : (
         input: Record<string, never>,
-        ctx: SandboxToolContext,
+        ctx: SandboxToolContext<TSandbox>,
       ) => ToolRunReturn<TOutput, TReturn>;
 }
 
@@ -366,7 +376,8 @@ export interface WaitingToolDefinition<
   TInput extends ToolInput | undefined,
   TOutput extends StandardSchemaV1 | undefined,
   TReturn = unknown,
-> extends ToolDefinition<TInput, TOutput, TReturn> {
+  TSandbox = Sandbox,
+> extends ToolDefinition<TInput, TOutput, TReturn, TSandbox> {
   /**
    * The tool may wait for longer than a command may run (sleep, wait for an
    * event, wait for a person). A call to it suspends the code that made it:
@@ -441,7 +452,7 @@ const toolMethods = {
    * EXPERIMENTAL: A remote MCP server as tools. Put the handle in
    * `agent.loop({ tools: { hex } })` and the model sees the server's tools
    * as `hex_<tool>`. For a sandbox's `run_code`, use
-   * `sandbox.tools.code({ tools: await hex.tools() })`. Each call is a
+   * `sandbox.tools.runCode.with({ tools: await hex.tools() })`. Each call is a
    * durable step that reads the credential inside the call.
    *
    * @example
@@ -463,6 +474,9 @@ const toolMethods = {
    * running as one durable step, `run` can use the global `step`
    * (`import { step } from "inngest"`) to run steps, invoke functions, send
    * events and wait for events. Each call's steps are scoped to that call.
+   *
+   * Listed on a sandbox, the tool's `context.sandbox` is that sandbox's
+   * durable `SandboxHandle`, for the model's calls and sandbox code's alike.
    *
    * @example
    * ```ts
@@ -486,7 +500,7 @@ const toolMethods = {
     TOutput extends StandardSchemaV1 | undefined = undefined,
     TReturn = unknown,
   >(
-    definition: WaitingToolDefinition<TInput, TOutput, TReturn>,
+    definition: WaitingToolDefinition<TInput, TOutput, TReturn, SandboxHandle>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return { ...definition, group: true };
   },
@@ -651,6 +665,49 @@ export const callWaits = (tools: SandboxTools, name: string): boolean => {
     Object.hasOwn(tools, name) &&
     toTool(tools[name] as SandboxToolEntry).waits === true
   );
+};
+
+/**
+ * Wraps a tool listed on a sandbox so that it acts on that machine: a
+ * `tool.group()` gets `handle` as `context.sandbox`, whoever calls it, and
+ * `name` (the sandbox's key) is added to its description. Other entries (plain
+ * functions, Inngest functions, MCP servers, `tool.step()`, and tools the SDK
+ * built) are returned as they are. Called when a sandbox is opened for a run.
+ */
+export const bindSandbox = (
+  entry: SandboxToolEntry,
+  handle: SandboxHandle,
+  name?: string,
+): SandboxToolEntry => {
+  if (
+    typeof entry !== "object" ||
+    entry === null ||
+    entry instanceof McpServer ||
+    entry instanceof InngestFunction ||
+    entry instanceof InngestFunctionReference ||
+    isInternalTool(entry) ||
+    typeof (entry as SandboxTool).run !== "function"
+  ) {
+    return entry;
+  }
+
+  const bound = entry as SandboxTool;
+  const run = bound.run as (...args: unknown[]) => unknown;
+  const note = name === undefined ? "" : `Works on the \`${name}\` sandbox.`;
+  const description = [bound.description, note].filter(Boolean).join(" ");
+
+  return {
+    ...bound,
+    ...(description && { description }),
+    ...(bound.group === true && {
+      // The context is the last argument, after the call's values.
+      run: (...args: unknown[]) => {
+        const ctx = args.pop() as SandboxToolContext;
+
+        return run(...args, { ...ctx, sandbox: handle });
+      },
+    }),
+  } as SandboxTool;
 };
 
 /**

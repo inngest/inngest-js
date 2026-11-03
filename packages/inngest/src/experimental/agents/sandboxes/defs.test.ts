@@ -126,7 +126,10 @@ describe("tool()", () => {
 
 describe("sandbox()", () => {
   test("is plain data and creates nothing", () => {
-    const workbench = sandbox({ id: "workbench", tools: sandbox.tools.code() });
+    const workbench = sandbox({
+      id: "workbench",
+      tools: sandbox.tools.defaults,
+    });
 
     expect(workbench.kind).toBe("inngest/sandbox.definition");
     expect(Object.isFrozen(workbench)).toBe(true);
@@ -143,7 +146,7 @@ describe("openSandboxes()", () => {
   const workbench = sandbox({
     id: "workbench",
     image: sandbox.image.custom("py:v1"),
-    tools: sandbox.tools.code({ only: ["run", "read"] }),
+    tools: { run: sandbox.tools.run, read: sandbox.tools.read },
   });
 
   test("is lazy by default: nothing is created until a tool runs", async () => {
@@ -251,7 +254,7 @@ describe("openSandboxes()", () => {
 });
 
 describe("validation", () => {
-  const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+  const def = sandbox({ id: "w", tools: sandbox.tools.defaults });
   const { sandboxes } = fakeEnvironment();
 
   test("rejects a bad binding name, an unknown idle, colliding tool names", () => {
@@ -296,7 +299,7 @@ describe("step ids", () => {
     const ids: unknown[] = [];
     const def = sandbox({
       id: "w",
-      tools: sandbox.tools.code({ only: ["run"] }),
+      tools: { run: sandbox.tools.run },
     });
     const opened = openSandboxes({ work: def, spare: def }, {
       create: async () => {
@@ -324,7 +327,7 @@ describe("step ids", () => {
 });
 
 describe("resolveSandboxes", () => {
-  const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+  const def = sandbox({ id: "w", tools: sandbox.tools.defaults });
   const ctx = { event: { data: { plan: "enterprise" } } };
 
   test("start is a value or a function of the context, resolved before opening", async () => {
@@ -389,7 +392,7 @@ describe("resolveSandboxes", () => {
 
 describe("getSandbox", () => {
   test("names the sandboxes the agent has when the name is unknown", () => {
-    const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+    const def = sandbox({ id: "w", tools: sandbox.tools.defaults });
     const opened = openSandboxes({ work: def, data: def }, {
       create: async () => {
         throw new Error("unused");
@@ -409,7 +412,7 @@ describe("getSandbox", () => {
 describe("openSandboxes with a bad binding", () => {
   test("starts nothing when a later binding is invalid", () => {
     const env = fakeEnvironment();
-    const def = sandbox({ id: "w", tools: sandbox.tools.code() });
+    const def = sandbox({ id: "w", tools: sandbox.tools.defaults });
 
     expect(() => {
       return openSandboxes(
@@ -531,19 +534,10 @@ describe("sandbox setup", () => {
 describe("sandbox step ID namespaces", () => {
   test("a tool step ID can't take the setup prefix", async () => {
     const env = fakeEnvironment();
-    let captured: SandboxHandle | undefined;
-    const def = sandbox({
-      id: "s",
-      tools: (handle) => {
-        captured = handle;
+    const def = sandbox({ id: "s" });
+    const opened = openSandboxes({ work: def }, env.sandboxes);
 
-        return {};
-      },
-    });
-
-    openSandboxes({ work: def }, env.sandboxes);
-
-    await expect(captured?.commands.run("setup:x", "true")).rejects.toThrow(
+    await expect(opened.work?.commands.run("setup:x", "true")).rejects.toThrow(
       "reserved",
     );
   });

@@ -1611,7 +1611,7 @@ export const buildHandlerLoop = <TTools extends SandboxTools>(
  *
  * const loop = agent.loop({
  *   model: anthropic({ model: "claude-sonnet-5-5" }),
- *   tools: sandbox.tools.code(),
+ *   tools: sandbox.tools.defaults,
  * });
  * const { text } = await loop("Fix the failing test");
  * ```

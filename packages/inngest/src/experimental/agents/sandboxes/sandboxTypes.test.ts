@@ -23,14 +23,19 @@ import type { PushResult, Repo } from "./repo.ts";
 const client = new Inngest({ id: testClientId });
 const agents = createAgents(client);
 
-const workbench = sandbox({ id: "workbench", tools: sandbox.tools.code() });
+const workbench = sandbox({ id: "workbench", tools: sandbox.tools.defaults });
 const reader = sandbox({
   id: "reader",
-  tools: sandbox.tools.code({ only: ["read", "search"] }),
+  tools: { read: sandbox.tools.read, search: sandbox.tools.search },
 });
 const coder = sandbox({
   id: "coder",
-  tools: sandbox.tools.code({ only: ["run", "read", "search", "edit"] }),
+  tools: {
+    run: sandbox.tools.run,
+    read: sandbox.tools.read,
+    search: sandbox.tools.search,
+    edit: sandbox.tools.edit,
+  },
 });
 const bare = sandbox({ id: "bare" });
 
@@ -157,14 +162,17 @@ describe("sandbox: the code tools are run, run_code, read, search and edit", () 
       SandboxDefinition<"run" | "read" | "search" | "edit">
     >();
     expectTypeOf(
-      sandbox({ id: "c", tools: sandbox.tools.code({ tools: {} }) }),
-    ).toEqualTypeOf<SandboxDefinition<"run" | "run_code">>();
+      sandbox({
+        id: "c",
+        tools: { run: sandbox.tools.run, runCode: sandbox.tools.runCode },
+      }),
+    ).toEqualTypeOf<SandboxDefinition<"run" | "runCode">>();
     expectTypeOf(bare).toEqualTypeOf<SandboxDefinition<never>>();
   });
 
-  test("write is not a code tool", () => {
+  test("write is not a built-in tool", () => {
     // @ts-expect-error write was deleted: a heredoc in run writes a file
-    sandbox.tools.code({ only: ["write"] });
+    sandbox.tools.write;
   });
 });
 
@@ -175,7 +183,7 @@ describe("sandbox: a definition takes id, image, size, tools, repo and setup", (
       image: sandbox.image.custom("py:v1"),
       vcpu: 2,
       memoryMb: 1024,
-      tools: sandbox.tools.code(),
+      tools: sandbox.tools.defaults,
       repo: { url: "acme/app", ref: "main", path: "/src" },
       setup: async () => {},
     });
@@ -207,12 +215,12 @@ describe("sandbox: the deleted exports are gone", () => {
 
 const withRepo = sandbox({
   id: "with-repo",
-  tools: sandbox.tools.code(),
+  tools: sandbox.tools.defaults,
   repo: { url: "acme/app", auth: { read: () => "r", write: () => "w" } },
 });
 const readOnly = sandbox({
   id: "read-only",
-  tools: sandbox.tools.code(),
+  tools: sandbox.tools.defaults,
   repo: { url: "acme/app", push: false },
 });
 

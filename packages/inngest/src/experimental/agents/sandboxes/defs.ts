@@ -13,20 +13,19 @@ import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { StepError } from "../../../components/StepError.ts";
-import {
-  type CodeToolName,
-  type CodeToolsOptions,
-  codeTools,
-} from "../../../components/sandbox/codeTools.ts";
+import { builtinTools } from "../../../components/sandbox/codeTools.ts";
 import {
   destroyQuietly,
   sandboxCreateDefaults,
 } from "../../../components/sandbox/group.ts";
 import type { SandboxImage } from "../../../components/sandbox/image.ts";
 import { image } from "../../../components/sandbox/image.ts";
+import { createShell } from "../../../components/sandbox/shell.ts";
+import type { SandboxShim } from "../../../components/sandbox/shims.ts";
 import { hasCode } from "../../../components/sandbox/snapshotCache.ts";
 import {
   type AgentTool,
+  bindSandbox,
   type SandboxToolEntry,
   type SandboxTools,
   tool,
@@ -38,6 +37,7 @@ import {
   type SandboxCreateFreshOptions,
   type SandboxCreateOptions,
   type SandboxHandle,
+  type SandboxIO,
   SandboxValidationError,
 } from "../../../components/sandbox/types.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../../types.ts";
@@ -60,13 +60,6 @@ import {
   type SandboxIdle,
   type ThreadSandboxOwner,
 } from "./threadSandboxes.ts";
-
-/**
- * Builds the tools a sandbox brings, such as `sandbox.tools.code()`.
- */
-export type SandboxToolsFactory<TTool extends string = string> = (
-  sandbox: SandboxHandle,
-) => Record<TTool, SandboxToolEntry>;
 
 /**
  * Options of `sandbox()`: the sandbox's ID, image, size, environment, tools
@@ -107,10 +100,30 @@ export interface SandboxDefinitionOptions<TTool extends string = string> {
   secrets?: string[];
 
   /**
-   * The tools every agent that uses this sandbox gets, such as
-   * `sandbox.tools.code()`. Without it the sandbox brings `sandbox.tools.code()`.
+   * The tools every agent that uses this sandbox gets: a record of tools, such
+   * as `{ run, read, edit, finish }` (the built-ins are `sandbox.tools.run` and
+   * so on). The model sees them as `<sandbox key>_<tool key>`. Every tool in it
+   * acts on this sandbox: its `context.sandbox` is this sandbox's handle,
+   * whether the model or sandbox code calls it, and the SDK adds "Works on the
+   * `<key>` sandbox." to its description. Without `tools` the sandbox brings
+   * `sandbox.tools.defaults` (`run`).
    */
-  tools?: SandboxToolsFactory<TTool>;
+  tools?: Record<TTool, SandboxToolEntry>;
+
+  /**
+   * Where relative paths and commands start, and where the shell starts: the
+   * repository's path when the sandbox has a `repo`. Default `/work`.
+   */
+  cwd?: string;
+
+  /**
+   * Programs on `PATH` that call a handler in your app, made with
+   * `tool.shim()`. Every command run through the sandbox's handle has them
+   * (the tools' commands and `sandboxes.work.commands`), so the program works
+   * for the model as it does in a script. A shim is a program, never an entry
+   * in the model's tool list.
+   */
+  shims?: readonly SandboxShim[];
 
   /**
    * Runs once, right after the sandbox is created and ready, before anything
@@ -138,7 +151,7 @@ export interface SandboxSetupContext {
   /**
    * The new sandbox. Step IDs are prefixed with `<name>:setup:sandbox:`.
    */
-  sandbox: SandboxHandle;
+  sandbox: SandboxIO;
 
   /**
    * Runs `fn` once per run, memoized, such as reading a saved workspace from
@@ -286,7 +299,7 @@ export type SandboxesConfig<
 
 /**
  * For each sandbox of an agent, by name, the names of the tools its definition
- * brings (`sandbox.tools.code()` brings `run`).
+ * brings (`sandbox.tools.defaults` brings `run`).
  * An agent's config is generic over it, so `sandboxes` and `sandboxTools` in
  * its body know their names.
  */
@@ -361,7 +374,7 @@ const defineSandbox = (
  * export const workbench = sandbox({
  *   id: "workbench",
  *   image: sandbox.image.custom("python-data:v1"),
- *   tools: sandbox.tools.code(),
+ *   tools: sandbox.tools.defaults,
  * });
  * ```
  */
@@ -376,24 +389,7 @@ export const sandbox = Object.assign(
   },
   {
     image,
-    tools: {
-      /**
-       * `run` in the sandbox (a shell that keeps its place), plus `read`,
-       * `search` and `edit` when named in `only`.
-       */
-      code: ((options?: CodeToolsOptions) => {
-        return (handle: SandboxHandle) => {
-          return codeTools(handle, options);
-        };
-      }) as {
-        <const TName extends CodeToolName = "run">(
-          options?: CodeToolsOptions<TName> & { tools?: undefined },
-        ): SandboxToolsFactory<TName>;
-        <const TName extends CodeToolName = "run" | "run_code">(
-          options: CodeToolsOptions<TName> & { tools: SandboxTools },
-        ): SandboxToolsFactory<TName>;
-      },
-    },
+    tools: builtinTools,
   },
 );
 
@@ -413,11 +409,6 @@ export interface SandboxShellPlace {
    */
   track(read: () => ShellPlace | undefined): void;
 }
-
-/**
- * The hook the code tools find on a sandbox handle, to keep the shell's place.
- */
-export const shellPlaceKey = "~shellPlace";
 
 /**
  * A sandbox an agent may use, created on first need.
@@ -456,7 +447,7 @@ export interface LazySandbox {
   readonly started: boolean;
 
   /**
-   * Where the thread's shell was left, for the code tools' shell.
+   * Where the thread's shell was left, for the handle's shell.
    */
   readonly place: SandboxShellPlace;
 
@@ -973,11 +964,40 @@ const lazySandbox = (
     });
   };
 
+  const cwd = definition.cwd ?? "/work";
+  const shims = definition.shims?.length ? definition.shims : undefined;
+  let shellMade: ReturnType<SandboxHandle["shell"]> | undefined;
+
   const handle: SandboxHandle = {
+    cwd: resolvedRepo?.path ?? cwd,
     commands: {
       run: async (...args) => {
-        return (await get()).commands.run(scoped(args[0]), args[1], args[2]);
+        // The sandbox's shims go with every command, besides the call's own.
+        const options =
+          shims === undefined
+            ? args[2]
+            : { ...args[2], shims: [...shims, ...(args[2]?.shims ?? [])] };
+
+        return (await get()).commands.run(scoped(args[0]), args[1], options);
       },
+    },
+    shell: () => {
+      shellMade ??= (async () => {
+        const saved = await place.load();
+        const made = createShell(handle.commands.run, {
+          cwd: saved?.cwd ?? handle.cwd,
+          env: saved?.env,
+          unset: saved?.unset,
+        });
+
+        readPlace = () => {
+          return { cwd: made.cwd, env: made.env, unset: [...made.unset] };
+        };
+
+        return made;
+      })();
+
+      return shellMade;
     },
     files: {
       write: async (...args) => {
@@ -1008,44 +1028,50 @@ const lazySandbox = (
     },
   };
 
-  Object.defineProperty(handle, shellPlaceKey, { value: place });
-
-  // A sandbox with no `tools` brings the code tools, as `sandbox.tools.code()`.
-  const brought = definition.tools
-    ? definition.tools(handle)
-    : codeTools(handle);
+  // A sandbox with no `tools` brings `sandbox.tools.defaults`. Each tool acts
+  // on this sandbox's handle, and the model can tell which sandbox it is on.
+  const brought: Record<string, SandboxToolEntry> =
+    definition.tools ?? builtinTools.defaults;
 
   for (const [key, entry] of Object.entries(brought)) {
-    tools[`${name}${toolNamespaceSeparator}${key}`] = entry;
+    tools[`${name}${toolNamespaceSeparator}${key}`] = bindSandbox(
+      entry,
+      handle,
+      name,
+    );
   }
 
   const repo = resolvedRepo && createRepo(handle, resolvedRepo);
 
   // The one push, made by the host: the model's `<sandbox>_push`.
   if (repo && resolvedRepo?.push !== false) {
-    tools[`${name}${toolNamespaceSeparator}push`] = tool.group({
-      description:
-        "Push a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
-      input: z.object({
-        branch: z
-          .string()
-          .describe("The local branch to push, such as agent/fix-typo"),
-      }),
-      run: async ({ branch }) => {
-        try {
-          return await repo.push(branch);
-        } catch (error) {
-          if (
-            error instanceof PushRefusedError ||
-            error instanceof NonRetriableError
-          ) {
-            return agent.toolError(error.message);
-          }
+    tools[`${name}${toolNamespaceSeparator}push`] = bindSandbox(
+      tool.group({
+        description:
+          "Push a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+        input: z.object({
+          branch: z
+            .string()
+            .describe("The local branch to push, such as agent/fix-typo"),
+        }),
+        run: async ({ branch }) => {
+          try {
+            return await repo.push(branch);
+          } catch (error) {
+            if (
+              error instanceof PushRefusedError ||
+              error instanceof NonRetriableError
+            ) {
+              return agent.toolError(error.message);
+            }
 
-          throw error;
-        }
-      },
-    });
+            throw error;
+          }
+        },
+      }),
+      handle,
+      name,
+    );
   }
 
   validateTools(tools);
@@ -1173,6 +1199,8 @@ const lazySandbox = (
         // comes first so that nothing after the destroy can leave a destroyed
         // sandbox as the current one.
         raw = undefined;
+        shellMade = undefined;
+        readPlace = undefined;
         created = undefined;
         ready = undefined;
         guard = undefined;

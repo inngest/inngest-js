@@ -39,7 +39,7 @@ const fakeEnvironment = () => {
   };
 };
 
-const work = sandbox({ id: "work", tools: sandbox.tools.code() });
+const work = sandbox({ id: "work", tools: sandbox.tools.defaults });
 
 describe("a listed sandbox gives the model its tools", () => {
   test("every listed sandbox adds <sandbox>_<tool> tools and starts nothing", () => {

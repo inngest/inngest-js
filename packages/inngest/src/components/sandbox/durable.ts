@@ -18,7 +18,6 @@ import {
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
 } from "./client.ts";
-import { codeTools } from "./codeTools.ts";
 import { checkExit, commandText } from "./commandError.ts";
 import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
@@ -923,7 +922,6 @@ export const createDurableSandboxFacade = (
     },
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
-    tools: { code: (options) => codeTools(facade, options) },
     commands: Object.freeze({ run }),
     files: Object.freeze({
       write: async (idOrOptions, { path, data }) => {

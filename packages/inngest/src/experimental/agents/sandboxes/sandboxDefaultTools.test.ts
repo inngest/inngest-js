@@ -1,7 +1,7 @@
 /**
  * @module
  * Tests for the tools a listed sandbox gives the model when its definition
- * has no `tools` option: `run`, as if it had `sandbox.tools.code()`.
+ * has no `tools` option: `run`, as if it had `sandbox.tools.defaults`.
  */
 import { describe, expect, test } from "vitest";
 import type {
@@ -83,7 +83,7 @@ describe("a listed sandbox's default tools", () => {
   test("tools that are set keep exactly what they were given", () => {
     const work = sandbox({
       id: "work",
-      tools: sandbox.tools.code({ only: ["read"] }),
+      tools: { read: sandbox.tools.read },
     });
 
     expect(modelToolNames({ work })).toEqual(["work_read"]);

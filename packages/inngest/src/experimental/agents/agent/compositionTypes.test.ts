@@ -27,7 +27,7 @@ const agents = createAgents(new Inngest({ id: testClientId }));
 
 const workbench = sandbox({
   id: "workbench",
-  tools: sandbox.tools.code(),
+  tools: sandbox.tools.defaults,
 });
 
 const lookup = tool.step({

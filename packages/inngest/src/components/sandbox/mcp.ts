@@ -352,7 +352,7 @@ export class McpServer {
 
   /**
    * The server's tools as a plain record named `<name>_<tool>`, for
-   * `sandbox.tools.code({ tools })` or to wrap single tools. The list is
+   * `sandbox.tools.runCode.with({ tools })` or to wrap single tools. The list is
    * read in a step. `name` is the prefix; default the `id` option.
    */
   async tools(name: string = this.id): Promise<SandboxTools> {
