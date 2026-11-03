@@ -490,6 +490,12 @@ export interface LazySandbox {
   readonly repo?: Repo;
 
   /**
+   * The directory commands start in: the repo's path, else the definition's
+   * `cwd`.
+   */
+  readonly cwd: string;
+
+  /**
    * Runs commands in the sandbox, opening it on first use.
    */
   readonly commands: SandboxHandle["commands"];
@@ -566,6 +572,15 @@ export interface AgentSandbox {
   readonly files: SandboxHandle["files"];
 
   /**
+   * EXPERIMENTAL: The sandbox's tools, named `<name>_<tool>` (`work_run`), to
+   * lend to a child: `agent.start(input, { tools: sandboxes.work.tools })`.
+   * The child runs them as steps of its own run against this machine. Only
+   * the built-in machine tools (`run`, `read`, `edit`, `write`, `search`,
+   * `runCode`) can be lent; `<name>_push` and management are never lent.
+   */
+  readonly tools: SandboxTools;
+
+  /**
    * Sets the sandbox aside now (paused, or saved and destroyed) and brings a
    * fresh one on the next use. See the thread's sandbox `idle`.
    */
@@ -593,11 +608,12 @@ export interface AgentSandboxWithRepo extends AgentSandbox {
  * SDK's own bookkeeping.
  */
 export const agentSandbox = (lazy: LazySandbox): AgentSandbox => {
-  return {
+  const handed: AgentSandbox = {
     ...(lazy.repo && { repo: lazy.repo }),
     commands: lazy.commands,
     $: lazy.$,
     files: lazy.files,
+    tools: lazy.tools,
     recycle: () => {
       return lazy.recycle();
     },
@@ -605,6 +621,81 @@ export const agentSandbox = (lazy: LazySandbox): AgentSandbox => {
       return lazy.close();
     },
   };
+
+  lendableSandboxes.set(handed, lazy);
+
+  return handed;
+};
+
+/**
+ * The sandbox behind each `AgentSandbox` the handler got, so a start can lend
+ * it by what it is.
+ */
+const lendableSandboxes = new WeakMap<object, LazySandbox>();
+
+/**
+ * The tools of a sandbox and what each is, so a start can lend them: the
+ * sandbox it works on, and the built-in tool it is (unset for a tool that
+ * can't be lent, such as `push`).
+ */
+const lendableTools = new WeakMap<
+  object,
+  { lazy: LazySandbox; builtin?: string; never?: true }
+>();
+
+/**
+ * What a start lends of one sandbox: where it is and which of its tools.
+ */
+export interface LentMachine {
+  /**
+   * The sandbox's ID on the platform.
+   */
+  id: string;
+
+  /**
+   * The directory the child's shell starts in.
+   */
+  cwd: string;
+
+  /**
+   * Whether the child's code gets the sandbox as `sandboxes.<name>`.
+   */
+  code: boolean;
+
+  /**
+   * The tools the child's model gets: the tool's name, and the built-in tool
+   * it is.
+   */
+  tools: { name: string; builtin: string }[];
+}
+
+/**
+ * The sandbox an `AgentSandbox` of the handler is, for lending.
+ */
+export const lendableSandbox = (value: unknown): LazySandbox | undefined => {
+  return typeof value === "object" && value !== null
+    ? lendableSandboxes.get(value)
+    : undefined;
+};
+
+/**
+ * Where a tool of a sandbox is from, for lending. `undefined` for anything
+ * that is not a tool of a sandbox.
+ */
+export const lendableTool = (value: unknown) => {
+  return typeof value === "object" && value !== null
+    ? lendableTools.get(value)
+    : undefined;
+};
+
+/**
+ * The built-in tool an entry is, by identity: `run`, `read`, and so on. A tool
+ * made with `.with()` is a different object and is not one.
+ */
+export const builtinNameOf = (entry: unknown): string | undefined => {
+  return Object.entries(builtinTools).find(([key, value]) => {
+    return key !== "defaults" && value === entry;
+  })?.[0];
 };
 
 /**
@@ -720,6 +811,13 @@ const lazySandbox = (
    * `setup`.
    */
   skills?: readonly Skill[],
+
+  /**
+   * A machine another run lent: the sandbox is adopted by its ID, never
+   * created, recycled or destroyed here, and its tools are exactly the lent
+   * ones.
+   */
+  lent?: LentMachine,
 ): { lazy: LazySandbox; begin: () => void } => {
   if (!namePattern.test(name)) {
     throw new SandboxValidationError(
@@ -790,6 +888,18 @@ const lazySandbox = (
   const acquire = async (
     options: SandboxCreateFreshOptions,
   ): Promise<DurableSandbox> => {
+    if (lent) {
+      const found = await sandboxes.get(`${name}:lent:get`, lent.id);
+
+      if (!found) {
+        throw new NonRetriableError(
+          `The sandbox "${name}" lent to this run (${lent.id}) is gone`,
+        );
+      }
+
+      return found;
+    }
+
     // The platform takes only a name beside a snapshot (no image, size,
     // environment or secrets), so the definition's environment and secrets are
     // not applied to a restored sandbox. Platform ask: accept them with a
@@ -910,6 +1020,13 @@ const lazySandbox = (
 
     raw = acquire(options);
 
+    // A lent machine is the lender's: nothing is checked out, placed or set up.
+    if (lent) {
+      created = raw;
+
+      return created;
+    }
+
     // Setup runs after the sandbox exists. `raw` stays the bare sandbox, so close() destroys it even when setup
     // failed.
     created = raw.then(async (sandbox) => {
@@ -1011,7 +1128,7 @@ const lazySandbox = (
     });
   };
 
-  const cwd = definition.cwd ?? "/work";
+  const cwd = lent?.cwd ?? definition.cwd ?? "/work";
   const shims = definition.shims?.length ? definition.shims : undefined;
   let shellMade: ReturnType<SandboxHandle["shell"]> | undefined;
 
@@ -1082,12 +1199,30 @@ const lazySandbox = (
   const brought: Record<string, SandboxToolEntry> =
     definition.tools ?? builtinTools.defaults;
 
-  for (const [key, entry] of Object.entries(brought)) {
-    tools[`${name}${toolNamespaceSeparator}${key}`] = bindSandbox(
-      entry,
-      handle,
-      name,
-    );
+  // Each tool and the built-in tool it is, so a start can lend it.
+  const origins: [object, string | undefined, true?][] = [];
+
+  for (const [key, entry] of Object.entries(lent ? {} : brought)) {
+    const bound = bindSandbox(entry, handle, name);
+
+    tools[`${name}${toolNamespaceSeparator}${key}`] = bound;
+    origins.push([bound as object, builtinNameOf(entry)]);
+  }
+
+  // The tools a lender gave: rebuilt from the built-in tools, on this handle.
+  for (const given of lent?.tools ?? []) {
+    const entry = (builtinTools as unknown as Record<string, SandboxToolEntry>)[
+      given.builtin
+    ];
+
+    if (!entry || given.builtin === "defaults") {
+      throw new NonRetriableError(
+        `The tool "${given.name}" lent to this run is "${given.builtin}", which is not a built-in sandbox tool`,
+      );
+    }
+
+    tools[given.name] = bindSandbox(entry, handle, name);
+    origins.push([tools[given.name] as object, given.builtin]);
   }
 
   const repo = resolvedRepo && createRepo(handle, resolvedRepo);
@@ -1121,6 +1256,12 @@ const lazySandbox = (
       handle,
       name,
     );
+    // Never lent: the push is made by the lender's host, with its token.
+    origins.push([
+      tools[`${name}${toolNamespaceSeparator}push`] as object,
+      undefined,
+      true,
+    ]);
   }
 
   validateTools(tools);
@@ -1139,9 +1280,16 @@ const lazySandbox = (
     files: handle.files,
     place,
     ...(repo && { repo }),
+    cwd: handle.cwd,
     tools,
     get,
     recycle: () => {
+      if (lent) {
+        throw new SandboxValidationError(
+          `Sandbox "${name}" was lent to this run, so it can't be recycled: it belongs to the run that lent it`,
+        );
+      }
+
       const previous = recycling ?? Promise.resolve();
       const next = previous.then(async () => {
         if (closed) {
@@ -1271,6 +1419,11 @@ const lazySandbox = (
       return next;
     },
     close: () => {
+      // A lent machine is never destroyed or paused here.
+      if (lent) {
+        return Promise.resolve();
+      }
+
       closed ??= (async () => {
         await recycling;
 
@@ -1340,6 +1493,14 @@ const lazySandbox = (
       return closed;
     },
   };
+
+  for (const [entry, builtin, never] of origins) {
+    lendableTools.set(entry, {
+      lazy,
+      ...(builtin && { builtin }),
+      ...(never && { never }),
+    });
+  }
 
   return {
     lazy,
@@ -1485,6 +1646,12 @@ export const openSandboxes = (
    * The agent's skills. Their files go to the first sandbox the model can use.
    */
   skills?: readonly Skill[],
+
+  /**
+   * Machines another run lent, by name. Each replaces the binding of the same
+   * name: the sandbox is the lender's, adopted by its ID.
+   */
+  lent?: Record<string, LentMachine>,
 ): Record<string, LazySandbox> => {
   const opened: Record<string, LazySandbox> = {};
   const begins: (() => void)[] = [];
@@ -1493,6 +1660,10 @@ export const openSandboxes = (
   // Every binding is validated before any eager one starts, so a bad binding
   // leaves nothing running.
   for (const [name, binding] of Object.entries(bindings)) {
+    if (lent && Object.hasOwn(lent, name)) {
+      continue;
+    }
+
     const forModel = toBinding(name, binding).model !== false;
     const { lazy, begin } = lazySandbox(
       name,
@@ -1507,6 +1678,20 @@ export const openSandboxes = (
 
     opened[name] = lazy;
     begins.push(begin);
+  }
+
+  for (const [name, machine] of Object.entries(lent ?? {})) {
+    const { lazy } = lazySandbox(
+      name,
+      { sandbox: defineSandbox({ id: name }), model: machine.tools.length > 0 },
+      sandboxes,
+      runtime,
+      undefined,
+      undefined,
+      machine,
+    );
+
+    opened[name] = lazy;
   }
 
   for (const begin of begins) {

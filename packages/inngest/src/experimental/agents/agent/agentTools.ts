@@ -6,7 +6,8 @@
  * a message in its inbox. A model agent can therefore never deadlock on
  * another agent.
  *
- * - `start_agent({ address, input? })`: starts an agent on a new thread.
+ * - `start_agent({ address, input?, attach? })`: starts an agent on a new
+ *   thread; with `attach` it ends when the model's run does.
  * - `stop_agent({ thread })`: stops the run of a thread the model started.
  *
  * Sandbox code gets the same two plus `agent_result({ thread })`, which waits
@@ -54,7 +55,7 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {}
  */
 type AgentActionToolSet = {
   start_agent: AgentTool<
-    { address: string; input?: Json; group?: string },
+    { address: string; input?: Json; group?: string; attach?: boolean },
     { thread: string }
   >;
   message_agent: AgentTool<{ thread: string; content: Json }, { ok: true }>;
@@ -137,6 +138,12 @@ const startInput = z.object({
       "A group name. Agents you start with the same group name can message and ask each other, and each hears when another joins.",
     ),
   reports: reportsInput,
+  attach: z
+    .boolean()
+    .optional()
+    .describe(
+      "Whether the agent ends when your run ends. Default false: it carries on by itself, and tells you how it ended if your thread is still there.",
+    ),
 });
 
 const stopInput = z.object({
@@ -149,11 +156,13 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
     input,
     group,
     reports,
+    attach,
   }: {
     address: string;
     input?: Json;
     group?: string;
     reports?: { type: string; schema?: JsonSchema; required?: boolean }[];
+    attach?: boolean;
   }) => {
     const execution = executionOf();
     const client = clientOf();
@@ -220,6 +229,7 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
         ...(resolved && { resolved }),
       },
       card.input ? prepared : (prepared ?? ""),
+      attach === undefined ? {} : { attach },
     );
 
     if (via === "start_agent") {

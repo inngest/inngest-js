@@ -32,6 +32,7 @@ import type {
 import { createAgentFunction } from "./agentFunction.ts";
 import { askTimeoutFunction } from "./askTimeout.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
+import { parentEndedFunction } from "./lending.ts";
 import { createSharedToolFunction } from "./sharedToolFunction.ts";
 import type {
   AgentBody,
@@ -368,6 +369,9 @@ export const createAgents = <TClient extends Inngest.Any>(
         askTimeoutFunctions.set(client, askTimeoutFunction(client));
       }
 
+      // Sent by a run that started attached children, once it ends for good.
+      parentEndedFunction(client);
+
       return created;
     }) as unknown as Agents<TClient>["agent"],
     functions: () => {
@@ -379,7 +383,14 @@ export const createAgents = <TClient extends Inngest.Any>(
       const timeout = askTimeoutFunctions.get(client);
 
       if (made.length > 0 && announcer && relay && timeout) {
-        return [...hosted, ...functions, announcer, relay, timeout];
+        return [
+          ...hosted,
+          ...functions,
+          announcer,
+          relay,
+          timeout,
+          parentEndedFunction(client),
+        ];
       }
 
       return announcer && hosted.length > 0

@@ -15,6 +15,7 @@ import type { Kv } from "../kv/kv.ts";
 import type { Skill } from "../skills/skills.ts";
 import type { TriggerEvent } from "../threads/thread.ts";
 import {
+  type LentMachine,
   openSandboxes,
   resolveSandboxes,
   type SandboxRuntime,
@@ -43,6 +44,12 @@ export const openRunSandboxes = async (options: {
    * The run's skills; their files go to the first sandbox the model can use.
    */
   skills?: readonly Skill[];
+
+  /**
+   * Machines the run's parent lent, by name: adopted by ID, never created or
+   * destroyed here.
+   */
+  lent?: Record<string, LentMachine>;
 }) => {
   const { config, client, ref, thread, runId, store, logger, defer, cleanup } =
     options;
@@ -51,7 +58,8 @@ export const openRunSandboxes = async (options: {
 
   const bindings = await resolveSandboxes(config.sandboxes, context);
   const opened =
-    Object.keys(bindings).length > 0
+    Object.keys(bindings).length > 0 ||
+    Object.keys(options.lent ?? {}).length > 0
       ? openSandboxes(
           bindings,
           stepSandboxes(step),
@@ -95,8 +103,21 @@ export const openRunSandboxes = async (options: {
                 });
               },
             }),
+          undefined,
+          options.lent,
         )
       : {};
+
+  // Machines lent for their tools only: the model's, not the handler's code.
+  const toolsOnly = new Set(
+    Object.entries(options.lent ?? {})
+      .filter(([, machine]) => {
+        return !machine.code;
+      })
+      .map(([name]) => {
+        return name;
+      }),
+  );
 
   // Closes every sandbox. Returns the first failure instead of throwing, so
   // a failed eager start nothing used never replaces the body's own error.
@@ -112,5 +133,5 @@ export const openRunSandboxes = async (options: {
     });
   };
 
-  return { opened, closeAll };
+  return { opened, closeAll, toolsOnly };
 };

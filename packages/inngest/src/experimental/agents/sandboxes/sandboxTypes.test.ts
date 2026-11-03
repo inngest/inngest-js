@@ -64,8 +64,8 @@ describe("sandbox: the handle runs commands and moves files like the core sandbo
         // @ts-expect-error get() left the public type
         sandboxes.work.get;
 
-        // @ts-expect-error tools left the public type
-        sandboxes.work.tools;
+        // The tools are public, to lend to a child.
+        expectTypeOf(sandboxes.work.tools).toBeObject();
 
         // @ts-expect-error there is no sandbox named typo
         sandboxes.typo;

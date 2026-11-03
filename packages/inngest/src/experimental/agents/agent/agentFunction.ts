@@ -86,6 +86,7 @@ import {
 import { createAgentScore } from "../loop/scores.ts";
 import {
   agentSandbox,
+  type LentMachine,
   openSandboxes,
   resolveSandboxes,
   sandboxTools,
@@ -129,6 +130,7 @@ import { agentToolsFor } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
+import { lentOf, parentEndedCancel } from "./lending.ts";
 import {
   type AgentBudget,
   budgetReason,
@@ -389,13 +391,20 @@ export function createAgentFunction(
       ...functionOptions(config),
       id: config.id,
 
+      // A child started attached ends with its parent's run.
+      cancelOn: [...(config.cancelOn ?? []), parentEndedCancel],
+
       // An agent's reads wake it as soon as a message lands, and a reader left
       // waiting beside its work never holds the run back.
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
         ...ownEvents.map((name) => {
-          return { event: name, if: `event.data.agent == ${quote(ref)}` };
+          // A `quiet` message is for a live run only: it never starts one.
+          return {
+            event: name,
+            if: `event.data.agent == ${quote(ref)} && event.data.quiet != true`,
+          };
         }),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
@@ -690,7 +699,7 @@ export function createAgentFunction(
           )) ?? [],
         );
 
-        const { opened, closeAll } = await openRunSandboxes({
+        const { opened, closeAll, toolsOnly } = await openRunSandboxes({
           skills: runSkills,
           config,
           client,
@@ -703,6 +712,7 @@ export function createAgentFunction(
           logger,
           defer,
           cleanup,
+          lent: lentOf(client, event, data.thread),
         });
 
         const agentScore = createAgentScore(client);
@@ -910,9 +920,14 @@ export function createAgentFunction(
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: Object.fromEntries(
-              Object.entries(opened).map(([name, lazy]) => {
-                return [name, agentSandbox(lazy)];
-              }),
+              Object.entries(opened)
+                .filter(([name]) => {
+                  // A machine lent for its tools only is not the code's.
+                  return !toolsOnly.has(name);
+                })
+                .map(([name, lazy]) => {
+                  return [name, agentSandbox(lazy)];
+                }),
             ) as unknown as AgentBodyContext["sandboxes"],
 
             // Slot: inbox. The thread's messages and how the run before this
@@ -1010,6 +1025,7 @@ export function createAgentFunction(
           ...(options?.reports && { reports: options.reports }),
         },
         input,
+        options,
       );
     },
   };

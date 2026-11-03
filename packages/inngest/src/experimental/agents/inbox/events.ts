@@ -15,6 +15,7 @@ import {
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import type { Json } from "../json.ts";
+import type { LentMachine } from "../sandboxes/defs.ts";
 import type { ReportSpec } from "./reports.ts";
 
 /**
@@ -65,6 +66,26 @@ export type SenderData = (
    * and others, by type, with the JSON Schema of each and where it goes.
    */
   reports?: ReportSpec;
+
+  /**
+   * On the message `start()` or `start_agent` sends to an attached child:
+   * the run ID of the parent. The child is cancelled by the `agent/parent.ended`
+   * event of that run.
+   */
+  parent_run?: string;
+
+  /**
+   * On the message `start()` sends when it lends the child tools or sandboxes:
+   * what is lent, by sandbox name.
+   */
+  lent?: Record<string, LentMachine>;
+
+  /**
+   * The signature of `lent`, made with the app's signing key over the lent
+   * machines, `parent_run` and the child's thread. A child refuses a `lent`
+   * that is unsigned or does not match.
+   */
+  lent_sig?: string;
 };
 
 /**
@@ -135,6 +156,13 @@ export type AgentFinishedData = AgentRouting & {
    * The agent and thread that finished.
    */
   from?: SenderData;
+
+  /**
+   * Set on the report of an attached child that was stopped. A run that is
+   * live on the thread reads it; it never starts a run, so a child cancelled
+   * because its parent ended does not wake the parent's thread.
+   */
+  quiet?: true;
 } & (
     | { outcome: "completed"; output?: Json }
     | { outcome: "failed"; error: string }
@@ -160,6 +188,25 @@ export const agentAnswer = eventType("agent/answer", {
  */
 export const agentFinished = eventType("agent/finished", {
   schema: staticSchema<AgentFinishedData>(),
+});
+
+/**
+ * The data of `agent/parent.ended`: the run that ended for good.
+ */
+export type AgentParentEndedData = {
+  /**
+   * The ID of the run that ended: completed, failed after its retries, or
+   * cancelled.
+   */
+  run_id: string;
+};
+
+/**
+ * Sent once when a run that started attached children ends for good. Each
+ * attached child is cancelled by it, matched on its `parent_run`.
+ */
+export const agentParentEnded = eventType("agent/parent.ended", {
+  schema: staticSchema<AgentParentEndedData>(),
 });
 
 /**

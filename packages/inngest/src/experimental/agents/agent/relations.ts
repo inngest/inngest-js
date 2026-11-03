@@ -201,3 +201,91 @@ export const relationOf = (
 
   return undefined;
 };
+
+/**
+ * What a lent payload is signed over: the lent machines in a fixed order, the
+ * parent's run and the child's thread, so a payload cannot be moved to another
+ * child or run.
+ */
+const lentDigest = (
+  lent: object,
+  parentRun: string,
+  thread: string,
+): string => {
+  return JSON.stringify(["lent", parentRun, thread, canonical(lent)]);
+};
+
+/**
+ * The value with every object's keys in order: the executor may reorder keys
+ * on the way, and the signature must not depend on it.
+ */
+const canonical = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(canonical);
+  }
+
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => {
+          return a < b ? -1 : a > b ? 1 : 0;
+        })
+        .map(([key, inner]) => {
+          return [key, canonical(inner)];
+        }),
+    );
+  }
+
+  return value;
+};
+
+const fullMac = (secret: string, data: string): string => {
+  return hmac(sha256 as unknown as Parameters<typeof hmac>[0], secret)
+    .update(data)
+    .digest("hex");
+};
+
+/**
+ * Signs what a start lends, so the child can tell the lend came from a run of
+ * this app and not from an event someone else sent.
+ * @param client The client, whose signing key signs.
+ * @param lent The lent machines, by name.
+ * @param parentRun The lending run's ID.
+ * @param thread The child's thread key.
+ */
+export const signLent = (
+  client: Inngest.Any,
+  lent: object,
+  parentRun: string,
+  thread: string,
+): string => {
+  const [secret] = secretsOf(client) as [string];
+
+  return fullMac(secret, lentDigest(lent, parentRun, thread));
+};
+
+/**
+ * Whether a lend carries a signature made for this payload, run and thread.
+ * @param client The client, whose signing key (or its fallback) signed.
+ * @param lent The lent machines, by name.
+ * @param signature The signature that came with them.
+ * @param parentRun The lending run's ID that came with them.
+ * @param thread The child's thread key.
+ */
+export const lentIsSigned = (
+  client: Inngest.Any,
+  lent: object,
+  signature: unknown,
+  parentRun: unknown,
+  thread: string,
+): boolean => {
+  if (typeof signature !== "string" || typeof parentRun !== "string") {
+    return false;
+  }
+
+  const data = lentDigest(lent, parentRun, thread);
+
+  return secretsOf(client).some((secret) => {
+    return fullMac(secret, data) === signature;
+  });
+};

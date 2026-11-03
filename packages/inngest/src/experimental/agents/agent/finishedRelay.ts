@@ -5,7 +5,9 @@
  * in an `inngest/function.finished` event that carries the run's trigger
  * event, and `start_agent` marks its runs in that event's `data.from`. This
  * function turns each such ending into an `agent/finished` message for the
- * starter's thread, which starts a run there if the starter's run has ended.
+ * starter's thread, which starts a run there if the starter's run has ended
+ * (except for an attached child that was stopped: that report never starts
+ * one).
  * It is driven by the platform's own terminal event, so no run's ending goes
  * unreported. There is one per app, whatever agent the run belonged to.
  */
@@ -75,10 +77,22 @@ export const agentFinishedFunction = (
                 }),
               };
 
+      // An attached child that was stopped may have been cancelled because its
+      // parent's run ended: the report is for a live run only and never starts
+      // one on the parent's thread.
+      const quiet =
+        from.parent_run !== undefined && outcome.outcome === "stopped";
+
       await step.sendEvent(
         "agent-finished",
         agentFinished.create(
-          { agent: from.address, thread: from.key, from: child, ...outcome },
+          {
+            agent: from.address,
+            thread: from.key,
+            from: child,
+            ...outcome,
+            ...(quiet && { quiet: true as const }),
+          },
           {
             id: `finished-${String(data.run_id)}`,
             meta: { sessions: threadSessions(from.key) },

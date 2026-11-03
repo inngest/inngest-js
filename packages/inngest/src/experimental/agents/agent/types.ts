@@ -64,6 +64,7 @@ import type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 import type { AgentToolSet } from "./agentTools.ts";
+import type { LendOptions } from "./lending.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
@@ -456,7 +457,7 @@ export type ModelFieldOf<TEvent> =
 /**
  * EXPERIMENTAL: the options of `agent.start()`.
  */
-export interface StartOptions {
+export interface StartOptions extends LendOptions {
   /**
    * The key of the thread to start the run on. Default: a new thread with a
    * generated key.
@@ -855,6 +856,11 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * `reports`: the typed reports the agent may send back, where each goes and
    * which it owes, made with `report.to(...)` and `report.required()`. The
    * agent's model gets a `report` tool, and its handler `me.report()`.
+   * `tools` and `sandboxes` lend the parent's sandbox tools and sandboxes to
+   * the child, which runs them as steps of its own run (same app only), and
+   * `attach` ties the child to this run: it is cancelled when this run ends
+   * for good. A child that borrows is attached by default; `attach: false`
+   * with lending is an error.
    */
   start(input: TInput, options?: StartOptions): StartedThreadPromise<TOutput>;
 
