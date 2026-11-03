@@ -4,7 +4,9 @@
  * an `agent/message.result` that carries the message's ID, so one live run can
  * serve many requests.
  */
+import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
+import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { freshKv, run } from "./test-helpers.ts";
@@ -101,5 +103,36 @@ describe("a run replies to each message it takes", () => {
         return e.name === "agent/message.result";
       }),
     ).toEqual([]);
+  });
+
+  test("serve answers each typed request with what its function returns, and returns the last", async () => {
+    const { client, sent } = setup();
+    const asked = invoke(z.object({ n: z.number() }));
+    const typed = { ...sender, typed: true };
+    const agent = createAgentFunction(
+      client,
+      { id: "bot", triggers: [asked], idle: "1m" },
+      async ({ inbox }) => {
+        return inbox.serve(asked, async ({ n }) => {
+          return n * 2;
+        });
+      },
+    );
+
+    const { output } = await run(agent.fn, {
+      event: message("m1", { n: 1 }, typed),
+      saved: [message("m2", { n: 2 }, typed), message("m3", "chat", sender)],
+      timeouts: 1,
+    });
+
+    expect(output).toBe(4);
+    expect(
+      sent.filter((e) => {
+        return e.name === "agent/message.result";
+      }),
+    ).toMatchObject([
+      { data: { id: "m1", output: 2 } },
+      { data: { id: "m2", output: 4 } },
+    ]);
   });
 });

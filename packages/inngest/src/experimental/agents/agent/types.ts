@@ -530,7 +530,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run.
    */
-  inbox: Inbox<
+  inbox: AgentInbox<
     AgentMessage<AgentTypesOf<TTypes>["event"], AgentTypesOf<TTypes>["sources"]>
   >;
 
@@ -638,6 +638,27 @@ export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
   AgentTypesOf<TTypes>["event"],
   AgentTypesOf<TTypes>["sources"]
 >;
+
+/**
+ * The thread's inbox as the handler reads it.
+ */
+export type AgentInbox<TMessage> = Inbox<TMessage> & {
+  /**
+   * Serves requests of one type: for each, in order, calls `fn` with its data
+   * and replies with what `fn` returns, so the sender's `result()` gets it
+   * (`start(input, { thread })` on a live thread). Ends when the inbox's loop
+   * forms do, after the agent's `idle` with nothing new, and returns the last
+   * reply. Messages of other types are skipped.
+   *
+   * ```ts
+   * async ({ inbox }) => inbox.serve(attemptRequested, async (input) => attempt(input))
+   * ```
+   */
+  serve<TType extends EventTypeWithAnySchema<string>, TResult>(
+    type: TType,
+    fn: (data: InboxMessageOf<{ event: TType }>["data"]) => Promise<TResult>,
+  ): Promise<TResult | undefined>;
+};
 
 type Replies = {
   /**

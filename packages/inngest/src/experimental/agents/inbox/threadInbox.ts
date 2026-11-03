@@ -14,7 +14,7 @@ import type {
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
-import type { AgentMessage, InboxSource } from "../agent/types.ts";
+import type { AgentInbox, AgentMessage, InboxSource } from "../agent/types.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import {
   agentAnswerEvent,
@@ -222,7 +222,7 @@ export function threadInbox(
   // Sends the result of a message a sender waits on, by the message's ID.
   replyTo?: (id: string, output: unknown) => Promise<void>,
 ): {
-  inbox: Inbox<AgentMessage>;
+  inbox: AgentInbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
 } {
   function unwrap(message: UntypedInboxMessage | null): AgentMessage | null {
@@ -601,8 +601,32 @@ export function threadInbox(
     true,
   );
 
+  const inbox = main as unknown as Inbox<AgentMessage>;
+
+  // Answers each request of one type with what `fn` makes of it, until the
+  // inbox's loop forms end (the run's `idle`). Other messages are skipped.
+  const serve = async (
+    type: { name: string },
+    fn: (data: unknown) => Promise<unknown>,
+  ) => {
+    // Every message but a question replies with any output.
+    const requests = inbox as unknown as Inbox<
+      UntypedInboxMessage & { reply(output: unknown): Promise<void> }
+    >;
+    let last: unknown;
+
+    for await (const message of requests) {
+      if (message.name === type.name) {
+        last = await fn(message.data);
+        await message.reply(last);
+      }
+    }
+
+    return last;
+  };
+
   return {
-    inbox: main as unknown as Inbox<AgentMessage>,
+    inbox: Object.assign(inbox, { serve }) as AgentInbox<AgentMessage>,
     view: (source: Inbox<UntypedInboxMessage>) => {
       return view(source, plain, false);
     },
