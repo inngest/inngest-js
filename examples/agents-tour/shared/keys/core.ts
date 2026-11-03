@@ -66,16 +66,8 @@ export const coreKeys = defineKeys([
     rank: 8,
     label: "Search pages",
     group: "Pages",
-    inField: ["Alt+Shift+P"],
-    outside: ["/"],
-  },
-  {
-    id: "cheat",
-    rank: 9,
-    label: "Cheat sheet",
-    group: "Pages",
-    inField: ["Alt+/"],
-    outside: ["?"],
+    inField: ["Mod+K"],
+    outside: [],
   },
   {
     id: "text",
@@ -100,14 +92,6 @@ export const coreKeys = defineKeys([
     group: "Code",
     inField: ["Alt+Shift+L"],
     outside: ["l"],
-  },
-  {
-    id: "devserver",
-    rank: 31,
-    label: "Open the Dev Server",
-    group: "Pages",
-    inField: ["Alt+Shift+."],
-    outside: ["."],
   },
   {
     id: "undo",

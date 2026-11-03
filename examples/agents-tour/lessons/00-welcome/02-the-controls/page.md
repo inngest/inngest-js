@@ -6,6 +6,6 @@
 
 Every button shows its key. The keys work everywhere, inside the editor too: {Run} starts your code.
 
-Press {cheat} to see all of them. **Dev Server** opens the Dev Server in a new tab.
+The stack icon at the top right opens a menu with **Dev Server**, which opens the Dev Server in a new tab. The bar in the middle of the top bar shows how many concepts you have collected; click it to read them.
 
 *Note:* <kbd>Tab</kbd> indents inside the editor. <kbd>Ctrl</kbd>+<kbd>M</kbd> makes it move focus instead.

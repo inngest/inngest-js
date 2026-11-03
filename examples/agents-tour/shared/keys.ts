@@ -1,8 +1,9 @@
 /**
  * @module
  * The key table's types, its matching and hint helpers, and `assembleKeys`,
- * which joins the per-area lists in `keys/` into the one table. The editor commands, the window handler, the `<kbd>`
- * hints and the cheat sheet are all made from it, so they cannot drift.
+ * which joins the per-area lists in `keys/` into the one table. The editor
+ * commands, the window handler and the `<kbd>` hints are all made from it, so
+ * they cannot drift.
  *
  * A combo is written `Mod+Enter`, `Alt+Shift+K` or `Alt+]`. `Mod` is Ctrl on
  * Windows and Linux and Cmd on macOS. Letters and symbols in a combo with a
@@ -22,7 +23,7 @@ export interface KeyDef {
   note?: string;
   // Handled by the pane that owns it, not by the window.
   local?: boolean;
-  // Place in the table, and so in the cheat sheet. Keys without one follow
+  // Place in the table. Keys without one follow
   // the ranked ones.
   rank?: number;
   // The play-pane panels (by id) this action belongs to: it opens the tab and
@@ -44,13 +45,6 @@ export type ActionId = KeyLists[keyof KeyLists][number]["id"];
 export const defineKeys = <const T extends readonly KeyDef[]>(defs: T) => {
   return defs;
 };
-
-export const monacoOnly = [
-  {
-    label: "Make Tab move focus instead of indenting",
-    combo: "Ctrl+M (Ctrl+Shift+M on macOS)",
-  },
-];
 
 export interface Combo {
   mod: boolean;

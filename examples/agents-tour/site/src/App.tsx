@@ -25,7 +25,7 @@ import { panelKeys } from "./keytable.ts";
 import { sendAction } from "./live.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { Nav } from "./Nav.tsx";
-import { Cheat, Concepts, Deeper, Search } from "./overlays.tsx";
+import { Concepts, Deeper, Search } from "./overlays.tsx";
 import { allPanels, type PanelDef, panelOf } from "./panels/index.ts";
 import { Divider } from "./panes.tsx";
 import { store } from "./platform.ts";
@@ -34,7 +34,7 @@ import { deeperWaiting, moduleEnd } from "./progress-model.ts";
 import { routeStreamEvent } from "./stream.ts";
 import { type RunPressed, TracePanel } from "./trace.tsx";
 
-type Overlay = "concepts" | "deeper" | "search" | "cheat" | null;
+type Overlay = "concepts" | "deeper" | "search" | null;
 
 const noProgress: ProgressSnapshot = {
   pages: {},
@@ -64,6 +64,8 @@ export const App = () => {
   const [ready, setReady] = useState(false);
   const [devServerUrl, setDevServerUrl] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBox = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [runs, setRuns] = useState<TraceRun[]>([]);
   const [status, setStatus] = useState<Status>({
@@ -323,6 +325,8 @@ export const App = () => {
     setConfirming(false);
     void api.resetProgress();
   };
+
+  const conceptCount = Object.keys(progress.concepts).length;
 
   const coreCount = flat.filter((entry) => {
     return entry.kind === "core";
@@ -603,9 +607,6 @@ export const App = () => {
     prev: () => {
       go(-1);
     },
-    cheat: () => {
-      setOverlay("cheat");
-    },
     contents: focusNav,
     search: () => {
       setOverlay("search");
@@ -617,11 +618,6 @@ export const App = () => {
       focusIn(".trace [data-row], .trace");
     },
     file: nextFile,
-    devserver: () => {
-      if (devServerUrl) {
-        window.open(devServerUrl, "_blank", "noopener");
-      }
-    },
     editor: toggleEditor,
     undo: undoReset,
   };
@@ -638,7 +634,6 @@ export const App = () => {
     },
   };
   const progressHandlers: Handlers = {
-    navToggle: toggleRail,
     nextModule: () => {
       if (end?.nextModule) {
         open(end.nextModule.id);
@@ -652,9 +647,6 @@ export const App = () => {
     deeperList: () => {
       setOverlay("deeper");
     },
-    concepts: () => {
-      setOverlay("concepts");
-    },
     dismiss: () => {
       if (navOpen) {
         setNavOpen(false);
@@ -662,7 +654,6 @@ export const App = () => {
         setModuleDone(null);
       }
     },
-    resetProgress: askReset,
   };
 
   const handlers: Handlers = {
@@ -676,8 +667,34 @@ export const App = () => {
 
   latest.current = handlers;
   useKeyboard(handlers, () => {
-    return overlay !== null;
+    return overlay !== null || menuOpen;
   });
+
+  // The stack menu closes on a click outside it or on Escape.
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const onDown = (event: MouseEvent) => {
+      if (!menuBox.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [menuOpen]);
 
   const markers: Marker[] = useMemo(() => {
     const out: Marker[] = [];
@@ -749,8 +766,39 @@ export const App = () => {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="logo" aria-hidden="true" />
-        <h1>Agents Tour</h1>
+        <div className="brand">
+          <span className="logo" aria-hidden="true" />
+          <h1>Agents Tour</h1>
+        </div>
+        <button
+          type="button"
+          className="concepts-bar"
+          id="concepts-chip"
+          tabIndex={-1}
+          onClick={() => {
+            setOverlay("concepts");
+          }}
+          title="Open the concepts you have collected"
+        >
+          <span
+            className="concepts-track"
+            role="progressbar"
+            aria-label="Concepts collected"
+            aria-valuemin={0}
+            aria-valuemax={progress.totalConcepts}
+            aria-valuenow={conceptCount}
+          >
+            <span
+              className="concepts-fill"
+              style={{
+                width: `${progress.totalConcepts ? Math.min(100, (conceptCount / progress.totalConcepts) * 100) : 0}%`,
+              }}
+            />
+          </span>
+          <span className="concepts-label">
+            {conceptCount} of {progress.totalConcepts} concepts
+          </span>
+        </button>
         <nav>
           {waiting.length > 0 ? (
             <button
@@ -768,18 +816,6 @@ export const App = () => {
           ) : null}
           <button
             type="button"
-            className="chip"
-            id="concepts-chip"
-            onClick={() => {
-              setOverlay("concepts");
-            }}
-            aria-keyshortcuts={shortcutsOf("concepts")}
-          >
-            {Object.keys(progress.concepts).length} of {progress.totalConcepts}{" "}
-            concepts <Kbd action="concepts" />
-          </button>
-          <button
-            type="button"
             className="ghost"
             onClick={() => {
               setOverlay("search");
@@ -788,25 +824,54 @@ export const App = () => {
           >
             Search <Kbd action="search" />
           </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setOverlay("cheat");
-            }}
-            aria-keyshortcuts={shortcutsOf("cheat")}
-          >
-            Keys <Kbd action="cheat" />
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={handlers.devserver}
-            title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
-            aria-keyshortcuts={shortcutsOf("devserver")}
-          >
-            Dev Server <Kbd action="devserver" />
-          </button>
+          <div className="stack-menu" ref={menuBox}>
+            <button
+              type="button"
+              className="ghost stack-button"
+              tabIndex={-1}
+              aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => {
+                setMenuOpen((value) => {
+                  return !value;
+                });
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3 3 8l9 5 9-5-9-5Z" />
+                <path d="m3 12 9 5 9-5" />
+                <path d="m3 16 9 5 9-5" />
+              </svg>
+            </button>
+            {menuOpen ? (
+              <div className="stack-popover" role="menu">
+                <a
+                  role="menuitem"
+                  tabIndex={-1}
+                  href={devServerUrl || undefined}
+                  target="_blank"
+                  rel="noopener"
+                  title="Opens the Dev Server dashboard, which shows the same runs as the Trace pane."
+                  onClick={() => {
+                    setMenuOpen(false);
+                  }}
+                >
+                  Dev Server
+                </a>
+              </div>
+            ) : null}
+          </div>
         </nav>
       </header>
 
@@ -1220,13 +1285,6 @@ export const App = () => {
         <Search
           index={index}
           onPick={pick}
-          onClose={() => {
-            setOverlay(null);
-          }}
-        />
-      ) : null}
-      {overlay === "cheat" ? (
-        <Cheat
           onClose={() => {
             setOverlay(null);
           }}

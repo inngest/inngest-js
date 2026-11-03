@@ -1,18 +1,14 @@
 /**
  * @module
- * Overlays: the concepts, the deeper pages, the page search and the cheat
- * sheet. Each takes
+ * Overlays: the concepts, the deeper pages and the page search. Each takes
  * focus when it opens and gives it back when it closes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { hintOf, monacoOnly } from "../../shared/keys.ts";
 import type {
   PageSummary,
   ProgressSnapshot,
   TourIndex,
 } from "../../shared/types.ts";
-import { keys } from "./keytable.ts";
-import { isMac } from "./platform.ts";
 
 const Modal = ({
   title,
@@ -268,75 +264,6 @@ export const Search = ({
           <p className="empty">No page matches.</p>
         ) : null}
       </div>
-    </Modal>
-  );
-};
-
-export const Cheat = ({ onClose }: { onClose: () => void }) => {
-  const groups = [
-    ...new Set(
-      keys.map((def) => {
-        return def.group;
-      }),
-    ),
-  ];
-
-  return (
-    <Modal title="Keys" onClose={onClose}>
-      <p className="modal-hint">
-        These keys work everywhere, inside the editor too.
-      </p>
-      <div className="cheat">
-        {groups.map((group) => {
-          return (
-            <section key={group}>
-              <h3>{group}</h3>
-              <table>
-                <tbody>
-                  {keys
-                    .filter((def) => {
-                      return def.group === group;
-                    })
-                    .map((def) => {
-                      return (
-                        <tr key={def.id}>
-                          <td>{def.label}</td>
-                          <td>
-                            {def.inField.map((spec) => {
-                              return (
-                                <kbd key={spec}>{hintOf(spec, isMac)}</kbd>
-                              );
-                            })}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </section>
-          );
-        })}
-        <section>
-          <h3>Editor</h3>
-          <table>
-            <tbody>
-              {monacoOnly.map((item) => {
-                return (
-                  <tr key={item.label}>
-                    <td>{item.label}</td>
-                    <td>
-                      <kbd>{item.combo}</kbd>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      </div>
-      <p className="modal-hint">
-        <kbd>Esc</kbd> closes this sheet.
-      </p>
     </Modal>
   );
 };

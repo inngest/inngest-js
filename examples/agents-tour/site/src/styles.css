@@ -77,10 +77,100 @@ body {
   letter-spacing: 0.01em;
 }
 
-.topbar nav {
-  margin-left: auto;
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.brand {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar nav {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+.concepts-bar {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 180px;
+  padding: 2px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.concepts-bar:hover {
+  color: var(--text);
+}
+
+.concepts-track {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.concepts-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width var(--motion) var(--ease);
+}
+
+.stack-menu {
+  position: relative;
+}
+
+.stack-button {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+.stack-button:hover {
+  color: var(--text);
+}
+
+.stack-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.stack-popover a {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.stack-popover a:hover {
+  background: var(--accent-soft);
 }
 
 .logo {
@@ -726,21 +816,6 @@ textarea {
   font-size: 16px;
 }
 
-.cheat table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.cheat td {
-  padding: 4px 8px 4px 0;
-  vertical-align: top;
-}
-
-.cheat td kbd {
-  margin-right: 4px;
-}
-
 @media (hover: none) {
   kbd {
     display: none;
@@ -783,21 +858,13 @@ textarea {
     border-top: 1px solid var(--border);
   }
 
-  .topbar nav button.ghost {
+  .topbar nav button.ghost:not(.stack-button) {
     display: none;
   }
 
   .pager button {
     padding: 12px 18px;
   }
-}
-
-.cheat table {
-  table-layout: fixed;
-}
-
-.cheat td:first-child {
-  width: 42%;
 }
 
 .run-output {
@@ -1582,14 +1649,19 @@ main.single .text {
 
 @media (max-width: 900px) {
   .topbar {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr auto;
     gap: 4px 12px;
     padding: 8px 12px;
   }
 
   .topbar nav {
-    flex-wrap: wrap;
-    margin-left: 0;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .concepts-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .body > main {
