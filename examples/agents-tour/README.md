@@ -100,6 +100,7 @@ browser (site/)  <--->  tour server (server/)  <--->  Dev Server (the cached bin
 |---|---|
 | `lessons/<nn-module>/module.json` | a module's `title` and `opening` line |
 | `lessons/<nn-module>/<nn>[a-z]-<page>/` | `page.md`, `manifest.json` and the editable files; `03-` is a core page, `03a-` a Go deeper page (label `3a`). An exercise adds `check.ts` and `stub/` and `solution/` folders |
+| `lessons/PAGES.md` | how to write a page and prove it: `pnpm tour:page`, `pnpm tour:page-check`, `pnpm tour:lessons` |
 | `lessons/_parked/` | lesson modules on the old agents API, kept but not loaded |
 | `lessons/_shared/`, `lessons/<nn-module>/_shared/` | read-only files stored once; a manifest's `readOnly` names which a page shows (the module's first, then the tour-wide one) |
 | `scripts/` | `tour.ts`, `devserver.ts`, `check.ts` (what the type checker cannot see), `typecheck-lessons.ts`, shared `lib.ts` |
