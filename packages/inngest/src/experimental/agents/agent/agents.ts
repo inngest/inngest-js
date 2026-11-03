@@ -81,7 +81,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSourceInput[] | undefined = undefined,
-    TModel extends ModelFieldOf<ThreadTriggerEventOf<TType>> | undefined = undefined,
+    TModel extends
+      | ModelFieldOf<ThreadTriggerEventOf<TType>>
+      | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TType,
@@ -113,7 +115,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSourceInput[] | undefined = undefined,
-    TModel extends ModelFieldOf<ThreadTriggerListEvent<TTypes>> | undefined = undefined,
+    TModel extends
+      | ModelFieldOf<ThreadTriggerListEvent<TTypes>>
+      | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       TTypes,
@@ -145,7 +149,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSourceInput[] | undefined = undefined,
-    TModel extends ModelFieldOf<ThreadTriggerEventOf<TOne>> | undefined = undefined,
+    TModel extends
+      | ModelFieldOf<ThreadTriggerEventOf<TOne>>
+      | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadEventTrigger<TOne> | (TOne & EventTypeWithAnySchema<string>),
@@ -205,7 +211,9 @@ export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
     TSandboxes extends SandboxToolNames = NoSandboxes,
     const TMiddleware extends Middleware.Class[] | undefined = undefined,
     const TSources extends readonly InboxSourceInput[] | undefined = undefined,
-    TModel extends ModelFieldOf<ThreadTriggerListEvent<TMany>> | undefined = undefined,
+    TModel extends
+      | ModelFieldOf<ThreadTriggerListEvent<TMany>>
+      | undefined = undefined,
   >(
     config: AgentFunctionConfig<
       ThreadTriggerList<TMany>,

@@ -402,6 +402,7 @@ describe("anthropic reply", () => {
         cacheWrite1h: 0,
       },
       model: "claude-sonnet-5-5",
+      details: { model: "claude-sonnet-5-5", stopReason: "tool_use" },
       usd: expect.closeTo(0.00007, 8),
     });
   });

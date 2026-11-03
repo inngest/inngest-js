@@ -145,7 +145,10 @@ describe("sandbox: the model's tool names come from the sandbox", () => {
   test("each tool is <sandbox>_<tool>, from what the definition brings", () => {
     type Names = keyof SandboxToolsOf<{
       work: { run: typeof sandbox.tools.run };
-      view: { read: typeof sandbox.tools.read; search: typeof sandbox.tools.search };
+      view: {
+        read: typeof sandbox.tools.read;
+        search: typeof sandbox.tools.search;
+      };
     }>;
 
     expectTypeOf<Names>().toEqualTypeOf<
@@ -167,7 +170,9 @@ describe("sandbox: the code tools are run, run_code, read, search and edit", () 
       id: "c",
       tools: { run: sandbox.tools.run, runCode: sandbox.tools.runCode },
     });
-    expectTypeOf<ToolNames<typeof withCode>>().toEqualTypeOf<"run" | "runCode">();
+    expectTypeOf<ToolNames<typeof withCode>>().toEqualTypeOf<
+      "run" | "runCode"
+    >();
     expectTypeOf<ToolNames<typeof bare>>().toEqualTypeOf<"run">();
   });
 
