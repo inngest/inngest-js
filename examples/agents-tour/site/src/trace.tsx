@@ -532,9 +532,7 @@ const PendingRun = ({ label }: { label: string | null }) => {
     <section className="run" aria-label="Starting a run">
       <div className="run-head">
         <span className="dot running" aria-hidden="true" />
-        <strong>
-          Running{label ? <code>{label}</code> : null}...
-        </strong>
+        <strong>Running{label ? <code>{label}</code> : null}...</strong>
       </div>
       <div className="wf" role="list">
         <div role="listitem">
@@ -726,11 +724,7 @@ const Run = ({
             </Reveal>
           );
         })}
-        <Reveal
-          role="listitem"
-          show={pending}
-          appear={!initialRows.current}
-        >
+        <Reveal role="listitem" show={pending} appear={!initialRows.current}>
           <PendingRow />
         </Reveal>
       </div>
@@ -875,11 +869,7 @@ export const TracePanel = ({
   }, [live]);
 
   return (
-    <div
-      className="trace"
-      aria-label="Trace"
-      tabIndex={-1}
-    >
+    <div className="trace" aria-label="Trace" tabIndex={-1}>
       <div className="trace-bar">
         <span>
           {runs.length} {runs.length === 1 ? "run" : "runs"}
