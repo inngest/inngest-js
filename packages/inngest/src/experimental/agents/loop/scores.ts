@@ -229,10 +229,12 @@ export interface AgentScore {
 }
 
 /**
- * The `score` of a tool's context: the same function as the handler's. In an
- * agent run it is the run's own, so the run waits for a score the tool did not
- * await. Elsewhere it rides on the running step, or does nothing. It checks
- * the name and value either way.
+ * The `score` of a tool's context, and `score` from `inngest/experimental/agents`:
+ * the same function as the handler's, found through the run's async context,
+ * so code anywhere in an agent run can score without passing it down. In an
+ * agent run it is the run's own, so the run waits for a score not awaited.
+ * Elsewhere it rides on the running step, or does nothing. It checks the name
+ * and value either way.
  */
 export const toolScore: AgentScoreFn = async (
   ...args: [
