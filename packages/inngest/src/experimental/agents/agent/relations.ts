@@ -305,47 +305,17 @@ export const relationOf = (
 /**
  * What a lent payload is signed over: the lent machines in a fixed order, the
  * parent's run and the child's thread, so a payload cannot be moved to another
- * child or run.
+ * child or run. There is no clock in it: the lend lasts as long as the
+ * parent's run, whose end cancels the child. `lending.ts` explains how a
+ * copied lend is kept from being used again.
  */
 const lentDigest = (
   app: string,
   lent: object,
   parentRun: string,
   thread: string,
-  issuedAt: number,
 ): string => {
-  return JSON.stringify([
-    "lent",
-    app,
-    parentRun,
-    thread,
-    issuedAt,
-    canonical(lent),
-  ]);
-};
-
-/**
- * How long a lend stays good after the parent issued it. A child's run starts
- * within seconds of the start event, but a function that is concurrency
- * limited or backed up can queue it for a while; an hour covers that, and
- * bounds how long a copied start event keeps working once the parent is gone.
- */
-export const lentMaxAgeMs = 60 * 60 * 1000;
-
-/**
- * Whether a lend issued at `issuedAt` (epoch milliseconds) is still within
- * its window at `now`. A lend dated in the future is refused too.
- */
-export const lentIsFresh = (
-  issuedAt: unknown,
-  now: number,
-): issuedAt is number => {
-  return (
-    typeof issuedAt === "number" &&
-    Number.isFinite(issuedAt) &&
-    issuedAt <= now + 60_000 &&
-    now - issuedAt <= lentMaxAgeMs
-  );
+  return JSON.stringify(["lent", app, parentRun, thread, canonical(lent)]);
 };
 
 /**
@@ -381,37 +351,31 @@ const fullMac = (secret: string, data: string): string => {
 /**
  * Signs what a start lends, so the child can tell the lend came from a run of
  * this app and not from an event someone else sent. The signature covers the
- * app, the lending run, the child's thread, the time of issue and the machines.
+ * app, the lending run, the child's thread and the machines.
  * @param client The client, whose signing key signs.
  * @param lent The lent machines, by name.
  * @param parentRun The lending run's ID.
  * @param thread The child's thread key.
- * @param issuedAt When the lend was issued, in epoch milliseconds.
  */
 export const signLent = (
   client: Inngest.Any,
   lent: object,
   parentRun: string,
   thread: string,
-  issuedAt: number,
 ): string => {
   const [secret] = secretsOf(client) as [string];
 
-  return fullMac(
-    secret,
-    lentDigest(client.id, lent, parentRun, thread, issuedAt),
-  );
+  return fullMac(secret, lentDigest(client.id, lent, parentRun, thread));
 };
 
 /**
- * Whether a lend carries a signature made for this app, payload, run, thread
- * and issue time. It does not check the age: see `lentIsFresh`.
+ * Whether a lend carries a signature made for this app, payload, run and
+ * thread.
  * @param client The client, whose signing key (or its fallback) signed.
  * @param lent The lent machines, by name.
  * @param signature The signature that came with them.
  * @param parentRun The lending run's ID that came with them.
  * @param thread The child's thread key.
- * @param issuedAt The issue time that came with them.
  */
 export const lentIsSigned = (
   client: Inngest.Any,
@@ -419,17 +383,12 @@ export const lentIsSigned = (
   signature: unknown,
   parentRun: unknown,
   thread: string,
-  issuedAt: unknown,
 ): boolean => {
-  if (
-    typeof signature !== "string" ||
-    typeof parentRun !== "string" ||
-    typeof issuedAt !== "number"
-  ) {
+  if (typeof signature !== "string" || typeof parentRun !== "string") {
     return false;
   }
 
-  const data = lentDigest(client.id, lent, parentRun, thread, issuedAt);
+  const data = lentDigest(client.id, lent, parentRun, thread);
 
   return secretsOf(client).some((secret) => {
     return fullMac(secret, data) === signature;

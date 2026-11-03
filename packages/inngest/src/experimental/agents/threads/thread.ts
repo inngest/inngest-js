@@ -18,6 +18,7 @@ import { step } from "../../../components/InngestStepTools.ts";
 import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
+import type { LentRecord } from "../agent/lending.ts";
 import type { LastRun } from "../agent/recovery.ts";
 import {
   AgentStoppedError,
@@ -172,6 +173,14 @@ export interface ThreadRecord {
    * ended. Only the run named in `run` counts.
    */
   folded?: { run: string; ids: string[] };
+
+  /**
+   * The lend the first run took: the parent run that lent, the names of the
+   * tools lent and the run that took it. Kept so a copy of the start message
+   * cannot take the lend again and a later message can be told the tools are
+   * gone.
+   */
+  lent?: LentRecord;
 
   /**
    * The process (boot) that wrote the record last.

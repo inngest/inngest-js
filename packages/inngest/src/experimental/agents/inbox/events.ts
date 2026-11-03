@@ -89,7 +89,8 @@ export type SenderData = (
   /**
    * The signature of `lent`, made with the app's signing key over the lent
    * machines, `parent_run` and the child's thread. A child refuses a `lent`
-   * that is unsigned or does not match.
+   * that is unsigned or does not match. It carries no time: the lend lasts as
+   * long as the parent's run, whose end cancels the child.
    */
   lent_sig?: string;
 };
@@ -114,6 +115,13 @@ export type AgentRecoverData = AgentRouting & {
    * were sent.
    */
   event: { id?: string; name: string; data: unknown };
+
+  /**
+   * The app that made the resend and its signature over the data. A run
+   * accepts a lend carried by a resent start only when the resend is signed.
+   */
+  by?: string;
+  sig?: string;
 };
 
 /**

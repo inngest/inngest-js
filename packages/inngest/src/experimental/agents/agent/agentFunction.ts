@@ -138,10 +138,11 @@ import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
-  lentIssuedAt,
-  lentOf,
+  lendIsOpen,
+  lendOf,
+  lentEndedNote,
+  lentToolNames,
   parentEndedCancel,
-  refuseStaleLend,
 } from "./lending.ts";
 import {
   type AgentBudget,
@@ -223,8 +224,15 @@ const createHandlerLoop = async (options: {
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
   skills: readonly Skill[];
+
+  /**
+   * The names of tools a parent lent this thread that are over, so the model
+   * is told not to call them.
+   */
+  lentEnded?: string[];
 }): Promise<AgentHandlerLoop> => {
-  const { client, logger, config, fields, listenTools, skills } = options;
+  const { client, logger, config, fields, listenTools, skills, lentEnded } =
+    options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -243,8 +251,14 @@ const createHandlerLoop = async (options: {
     config.system as RunField<string | undefined>,
   );
   const system =
-    skills.length > 0
-      ? [written, skillsPrompt(skills)].filter(Boolean).join("\n\n")
+    skills.length > 0 || lentEnded
+      ? [
+          written,
+          skills.length > 0 ? skillsPrompt(skills) : undefined,
+          lentEnded ? lentEndedNote(lentEnded) : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
       : written;
   const tools = await fields.get(
     "tools",
@@ -475,6 +489,10 @@ export function createAgentFunction(
                 event: event as unknown as AgentBodyContext["event"],
                 thread: { key: data.thread },
               });
+        // What the start event lends, with its signature checked before the
+        // thread records anything. Whether the thread may use it is decided
+        // once the record is written.
+        const claim = lendOf(client, event, data.thread);
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
@@ -482,6 +500,11 @@ export function createAgentFunction(
               startInflight(found, event) ?? null,
               inStep,
               ownBudget,
+              undefined,
+              claim && {
+                parentRun: claim.parentRun,
+                tools: lentToolNames(claim.machines),
+              },
             ),
             previousRun: (await readLastRun(store, ref, inStep)) ?? null,
           };
@@ -716,19 +739,17 @@ export function createAgentFunction(
           )) ?? [],
         );
 
-        // A lend is signed and also dated: one that is too old is refused,
-        // so a copied start event cannot borrow the parent's machine once the
-        // parent is gone. The clock is read in a step, so the verdict holds
-        // for every retry and replay of the run.
-        const lent = lentOf(client, event, data.thread);
-
-        if (lent) {
-          const issuedAt = lentIssuedAt(event);
-
-          await step.run("lent-fresh", () => {
-            refuseStaleLend(issuedAt, Date.now());
-          });
-        }
+        // A lend is signed for its parent run and this thread, and has no
+        // clock: it lasts as long as the parent's run, whose end cancels this
+        // one. The thread's record decides whether this run may use it (the
+        // first run of the start message, or a recovery's resend); any other
+        // message gets none, and its model is told the lent tools are gone.
+        const lent =
+          claim && lendIsOpen(claim, started.lent, runId)
+            ? claim.machines
+            : undefined;
+        const lentEnded =
+          !lent && started.lent ? started.lent.tools : undefined;
 
         const { opened, closeAll, toolsOnly } = await openRunSandboxes({
           skills: runSkills,
@@ -945,6 +966,7 @@ export function createAgentFunction(
           config,
           fields,
           skills: runSkills,
+          lentEnded,
           listenTools: {
             ...sandboxTools(opened),
             ...listenTools,

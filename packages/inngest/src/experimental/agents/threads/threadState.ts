@@ -11,6 +11,7 @@
  * record on its next status change or turn.
  */
 
+import type { LentRecord } from "../agent/lending.ts";
 import {
   type AgentBudget,
   type EffectiveLimits,
@@ -202,12 +203,25 @@ export const threadRecorder = (
        * The IDs of the messages this turn takes in, noted for their senders.
        */
       folded?: string[],
+
+      /**
+       * The lend the start event carries, kept the first time only: the
+       * record names the run that took it first.
+       */
+      lend?: Omit<LentRecord, "takenBy">,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
 
         return {
           status: "running",
+          // A lend from the parent run the record already names is not taken
+          // again; a thread with a key of its own can be lent to by another
+          // parent run.
+          ...(lend &&
+            current.lent?.parentRun !== lend.parentRun && {
+              lent: { ...lend, takenBy: runId },
+            }),
           ...(inherited && { inherited }),
           ...(current.budget === undefined && budget && { budget }),
           ...(folded &&

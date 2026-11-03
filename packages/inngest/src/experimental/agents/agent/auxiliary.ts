@@ -296,7 +296,9 @@ export const createFinishedFunction = (
       await step.sendEvent(
         "recover-resend",
         agentRecover.create(
-          {
+          // Signed, so a run takes the lend a resent start carries only from
+          // a resend this app made.
+          signLedgerData(client, agentRecover.name, {
             agent: ref,
             thread: message.thread,
             event: inflight.event ?? {
@@ -309,7 +311,7 @@ export const createFinishedFunction = (
                 ...(inflight.from !== undefined && { from: inflight.from }),
               },
             },
-          },
+          }),
           {
             id: `recover-${runId}`,
             meta: { sessions: threadSessions(message.thread) },

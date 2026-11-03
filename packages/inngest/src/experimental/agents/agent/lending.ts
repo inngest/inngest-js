@@ -20,7 +20,8 @@ import {
   lendableSandbox,
   lendableTool,
 } from "../sandboxes/defs.ts";
-import { lentIsFresh, lentIsSigned } from "./relations.ts";
+import { agentRecoverEvent } from "../threads/thread.ts";
+import { ledgerDataIsSigned, lentIsSigned } from "./relations.ts";
 
 /**
  * What a start lends and how long the child lives: the part of the start
@@ -190,77 +191,151 @@ export const parentEndedFunction = (
 };
 
 /**
- * The machines a run was lent, from its start event. A lend that is unsigned,
- * or whose signature does not match its parent run and this thread, is
- * refused: the run fails for good, since a forged lend would otherwise name
- * any sandbox.
- * @param client The app's client, whose signing key checks the signature.
+ * What a run's start event lends it, checked for its signature but not yet for
+ * whether the thread may still use it.
+ */
+export interface LendClaim {
+  /**
+   * The lent machines, by name.
+   */
+  machines: Record<string, LentMachine>;
+
+  /**
+   * The parent run that lent them.
+   */
+  parentRun: string;
+
+  /**
+   * Whether the lend came on a resend made by `recovery`, not on the start
+   * message itself.
+   */
+  recovered: boolean;
+}
+
+/**
+ * The `from` a start event carries: on the message itself, or inside the
+ * message a recovery resent.
+ */
+const startFrom = (event: {
+  name?: string;
+  data?: unknown;
+}): { from: Record<string, unknown> | undefined; recovered: boolean } => {
+  if (event.name === agentRecoverEvent) {
+    const resent = (
+      event.data as { event?: { data?: { from?: Record<string, unknown> } } }
+    )?.event;
+
+    return { from: resent?.data?.from, recovered: true };
+  }
+
+  return {
+    from: (event.data as { from?: Record<string, unknown> } | undefined)?.from,
+    recovered: false,
+  };
+};
+
+/**
+ * The lend a run's start event carries, with its signature checked. A lend
+ * that is unsigned, or whose signature does not match its parent run and this
+ * thread, is refused: the run fails for good, since a forged lend would
+ * otherwise name any sandbox. A lend on a recovery's resend must also come on
+ * a resend this app signed.
+ *
+ * Whether the thread may use it is `lendIsOpen`.
+ * @param client The app's client, whose signing key checks the signatures.
  * @param event The event that started the run.
  * @param thread The run's thread key.
  */
-export const lentOf = (
+export const lendOf = (
   client: Inngest.Any,
-  event: { data?: unknown },
+  event: { name?: string; data?: unknown },
   thread: string,
-): Record<string, LentMachine> | undefined => {
-  const from = (
-    event.data as
-      | {
-          from?: {
-            lent?: Record<string, LentMachine>;
-            lent_sig?: unknown;
-            lent_at?: unknown;
-            parent_run?: unknown;
-          };
-        }
-      | undefined
-  )?.from;
+): LendClaim | undefined => {
+  const { from, recovered } = startFrom(event);
+  const lent = from?.lent as Record<string, LentMachine> | undefined;
 
-  if (!from?.lent) {
+  if (!lent) {
     return undefined;
   }
 
   if (
-    !lentIsSigned(
-      client,
-      from.lent,
-      from.lent_sig,
-      from.parent_run,
-      thread,
-      from.lent_at,
-    )
+    !lentIsSigned(client, lent, from?.lent_sig, from?.parent_run, thread) ||
+    (recovered && !ledgerDataIsSigned(client, agentRecoverEvent, event.data))
   ) {
     throw new NonRetriableError(
       "The sandboxes lent to this run are unsigned or do not match: only a run of this app can lend",
     );
   }
 
-  return from.lent;
+  return { machines: lent, parentRun: from?.parent_run as string, recovered };
 };
 
 /**
- * The time (epoch milliseconds) a run's lend was issued, from its start event;
- * only meaningful after `lentOf` accepted the lend.
+ * What a thread's record keeps of the lend it took.
  */
-export const lentIssuedAt = (event: { data?: unknown }): number => {
-  const at = (event.data as { from?: { lent_at?: unknown } } | undefined)?.from
-    ?.lent_at;
+export interface LentRecord {
+  parentRun: string;
 
-  return typeof at === "number" ? at : 0;
+  /**
+   * The names of the tools lent, so a later run can tell the model they are
+   * gone.
+   */
+  tools: string[];
+
+  /**
+   * The run that took the lend first.
+   */
+  takenBy: string;
+}
+
+/**
+ * Whether the thread may use a lend that checked out. A lend is not dated: it
+ * lasts as long as the parent's run, whose end cancels the child. What keeps
+ * a copied start event from borrowing the machine again is the thread's own
+ * record, which keeps the lend the first run took:
+ *
+ * - the message that started the thread opens the lend once: the run that
+ *   first took it is the only run of that message that may use it;
+ * - a recovery's resend on that same thread may use it again, since the failed
+ *   run was the one that took it. The lend names the thread and the parent
+ *   run, and the resend is signed by this app.
+ *
+ * Any other message, or a copy of the start event, gets no lend.
+ * @param claim What the start event lends.
+ * @param kept What the thread's record kept, after this run noted its start.
+ * @param runId This run.
+ */
+export const lendIsOpen = (
+  claim: LendClaim,
+  kept: LentRecord | undefined,
+  runId: string,
+): boolean => {
+  return (
+    kept?.parentRun === claim.parentRun &&
+    (claim.recovered || kept.takenBy === runId)
+  );
 };
 
 /**
- * Throws, for good, when a lend is older than its window. A run reads the
- * clock once, in a step, so a retry or a replay keeps the first verdict.
- * @param issuedAt When the lend was issued.
- * @param now The current time.
+ * The names of the tools a lend gives.
  */
-export const refuseStaleLend = (issuedAt: number, now: number): void => {
-  if (!lentIsFresh(issuedAt, now)) {
-    throw new NonRetriableError(
-      "The sandboxes lent to this run were lent too long ago: a lend is good for an hour after the parent issues it",
-    );
-  }
+export const lentToolNames = (
+  machines: Record<string, LentMachine>,
+): string[] => {
+  return Object.values(machines).flatMap((machine) => {
+    return machine.tools.map((given) => {
+      return given.name;
+    });
+  });
+};
+
+/**
+ * What the model of a run that borrowed before reads, once the lend is over:
+ * the lent tools ended with the start of the parent's run.
+ * @param tools The names of the tools that were lent.
+ */
+export const lentEndedNote = (tools: string[]): string => {
+  return `The tools your parent lent you${tools.length > 0 ? ` (${tools.join(", ")})` : ""} were available only for the work your parent started you with. They ended with that start and are not available now, so do not call them.`;
 };
 
 /**
@@ -268,11 +343,12 @@ export const refuseStaleLend = (issuedAt: number, now: number): void => {
  * that started it attached. A run nothing attached never matches it.
  *
  * In `cancelOn`, `event` is the run's own trigger and `async` is the arriving
- * `agent/parent.ended`. The trigger names the parent run; the arriving event
- * names the run that ended. A trigger without `from.parent_run` makes the
- * expression `async.data.run_id == null`, which a real event never matches.
+ * `agent/parent.ended`. The trigger names the parent run, directly or inside
+ * the message a recovery resent (so a recovered child ends with its parent
+ * too); the arriving event names the run that ended. A trigger without a
+ * `parent_run` never matches a real event.
  */
 export const parentEndedCancel = {
   event: agentParentEnded.name,
-  if: "async.data.run_id == event.data.from.parent_run",
+  if: `async.data.run_id == (event.name == "${agentRecoverEvent}" ? event.data.event.data.from.parent_run : event.data.from.parent_run)`,
 };

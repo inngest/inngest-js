@@ -282,23 +282,10 @@ export function startThread<TOutput>(
               ),
             }),
           ...(attached && { parent_run: ctx.runId as string }),
-          ...(lent &&
-            (() => {
-              // The send step is memoized, so a replay's new time is unused.
-              const lentAt = Date.now();
-
-              return {
-                lent,
-                lent_at: lentAt,
-                lent_sig: signLent(
-                  target.client,
-                  lent,
-                  ctx.runId as string,
-                  key,
-                  lentAt,
-                ),
-              };
-            })()),
+          ...(lent && {
+            lent,
+            lent_sig: signLent(target.client, lent, ctx.runId as string, key),
+          }),
         },
       },
     );

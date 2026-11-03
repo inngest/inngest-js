@@ -18,7 +18,7 @@ import {
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import { reportSenderProblem } from "../inbox/reports.ts";
 import { resentAs } from "../inbox/threadInbox.ts";
-import { parentEndedCancel, refuseStaleLend } from "./lending.ts";
+import { parentEndedCancel } from "./lending.ts";
 import {
   groupId,
   lentIsSigned,
@@ -37,32 +37,26 @@ describe("lending: agent/parent.ended cascade", () => {
   // In cancelOn, `event` is the run's trigger and `async` the incoming
   // cancel event. A field the trigger lacks turns `event.data.x == async.y`
   // into `async.y == null`, which every real `agent/parent.ended` satisfies.
-  test("cancels only the children of the run that ended", () => {
-    expect(parentEndedCancel.if).toBe(
-      "async.data.run_id == event.data.from.parent_run",
+  test("cancels only the children of the run that ended, recovered ones too", () => {
+    expect(parentEndedCancel.if).toContain("async.data.run_id == (");
+    expect(parentEndedCancel.if).toContain("event.data.from.parent_run");
+    expect(parentEndedCancel.if).toContain(
+      "event.data.event.data.from.parent_run",
     );
   });
 });
 
 describe("lending: replay", () => {
-  test("a lend older than its window is refused, a fresh one is not", () => {
-    const now = Date.now();
-
-    expect(() => refuseStaleLend(now - 60_000, now)).not.toThrow();
-    expect(() => refuseStaleLend(now - 2 * 60 * 60 * 1000, now)).toThrow(
-      "too long ago",
-    );
-  });
-
-  test("the issue time is signed, so it can't be moved to look fresh", () => {
+  test("a lend is bound to its run and thread, and has no clock", () => {
     const app = new Inngest({ id: "a", signingKey: envSigningKey });
     const lent = { work: { id: "sbx", cwd: "/", code: true, tools: [] } };
     const thread = "a/worker:runX.0.tag.a%2Fboss";
-    const sig = signLent(app, lent, "runX", thread, 1000);
+    const sig = signLent(app, lent, "runX", thread);
 
-    expect(lentIsSigned(app, lent, sig, "runX", thread, 1000)).toBe(true);
-    expect(lentIsSigned(app, lent, sig, "runX", thread, 999_999)).toBe(false);
-    expect(lentIsSigned(app, lent, sig, "runX", thread, undefined)).toBe(false);
+    expect(lentIsSigned(app, lent, sig, "runX", thread)).toBe(true);
+    expect(lentIsSigned(app, lent, sig, "runY", thread)).toBe(false);
+    expect(lentIsSigned(app, lent, sig, "runX", "a/worker:runX.1")).toBe(false);
+    expect(lentIsSigned(app, lent, sig, undefined, thread)).toBe(false);
   });
 });
 
@@ -205,9 +199,9 @@ describe("reach: thread-key tags", () => {
       work: { id: "sbx_of_anyone", cwd: "/", code: true, tools: [] },
     };
     const thread = "a/worker:runX.0.tag.a%2Fboss";
-    const sig = signLent(appB, lent, "runX", thread, 1000);
+    const sig = signLent(appB, lent, "runX", thread);
 
-    expect(lentIsSigned(appA, lent, sig, "runX", thread, 1000)).toBe(false);
+    expect(lentIsSigned(appA, lent, sig, "runX", thread)).toBe(false);
   });
 
   test("a starter holding a newline cannot shift the MAC input", () => {
