@@ -609,6 +609,13 @@ export interface SandboxHandle extends SandboxIO {
   readonly cwd: string;
 
   /**
+   * Runs a command as one step, from a tagged template: `` $`git status` ``,
+   * `` $.sh`a | b` ``, or `$(options)`. Its steps are scoped like `commands`,
+   * carry the sandbox's `shims`, and start in `cwd`.
+   */
+  readonly $: DurableSandbox["$"];
+
+  /**
    * The shell the tools of this sandbox share (`run`, `read`, `edit`,
    * `search`): commands that keep their working directory and exported
    * environment. Made once per sandbox, in the place the thread's last run left

@@ -14,6 +14,7 @@ import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { StepError } from "../../../components/StepError.ts";
 import { builtinTools } from "../../../components/sandbox/codeTools.ts";
+import { createDollar } from "../../../components/sandbox/dollar.ts";
 import {
   destroyQuietly,
   sandboxCreateDefaults,
@@ -462,6 +463,11 @@ export interface LazySandbox {
   readonly commands: SandboxHandle["commands"];
 
   /**
+   * Runs a command as one step, from a tagged template, opening it on first use.
+   */
+  readonly $: SandboxHandle["$"];
+
+  /**
    * Reads and writes files in the sandbox, opening it on first use.
    */
   readonly files: SandboxHandle["files"];
@@ -517,6 +523,12 @@ export interface AgentSandbox {
   readonly commands: SandboxHandle["commands"];
 
   /**
+   * Runs a command as one step, from a tagged template: `` $`git status` ``,
+   * `` $.sh`a | b` ``, `$(options)`. Starts in the sandbox's `cwd`.
+   */
+  readonly $: SandboxHandle["$"];
+
+  /**
    * Reads and writes files in the sandbox, opening it on first use.
    */
   readonly files: SandboxHandle["files"];
@@ -552,6 +564,7 @@ export const agentSandbox = (lazy: LazySandbox): AgentSandbox => {
   return {
     ...(lazy.repo && { repo: lazy.repo }),
     commands: lazy.commands,
+    $: lazy.$,
     files: lazy.files,
     recycle: () => {
       return lazy.recycle();
@@ -968,19 +981,21 @@ const lazySandbox = (
   const shims = definition.shims?.length ? definition.shims : undefined;
   let shellMade: ReturnType<SandboxHandle["shell"]> | undefined;
 
+  const run: SandboxHandle["commands"]["run"] = async (...args) => {
+    // The sandbox's shims go with every command, besides the call's own.
+    const options =
+      shims === undefined
+        ? args[2]
+        : { ...args[2], shims: [...shims, ...(args[2]?.shims ?? [])] };
+
+    return (await get()).commands.run(scoped(args[0]), args[1], options);
+  };
+
   const handle: SandboxHandle = {
     cwd: resolvedRepo?.path ?? cwd,
-    commands: {
-      run: async (...args) => {
-        // The sandbox's shims go with every command, besides the call's own.
-        const options =
-          shims === undefined
-            ? args[2]
-            : { ...args[2], shims: [...shims, ...(args[2]?.shims ?? [])] };
-
-        return (await get()).commands.run(scoped(args[0]), args[1], options);
-      },
-    },
+    commands: { run },
+    // The same commands as one step each, from a tagged template, starting in `cwd`.
+    $: createDollar(run, { cwd: resolvedRepo?.path ?? cwd }),
     shell: () => {
       shellMade ??= (async () => {
         const saved = await place.load();
@@ -1086,6 +1101,7 @@ const lazySandbox = (
       return raw !== undefined;
     },
     commands: handle.commands,
+    $: handle.$,
     files: handle.files,
     place,
     ...(repo && { repo }),
