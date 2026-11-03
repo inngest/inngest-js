@@ -19,6 +19,7 @@ describe("discovery types", () => {
       description?: string;
       input?: JsonSchema;
       skills?: { name: string; description: string }[];
+      tags?: string[];
       share: "private" | "team";
       owner?: string;
       effects: "read" | "write";
@@ -132,7 +133,7 @@ describe("discovery types", () => {
     expectTypeOf<AgentSummary>().toEqualTypeOf<
       Pick<
         AgentCard,
-        "address" | "description" | "skills" | "effects" | "paused"
+        "address" | "description" | "skills" | "tags" | "effects" | "paused"
       >
     >();
   });

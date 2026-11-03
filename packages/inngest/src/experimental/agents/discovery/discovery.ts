@@ -83,6 +83,12 @@ export interface AgentCard {
   skills?: AgentCardSkill[];
 
   /**
+   * Free-form labels from the card, such as `"sdk"` or `"billing"`.
+   * `list_agents` matches them like words of the description.
+   */
+  tags?: string[];
+
+  /**
    * Who may find the agent. `"private"` unless the card says `"team"`.
    */
   share: AgentShare;
@@ -118,6 +124,12 @@ export interface AgentCardConfig {
    * `description` option.
    */
   description?: string;
+
+  /**
+   * Free-form labels, such as `["sdk", "billing"]`. `list_agents` matches
+   * them like words of the description.
+   */
+  tags?: string[];
 
   /**
    * Who may find the agent. Default `"private"`.
@@ -167,7 +179,7 @@ export type AgentDiscovery =
  */
 export type AgentSummary = Pick<
   AgentCard,
-  "address" | "description" | "skills" | "effects" | "paused"
+  "address" | "description" | "skills" | "tags" | "effects" | "paused"
 >;
 
 /**
@@ -283,6 +295,7 @@ export const cardOf = (
     ...(description !== undefined && { description }),
     ...(input && { input }),
     ...(parts.skills && parts.skills.length > 0 && { skills: parts.skills }),
+    ...(config.tags && config.tags.length > 0 && { tags: config.tags }),
     share: config.share ?? "private",
     ...(config.owner !== undefined && { owner: config.owner }),
     effects: config.effects ?? "write",
@@ -498,7 +511,7 @@ const words = (text: string): string[] => {
 
 /**
  * The cards that match a free-text query: those that contain any of its words
- * in their address, description or skills, best matches first. No query
+ * in their address, description, skills or tags, best matches first. No query
  * matches every card.
  */
 export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
@@ -516,6 +529,7 @@ export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
         ...(card.skills ?? []).map((skill) => {
           return `${skill.name} ${skill.description}`;
         }),
+        ...(card.tags ?? []),
       ].join(" ");
       const have = new Set(words(text));
       const score = wanted.filter((word) => {
@@ -543,6 +557,7 @@ export const summaryOf = (card: AgentCard): AgentSummary => {
     address: card.address,
     ...(card.description !== undefined && { description: card.description }),
     ...(card.skills && { skills: card.skills }),
+    ...(card.tags && { tags: card.tags }),
     effects: card.effects,
     ...(card.paused && { paused: true }),
   };

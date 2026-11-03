@@ -215,7 +215,7 @@ export interface AgentFunctionConfig<
 
   /**
    * What the agent publishes about itself for discovery: `description`,
-   * `share` (`"private"` by default, only agents of its own app; `"team"`, the
+   * `tags`, `share` (`"private"` by default, only agents of its own app; `"team"`, the
    * whole environment), `owner`, `effects` (`"read"` or `"write"`, default
    * `"write"`) and `speed`. An agent without a `card` still publishes its
    * address, private.

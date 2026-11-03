@@ -35,6 +35,7 @@ const docs = agents.agent(
     id: "docs",
     card: {
       description: "Answers questions about the docs",
+      tags: ["docs", "support"],
       share: "team",
       owner: "docs-team",
       effects: "read",
@@ -68,6 +69,7 @@ describe("an agent's card", () => {
       address: `${testClientId}/docs`,
       description: "Answers questions about the docs",
       input: expect.objectContaining({ required: ["question"] }),
+      tags: ["docs", "support"],
       share: "team",
       owner: "docs-team",
       effects: "read",
@@ -176,6 +178,27 @@ describe("sharing and matching", () => {
     expect(ids("one")).toEqual(["a/one"]);
     expect(ids()).toHaveLength(2);
     expect(ids("zebra")).toEqual([]);
+  });
+
+  test("a query matches a card's tags", () => {
+    const cards = [
+      card({ address: "a/one", description: "Writes code", tags: ["sdk"] }),
+      card({ address: "a/two", description: "Answers questions" }),
+    ];
+
+    expect(matchCards(cards, "sdk").map(addressOf)).toEqual(["a/one"]);
+  });
+
+  test("a card without tags publishes none, and empty tags are dropped", () => {
+    const untagged = agents.agent(
+      { id: "untagged", card: { tags: [] } },
+      async () => {
+        return null;
+      },
+    );
+
+    expect("tags" in secret.card).toBe(false);
+    expect("tags" in untagged.card).toBe(false);
   });
 });
 
