@@ -181,6 +181,13 @@ export interface InngestExecutionOptions {
   disableImmediateExecution?: boolean;
 
   /**
+   * What the executor said it supports on this request (`ctx.capabilities`).
+   * Undefined when the request carried no context, which means nothing is
+   * known and nothing is refused.
+   */
+  executorCapabilities?: string[];
+
+  /**
    * Information about the incoming HTTP request that triggered this execution.
    * Used by middleware `wrapRequest` hooks.
    */

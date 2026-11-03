@@ -25,6 +25,16 @@ import type { Middleware } from "./middleware/middleware.ts";
 import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
+ * Set by the SDK's own agent functions, which run with
+ * `optimizeParallelism: false` by design: the function's options carry it as a
+ * key, and the deprecation warning for the option is not logged. It is not
+ * exported from the package.
+ */
+export const internalQuietOptimizeParallelism = Symbol(
+  "inngest.internal.quietOptimizeParallelism",
+);
+
+/**
  * A stateless Inngest function, wrapping up function configuration and any
  * in-memory steps to run when triggered.
  *
@@ -76,7 +86,10 @@ export class InngestFunction<
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
 
-    if (this.opts.optimizeParallelism === false) {
+    if (
+      this.opts.optimizeParallelism === false &&
+      !(internalQuietOptimizeParallelism in this.opts)
+    ) {
       warnOnce(
         this.client[internalLoggerSymbol],
         `optimize-parallelism-deprecated:${this.opts.id}`,

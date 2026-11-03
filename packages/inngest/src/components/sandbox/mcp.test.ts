@@ -4,15 +4,24 @@
  * MCP server.
  */
 import { describe, expect, test } from "vitest";
+import {
+  type AgentModelRequest,
+  agent,
+} from "../../experimental/agents/loop/loop.ts";
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
-import { type AgentModelRequest, agent } from "../agent/loop.ts";
-import { fakeMcpFetch } from "../agent/testing/mcp.ts";
-import { script } from "../agent/testing/model.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { createDurableSandboxFacade } from "./durable.ts";
 import { mapMcpResult } from "./mcp.ts";
-import { McpAuthError, McpUnavailableError } from "./mcpClient.ts";
+import {
+  forgetMcpSessions,
+  McpAuthError,
+  McpUnavailableError,
+} from "./mcpClient.ts";
+import { fakeMcpFetch } from "./mcpFakes.ts";
+import type { SandboxRawTool } from "./protocol.ts";
+import { script } from "./scriptedModel.ts";
 import { secret } from "./secret.ts";
 import { resolveToolCall, type SandboxTool, tool } from "./tools.ts";
 
@@ -80,6 +89,18 @@ describe("tool.mcp", () => {
       description: "Starts a thread",
       input: { type: "object", required: ["prompt"] },
     });
+  });
+
+  test("every tool built from a server is flagged untrusted", async () => {
+    const { hex } = connect();
+    const tools = await build(hex);
+
+    expect(Object.keys(tools).length).toBeGreaterThan(0);
+    expect(
+      Object.values(tools).every((entry) => {
+        return (entry as SandboxTool).untrusted === true;
+      }),
+    ).toBe(true);
   });
 
   test("sends the bearer on every request, and the idempotency key", async () => {
@@ -336,12 +357,34 @@ describe("tool.mcp", () => {
     expect(await call(tools.hex_get_thread, {})).toBe("running");
   });
 
+  test("a call on a fresh process reconnects with its own session", async () => {
+    const { hex, server } = connect();
+    const listing = await hex["~list"]();
+    const first = server.calls.find((item) => item.method === "initialize");
+
+    // The call lands on another machine, which holds none of the sessions the
+    // first one made.
+    forgetMcpSessions();
+
+    const tools = hex["~build"]("hex", listing);
+
+    expect(await call(tools.hex_get_thread, {})).toBe("running");
+    expect(
+      server.calls.filter((item) => item.method === "initialize"),
+    ).toHaveLength(2);
+    expect(first).toBeDefined();
+  });
+
   test("refuses plain http except for localhost, and credentials in the url", () => {
-    expect(() => tool.mcp({ url: "http://example.com/mcp" })).toThrow("https");
-    expect(() => tool.mcp({ url: "http://localhost:1/mcp" })).not.toThrow();
-    expect(() => tool.mcp({ url: "https://u:p@example.com/mcp" })).toThrow(
-      "credentials",
-    );
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://example.com/mcp" });
+    }).toThrow("https");
+    expect(() => {
+      return tool.mcp({ id: "x", url: "http://localhost:1/mcp" });
+    }).not.toThrow();
+    expect(() => {
+      return tool.mcp({ id: "x", url: "https://u:p@example.com/mcp" });
+    }).toThrow("credentials");
   });
 
   test("a server in a plain tools record fails with a pointer to tools()", async () => {
@@ -349,7 +392,9 @@ describe("tool.mcp", () => {
 
     const { toolDefinitions } = await import("./tools.ts");
 
-    expect(() => toolDefinitions({ hex })).toThrow("await server.tools()");
+    expect(() => {
+      return toolDefinitions({ hex });
+    }).toThrow("await server.tools()");
   });
 
   test("sandbox code calls the tools by name with named arguments, and a tool error is an error", async () => {
@@ -375,12 +420,6 @@ describe("tool.mcp", () => {
       id: "t-1",
       prompt: "hi",
     });
-  });
-
-  test("tools() needs a name", async () => {
-    const hex = tool.mcp({ url: "https://example.com/mcp" });
-
-    await expect(hex.tools()).rejects.toThrow("needs a name");
   });
 });
 
@@ -424,6 +463,60 @@ const drive = async (fn: InngestFunction.Any) => {
   throw new Error("The function did not finish");
 };
 
+describe("a bare tool.mcp server in sandbox code", () => {
+  process.env.MCP_TEST_TOKEN = token;
+
+  const sandboxRef = {
+    kind: "inngest/sandbox" as const,
+    version: 1 as const,
+    id: "22222222-2222-4222-8222-222222222222",
+    name: "mcp-box",
+    status: "RUNNING" as const,
+    vpcId: "11111111-1111-4111-8111-111111111111",
+    imageRef: "default",
+    resources: { vcpu: 2, memoryMb: 2048 },
+    createdAt: "2026-07-28T00:00:00Z",
+  };
+
+  test("commands.run lists the server's tools in a step and offers them as <key>_<tool>", async () => {
+    const { hex } = connect();
+    const offered: string[][] = [];
+    const rawTool: SandboxRawTool = async (_id, _operation, _check, tools) => {
+      offered.push(Object.keys(tools?.tools ?? {}));
+
+      return {
+        protocolVersion: 1,
+        action: "exec",
+        result: {
+          stdout: "",
+          stderr: "",
+          encoding: "base64",
+          exitCode: 0,
+          output: { truncated: false },
+        },
+      } as never;
+    };
+    const client = new Inngest({ id: testClientId });
+    const fn = client.createFunction(
+      { id: "mcp-script", triggers: [{ event: "mcp/script" }] },
+      async () => {
+        const sandbox = createDurableSandboxFacade(sandboxRef, () => {
+          return rawTool;
+        });
+
+        await sandbox.commands.run("work", "node script.mjs", {
+          tools: { hex },
+        });
+      },
+    );
+    const { type, ran } = await drive(fn);
+
+    expect(type).toBe("function-resolved");
+    expect(ran).toContain("work:mcp:hex:list");
+    expect(offered).toEqual([["hex_create_thread", "hex_get_thread"]]);
+  });
+});
+
 describe("tool.mcp in agent.loop", () => {
   process.env.MCP_TEST_TOKEN = token;
 
@@ -440,14 +533,13 @@ describe("tool.mcp in agent.loop", () => {
       { id: "mcp-loop", triggers: [{ event: "mcp/run" }] },
       async () => {
         const result = await agent.loop({
-          model: agent.model(async (request) => {
+          model: async (request) => {
             requests.push(structuredClone(request));
 
             return model(request);
-          }),
-          prompt: "go",
+          },
           tools: { hex },
-        });
+        })("go");
 
         text = result.text;
       },
@@ -490,14 +582,13 @@ describe("tool.mcp in agent.loop", () => {
       { id: "mcp-unknown", triggers: [{ event: "mcp/run" }] },
       async () => {
         await agent.loop({
-          model: agent.model(async (request) => {
+          model: async (request) => {
             requests.push(structuredClone(request));
 
             return model(request);
-          }),
-          prompt: "go",
+          },
           tools: { hex },
-        });
+        })("go");
       },
     );
 

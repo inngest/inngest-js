@@ -156,6 +156,14 @@ interface JsonRpcMessage {
 // The sessions of this process, by server and credentials.
 const sessions = new Map<string, Promise<Session>>();
 
+/**
+ * @internal Forgets this process's sessions, as a call that lands on another
+ * machine would find them: the next request starts its own.
+ */
+export const forgetMcpSessions = (): void => {
+  sessions.clear();
+};
+
 const preSendCodes = new Set([
   "ECONNREFUSED",
   "ENOTFOUND",
