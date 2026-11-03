@@ -127,6 +127,13 @@ interface Copy {
   echoes: Map<number, ThreadChangedData>;
   seq: number;
   sub?: Inbox;
+
+  /**
+   * What a run that only writes listens on: the echoes of its writes and the
+   * news that a ledger run took over, so it can send a write again.
+   */
+  echo?: Inbox;
+  echoing?: Promise<void>;
   loading?: Promise<void>;
   ready: boolean;
   view?: ThreadLedgerState;
@@ -607,6 +614,19 @@ const write = async (copy: Copy, change: ThreadChange): Promise<number> => {
     }
   }
 
+  // A run that never reads has no copy listening, so a write sent while a
+  // ledger run hands over would be lost. It listens from its first write on.
+  if (!copy.sub && !copy.echo) {
+    const { thread, app } = copy;
+    const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
+
+    copy.echo = step.subscribe(`ledger-echo:${thread}`, [
+      { event: threadChanged.name, if: mine },
+      { event: threadReady.name, if: mine },
+    ]) as unknown as Inbox;
+    await inboxOpenedPromise(copy.echo);
+  }
+
   copy.seq += 1;
 
   const seq = copy.seq;
@@ -619,7 +639,46 @@ const write = async (copy: Copy, change: ThreadChange): Promise<number> => {
     writeOf(copy, seq, change),
   );
 
+  await awaitEchoes(copy);
+
   return seq;
+};
+
+/**
+ * For a run that only writes: waits until the ledger has echoed every write,
+ * sending the ones a ledger run that took over did not apply again. A run
+ * that reads is served by its copy's own inbox instead.
+ */
+const awaitEchoes = async (copy: Copy): Promise<void> => {
+  const echo = copy.echo;
+
+  if (!echo || copy.sub) {
+    return;
+  }
+
+  copy.echoing ??= (async () => {
+    try {
+      while (copy.pending.length > 0) {
+        const batch = await echo.nextBatch();
+
+        if (batch === undefined || batch === null) {
+          return;
+        }
+
+        takeMessages(copy, batch);
+
+        if (copy.resend || (copy.heardReady && copy.pending.length > 0)) {
+          await resendPending(copy);
+        }
+
+        copy.heardReady = false;
+      }
+    } finally {
+      copy.echoing = undefined;
+    }
+  })();
+
+  await copy.echoing;
 };
 
 /**
@@ -786,8 +845,11 @@ const outsideSeq = new Map<string, number>();
  * - A ledger lives as a function run: it holds its state for as long as the
  *   platform lets a run wait, and hands over to a fresh run near Inngest's step
  *   limit (about 400 writes). A write sent during a handover is sent again by
- *   its writer when the next ledger run's `reset` arrives; a script, or a run
- *   that never reads, has no copy to do it, so its write can be lost.
+ *   its writer when the next ledger run's `reset` arrives. A function run that
+ *   only writes listens for the echo of each write and waits for it, so it
+ *   sends again like a run that reads. A writer outside any function (a
+ *   script or a route) has nothing to listen with, so its write is best-effort
+ *   and can be lost in a handover.
  * - A ledger belongs to one app: `kv.env` is shared by the functions of one app,
  *   not across apps.
  * - Writing inside a step's callback, reading outside a function, and a
@@ -959,6 +1021,10 @@ export const closeThreadCopies = async (instance: object): Promise<void> => {
   for (const copy of copies.get(instance)?.values() ?? []) {
     if (copy.sub && !copy.sub.closed) {
       await copy.sub.close();
+    }
+
+    if (copy.echo && !copy.echo.closed) {
+      await copy.echo.close();
     }
   }
 
