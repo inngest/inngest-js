@@ -74,6 +74,11 @@ export interface StartTarget {
    * model as an `agent/finished` message).
    */
   via?: "start_agent";
+
+  /**
+   * The thread to start the run on. Default: a new thread with a generated key.
+   */
+  thread?: string;
 }
 
 /**
@@ -126,9 +131,9 @@ export function startThread<TOutput>(
   }
 
   const n = nextCount(instance, "start");
-  // The address leads the key, so a tool that is given only the key can tell
-  // which agent the thread belongs to.
-  const key = `${target.address}:${ctx.runId}.${n}`;
+  // The address leads a generated key, so a tool that is given only the key
+  // can tell which agent the thread belongs to.
+  const key = target.thread ?? `${target.address}:${ctx.runId}.${n}`;
   const sessions = {
     agent_session: currentSessions(ctx).agent_session ?? (ctx.runId as string),
     agent_thread: key,

@@ -61,6 +61,7 @@ import { kv } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
   type AgentLoop,
+  type AgentLoopOptions,
   type AgentModel,
   addTools,
   buildHandlerLoop,
@@ -250,7 +251,9 @@ const createHandlerLoop = async (options: {
   }
 
   return buildHandlerLoop({
-    ...config.loop,
+    // `format` and `steer` are typed with the agent's own messages on the
+    // definition; the loop hands them those same messages, with `is()`.
+    ...(config.loop as Omit<AgentLoopOptions, "model">),
     model,
     ...(system !== undefined && { system }),
     tools: addTools(
@@ -713,6 +716,7 @@ export function createAgentFunction(
           recorder,
           threadKey: thread.key,
           questions,
+          ...(startMessage.id && { triggerId: startMessage.id }),
           remember:
             (await fields.get(
               "remember",
@@ -862,7 +866,7 @@ export function createAgentFunction(
     },
     id: config.id,
     address: ref,
-    start(input) {
+    start(input, options) {
       return startThread(
         {
           client,
@@ -871,6 +875,7 @@ export function createAgentFunction(
           typed: triggers.some((trigger) => {
             return trigger.event === internalEvents.FunctionInvoked;
           }),
+          ...(options?.thread !== undefined && { thread: options.thread }),
         },
         input,
       );

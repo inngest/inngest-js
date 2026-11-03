@@ -43,6 +43,12 @@ export const createLoopWiring = (options: {
    * Whether the loops of this run remember the thread's history.
    */
   remember: boolean;
+
+  /**
+   * The ID of the event that started the run. The loop never folds it in by
+   * itself: the handler passes it, or passes its own input instead.
+   */
+  triggerId?: string;
 }): AgentLoopWiring => {
   const {
     config,
@@ -54,14 +60,17 @@ export const createLoopWiring = (options: {
     threadKey,
     questions,
     remember,
+    triggerId,
   } = options;
 
   return {
     remember,
     async drain() {
       // The handler's inbox first, then each inbox the model opened, in the
-      // order it opened them.
-      const taken: AgentEvent[] = [...(await inbox.drain())];
+      // order it opened them. The run's trigger is the handler's to give.
+      const taken: AgentEvent[] = (await inbox.drain()).filter((event) => {
+        return !triggerId || event.id !== triggerId;
+      });
 
       for (const open of [...named.values()]) {
         if (!open.inbox.closed) {

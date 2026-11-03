@@ -152,7 +152,7 @@ export interface SandboxSetupContext {
   /**
    * The new sandbox. Step IDs are prefixed with `<name>:setup:sandbox:`.
    */
-  sandbox: SandboxIO;
+  sandbox: SandboxIO & Pick<SandboxHandle, "$">;
 
   /**
    * Runs `fn` once per run, memoized, such as reading a saved workspace from
@@ -648,6 +648,9 @@ const setupContext = (
       ? prefixed(idOrOptions)
       : { ...idOrOptions, id: prefixed(idOrOptions.id) };
   };
+  const setupRun: DurableSandbox["commands"]["run"] = (...args) => {
+    return sandbox.commands.run(scoped(args[0]), args[1], args[2]);
+  };
 
   return {
     name,
@@ -659,11 +662,8 @@ const setupContext = (
       },
     },
     sandbox: {
-      commands: {
-        run: (...args) => {
-          return sandbox.commands.run(scoped(args[0]), args[1], args[2]);
-        },
-      },
+      commands: { run: setupRun },
+      $: createDollar(setupRun),
       files: {
         write: (...args) => {
           return sandbox.files.write(scoped(args[0]), args[1]);

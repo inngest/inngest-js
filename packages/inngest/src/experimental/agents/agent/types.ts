@@ -44,6 +44,7 @@ import type {
   AgentLoop,
   AgentLoopOptions,
   AgentModel,
+  AgentUserContent,
   ModelValue,
 } from "../loop/loop.ts";
 import type {
@@ -280,7 +281,24 @@ export interface AgentFunctionConfig<
    * place. The agent's triggers, inbox and thread stay as they are.
    */
   loop?:
-    | Omit<AgentLoopOptions, "id" | "model" | "system" | "tools" | "history">
+    | (Omit<
+        AgentLoopOptions,
+        "id" | "model" | "system" | "tools" | "history" | "format" | "steer"
+      > & {
+        /**
+         * What the model sees for a message: the agent's own messages, typed
+         * from its triggers and `inbox`, with `is()`. Default: `formatEvent`.
+         */
+        format?: (message: AgentMessageOf<TTypes>) => AgentUserContent;
+
+        /**
+         * Chooses which drained messages are folded in, from the agent's own
+         * messages. What it skips comes back as `result.unread`.
+         */
+        steer?: (
+          drained: AgentMessageOf<TTypes>[],
+        ) => AgentMessageOf<TTypes>[] | Promise<AgentMessageOf<TTypes>[]>;
+      })
     | AgentLoop;
 
   /**
@@ -604,6 +622,15 @@ type FromSender = {
   from?: Sender;
 };
 
+/**
+ * A message the agent's handler and loop read: its triggers, its `inbox`
+ * sources and the agent messages, with `is()`.
+ */
+export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
+  AgentTypesOf<TTypes>["event"],
+  AgentTypesOf<TTypes>["sources"]
+>;
+
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
@@ -751,7 +778,10 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
   address: string;
 
   /**
-   * Starts the agent on a new thread with a generated key and returns at once.
+   * Starts the agent and returns at once: on a new thread with a generated key,
+   * or on `options.thread`, so a caller can keep one thread (and its sandboxes)
+   * across runs with a typed input. A message to that thread while the run is
+   * live lands in its inbox as usual.
    * The value is a promise of the thread's handle that also has its methods,
    * so `await agent.start(x).result()` needs one `await`. Needs a function's
    * step context. Called without `await`, the start is still sent when the
@@ -759,8 +789,12 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * the engine reports the step (the default for plain functions is not to send
    * an op nothing awaited), so `await` it there.
    * @param input What the agent is asked to do.
+   * @param options `thread`: the key of the thread to start the run on.
    */
-  start(input: TInput): StartedThreadPromise<TOutput>;
+  start(
+    input: TInput,
+    options?: { thread?: string },
+  ): StartedThreadPromise<TOutput>;
 
   /**
    * The handle of a thread of this agent.
