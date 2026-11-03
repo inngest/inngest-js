@@ -117,7 +117,8 @@ In a fresh worktree, start the tour (step 2) once first: that installs `node_mod
    | Next, Previous | Next, Previous (footer) | `Alt+]`, `Alt+[` |
    | Next file tab | Next file, or a tab | `Alt+Shift+L` |
    | Raw trace | Show everything | `Alt+Shift+H` |
-   | Concepts, Search, Keys, Dev Server | top bar buttons | `Alt+Shift+O`, `Alt+Shift+P`, `Alt+/`, `Alt+Shift+.` |
+   | Search | Search (top bar) | `Control+k` |
+   | Concepts, Dev Server (stack icon menu) | mouse only, no key | |
    | Focus lesson, trace, editor | | `Alt+Shift+1`, `Alt+Shift+T`, `Alt+Shift+E` |
 
    Useful reads: `agent-browser snapshot -i` for refs; the code is `Array.from(document.querySelectorAll(".view-line")).sort((a,b)=>parseFloat(a.style.top)-parseFloat(b.style.top)).map(l=>l.innerText).join("\n")`; to put messy code in, `click .view-lines`, `press Control+a`, `keyboard inserttext "..."` (typing triggers auto-close brackets).
@@ -129,7 +130,7 @@ In a fresh worktree, start the tour (step 2) once first: that installs `node_mod
 - Key hints are hidden in headless Chromium (`@media (hover: none)` hides `kbd`), so "Press Run ." in a snapshot is right; a real screen shows the key.
 - agent-browser key names: write `Alt+[` and `Alt+]`, not `Alt+BracketLeft`, which sends nothing useful.
 - Monaco's suggest box can cover the buttons after typing in the editor; `press Escape` before clicking.
-- Reset progress needs two presses of the same button within a few seconds ("Press again to reset").
+- Reset progress (left nav, mouse only) needs two clicks of the same button within a few seconds ("Press again to reset").
 - The Trace's first row for a run started by a message is `message`, with the content beside it; open it for the event as sent. By default the Trace shows only that row and the calls the code makes: a `next` span (the reader's `inbox.next()`, labelled so) and the reader's own steps. The SDK's own `subscribe`, `inbox`, `close`, `inbox:close`, Thread state and Finalization rows, and the wait bar between messages when the code never calls `inbox.next()`, show only under Show everything. The rule is in `site/src/trace.tsx` (`isPlumbing`), decided from the run's own spans.
 - Progress is saved per worktree in `.tour-cache/progress.json`, so your checks never touch anyone else's.
 - An agent with no body (`agents.agent({ id })`) is valid: the run reads its first message and ends with no output.
