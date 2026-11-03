@@ -47,7 +47,6 @@ import type {
   AgentUserContent,
   ModelValue,
 } from "../loop/loop.ts";
-import type { AgentScoreFn } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -64,6 +63,7 @@ import type {
 import type { AgentToolSet } from "./agentTools.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
+import type { AgentScoreFn } from "../loop/scores.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 import type { StartedThreadPromise } from "./startThread.ts";
@@ -530,7 +530,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * Messages sent to the thread, one per delivery, in order. The first is the
    * event that started the run.
    */
-  inbox: AgentInbox<
+  inbox: Inbox<
     AgentMessage<AgentTypesOf<TTypes>["event"], AgentTypesOf<TTypes>["sources"]>
   >;
 
@@ -639,41 +639,10 @@ export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
   AgentTypesOf<TTypes>["sources"]
 >;
 
-/**
- * The thread's inbox as the handler reads it.
- */
-export type AgentInbox<TMessage> = Inbox<TMessage> & {
-  /**
-   * Serves requests of one type: for each, in order, calls `fn` with its data
-   * and replies with what `fn` returns, so the sender's `result()` gets it
-   * (`start(input, { thread })` on a live thread). Ends when the inbox's loop
-   * forms do, after the agent's `idle` with nothing new, and returns the last
-   * reply. Messages of other types are skipped.
-   *
-   * ```ts
-   * async ({ inbox }) => inbox.serve(attemptRequested, async (input) => attempt(input))
-   * ```
-   */
-  serve<TType extends EventTypeWithAnySchema<string>, TResult>(
-    type: TType,
-    fn: (data: InboxMessageOf<{ event: TType }>["data"]) => Promise<TResult>,
-  ): Promise<TResult | undefined>;
-};
-
-type Replies = {
-  /**
-   * Answers the sender that waits on this message (`message()` or `start()`
-   * on a live thread): its `result()` resolves with `output` now, without
-   * waiting for the run to end. Only the first result counts. On a message no
-   * one waits on it does nothing.
-   */
-  reply(output: unknown): Promise<void>;
-};
-
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
-  | (TriggerMessage<TEvent> & Replies)
-  | (SourceMessages<TSources> & Replies)
-  | (MessageOf<AgentMessageData, "agent/message"> & FromSender & Replies)
+  | TriggerMessage<TEvent>
+  | SourceMessages<TSources>
+  | (MessageOf<AgentMessageData, "agent/message"> & FromSender)
   | (MessageOf<AgentQuestionData, "agent/question"> &
       FromSender & {
         /**
@@ -682,8 +651,8 @@ export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
          */
         reply(answer: string | { outcome: "refused" }): Promise<void>;
       })
-  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender & Replies)
-  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender & Replies);
+  | (MessageOf<AgentAnswerData, "agent/answer"> & FromSender)
+  | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender);
 
 /**
  * An inbox the model opened with `inbox_listen`.

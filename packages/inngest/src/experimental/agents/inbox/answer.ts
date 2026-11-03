@@ -14,9 +14,8 @@
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
-import type { Json } from "../json.ts";
 import { threadSessions } from "../threads/thread.ts";
-import { agentAnswer, agentMessageResult, type SenderData } from "./events.ts";
+import { agentAnswer, type SenderData } from "./events.ts";
 
 /**
  * The question being answered: its id and who asked.
@@ -90,39 +89,6 @@ export async function answerQuestion(
 
   if (execution && !execution.executingStep) {
     await step.sendEvent(answerEventId(question.data.id), event);
-
-    return;
-  }
-
-  await client.send(event);
-}
-
-/**
- * Sends the result of a message now, before the run that took it ends, so the
- * sender's `result()` gets it. Inside a function it is a step, so a replay
- * sends it once. A later result for the same message (the run's own, when it
- * ends) is not read: the sender takes the first.
- * @param client Inngest client.
- * @param id The ID of the message event.
- * @param runId The run that answers.
- * @param output What the sender's `result()` resolves with.
- */
-export async function replyToMessage(
-  client: Inngest.Any,
-  id: string,
-  runId: string,
-  output: unknown,
-): Promise<void> {
-  const event = agentMessageResult.create({
-    id,
-    run_id: runId,
-    status: "completed",
-    output: output as Json,
-  });
-  const execution = getAsyncCtxSync()?.execution;
-
-  if (execution && !execution.executingStep) {
-    await step.sendEvent(`reply:${id}`, event);
 
     return;
   }

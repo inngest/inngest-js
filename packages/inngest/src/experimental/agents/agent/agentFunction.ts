@@ -41,7 +41,7 @@ import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import { cardOf } from "../discovery/discovery.ts";
-import { answerQuestion, replyToMessage } from "../inbox/answer.ts";
+import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
@@ -733,9 +733,6 @@ export function createAgentFunction(
           },
           (data) => {
             questions.receive(data);
-          },
-          (id, output) => {
-            return replyToMessage(client, id, runId, output);
           },
         );
 
