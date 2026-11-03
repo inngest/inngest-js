@@ -6,12 +6,12 @@ How to add one page of the Agents Tour and prove it works. Written for someone w
 
 - **Show, don't tell.** Every call, value or file the text names is on screen: a tab, the Trace, a panel. If Run does something, the code for it is in `run.ts`. Never describe in prose something the reader cannot see.
 - **Name the thing every time.** No "it", "its", "this" or "that" standing in for a thing: write "Run calls...", "The run returns...", "Our `hello` agent has no body". A learner cannot tell what "it" points at.
-- **We build together.** Collaborative and friendly: say "we", "let's", "our". An agent the reader built is "our `hello` agent", never a bare `hello` on its own. Warm but short: no filler, no exclamation marks.
+- **We build together.** Write as if sat next to the reader, building the agent with them: friendly and collaborative, with "we", "let's" and "our" where they come naturally. The voice is a tone, not a formula: introduce an agent as "our `hello` agent" once if that reads well, then just call it `hello`. Never repeat "our" in every sentence. Warm but short: no filler, no exclamation marks.
 - **Every "look at" sentence says where**: "In `run.ts`, ...", "In the Trace, ...".
 - **One shape per page**, one paragraph each:
   1. What the idea does for you, in one or two sentences. The code is in the editor.
-  2. "Press {Run}." and what `run.ts` does, naming the tab: "Run calls the code in `run.ts`, which starts our `hello` agent with the message `Hi`."
-  3. Where to look and what is there: "In the Trace, the run of our `hello` agent is completed."
+  2. "Press {Run}." and what `run.ts` does, naming the tab: "Run calls the code in `run.ts`, which starts `hello` with the message `Hi`."
+  3. Where to look and what is there: "In the Trace, the run is completed."
 - At most three short sentences before the reader needs the code.
 - Name every action with its key hint in braces: `Press {Run}.` renders as **Run** plus its key. The names come from the key table in `shared/keys/*.ts` (`{Run}` and `{cheat}` are in use; `shared/hints.ts` resolves them); an unknown name fails `pnpm tour:lessons`.
 - First line of `page.md` is `# Title`. Supported markdown: paragraphs, `code`, **bold**, *italic*, `<kbd>`. Nothing else.
