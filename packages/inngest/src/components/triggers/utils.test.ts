@@ -90,6 +90,54 @@ describe("eventType: failure", async () => {
     );
   });
 
+  test("union schema lists the failing fields of each member", async () => {
+    const events = [
+      { name: "evt", data: { ingredientIds: [1, 2] } },
+    ] as const;
+    const triggers = [
+      eventType("evt", {
+        schema: z.union([
+          z.object({ all: z.literal(true), context: z.string().nullable() }),
+          z.object({
+            ingredientIds: z.array(z.string()),
+            context: z.string().nullable(),
+          }),
+        ]),
+      }),
+    ] as const;
+
+    const error = await validateEvents(events, triggers).catch(
+      (err: unknown) => err,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    const { message, issues } = error as Error & { issues: unknown[] };
+    expect(message).toContain("value: Invalid input");
+    expect(message).toContain(
+      "ingredientIds.0: Expected string, received number",
+    );
+    expect(message).toContain("context: Required");
+    expect(issues).toHaveLength(1);
+  });
+
+  test("the issues stay on the error", async () => {
+    const events = [{ name: "evt", data: { msg: 1 } }] as const;
+    const triggers = [
+      eventType("evt", { schema: z.object({ msg: z.string() }) }),
+    ] as const;
+
+    const error = await validateEvents(events, triggers).catch(
+      (err: unknown) => err,
+    );
+
+    const { issues } = error as Error & {
+      issues: { path?: unknown[]; message: string }[];
+    };
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toEqual(["msg"]);
+    expect(issues[0]?.message).toBe("Expected string, received number");
+  });
+
   test("2nd event fails both schemas", async () => {
     const events = [
       { name: "evt-2", data: { name: "Alice" } },
