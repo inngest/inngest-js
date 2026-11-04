@@ -48,6 +48,21 @@ const isNextCall = (step: TraceStep) => {
   return step.id === 'span:["inbox:start"]';
 };
 
+// The spans of the ledger, the SDK's default store for kv and thread state:
+// its `ledger-` steps, the `next` and `drain` reads of its state and the
+// content hashes it names its sub-spans by. A run on a memory store has none.
+const isLedger = (step: TraceStep) => {
+  return (
+    /^ledger-/.test(step.name) ||
+    /^ledger-/.test(step.id) ||
+    /^[0-9a-f]{40}$/.test(step.name) ||
+    (/^(next|drain)$/.test(step.name) &&
+      step.children.some((child) => {
+        return /^ledger-/.test(child.name);
+      }))
+  );
+};
+
 // What the SDK does on its own. Only "Show everything" lists it. Spans are
 // decided by what the run recorded: an agent whose body never calls
 // `inbox.next()` has no `next` span, so nothing here guesses from the code.
@@ -58,6 +73,7 @@ const isPlumbing = (step: TraceStep) => {
 
   return (
     isHousekeeping(step) ||
+    isLedger(step) ||
     /^span:\["inbox/.test(step.id) ||
     /^(inbox|subscribe|close)\b/.test(step.name)
   );

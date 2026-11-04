@@ -132,10 +132,11 @@ const triggerOf = async (devServer: DevServer, id: string | undefined) => {
 };
 
 // Functions the reader did not write: each agent's `-cleanup` and
-// `-finished`, the SDK's shared agent functions, and the host's `tour-start`,
-// which starts the page's agent for Run.
+// `-finished`, the SDK's shared agent functions (the ledger's supervisor and
+// its per-thread runs among them), and the host's `tour-start`, which starts
+// the page's agent for Run.
 const hidden =
-  /-(cleanup|finished|arrival|agents-announce|agents-ask-timeout|tour-start)$/;
+  /-(cleanup|finished|arrival|agents-announce|agents-ask-timeout|agents-thread-ledger|agents-thread-ledger-run|tour-start)$/;
 
 export const readRuns = async (devServer: DevServer, from: string) => {
   const data = await devServer.gql<{
