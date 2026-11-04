@@ -110,7 +110,7 @@ export const createCleanupFunction = (
         }
 
         if (thread) {
-          await markThreadIdle(store, ref, thread, runId);
+          await markThreadIdle(store, ref, thread, runId, onLedger());
         }
       } finally {
         await closeCopies();

@@ -135,9 +135,10 @@ export const threadRecorder = (
         restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
       });
     };
-    // The run is the only writer of its own record while it lives, so the
-    // ledger, which keeps a local copy and settles a conditional write with a
-    // round trip, takes a plain read and write; a store keeps its atomic update.
+    // The run is the only writer of its own record while it lives (one run per
+    // agent per thread, and records are per agent), so the ledger, which has no
+    // conditional writes, takes a plain read and write where the newest run
+    // wins; a store keeps its atomic update.
     let written: ThreadRecord;
 
     if (single) {
@@ -368,14 +369,34 @@ export const markThreadIdle = async (
    * The run that ended.
    */
   runId: string,
+
+  /**
+   * Whether the store is the ledger, which has no conditional writes: the
+   * record is then read and written plainly, and the newest run wins.
+   */
+  plain = false,
 ): Promise<void> => {
-  await store.scope("thread", thread).update(recordKey(agent), (found) => {
+  const scope = store.scope("thread", thread);
+  const idle = (found: ThreadRecord | undefined) => {
     const current = found ?? emptyRecord();
 
     return current.runId === runId
       ? withTransition(current, { ...current, status: "idle" as const })
       : current;
-  });
+  };
+
+  if (plain) {
+    const found = await scope.get(recordKey(agent));
+
+    // Only a record this run still owns changes: a newer run's is left alone.
+    if (found?.runId === runId) {
+      await scope.set(recordKey(agent), idle(found));
+    }
+
+    return;
+  }
+
+  await scope.update(recordKey(agent), idle);
 };
 
 /**

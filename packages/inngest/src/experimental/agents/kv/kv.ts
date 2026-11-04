@@ -29,6 +29,7 @@ import { nextCount } from "../agent/executionCounter.ts";
 import { currentSessions } from "../agent/sessions.ts";
 import type { Json } from "../json.ts";
 import {
+  conditionalOnLedger,
   isLedgerKvStore,
   type LedgerKvStore,
   type LedgerSender,
@@ -906,6 +907,10 @@ async function tryDecode<K extends KvKeyInput>(
  * Reads and writes one scope instance directly, with values as JSON.
  */
 interface RawKv {
+  /**
+   * Set on the ledger's handle, which has no conditional writes.
+   */
+  readonly ledger?: true;
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
   setIfAbsent(
@@ -926,12 +931,6 @@ interface RawKv {
   ): Promise<{ stopped: R } | { written: unknown }>;
   delete(key: string): Promise<void>;
 
-  /**
-   * Deletes the key only if it still holds `read` (the value as `get` returned
-   * it, `undefined` for none) and says whether it did. Present on stores that
-   * can do it in one step: `take` uses it so two callers never both take.
-   */
-  deleteIf?(key: string, read: unknown): Promise<boolean>;
   all(): Promise<Record<string, unknown>>;
   clear(): Promise<void>;
   indexAdd(index: string, member: string, score: number): Promise<void>;
@@ -1098,7 +1097,18 @@ export interface Kv {
   readonly run: KvScopeInstance;
 
   /**
-   * The current thread's keys, kept across the runs of an agent thread.
+   * EXPERIMENTAL: The current thread's keys, kept across the runs of an agent
+   * thread.
+   *
+   * On the default ledger store, thread state is eventually consistent: a
+   * shared whiteboard every live run on the thread sees with a small lag, not a
+   * lock. A value never goes backwards for a key (the later write wins,
+   * ordered by when Inngest recorded it, then by writer), but two writers
+   * racing on one key can each read their own value until the other's arrives.
+   * For anything agents must agree on, send a message to one owner or
+   * configure a store adapter. Prefer one writer per key. The ledger has no
+   * conditional writes: `setIfAbsent`, `update` and `take` throw there and ask
+   * for a store adapter, which keeps them.
    */
   readonly thread: KvScopeInstance;
 
@@ -1199,6 +1209,7 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
   const hash = kvHash(scope, ids);
 
   return {
+    ...(isLedgerKvStore(adapter) && { ledger: true as const }),
     async get(key) {
       const raw = await adapter.get(hash, key);
 
@@ -1213,6 +1224,10 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
       );
     },
     async setIfAbsent(key, value, options) {
+      if (isLedgerKvStore(adapter)) {
+        throw conditionalOnLedger("setIfAbsent");
+      }
+
       return adapter.setIfAbsent(
         hash,
         key,
@@ -1221,6 +1236,10 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
       );
     },
     async update(key, compute) {
+      if (isLedgerKvStore(adapter)) {
+        throw conditionalOnLedger("update");
+      }
+
       for (let attempt = 0; attempt < updateAttempts; attempt++) {
         const raw = await adapter.get(hash, key);
         const outcome = await compute(
@@ -1250,13 +1269,6 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
     async delete(key) {
       await adapter.delete(hash, key);
     },
-    ...(isLedgerKvStore(adapter) && {
-      async deleteIf(key: string, read: unknown) {
-        // The ledger compares the stored text, so the value read is put back as
-        // the text it was stored as.
-        return adapter.deleteIf(hash, key, JSON.stringify(read));
-      },
-    }),
     async all() {
       const raw = await adapter.all(hash);
 
@@ -1801,32 +1813,23 @@ export function createKv(
         // Checked before the key is removed, so a value that fails its schema
         // stays readable.
         const read = await run("take", name, async (h) => {
-          for (let attempt = 0; attempt < updateAttempts; attempt++) {
-            const raw = await h.get(name);
-            const checked = await tryDecode(key, raw);
-            if (!checked.ok) {
-              return {
-                "~kvRead": true,
-                found: false,
-                invalid: checked.invalid,
-              } satisfies KvRead;
-            }
-
-            if (!h.deleteIf || raw === undefined) {
-              await h.delete(name);
-
-              return found(raw);
-            }
-
-            // One caller wins the delete: the others read again.
-            if (await h.deleteIf(name, raw)) {
-              return found(raw);
-            }
+          if (h.ledger) {
+            throw conditionalOnLedger("take");
           }
 
-          throw new Error(
-            `kv take of "${name}" kept losing to other callers; gave up after ${updateAttempts} tries`,
-          );
+          const raw = await h.get(name);
+          const checked = await tryDecode(key, raw);
+          if (!checked.ok) {
+            return {
+              "~kvRead": true,
+              found: false,
+              invalid: checked.invalid,
+            } satisfies KvRead;
+          }
+
+          await h.delete(name);
+
+          return found(raw);
         });
 
         return decode(key, unwrapRead(read));

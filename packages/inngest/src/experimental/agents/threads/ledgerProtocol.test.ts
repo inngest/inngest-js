@@ -84,7 +84,7 @@ describe("ledger expiry", () => {
     const change = resolveTtl({ op: "set", key: "k", value: 1, ttl: 10 }, 5000);
     const state = emptyThreadState();
 
-    applyChange(state, change, 5000);
+    applyChange(state, change, [5000, "w", 1]);
 
     expect(change).toEqual({ op: "set", key: "k", value: 1, exp: 15000 });
     expect(liveKey(state, "k", 14999)?.v).toBe(1);
@@ -209,7 +209,7 @@ describe("ledger handover", () => {
         thread,
         app: "handover-app",
         version: 7,
-        state: { keys: { k: { v: 1 } }, indexes: {} },
+        state: { keys: { k: { v: 1, at: [1, "r1", 1] } }, indexes: {} },
         last: { r1: 1 },
       },
     ) as ThreadHandoverData;
