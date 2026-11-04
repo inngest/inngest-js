@@ -14,9 +14,22 @@ import {
   eventType,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
+import type { Renewal, WireGrant } from "../agent/grant.ts";
 import type { Json } from "../json.ts";
 import type { LentMachine } from "../sandboxes/defs.ts";
-import type { ReportSpec } from "./reports.ts";
+import type { ReportSchemas } from "./reports.ts";
+
+/**
+ * What a message carries under the reserved key `"::agents"` when it relies on
+ * a grant: the grant, and a proof made for this event and target. A start
+ * always carries it; a message sent to an unattached child by its starter may
+ * carry a `renew`.
+ */
+export type GrantData = {
+  grant?: WireGrant;
+  pop?: string;
+  renew?: Renewal;
+};
 
 /**
  * What every event sent to a thread carries, to route it.
@@ -53,46 +66,35 @@ export type SenderData = (
   | { kind: "function"; id: string; key: string; depth?: number }
 ) & {
   /**
-   * On the message `start()` sends: the key of the thread it opens, the
-   * limits it passes down, and whether the agent has an `invoke()` trigger,
-   * so `content` is that trigger's data and the run's event has its shape.
+   * On the message `start()` sends: the key of the thread it opens, and
+   * whether the agent has an `invoke()` trigger, so `content` is that
+   * trigger's data and the run's event has its shape. The limits, report
+   * routes and lend it passes down are in the signed grant, under
+   * `data["::agents"]`.
    */
   thread?: string;
-  limits?: unknown;
   typed?: boolean;
 
   /**
-   * On the message `start()` sends: the reports the agent owes the starter
-   * and others, by type, with the JSON Schema of each and where it goes.
+   * On the message `start()` sends: the reports the agent owes, by type, with
+   * the JSON Schema of each and whether it is owed. Where each goes is in the
+   * grant.
    */
-  reports?: ReportSpec;
-
-  /**
-   * An HMAC over the destinations of `reports`, the child's thread and its
-   * app, so a report can prove the starter granted its destination.
-   */
-  reports_sig?: string;
+  reports?: ReportSchemas;
 
   /**
    * On the message `start()` or `start_agent` sends to an attached child:
    * the run ID of the parent. The child is cancelled by the `agent/parent.ended`
-   * event of that run.
+   * event of that run. The grant carries the same run ID, signed.
    */
   parent_run?: string;
 
   /**
    * On the message `start()` sends when it lends the child tools or sandboxes:
-   * what is lent, by sandbox name.
+   * what is lent, by sandbox name. The grant holds a digest of it, so a child
+   * refuses a `lent` that does not match.
    */
   lent?: Record<string, LentMachine>;
-
-  /**
-   * The signature of `lent`, made with the app's signing key over the lent
-   * machines, `parent_run` and the child's thread. A child refuses a `lent`
-   * that is unsigned or does not match. It carries no time: the lend lasts as
-   * long as the parent's run, whose end cancels the child.
-   */
-  lent_sig?: string;
 };
 
 /**
@@ -102,6 +104,7 @@ export type SenderData = (
 export type AgentMessageData = AgentRouting & {
   content: Json;
   from?: SenderData;
+  "::agents"?: GrantData;
 };
 
 /**
@@ -137,6 +140,7 @@ export const agentMessage = eventType("agent/message", {
  */
 export type AgentQuestionData = AgentRouting & {
   from?: SenderData;
+  "::agents"?: GrantData;
   /**
    * The question's ID. The answer's `re` is this value.
    */

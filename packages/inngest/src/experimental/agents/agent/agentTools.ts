@@ -40,12 +40,23 @@ import {
   owesRecord,
   type ReportSpec,
   requiredReports,
+  reservedReportType,
 } from "../inbox/reports.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { kv } from "../kv/kv.ts";
-import { threadHandle, threadSessions } from "../threads/thread.ts";
+import {
+  sendMessage,
+  threadHandle,
+  threadSessions,
+} from "../threads/thread.ts";
 import { trackChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
+import {
+  type Grant,
+  grantOfExecution,
+  proofOf,
+  renewalOfExecution,
+} from "./grant.ts";
 import { agentOfKey, relationOf } from "./relations.ts";
 import { AgentStoppedError } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
@@ -126,7 +137,7 @@ const reportsInput = z
   )
   .optional()
   .describe(
-    "Typed reports the agent should send back to you. They arrive in your inbox as `agent/report/<type>` messages.",
+    'Typed reports the agent should send back to you. Each arrives in your inbox as a `Report "<type>"` message. A type name does not start with `agent/` or `inngest/`.',
   );
 
 const startInput = z.object({
@@ -211,6 +222,12 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
 
       resolved = Object.fromEntries(
         reports.map((report) => {
+          if (reservedReportType(report.type)) {
+            throw new Error(
+              `The report type "${report.type}" is reserved: a type name is not empty, has no "*" and does not start with "agent/" or "inngest/".`,
+            );
+          }
+
           return [
             report.type,
             {
@@ -274,8 +291,12 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
  * thread that started it), its children (threads it started, in any run) and
  * the members of its group. The relation is read from the thread keys alone.
  */
-const checkReach = (tool: string, thread: string): string | undefined => {
-  const self = executionOf().agent;
+const checkReach = (
+  tool: string,
+  thread: string,
+): { address?: string; grant?: Grant } => {
+  const execution = executionOf();
+  const self = execution.agent;
 
   if (!self?.ref) {
     throw new Error(`${tool} can only be used by an agent`);
@@ -283,13 +304,21 @@ const checkReach = (tool: string, thread: string): string | undefined => {
 
   const reach = relationOf(clientOf(), self.thread, thread);
 
-  if (reach === undefined) {
-    throw new Error(
-      `You can't reach thread "${thread}" with ${tool}. You can reach the thread that started you, threads you started with start_agent, and members of your group, by the thread key start_agent or a group message gave you.`,
-    );
+  if (reach !== undefined) {
+    return { address: reach.address };
   }
 
-  return reach.address;
+  // A thread started with a key of its own has no tag, but the grant its
+  // start carried names its starter, so the run that start created can reach it.
+  const grant = grantOfExecution(execution.instance);
+
+  if (grant?.par && grant.par.key === thread && grant.sub === self.thread) {
+    return { address: grant.par.address, grant };
+  }
+
+  throw new Error(
+    `You can't reach thread "${thread}" with ${tool}. You can reach the thread that started you, threads you started with start_agent, and members of your group, by the thread key start_agent or a group message gave you.`,
+  );
 };
 
 const stopAgent = async ({ thread }: { thread: string }) => {
@@ -349,10 +378,25 @@ const messageAgent = async ({
 }) => {
   // A parent's address comes from the key that names it; any other thread's
   // agent leads its key.
-  const address =
-    checkReach("message_agent", thread) ?? addressOfThread(thread);
+  const reach = checkReach("message_agent", thread);
+  const address = reach.address ?? addressOfThread(thread);
+  const { grant } = reach;
 
-  await threadHandle(clientOf(), address, thread).message(content);
+  // A message that relies on the grant carries it with a proof made for this
+  // message, so a copy of the grant cannot be used for another.
+  await sendMessage(clientOf(), address, thread, content, {
+    ...(grant && {
+      agents: (id: string) => {
+        return proofOf(
+          clientOf(),
+          grant,
+          id,
+          thread,
+          renewalOfExecution(executionOf().instance),
+        );
+      },
+    }),
+  });
 
   return { ok: true as const };
 };
@@ -364,7 +408,8 @@ const askAgent = async ({
   thread: string;
   question: string;
 }) => {
-  const agent = checkReach("ask_agent", thread) ?? addressOfThread(thread);
+  const reach = checkReach("ask_agent", thread);
+  const agent = reach.address ?? addressOfThread(thread);
   const execution = executionOf();
   const self = execution.agent;
 
@@ -381,8 +426,23 @@ const askAgent = async ({
   // answer, or `timed_out`, arrives as an `agent/answer` message.
   await step.sendEvent(`${id}:send`, [
     agentQuestion.create(
-      { agent, thread, id, text: question, from: senderOf(execution) },
-      { meta: { sessions: threadSessions(thread) } },
+      {
+        agent,
+        thread,
+        id,
+        text: question,
+        from: senderOf(execution),
+        ...(reach.grant && {
+          "::agents": proofOf(
+            clientOf(),
+            reach.grant,
+            id,
+            thread,
+            renewalOfExecution(execution.instance),
+          ),
+        }),
+      },
+      { meta: { sessions: threadSessions(thread) }, id },
     ),
     agentAskTimeout.create({
       id,

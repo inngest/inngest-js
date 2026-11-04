@@ -16,6 +16,12 @@ import {
   agentToolsFor,
   sandboxAgentTools,
 } from "./agentTools.ts";
+import {
+  messageGrantProblem,
+  mintGrant,
+  parentLine,
+  proofOf,
+} from "./grant.ts";
 import { relatedKey } from "./relations.ts";
 import { run } from "./test-helpers.ts";
 
@@ -134,7 +140,7 @@ const callTools = async (
   return { results: output as unknown[], invokes };
 };
 
-let sent: { name: string; data: Record<string, unknown> }[] = [];
+let sent: { id?: string; name: string; data: Record<string, unknown> }[] = [];
 
 beforeEach(() => {
   sent = [];
@@ -418,6 +424,103 @@ describe("message_agent", () => {
     // The body replays after each send, so the last three are the final pass.
     expect(results.slice(-3, -1)).toEqual([{ ok: true }, { ok: true }]);
     expect(JSON.stringify(results[results.length - 1])).toMatch(/can't reach/);
+  });
+});
+
+describe("message_agent: a child started with a key of its own", () => {
+  const boss = `${plain.card.address}:boss.0`;
+  // A key a caller chose: it carries no tag, so only the grant relates it.
+  const custom = "custom-key-1";
+  const messageBoss = async (grantOver?: { id: string; given: object }) => {
+    const results: unknown[] = [];
+    const tools = agentToolSet({ functions: live });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      const resolved = await resolveToolCall(
+        tools,
+        {
+          op: "call",
+          id: 1,
+          tool: "message_agent",
+          args: [],
+          kwargs: { thread: boss, content: "done" },
+        },
+        "{}",
+      );
+
+      try {
+        results.push(
+          resolved.error !== undefined
+            ? { error: resolved.error }
+            : await resolved.invoke({
+                signal: new AbortController().signal,
+                idempotencyKey: "k",
+              }),
+        );
+      } catch (error) {
+        results.push({ error: String(error) });
+      }
+    });
+    const data: Record<string, unknown> = {
+      agent: `${testClientId}/caller`,
+      thread: custom,
+      content: "go",
+      from: {
+        ...(grantOver && { thread: custom }),
+        kind: "agent",
+        address: plain.card.address,
+        key: boss,
+      },
+      ...(grantOver && { "::agents": grantOver.given }),
+    };
+
+    await run(caller.fn, {
+      event: {
+        ...(grantOver && { id: grantOver.id }),
+        name: "agent/message",
+        data,
+      },
+    });
+
+    return results.at(-1);
+  };
+
+  test("the run its start created reaches its starter, with a proof for the message", async () => {
+    const grant = mintGrant(client, {
+      thread: custom,
+      lines: [`iss=${testClientId}`, parentLine(plain.card.address, boss)],
+    });
+
+    expect(
+      await messageBoss({
+        id: "start-1",
+        given: proofOf(client, grant, "start-1", custom),
+      }),
+    ).toEqual({ ok: true });
+
+    const message = sent.find((event) => event.name === "agent/message");
+    const carried = message?.data["::agents"] as {
+      grant: unknown;
+      pop: string;
+    };
+
+    expect(message?.data.thread).toBe(boss);
+    expect(
+      messageGrantProblem(
+        client,
+        { id: message?.id, data: message?.data },
+        boss,
+      ),
+    ).toBeUndefined();
+    // The proof is for this event ID and thread only.
+    expect(
+      messageGrantProblem(client, { id: "other", data: message?.data }, boss),
+    ).toBeDefined();
+    expect(carried.pop).toEqual(expect.any(String));
+  });
+
+  test("a run that was started by another message has no relation to a custom key's parent", async () => {
+    expect(JSON.stringify(await messageBoss())).toMatch(/can't reach/);
+    expect(sent.filter((event) => event.name === "agent/message")).toEqual([]);
   });
 });
 

@@ -37,7 +37,7 @@ import type {
   AgentMessageData,
   AgentQuestionData,
 } from "../inbox/events.ts";
-import type { AgentReport, AgentReportRoute } from "../inbox/reports.ts";
+import type { AgentReportLine } from "../inbox/reports.ts";
 import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
@@ -474,14 +474,17 @@ export interface StartOptions extends LendOptions {
   group?: string;
 
   /**
-   * What the started agent owes back, as typed reports: each line is a
-   * report type with `.to(...threads)` (where it goes; with no thread, back
-   * to the starter) and `.required()` (it is owed: the agent's loop reminds
-   * its model before it may finish). The lines of one type merge. The
-   * routing travels in the start event, so the agent needs no prior
-   * knowledge of the types.
+   * EXPERIMENTAL: what the started agent owes back, as typed reports. A line
+   * is an ordinary `eventType()` (the report goes back to the thread that
+   * started the agent) or `{ event, to, if, required }`: `to` is the thread or
+   * threads it goes to (`me`, `agent.thread(key)`), `if` a CEL condition over
+   * the report (`async.data`) and `required` that the report is owed: the
+   * agent's loop reminds its model before it may finish. The lines of one
+   * type merge. The routing travels in the signed grant of the start, so the
+   * agent needs no prior knowledge of the types. `msg.is(milestone)` narrows
+   * the report in the receiver's inbox, typed as the event type's data.
    */
-  reports?: readonly AgentReportRoute[];
+  reports?: readonly AgentReportLine[];
 }
 
 /**
@@ -502,18 +505,17 @@ export interface Me {
 
   /**
    * EXPERIMENTAL: sends a typed report to the destinations the run's starter
-   * listed for its type (every one whose `if` passes). The data is checked
-   * against the report's schema first and a bad report throws, sending
-   * nothing. It throws when the run was not started with this report type.
-   * Counts toward a required report. Sent from a step, so a replay sends it
-   * once.
+   * listed for its type (every one whose `if` passes). The type is an
+   * ordinary `eventType()`. The data is checked against its schema first and a
+   * bad report throws, sending nothing. It throws when the run was not started
+   * with this report type. Counts toward a required report. Sent from a step,
+   * so a replay sends it once.
    */
-  report<
-    TName extends string,
-    TSchema extends StandardSchemaV1<Record<string, unknown>>,
-  >(
-    type: AgentReport<TName, TSchema>,
-    data: StandardSchemaV1.InferInput<TSchema>,
+  report<TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined>(
+    type: { readonly name: string; readonly schema: TSchema },
+    data: TSchema extends StandardSchemaV1
+      ? StandardSchemaV1.InferInput<TSchema>
+      : Record<string, unknown>,
   ): Promise<void>;
 }
 
@@ -855,9 +857,9 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * thread started with the same group name can `message_agent` and
    * `ask_agent` each other, and the live ones hear of each join. A group needs
    * a generated key, so it cannot be set with `thread`.
-   * `reports`: the typed reports the agent may send back, where each goes and
-   * which it owes, made with `report.to(...)` and `report.required()`. The
-   * agent's model gets a `report` tool, and its handler `me.report()`.
+   * `reports`: the typed reports the agent may send back, as event types or
+   * `{ event, to, if, required }` lines: where each goes and which it owes.
+   * The agent's model gets a `report` tool, and its handler `me.report()`.
    * `tools` and `sandboxes` lend the parent's sandbox tools and sandboxes to
    * the child, which runs them as steps of its own run (same app only), and
    * `attach` ties the child to this run: it is cancelled when this run ends

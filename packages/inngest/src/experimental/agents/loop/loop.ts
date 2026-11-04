@@ -114,7 +114,8 @@ const textOfJson = (value: unknown): string => {
  *   no KV store.
  * - `agent/group.joined`: who joined the group and the thread key to reach it
  *   with.
- * - `agent/report/<type>`: `Report "<type>" from <address> (thread <key>): <data>`.
+ * - a report (an event of the type the starter asked for, such as
+ *   `milestone`): `Report "<type>" from <address> (thread <key>): <data>`.
  * - `agent/answer`: the answer next to the question it answers (`questions`
  *   maps a question's id to its text); `refused` and `timed_out` read as a
  *   plain "no answer" line.
@@ -129,11 +130,12 @@ export const formatEvent = (
 ): string => {
   const data = (event.data ?? {}) as Record<string, unknown>;
   // A report's data is its own, so its sender is beside it.
-  const from = (
-    event.name.startsWith("agent/report/")
-      ? (event as { from?: unknown }).from
-      : data.from
-  ) as Sender | undefined;
+  const report =
+    typeof (event as { report?: unknown }).report === "object" &&
+    (event as { report?: unknown }).report !== null;
+  const from = (report ? (event as { from?: unknown }).from : data.from) as
+    | Sender
+    | undefined;
   const where = from?.key === undefined ? "" : ` (thread ${from.key})`;
 
   if (event.name === "agent/message") {
@@ -199,10 +201,8 @@ export const formatEvent = (
     return `Answer to ${about} from ${whoOf(from)}: ${textOfJson(data.text)}`;
   }
 
-  if (event.name.startsWith("agent/report/")) {
-    const type = event.name.slice("agent/report/".length);
-
-    return `Report "${type}" from ${whoOf(from)}${where}: ${JSON.stringify(event.data)}`;
+  if (report) {
+    return `Report "${event.name}" from ${whoOf(from)}${where}: ${JSON.stringify(event.data)}`;
   }
 
   return JSON.stringify({ event: event.name, data: event.data });

@@ -1,16 +1,19 @@
 /**
  * @module
  * EXPERIMENTAL: typed reports. A report is a message a started agent sends
- * back, defined once with `agentReport(name, schema)` and shared across the
- * repo like an `eventType()`. The starter says what the child owes and to
- * whom with the `reports` start option; the routing travels in the start
- * event, as JSON Schema and thread addresses, so a child found by discovery
- * needs no prior knowledge of the types.
+ * back. Its type is an ordinary `eventType()`, shared across the repo like any
+ * other event type: the starter says what the child owes and to whom with the
+ * `reports` start option, and the child sends one with `me.report(type, data)`
+ * or its model's `report` tool. The routing travels in the start event: the
+ * JSON Schema of each type, and the destinations inside the signed grant, so a
+ * child found by discovery needs no prior knowledge of the types.
  *
- * A report is delivered to a thread directly, as `agent/report/<name>`, like
- * `agent/message`. The child checks the data against the schema when it
- * sends, and evaluates each destination's `if` itself, so one report goes to
- * every destination whose `if` passes.
+ * A report is delivered to a thread directly, as an `agent/report` event with
+ * its routing under `data["::agents"]`, and the thread's inbox shows it as an
+ * event with the report type's own name, so `msg.is(milestone)` narrows it.
+ * The child checks the data against the schema when it sends, and evaluates
+ * each destination's `if` itself, so one report goes to every destination whose
+ * `if` passes.
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
@@ -25,12 +28,18 @@ import {
   tool,
 } from "../../../components/sandbox/tools.ts";
 import {
-  EventType,
   eventType,
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import { nextCount } from "../agent/executionCounter.ts";
-import { grantNames, relationOf } from "../agent/relations.ts";
+import {
+  type Grant,
+  grantEnded,
+  proofIsValid,
+  verifyGrant,
+  type WireGrant,
+} from "../agent/grant.ts";
+import { relationOf } from "../agent/relations.ts";
 import { senderOf } from "../agent/sender.ts";
 import { compileExpression, MissingPathError } from "../cel.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
@@ -39,16 +48,24 @@ import { type Kv, typedKey } from "../kv/kv.ts";
 import type { SenderData } from "./events.ts";
 
 /**
- * The start of every report event's name.
- */
-export const reportEventPrefix = "agent/report/";
-
-/**
  * The name a report travels under. Triggers and inbox subscriptions match an
  * event by its exact name, so every report is sent as this one event, with its
- * type in the data, and the receiver's inbox shows it as `agent/report/<type>`.
+ * type in the data, and the receiver's inbox shows it under the type's own name.
  */
 export const reportWireEvent = "agent/report";
+
+/**
+ * Whether a name may not be a report type: an event name of the agent layer or
+ * the platform would be taken for that event once a report carried it.
+ */
+export const reservedReportType = (type: string): boolean => {
+  return (
+    type === "" ||
+    type.includes("*") ||
+    type.startsWith("agent/") ||
+    type.startsWith("inngest/")
+  );
+};
 
 /**
  * What is wrong with a report's data for the report type it is read as, or
@@ -91,44 +108,65 @@ export const reportDataProblem = (
 };
 
 /**
+ * Whether an inbox message is a report: one the inbox showed under its type's
+ * name, with its routing in `report`.
+ */
+export const isReportMessage = (message: unknown): boolean => {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    typeof (message as { report?: unknown }).report === "object" &&
+    (message as { report?: unknown }).report !== null
+  );
+};
+
+/**
  * Why a message is not a report this thread can take, or `undefined` when it
- * is not a report or comes from a thread this one started, or one whose
- * start granted this thread (a signed routing table the report carries). The `from` of an
- * event is whatever its sender wrote; the tag in the sender's thread key is
- * what proves this thread started it.
- * @param client The client, whose signing key checks the tag.
+ * is not a report or comes from a thread this one started (the tag in the
+ * sender's thread key proves it), or from one whose grant names this thread
+ * as a destination of this type, with a proof made for this event. The `from`
+ * of an event is whatever its sender wrote.
+ * @param client The client, whose signing key checks the tag and the grant.
  * @param thread The receiving thread's key.
  * @param message The message, as `resentAs` shows it.
  */
 export const reportSenderProblem = (
   client: Inngest.Any,
   thread: string,
-  message: { name: string; from?: unknown; grant?: unknown },
+  message: {
+    id?: string;
+    ts?: number;
+    name: string;
+    from?: unknown;
+    report?: { grant?: unknown; pop?: unknown };
+  },
 ): string | undefined => {
-  if (!isReportEvent(message.name)) {
+  if (!isReportMessage(message)) {
     return undefined;
   }
 
   const key = (message.from as { key?: unknown } | undefined)?.key;
 
-  return typeof key === "string" &&
-    (relationOf(client, thread, key)?.relation === "child" ||
-      grantNames(
-        client,
-        key,
-        message.grant,
-        thread,
-        message.name.slice(reportEventPrefix.length),
-      ))
-    ? undefined
-    : "its sender is not a thread this thread started, so it is not a report this thread can take";
-};
+  if (typeof key === "string") {
+    if (relationOf(client, thread, key)?.relation === "child") {
+      return undefined;
+    }
 
-/**
- * Whether an event is a report.
- */
-export const isReportEvent = (name: string): boolean => {
-  return name.startsWith(reportEventPrefix);
+    const grant = verifyGrant(client, message.report?.grant, key);
+
+    if (
+      grant &&
+      proofIsValid(client, grant, message.id, thread, message.report?.pop) &&
+      !grantEnded(grant, message.ts) &&
+      grant.rep.some((route) => {
+        return route.thread === thread && route.type === message.name;
+      })
+    ) {
+      return undefined;
+    }
+  }
+
+  return "its sender is not a thread this thread started, or one whose start granted it, so it is not a report this thread can take";
 };
 
 /**
@@ -220,10 +258,11 @@ export type ReportRouting = {
   from?: SenderData;
 
   /**
-   * The routing the starter signed for the sender, so a receiver that did
-   * not start the sender can tell it was named.
+   * The grant the sender holds and a proof made for this event, so a receiver
+   * that did not start the sender can tell the starter named it.
    */
-  grant?: { to: Record<string, ReportDestination[]>; sig: string };
+  grant?: WireGrant;
+  pop?: string;
 };
 
 /**
@@ -262,150 +301,59 @@ export const withoutRouting = (data: unknown): Record<string, unknown> => {
 };
 
 /**
- * Options of `report.to()`.
+ * What a report line needs of an event type: a name, and a schema when its
+ * data is checked. Any `eventType()` fits.
  */
-export interface ReportToOptions {
-  /**
-   * A CEL condition over the report, written like the `if` of an inbox
-   * source: `async.data` is the report's data. The report goes to this
-   * destination only when it is true.
-   */
-  if?: string;
-}
-
-/**
- * EXPERIMENTAL: a report type, made with `agentReport()`, with the routing a
- * starter lists in its `reports` start option.
- */
-export class AgentReport<
-  TName extends string = string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> = StandardSchemaV1<
-    Record<string, unknown>
-  >,
-> extends EventType<`agent/report/${TName}`, TSchema> {
-  /**
-   * The report's type name, without the `agent/report/` of its event name.
-   */
-  readonly type: TName;
-
-  constructor(type: TName, schema: TSchema) {
-    super({
-      name: `${reportEventPrefix}${type}` as `agent/report/${TName}`,
-      schema,
-    });
-    this.type = type;
-  }
-
-  /**
-   * Sends this report to the threads given, when `options.if` passes. With no
-   * thread it goes to the thread that started the agent.
-   * @param args The thread handles (`me`, `agent.thread(key)`), then optionally the options.
-   */
-  to(
-    ...args: (ReportTarget | ReportToOptions)[]
-  ): AgentReportRoute<TName, TSchema> {
-    const last = args.at(-1);
-    const hasOptions =
-      last !== undefined &&
-      typeof last === "object" &&
-      !("key" in last) &&
-      !("message" in last);
-    const targets = (hasOptions ? args.slice(0, -1) : args) as ReportTarget[];
-
-    return makeRoute(
-      this,
-      targets,
-      hasOptions ? (last as ReportToOptions) : {},
-      false,
-    );
-  }
-
-  /**
-   * Marks this report owed: the agent may not finish before it has sent one.
-   * It goes to the thread that started the agent.
-   */
-  required(): AgentReportRoute<TName, TSchema> {
-    return makeRoute(this, [], {}, true);
-  }
-}
-
-/**
- * EXPERIMENTAL: one line of a start's `reports` list: a report type with
- * where it goes and whether it is owed. Made by `report.to()` and
- * `report.required()`.
- */
-export interface AgentReportRoute<
-  TName extends string = string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> = StandardSchemaV1<
-    Record<string, unknown>
-  >,
-> {
-  readonly report: AgentReport<TName, TSchema>;
-  readonly targets: readonly ReportTarget[];
-  readonly if?: string;
-  readonly owed: boolean;
-
-  /**
-   * Marks this report type owed.
-   */
-  required(): AgentReportRoute<TName, TSchema>;
-}
-
-const makeRoute = <
-  TName extends string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>>,
->(
-  report: AgentReport<TName, TSchema>,
-  targets: readonly ReportTarget[],
-  options: ReportToOptions,
-  owed: boolean,
-): AgentReportRoute<TName, TSchema> => {
-  if (options.if !== undefined) {
-    toReportCondition(options.if);
-  }
-
-  return {
-    report,
-    targets,
-    ...(options.if !== undefined && { if: options.if }),
-    owed,
-    required() {
-      return makeRoute(report, targets, options, true);
-    },
-  };
+export type ReportEventType = {
+  readonly name: string;
+  readonly schema?: unknown;
 };
 
 /**
- * EXPERIMENTAL: defines a typed report a started agent can send back. Its
- * event is `agent/report/<name>`, so `msg.is(report)` narrows a message and
- * `msg.data` is typed by the schema. Define it once and share it, like an
- * `eventType()`.
- *
- * The starter lists the reports the child owes in `start()`'s `reports`
- * option, with `report.to(...)` and `report.required()`.
- * @param name The report's name.
- * @param schema A Standard Schema of its data, such as a zod object.
- * @example
- * ```ts
- * const milestone = agentReport("milestone", z.object({ reached: z.string() }));
- *
- * await em.start({ brief }, { reports: [milestone.to(me), milestone.required()] });
- * ```
+ * EXPERIMENTAL: one line of a start's `reports` list in its full form: a
+ * report event type, where it goes and whether it is owed.
  */
-export const agentReport = <
-  const TName extends string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>>,
->(
-  name: TName,
-  schema: TSchema,
-): AgentReport<TName, TSchema> => {
-  if (name === "" || name.includes("*")) {
-    throw new Error(
-      `agentReport("${name}"): a report name is not empty and has no "*".`,
-    );
-  }
+export interface AgentReportRoute<
+  TEvent extends ReportEventType = ReportEventType,
+> {
+  /**
+   * The report's event type, such as `milestone = eventType("milestone", ...)`.
+   * Its name is the report's type.
+   */
+  event: TEvent;
 
-  return new AgentReport(name, schema);
+  /**
+   * The threads the report goes to (`me`, `agent.thread(key)`). Default: the
+   * thread that started the agent.
+   */
+  to?: ReportTarget | readonly ReportTarget[];
+
+  /**
+   * A CEL condition over the report, written like the `if` of an inbox
+   * source: `async.data` is the report's data. The report goes to these
+   * destinations only when it is true.
+   */
+  if?: string;
+
+  /**
+   * Whether the report is owed: the agent's loop reminds its model before it
+   * may finish.
+   */
+  required?: boolean;
+}
+
+/**
+ * EXPERIMENTAL: a line of a start's `reports` list: an event type alone (it
+ * goes back to the thread that started the agent and is not owed), or an
+ * `AgentReportRoute`.
+ */
+export type AgentReportLine = ReportEventType | AgentReportRoute;
+
+const routeOf = (line: AgentReportLine): AgentReportRoute => {
+  return typeof (line as { event?: unknown }).event === "object" &&
+    (line as { event?: unknown }).event !== null
+    ? (line as AgentReportRoute)
+    : { event: line as ReportEventType };
 };
 
 /**
@@ -451,24 +399,87 @@ export const conditionPasses = (
 };
 
 /**
- * Makes the `reports` of a start into what travels in the start event. The
+ * What a start carries of its reports beside the grant: the JSON Schema of
+ * each type the child checks its data against, and whether it is owed. Where
+ * each goes is in the signed grant.
+ */
+export type ReportSchemas = Record<
+  string,
+  { schema?: JsonSchema; required?: true }
+>;
+
+/**
+ * The part of a resolved spec that travels beside the grant.
+ * @param spec The resolved reports.
+ */
+export const schemasOf = (spec: ReportSpec): ReportSchemas => {
+  return Object.fromEntries(
+    Object.entries(spec).map(([type, entry]) => {
+      return [
+        type,
+        {
+          ...(entry.schema && { schema: entry.schema }),
+          ...(entry.required && { required: true as const }),
+        },
+      ];
+    }),
+  );
+};
+
+/**
+ * The routes of a resolved spec, as a grant names them.
+ * @param spec The resolved reports.
+ */
+export const routesOf = (
+  spec: ReportSpec,
+): { type: string; agent: string; thread: string; if?: string }[] => {
+  return Object.entries(spec).flatMap(([type, entry]) => {
+    return entry.to.map((place) => {
+      return {
+        type,
+        agent: place.agent,
+        thread: place.thread,
+        ...(place.if !== undefined && { if: place.if }),
+      };
+    });
+  });
+};
+
+/**
+ * Makes the `reports` of a start into what the start event routes. The
  * lines of one report type merge: every destination is kept and the type is
  * owed when any line says so. A line with no thread goes to `starter`.
- * @param routes The `reports` option.
+ * @param lines The `reports` option.
  * @param starter The thread that starts the agent, when it is an agent's.
  */
 export const resolveReports = (
-  routes: readonly AgentReportRoute[],
+  lines: readonly AgentReportLine[],
   starter: { agent: string; thread: string } | undefined,
 ): ReportSpec => {
   const spec: ReportSpec = {};
 
-  for (const route of routes) {
-    const type = route.report.type;
+  for (const line of lines) {
+    const route = routeOf(line);
+    const type = route.event.name;
+
+    if (reservedReportType(type)) {
+      throw new Error(
+        `The report type "${type}" is reserved: a report's event name is not empty, has no "*" and does not start with "agent/" or "inngest/".`,
+      );
+    }
+
+    if (route.if !== undefined) {
+      toReportCondition(route.if);
+    }
+
     let schema: JsonSchema | undefined;
 
     try {
-      schema = toJsonSchema(type, route.report.schema) as JsonSchema;
+      schema = (
+        route.event.schema === undefined
+          ? { type: "object" }
+          : toJsonSchema(type, route.event.schema as StandardSchemaV1)
+      ) as JsonSchema;
     } catch {
       // A schema that cannot become JSON Schema is not checked by the child
       // beyond being an object.
@@ -478,18 +489,25 @@ export const resolveReports = (
     const entry = spec[type] ?? { schema, to: [] };
 
     spec[type] = entry;
+
+    const targets =
+      route.to === undefined
+        ? []
+        : Array.isArray(route.to)
+          ? (route.to as readonly ReportTarget[])
+          : [route.to as ReportTarget];
     const where =
-      route.targets.length === 0
+      targets.length === 0
         ? [starter]
-        : route.targets.map((target) => {
+        : targets.map((target) => {
             return addressOfHandle(target);
           });
 
     for (const place of where) {
       if (!place) {
         throw new Error(
-          route.targets.length === 0
-            ? `The report "${type}" has no thread to go to: it was started by a function that is not an agent, so name a thread with ${type}.to(thread).`
+          targets.length === 0
+            ? `The report "${type}" has no thread to go to: it was started by a function that is not an agent, so name a thread with \`to\`.`
             : `The report "${type}" is sent to a handle that is not an agent's thread. Use \`me\` or \`agent.thread(key)\`.`,
         );
       }
@@ -501,7 +519,7 @@ export const resolveReports = (
       });
     }
 
-    if (route.owed) {
+    if (route.required) {
       entry.required = true;
     }
   }
@@ -519,9 +537,13 @@ export interface ReportBook {
   readonly sent: Set<string>;
 
   /**
-   * The signature of the routing in `spec`, from the start event.
+   * Makes what a report to `target` carries so its receiver can tell the
+   * starter granted it: the run's grant and a proof for this event.
    */
-  readonly grantSig?: string;
+  readonly proof?: (
+    id: string,
+    target: string,
+  ) => { grant: WireGrant; pop: string };
 }
 
 /**
@@ -685,38 +707,54 @@ export const flushOwes = async (
 };
 
 /**
- * The signature of the routing a start event carries for its reports, if any.
+ * The reports a start event owes, as a run reads them: the schemas the start
+ * carries and the routes of its verified grant. A type the grant routes
+ * nowhere has no destination, and a type only the grant names is not checked
+ * against a schema.
  * @param start The event that started the run, as saved.
+ * @param grant The grant the start carried, verified.
  */
-export const reportsSigOf = (start: {
-  name: string;
-  data?: unknown;
-}): string | undefined => {
+export const reportsOf = (
+  start: { name: string; data?: unknown },
+  grant: Grant | undefined,
+): ReportSpec | undefined => {
   const data = start.data as
     | { from?: SenderData; event?: { data?: { from?: SenderData } } }
     | undefined;
   const from =
     start.name === "agent/recover" ? data?.event?.data?.from : data?.from;
+  const schemas = from?.reports ?? {};
+  const types = new Set([
+    ...Object.keys(schemas),
+    ...(grant?.rep ?? []).map((route) => {
+      return route.type;
+    }),
+  ]);
+  const spec: ReportSpec = {};
 
-  return from?.reports_sig;
-};
+  for (const type of types) {
+    if (reservedReportType(type)) {
+      continue;
+    }
 
-/**
- * The reports a start event carries, if it carries any.
- * @param start The event that started the run, as saved.
- */
-export const reportsOf = (start: {
-  name: string;
-  data?: unknown;
-}): ReportSpec | undefined => {
-  const data = start.data as
-    | { from?: SenderData; event?: { data?: { from?: SenderData } } }
-    | undefined;
-  const from =
-    start.name === "agent/recover" ? data?.event?.data?.from : data?.from;
-  const reports = from?.reports;
+    spec[type] = {
+      ...(schemas[type]?.schema && { schema: schemas[type]?.schema }),
+      ...(schemas[type]?.required && { required: true as const }),
+      to: (grant?.rep ?? [])
+        .filter((route) => {
+          return route.type === type;
+        })
+        .map((route) => {
+          return {
+            agent: route.agent,
+            thread: route.thread,
+            ...(route.if !== undefined && { if: route.if }),
+          };
+        }),
+    };
+  }
 
-  return reports && Object.keys(reports).length > 0 ? reports : undefined;
+  return Object.keys(spec).length > 0 ? spec : undefined;
 };
 
 /**
@@ -804,7 +842,7 @@ export const sendReport = async (
     throw new Error("A report must be sent inside an Inngest function");
   }
 
-  const name = `${reportEventPrefix}${type}`;
+  const name = type;
   const from = senderOf(execution);
   const destinations = entry.to.filter((destination) => {
     return conditionPasses(destination.if, name, data);
@@ -823,7 +861,10 @@ export const sendReport = async (
 
   await step.sendEvent(
     `report:${type}:${n}`,
-    destinations.map((destination) => {
+    destinations.map((destination, index) => {
+      // The ID is the event's own, so a proof can be made for it.
+      const id = `report:${execution.ctx.runId}.${n}.${index}`;
+
       return event.create(
         {
           ...(data as Record<string, unknown>),
@@ -832,19 +873,11 @@ export const sendReport = async (
             thread: destination.thread,
             type,
             from,
-            ...(book.grantSig !== undefined && {
-              grant: {
-                to: Object.fromEntries(
-                  Object.entries(book.spec).map(([name, spec]) => {
-                    return [name, spec.to];
-                  }),
-                ),
-                sig: book.grantSig,
-              },
-            }),
+            ...book.proof?.(id, destination.thread),
           },
         } as ReportEnvelope,
         {
+          id,
           meta: {
             sessions: {
               agent_session: destination.thread,

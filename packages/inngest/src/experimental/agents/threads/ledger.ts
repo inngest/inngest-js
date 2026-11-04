@@ -10,33 +10,47 @@
  * ledger runs, a message cannot start a second, empty ledger while the state
  * is moving from one run to the next. The protocol is plain events:
  *
- * - `agent/thread.write { thread, runId, seq, change }`: a write. `seq`
- *   numbers the writes of one writer, because delivery order is not
- *   guaranteed. The ledger applies a writer's writes in `seq` order and gives
- *   each applied write the thread's next `version`.
- * - `agent/thread.changed { thread, version, runId, seq, change }`: what the
- *   ledger sends for each applied write. Every live run that holds a copy of
- *   the thread receives it through an inbox filtered by thread and applies
- *   changes in version order.
+ * - `agent/thread.write { thread, runId, seq, change }`: a write. Every live
+ *   run that holds a copy of the thread subscribes to it, and so does the
+ *   ledger. There is no echo: each copy and the ledger resolve the writes they
+ *   receive with the same rule (`ThreadResolver`).
  * - `agent/thread.read { thread, runId }`: asks for the resolved state. The
- *   ledger answers with `agent/thread.state { thread, runId, version, state,
- *   seq }`.
+ *   ledger answers with `agent/thread.state { thread, runId, state, last }`.
  * - Handover: when a ledger run nears Inngest's step limit it returns its
  *   state (`ThreadHandoverData`) to the function that invoked it, which
  *   invokes the next run with it. No event carries a handover, so none can be
  *   skipped, dropped or reach a run that is not listening.
- * - `agent/thread.ready { thread, app, epoch }`: sent once a ledger run's
- *   subscription is open. A reader whose `agent/thread.read` may have reached
- *   no live ledger asks again when it hears this.
+ * - `agent/thread.ready { thread, app, epoch, last }`: sent once a ledger run's
+ *   subscription is open, with the last `seq` it applied for each writer. A
+ *   reader whose `agent/thread.read` may have reached no live ledger asks again
+ *   when it hears this, and a writer sends again the writes the ledger lacks
+ *   (those with a `seq` past its entry in `last`).
  * - `agent/run.ended { thread, app, agent, runId, last }`: a run of the
  *   thread ended. The agent's `<id>-finished` function sends it, with the
  *   record of how the run ended. The ledger stores `last` as the thread's
  *   `__lastRun:<agent>` (the next run's `previousRun`) and does nothing else
  *   with it.
  *
- * The ledger only stores. It never decides for anyone, resends, wakes a
- * thread or sends an agent message: `agent/finished` and its `missing` are the
- * business of the agents, not of the ledger.
+ * The ledger only reads its inbox and stores. It never decides for anyone,
+ * echoes, wakes a thread or sends an agent message.
+ *
+ * The rule every copy and the ledger apply to writes:
+ *
+ * - A run's own writes apply in its `seq` order: a later one is held until the
+ *   earlier arrives. (A writer outside any run, named `ext-...`, is not held:
+ *   its writes apply as they come.)
+ * - Across writers, for one key, the later write wins, ordered by the event's
+ *   `ts` (the time Inngest recorded the event on receipt, not the sender's
+ *   clock), then the writer's run ID, then `seq`. A deleted key keeps a
+ *   tombstone with its stamp, so a write that arrives late and is older than
+ *   the delete does not bring the key back. `clear` is a stamp too.
+ * - A write that would take the state past its size limit is refused by
+ *   everyone.
+ *
+ * Because every copy applies the same rule to the same writes, copies converge
+ * with the ledger, and a value never goes backwards for a key. Thread state is
+ * a shared whiteboard everyone sees with a small lag: it is eventually
+ * consistent, not a lock.
  *
  * Every event of the protocol is signed with the environment's signing key and
  * the signer's app ID (`by` and `sig` in its data). The ledger and the copies
@@ -44,13 +58,10 @@
  * event key cannot write, read or answer. Different apps of one environment
  * may write one thread's state; the signature is what they all need.
  *
- * Every ledger run has an `epoch`, its run ID, which `agent/thread.changed`,
- * `agent/thread.state` and `agent/thread.ready` carry. A copy that sees a
- * different epoch than its own reloads with one read, because a ledger that
- * started over restarts the versions. A ledger run that took over by handover
- * starts by sending a `reset` change: the state and, for each writer, the last
- * `seq` it applied. A writer that hears a `reset` sends again the writes it
- * made that the ledger did not apply.
+ * A ledger run that took over by handover starts by sending `agent/thread.ready`
+ * with the `seq` it holds for each writer. A writer sends again the writes it
+ * made that the ledger did not apply, marked with the time they were first
+ * recorded (`at`) so a late resend does not change which write is later.
  *
  * The ledger is storage behind `ledgerKvAdapter()`, the default KV store: it
  * keeps the keys and sorted indexes of one KV scope instance. Its address is
@@ -64,16 +75,18 @@
  * - Nothing here is durable outside the ledger's run. A ledger run waits for
  *   its next message for as long as the platform lets a run wait; it ends if it
  *   is cancelled or the platform ends it, and then its state is gone (the next
- *   message starts an empty ledger). Near Inngest's step limit it hands over
- *   its state to the next run, through the supervisor that invoked it: that is
- *   the only planned end. The supervisor spends one step per run, so a thread
- *   keeps its ledger for about 400,000 writes.
- * - Each write costs the writer one step and the ledger two, so a ledger hands
- *   over after roughly 400 writes. A state past 128 KB refuses writes.
+ *   message starts an empty ledger, and live writers send again what they
+ *   hold). Near Inngest's step limit it hands over its state to the next run,
+ *   through the supervisor that invoked it: that is the only planned end. The
+ *   supervisor spends one step per run.
+ * - Each write costs the writer one step and the ledger at most one (it takes
+ *   in a batch of writes with one), so a ledger hands over after roughly 900
+ *   writes. A state past 128 KB refuses writes.
  * - A write that reaches the ledger between its last read and its handover is
- *   sent again by its writer when the next ledger run's `reset` arrives. A
- *   writer that is not a run (a script) or never reads or syncs has no copy
- *   and cannot, so such a write can be lost.
+ *   sent again by its writer when the next ledger run's `agent/thread.ready`
+ *   arrives. A writer that is not a run (a script) has no copy and cannot, and
+ *   a run that ends before it hears the next ready cannot either, so such a
+ *   write can be lost.
  */
 
 import type { Inngest } from "../../../components/Inngest.ts";
@@ -97,19 +110,53 @@ import { lastRunRecordKey } from "./thread.ts";
 export const threadStateLimit = 128 * 1024;
 
 /**
+ * When a write happened, for ordering: the event's `ts`, the writer's run ID
+ * and the writer's `seq`.
+ */
+export type Stamp = [ts: number, runId: string, seq: number];
+
+/**
+ * One key of a thread's state. A deleted key stays as a tombstone (`del`) so a
+ * late, older write does not bring it back.
+ */
+export interface ThreadKey {
+  v?: Json;
+
+  /**
+   * The time the key expires, in milliseconds since the epoch.
+   */
+  exp?: number;
+  at: Stamp;
+  del?: true;
+}
+
+/**
+ * One member of a sorted index, with the same tombstone rule as a key.
+ */
+export interface ThreadMember {
+  s?: number;
+  at: Stamp;
+  del?: true;
+}
+
+/**
  * The resolved state of one thread: its keys and its sorted indexes.
  */
 export interface ThreadLedgerState {
   /**
-   * The keys. `exp` is the time the key expires, in milliseconds since the
-   * epoch.
+   * The keys.
    */
-  keys: Record<string, { v: Json; exp?: number }>;
+  keys: Record<string, ThreadKey>;
 
   /**
    * The sorted indexes: member to score.
    */
-  indexes: Record<string, Record<string, number>>;
+  indexes: Record<string, Record<string, ThreadMember>>;
+
+  /**
+   * The stamp of the latest `clear`: nothing older than it is state.
+   */
+  cleared?: Stamp;
 }
 
 /**
@@ -131,52 +178,16 @@ export type ThreadChange =
       key: string;
       value: Json;
       /**
-       * How long the key lives, in seconds. The ledger turns it into `exp`
-       * with the time of the write event, so every copy agrees.
+       * How long the key lives, in seconds. Whoever applies the write turns it
+       * into `exp` with the write's time, so every copy agrees.
        */
       ttl?: number;
       exp?: number;
-    }
-  | {
-      op: "setIfAbsent";
-      key: string;
-      value: Json;
-      ttl?: number;
-      exp?: number;
-    }
-  | {
-      /**
-       * Deletes the key only when its live value is `expected`. The ledger
-       * says whether it did.
-       */
-      op: "casDelete";
-      key: string;
-      expected: Json;
-    }
-  | {
-      /**
-       * Replaces the key only when its live value is `expected` (`null`:
-       * the key is absent). The ledger says whether it did.
-       */
-      op: "cas";
-      key: string;
-      expected: Json | null;
-      value: Json;
     }
   | { op: "delete"; key: string }
   | { op: "clear" }
   | { op: "indexAdd"; index: string; member: string; score: number }
-  | { op: "indexRemove"; index: string; member: string }
-  | {
-      /**
-       * Sent by the ledger, never by a writer: tells every copy the state a
-       * run took over by handover holds. `last` is the last `seq` applied for
-       * each writer.
-       */
-      op: "reset";
-      state: ThreadLedgerState;
-      last: Record<string, number>;
-    };
+  | { op: "indexRemove"; index: string; member: string };
 
 /**
  * The data of `agent/thread.write`.
@@ -207,36 +218,19 @@ export type ThreadWriteData = LedgerSigned & {
    * The write.
    */
   change: ThreadChange;
-};
-
-/**
- * The data of `agent/thread.changed`.
- */
-export type ThreadChangedData = ThreadWriteData & {
-  /**
-   * The ledger run that applied the write. A copy that sees another epoch
-   * than the one it holds reloads.
-   */
-  epoch: string;
 
   /**
-   * The thread's version after this change. Starts at 1 and rises by one for
-   * each applied write.
+   * Set on a write sent again: the `ts` Inngest recorded when the write was
+   * first sent, so the resend orders where the first send would have.
    */
-  version: number;
+  at?: number;
 
   /**
-   * Set when the ledger refused the write, so the writer drops its own copy
-   * of it. A refused write does not change the version.
+   * Set on a write sent again: the lowest `seq` the writer still holds. The
+   * ones before it cannot be sent, so a ledger that never saw them goes on
+   * from here instead of holding every later write for them.
    */
-  rejected?: string;
-
-  /**
-   * Set when a conditional write (`setIfAbsent`, `cas`) did not apply because
-   * the key was not as the writer expected. `current` is the key's live value
-   * then (`null`: absent). A refused write does not change the version.
-   */
-  conflict?: { current: Json | null };
+  from?: number;
 };
 
 /**
@@ -275,19 +269,14 @@ export type ThreadStateData = ThreadReadData & {
   epoch: string;
 
   /**
-   * The version the state is at.
-   */
-  version: number;
-
-  /**
    * The resolved state.
    */
   state: ThreadLedgerState;
 
   /**
-   * The last `seq` of the asking run's writes that the state includes.
+   * The last `seq` the state includes for each writer.
    */
-  seq: number;
+  last: Record<string, number>;
 };
 
 /**
@@ -307,7 +296,7 @@ export type ThreadHandoverData = LedgerSigned & {
   app: string;
 
   /**
-   * The version the state is at.
+   * How many writes the state has taken in. Informational.
    */
   version: number;
 
@@ -330,6 +319,12 @@ export type ThreadReadyData = LedgerSigned & {
   thread: string;
   app: string;
   epoch: string;
+
+  /**
+   * The last `seq` the ledger holds for each writer: a writer sends again
+   * what is past its own entry.
+   */
+  last: Record<string, number>;
 
   /**
    * The run whose request started this ledger run and is answered in the same
@@ -373,9 +368,6 @@ export const threadWrite = eventType("agent/thread.write", {
 });
 export const threadRead = eventType("agent/thread.read", {
   schema: staticSchema<ThreadReadData>(),
-});
-export const threadChanged = eventType("agent/thread.changed", {
-  schema: staticSchema<ThreadChangedData>(),
 });
 export const threadStateReply = eventType("agent/thread.state", {
   schema: staticSchema<ThreadStateData>(),
@@ -435,6 +427,21 @@ export const overLimitMessage = (thread: string, size: number): string => {
 };
 
 /**
+ * Orders two stamps: negative when `a` is earlier.
+ */
+export const compareStamps = (a: Stamp, b: Stamp): number => {
+  if (a[0] !== b[0]) {
+    return a[0] < b[0] ? -1 : 1;
+  }
+
+  if (a[1] !== b[1]) {
+    return a[1] < b[1] ? -1 : 1;
+  }
+
+  return a[2] === b[2] ? 0 : a[2] < b[2] ? -1 : 1;
+};
+
+/**
  * The value of a key, if it is set and has not expired.
  */
 export const liveKey = (
@@ -444,8 +451,11 @@ export const liveKey = (
 ): { v: Json } | undefined => {
   const found = Object.hasOwn(state.keys, key) ? state.keys[key] : undefined;
 
-  return found && (found.exp === undefined || found.exp > now)
-    ? found
+  return found &&
+    !found.del &&
+    found.v !== undefined &&
+    (found.exp === undefined || found.exp > now)
+    ? { v: found.v }
     : undefined;
 };
 
@@ -455,7 +465,7 @@ export const liveKey = (
  * @param now The time, in milliseconds since the epoch.
  */
 export const resolveTtl = (change: ThreadChange, now: number): ThreadChange => {
-  if ((change.op === "set" || change.op === "setIfAbsent") && "ttl" in change) {
+  if (change.op === "set" && "ttl" in change) {
     const { ttl, ...rest } = change;
 
     return ttl === undefined ? rest : { ...rest, exp: now + ttl * 1000 };
@@ -465,91 +475,251 @@ export const resolveTtl = (change: ThreadChange, now: number): ThreadChange => {
 };
 
 /**
- * Applies a change to a state, in place.
+ * Applies a change to a state, in place, if it is later than what the state
+ * holds for what it touches. Applying the same write again changes nothing.
  * @param state The state.
- * @param change The change.
- * @param now The time, in milliseconds since the epoch.
- * @returns Whether it applied. Only a conditional change (`setIfAbsent`,
- * `cas`) can be refused.
+ * @param change The change, with its `ttl` already resolved.
+ * @param at The write's stamp.
  */
 export const applyChange = (
   state: ThreadLedgerState,
   change: ThreadChange,
-  now: number,
-): boolean => {
+  at: Stamp,
+): void => {
+  const covered = state.cleared && compareStamps(at, state.cleared) <= 0;
+
   switch (change.op) {
-    case "set":
+    case "set": {
+      const found = Object.hasOwn(state.keys, change.key)
+        ? state.keys[change.key]
+        : undefined;
+
+      if (covered || (found && compareStamps(found.at, at) >= 0)) {
+        return;
+      }
+
       state.keys[change.key] = {
         v: change.value,
         ...(change.exp !== undefined && { exp: change.exp }),
+        at,
       };
-      return true;
-    case "setIfAbsent":
-      if (!liveKey(state, change.key, now)) {
-        state.keys[change.key] = {
-          v: change.value,
-          ...(change.exp !== undefined && { exp: change.exp }),
-        };
-
-        return true;
-      }
-
-      return false;
-    case "cas": {
-      const live = liveKey(state, change.key, now);
-
-      if ((live?.v ?? null) !== change.expected) {
-        return false;
-      }
-
-      state.keys[change.key] = { v: change.value };
-
-      return true;
+      return;
     }
-    case "casDelete": {
-      if (liveKey(state, change.key, now)?.v !== change.expected) {
-        return false;
+    case "delete": {
+      const found = Object.hasOwn(state.keys, change.key)
+        ? state.keys[change.key]
+        : undefined;
+
+      if (covered || (found && compareStamps(found.at, at) >= 0)) {
+        return;
       }
 
-      delete state.keys[change.key];
-
-      return true;
+      state.keys[change.key] = { del: true, at };
+      return;
     }
-    case "delete":
-      delete state.keys[change.key];
-      return true;
-    case "clear":
-      state.keys = {};
-      state.indexes = {};
-      return true;
-    case "indexAdd": {
+    case "clear": {
+      if (covered) {
+        return;
+      }
+
+      state.cleared = at;
+
+      for (const [key, found] of Object.entries(state.keys)) {
+        if (compareStamps(found.at, at) < 0) {
+          delete state.keys[key];
+        }
+      }
+
+      for (const [index, members] of Object.entries(state.indexes)) {
+        for (const [member, found] of Object.entries(members)) {
+          if (compareStamps(found.at, at) < 0) {
+            delete members[member];
+          }
+        }
+
+        if (Object.keys(members).length === 0) {
+          delete state.indexes[index];
+        }
+      }
+
+      return;
+    }
+    case "indexAdd":
+    case "indexRemove": {
       const members = Object.hasOwn(state.indexes, change.index)
         ? state.indexes[change.index]
         : undefined;
+      const found =
+        members && Object.hasOwn(members, change.member)
+          ? members[change.member]
+          : undefined;
+
+      if (covered || (found && compareStamps(found.at, at) >= 0)) {
+        return;
+      }
 
       const target = members ?? {};
 
       state.indexes[change.index] = target;
-      target[change.member] = change.score;
-      return true;
+      target[change.member] =
+        change.op === "indexAdd" ? { s: change.score, at } : { del: true, at };
+      return;
     }
-    case "indexRemove": {
-      const members = state.indexes[change.index];
-
-      if (members) {
-        delete members[change.member];
-
-        if (Object.keys(members).length === 0) {
-          delete state.indexes[change.index];
-        }
-      }
-
-      return true;
-    }
-    default:
-      return true;
   }
 };
+
+/**
+ * Whether a writer's writes are applied in `seq` order. A writer outside any
+ * run has no count a lost write could be waiting on, so its writes are not.
+ */
+const isOrdered = (runId: string): boolean => {
+  return !runId.startsWith("ext-");
+};
+
+/**
+ * A write the resolver refused for taking the state past its size limit.
+ */
+export type Refused = { write: ThreadWriteData; size: number };
+
+/**
+ * The one rule every copy and the ledger resolve writes with: a writer's own
+ * writes apply in `seq` order (a later one waits for the earlier), and across
+ * writers the later write of a key wins by (event `ts`, writer, `seq`).
+ */
+export class ThreadResolver {
+  state: ThreadLedgerState;
+
+  /**
+   * The time of the latest event taken in. Expiry is judged by it, so a
+   * replay reaches the same state.
+   */
+  clock: number;
+
+  /**
+   * The last `seq` applied for each writer.
+   */
+  readonly last = new Map<string, number>();
+
+  /**
+   * How many writes have been applied.
+   */
+  applied = 0;
+
+  private readonly held = new Map<
+    string,
+    { write: ThreadWriteData; ts: number }
+  >();
+
+  constructor(
+    init: {
+      state?: ThreadLedgerState;
+      last?: Record<string, number>;
+      clock?: number;
+      applied?: number;
+    } = {},
+  ) {
+    this.state = init.state ?? emptyThreadState();
+    this.clock = init.clock ?? 0;
+    this.applied = init.applied ?? 0;
+
+    for (const [writer, seq] of Object.entries(init.last ?? {})) {
+      this.last.set(writer, seq);
+    }
+  }
+
+  /**
+   * Takes in a write the event stream delivered.
+   * @param write The write.
+   * @param eventTs The event's `ts`: when Inngest recorded it.
+   * @returns The writes refused for size, this one or one it released.
+   */
+  take(write: ThreadWriteData, eventTs: number | undefined): Refused[] {
+    const ts = write.at ?? eventTs ?? this.clock;
+
+    this.clock = Math.max(this.clock, eventTs ?? 0);
+
+    if (!isOrdered(write.runId)) {
+      return this.apply(write, ts);
+    }
+
+    // A writer that sent again says what it no longer holds: go on from there.
+    if (
+      write.from !== undefined &&
+      (this.last.get(write.runId) ?? 0) < write.from - 1
+    ) {
+      this.last.set(write.runId, write.from - 1);
+    }
+
+    const done = this.last.get(write.runId) ?? 0;
+
+    if (write.seq <= done) {
+      return [];
+    }
+
+    if (write.seq !== done + 1) {
+      this.held.set(`${write.runId}:${write.seq}`, { write, ts });
+
+      return [];
+    }
+
+    return [...this.apply(write, ts), ...this.release()];
+  }
+
+  /**
+   * The writes taken in that wait for an earlier one of their writer.
+   */
+  get waiting(): number {
+    return this.held.size;
+  }
+
+  private release(): Refused[] {
+    const refused: Refused[] = [];
+    let moved = true;
+
+    while (moved) {
+      moved = false;
+
+      for (const [key, found] of [...this.held.entries()]) {
+        const done = this.last.get(found.write.runId) ?? 0;
+
+        if (found.write.seq <= done) {
+          this.held.delete(key);
+        } else if (found.write.seq === done + 1) {
+          this.held.delete(key);
+          refused.push(...this.apply(found.write, found.ts));
+          moved = true;
+        }
+      }
+    }
+
+    return refused;
+  }
+
+  private apply(write: ThreadWriteData, ts: number): Refused[] {
+    if (isOrdered(write.runId)) {
+      this.last.set(write.runId, write.seq);
+    }
+
+    const next = structuredClone(this.state);
+
+    applyChange(next, resolveTtl(write.change, ts), [
+      ts,
+      write.runId,
+      write.seq,
+    ]);
+
+    const size = stateSize(next);
+
+    if (size > threadStateLimit) {
+      return [{ write, size }];
+    }
+
+    this.state = next;
+    this.applied += 1;
+
+    return [];
+  }
+}
 
 /**
  * How many steps a ledger run may use before it hands over to a fresh run.
@@ -564,13 +734,6 @@ const handoverAt = (): number => {
 
   return given && given > 0 ? given : 900;
 };
-
-/**
- * How long the ledger holds a write that arrived ahead of an earlier one from
- * the same writer, in milliseconds, before it applies the writes it has and
- * moves past the gap.
- */
-const gapWaitMs = 5000;
 
 /**
  * How long the supervisor waits for a ledger run, which waits for its next
@@ -597,6 +760,13 @@ const ledgerApps = new Set<string>();
  */
 export const ledgerIsServed = (app: string): boolean => {
   return ledgerApps.has(app);
+};
+
+type Message = {
+  id?: string;
+  name: string;
+  ts?: number;
+  data: unknown;
 };
 
 /**
@@ -630,7 +800,7 @@ export const createLedgerFunctions = (
       const limit = handoverAt();
       const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
 
-      // This run's name for the copies: a copy that sees another one reloads.
+      // This run's name, so a reader can tell which ledger run answered.
       const epoch = runId;
 
       const signed = <T extends Record<string, unknown>>(
@@ -654,42 +824,27 @@ export const createLedgerFunctions = (
         return false;
       };
 
-      let state = emptyThreadState();
-      let version = 0;
-
-      // The time of the latest event taken in. Expiry is judged by it, so a
-      // replay of the run reaches the same state.
-      let clock = input.start?.ts ?? 0;
-
-      // The last `seq` applied for each writer, and writes that came ahead of
-      // their turn.
-      const last = new Map<string, number>();
-      const held = new Map<string, ThreadWriteData>();
       const seen = new Set<string>();
       let steps = 0;
 
-      // A run that takes over carries the state the run before it left, and
-      // says so to the copies with a `reset`.
+      // A run that takes over carries the state the run before it left.
       const carried =
         input.carried && valid({ name: handoverName, data: input.carried })
           ? input.carried
           : undefined;
       const start = carried ? undefined : input.start;
-
-      if (carried) {
-        state = carried.state;
-        version = carried.version;
-
-        for (const [writer, seq] of Object.entries(carried.last)) {
-          last.set(writer, seq);
-        }
-      }
+      const resolver = new ThreadResolver({
+        state: carried?.state,
+        last: carried?.last,
+        applied: carried?.version,
+        clock: input.start?.ts ?? 0,
+      });
 
       logger.info(
         {
           thread,
           started: carried ? "handover" : start?.name,
-          version,
+          version: resolver.applied,
           epoch,
         },
         "thread ledger run started",
@@ -714,101 +869,26 @@ export const createLedgerFunctions = (
       steps += 1;
 
       const out: Array<
-        ReturnType<
-          | typeof threadChanged.create
-          | typeof threadStateReply.create
-          | typeof threadReady.create
-        >
+        ReturnType<typeof threadStateReply.create | typeof threadReady.create>
       > = [];
 
-      const changedOf = (
-        write: ThreadWriteData,
-        extra: Partial<ThreadChangedData>,
-      ) => {
-        return threadChanged.create(
-          signed(threadChanged.name, {
-            thread,
-            app,
-            runId: write.runId,
-            seq: write.seq,
-            change: write.change,
-            epoch,
-            version,
-            ...extra,
-          }),
-        );
-      };
-
-      const apply = (write: ThreadWriteData) => {
-        last.set(write.runId, write.seq);
-
-        const change = resolveTtl(write.change, clock);
-        const next = structuredClone(state);
-
-        if (!applyChange(next, change, clock)) {
-          // A conditional write that did not apply: the writer is told what the
-          // key holds, and nothing changes.
-          const key = (change as { key: string }).key;
-
-          out.push(
-            changedOf(
-              { ...write, change },
-              { conflict: { current: liveKey(state, key, clock)?.v ?? null } },
-            ),
-          );
-
-          return;
-        }
-
-        const size = stateSize(next);
-
-        if (size > threadStateLimit) {
+      const resolve = (write: ThreadWriteData, ts: number | undefined) => {
+        for (const refused of resolver.take(write, ts)) {
           logger.warn(
-            { thread, size, limit: threadStateLimit },
+            {
+              thread,
+              writer: refused.write.runId,
+              size: refused.size,
+              limit: threadStateLimit,
+            },
             "thread write refused: the state would pass its size limit",
           );
-          out.push(
-            changedOf(
-              { ...write, change },
-              { rejected: overLimitMessage(thread, size) },
-            ),
-          );
-
-          return;
         }
-
-        state = next;
-        version += 1;
-
-        out.push(changedOf({ ...write, change }, {}));
       };
 
-      const resetOf = () => {
-        return threadChanged.create(
-          signed(threadChanged.name, {
-            thread,
-            app,
-            runId: "ledger",
-            seq: 0,
-            epoch,
-            version,
-            change: {
-              op: "reset" as const,
-              state,
-              last: Object.fromEntries(last),
-            },
-          }),
-        );
-      };
-
-      // Takes in one message: a write goes in order or is held, a read is
-      // answered, the end of a run is stored.
-      const take = (message: {
-        id?: string;
-        name: string;
-        ts?: number;
-        data: unknown;
-      }): void => {
+      // Takes in one message: a write is resolved, a read is answered, the end
+      // of a run is stored.
+      const take = (message: Message): void => {
         if (!valid(message)) {
           return;
         }
@@ -821,26 +901,25 @@ export const createLedgerFunctions = (
           seen.add(message.id);
         }
 
-        if (typeof message.ts === "number") {
-          clock = Math.max(clock, message.ts);
-        }
-
         if (message.name === runEnded.name) {
           // Stored as the agent's `__lastRun` and nothing else: what to do
           // about the end is for the agents to say.
           const ended = message.data as RunEndedData;
 
-          apply({
-            thread,
-            app,
-            runId: "ledger",
-            seq: (last.get("ledger") ?? 0) + 1,
-            change: {
-              op: "set",
-              key: lastRunRecordKey(ended.agent),
-              value: JSON.stringify(ended.last),
+          resolve(
+            {
+              thread,
+              app,
+              runId: "ledger",
+              seq: (resolver.last.get("ledger") ?? 0) + 1,
+              change: {
+                op: "set",
+                key: lastRunRecordKey(ended.agent),
+                value: JSON.stringify(ended.last),
+              },
             },
-          });
+            message.ts,
+          );
 
           return;
         }
@@ -856,9 +935,8 @@ export const createLedgerFunctions = (
                 runId: data.runId,
                 n: data.n,
                 epoch,
-                version,
-                state,
-                seq: last.get(data.runId) ?? 0,
+                state: resolver.state,
+                last: Object.fromEntries(resolver.last),
               }),
             ),
           );
@@ -866,67 +944,24 @@ export const createLedgerFunctions = (
           return;
         }
 
-        const write = message.data as ThreadWriteData;
-        const done = last.get(write.runId) ?? 0;
-
-        if (write.seq <= done) {
-          return;
-        }
-
-        if (write.seq !== done + 1) {
-          held.set(`${write.runId}:${write.seq}`, write);
-
-          return;
-        }
-
-        apply(write);
+        resolve(message.data as ThreadWriteData, message.ts);
       };
 
-      // Applies held writes whose turn has come; with `force`, also the ones
-      // that are still ahead of a gap, in order.
-      const release = (force: boolean) => {
-        let moved = true;
-
-        while (moved) {
-          moved = false;
-
-          for (const [key, write] of [...held.entries()].sort(
-            ([, a], [, b]) => {
-              return a.seq - b.seq;
-            },
-          )) {
-            const done = last.get(write.runId) ?? 0;
-
-            if (write.seq <= done) {
-              held.delete(key);
-            } else if (write.seq === done + 1 || force) {
-              held.delete(key);
-              apply(write);
-              moved = true;
-            }
-          }
-        }
-      };
-
-      // A ledger that took over by handover tells every copy what it holds and
-      // which writes of theirs it applied.
-      if (carried) {
-        version += 1;
-        out.push(resetOf());
-      } else if (start) {
+      if (start) {
         take(start);
-        release(false);
       }
 
       // Tells readers whose read may have found no live ledger that this one
-      // is listening. After the answer to the read that started this run, so
-      // that reader does not ask twice.
+      // is listening, and writers which of their writes it holds. After the
+      // answer to the read that started this run, so that reader does not ask
+      // twice.
       out.push(
         threadReady.create(
           signed(threadReady.name, {
             thread,
             app,
             epoch,
+            last: Object.fromEntries(resolver.last),
             ...(start?.name === threadRead.name && {
               answered: String(start.data.runId),
             }),
@@ -947,54 +982,40 @@ export const createLedgerFunctions = (
         // Near the limit the ledger hands its state back to the supervisor,
         // which invokes the next run with it. A write that reaches no run
         // between the two is sent again by its writer when the next run's
-        // `reset` arrives.
+        // `agent/thread.ready` arrives.
         if (steps + 3 >= limit) {
           logger.info(
-            { thread, version, steps },
+            { thread, version: resolver.applied, steps },
             "thread ledger nears the step limit and hands over",
           );
 
           return {
             thread,
-            version,
+            version: resolver.applied,
             handover: signed(handoverName, {
               thread,
               app,
-              version,
-              state,
-              last: Object.fromEntries(last),
+              version: resolver.applied,
+              state: resolver.state,
+              last: Object.fromEntries(resolver.last),
             }) satisfies ThreadHandoverData,
           } satisfies LedgerRunResult;
         }
 
-        const batch =
-          held.size > 0
-            ? await sub.nextBatch({ timeout: gapWaitMs })
-            : await sub.nextBatch();
+        const batch = await sub.nextBatch();
 
         steps += 1;
 
-        if (batch === undefined) {
-          return { thread, version } satisfies LedgerRunResult;
-        }
-
-        if (batch === null) {
-          release(true);
-          continue;
+        if (batch === undefined || batch === null) {
+          return {
+            thread,
+            version: resolver.applied,
+          } satisfies LedgerRunResult;
         }
 
         for (const message of batch) {
-          take(
-            message as {
-              id?: string;
-              name: string;
-              ts?: number;
-              data: unknown;
-            },
-          );
+          take(message as Message);
         }
-
-        release(false);
       }
     },
   );

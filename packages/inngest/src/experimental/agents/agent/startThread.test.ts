@@ -11,6 +11,7 @@ import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
+import { mintGrant, proofOf, verifyGrant } from "./grant.ts";
 import { run } from "./test-helpers.ts";
 
 type Sent = { id?: string; name: string; data: Record<string, unknown> };
@@ -271,15 +272,29 @@ describe("start().result()", () => {
 });
 
 describe("start() limits", () => {
-  const event = {
-    name: "agent/message",
-    data: {
-      agent: `${testClientId}/caller`,
+  // The start the caller runs for: another agent's start, with one grant that
+  // carries what it passes down (`depth=` lines).
+  const startedWith = (depth: number, from: number) => {
+    const client = new Inngest({ id: testClientId });
+    const grant = mintGrant(client, {
       thread: "c1",
-      content: "go",
-      from: { depth: 1, limits: { depth: 0 } },
-    },
+      restrict: [`depth=${depth}`],
+      lines: [`iss=${testClientId}`],
+    });
+
+    return {
+      id: "e1",
+      name: "agent/message",
+      data: {
+        agent: `${testClientId}/caller`,
+        thread: "c1",
+        content: "go",
+        from: { depth: from, thread: "c1" },
+        "::agents": proofOf(client, grant, "e1", "c1"),
+      },
+    };
   };
+  const event = startedWith(0, 1);
 
   test("a chain longer than limits.depth is refused with a readable error", async () => {
     const { agents } = setup();
@@ -306,16 +321,17 @@ describe("start() limits", () => {
       await callee.start("x");
     });
 
-    await run(caller.fn, {
-      event: {
-        ...event,
-        data: { ...event.data, from: { depth: 2, limits: { depth: 3 } } },
-      },
-    });
+    await run(caller.fn, { event: startedWith(3, 2) });
 
-    expect(sent.filter((e) => e.name === "agent/message")).toMatchObject([
-      { data: { from: { depth: 3, limits: { depth: 2 } } } },
-    ]);
+    const message = sent.find((e) => e.name === "agent/message");
+    const carried = message?.data["::agents"] as {
+      grant: { lines: string[] };
+    };
+
+    expect(message?.data.from).toMatchObject({ depth: 3 });
+    // The callee's grant follows the caller's and lowers the depth.
+    expect(carried.grant.lines).toContain("depth=3");
+    expect(carried.grant.lines).toContain("depth=2");
   });
 
   test("nothing of the starter's budget is handed to the thread it starts", async () => {
@@ -328,19 +344,17 @@ describe("start() limits", () => {
       },
     );
 
-    await run(caller.fn, {
-      event: {
-        ...event,
-        data: { ...event.data, from: { depth: 1, limits: { depth: 2 } } },
-      },
-    });
+    await run(caller.fn, { event: startedWith(2, 1) });
 
-    const from = sent.find((e) => e.name === "agent/message")?.data.from as {
-      limits: object;
-    };
+    const message = sent.find((e) => e.name === "agent/message");
+    const grant = verifyGrant(
+      new Inngest({ id: testClientId }),
+      (message?.data["::agents"] as { grant: unknown }).grant,
+      message?.data.thread as string,
+    );
 
-    expect(from.limits).not.toHaveProperty("budget");
-    expect(from.limits).toEqual({ depth: 1 });
+    expect(grant?.limits).toEqual({ depth: 1 });
+    expect(message?.data.from).not.toHaveProperty("limits");
   });
 });
 

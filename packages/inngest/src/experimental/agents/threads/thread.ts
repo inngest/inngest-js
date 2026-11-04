@@ -17,9 +17,15 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import {
+  hasStarted,
+  renewalFor,
+  unattachedGrantSeconds,
+} from "../agent/grant.ts";
 import type { LentRecord } from "../agent/lending.ts";
 import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
+import { relationOf } from "../agent/relations.ts";
 import {
   AgentStoppedError,
   AgentTimeoutError,
@@ -375,14 +381,19 @@ export function threadStateOf(
  * @param agent The agent, as `"appId/functionId"`.
  * @param key Thread key.
  * @param content What to say.
- * @param extra Fields of `from`, and the sessions, a `start()` adds.
+ * @param extra Fields of `from`, the sessions, and what the message carries
+ * under `"::agents"` (made for the message's ID), a `start()` adds.
  */
 export function sendMessage<TOutput = unknown>(
   client: Inngest.Any,
   agent: string,
   key: string,
   content: Json,
-  extra: { from?: object; sessions?: Record<string, string> } = {},
+  extra: {
+    from?: object;
+    sessions?: Record<string, string>;
+    agents?: (id: string) => object;
+  } = {},
 ): MessageCall<TOutput> {
   const meta = { sessions: extra.sessions ?? threadSessions(key) };
   const execution = stepContext();
@@ -395,12 +406,29 @@ export function sendMessage<TOutput = unknown>(
 
   const n = nextCount(execution.instance, "message");
   const id = `msg:${execution.ctx.runId}.${n}`;
+  // A message from the thread that started an unattached child keeps the
+  // child's grant alive for another 7 days.
+  const self = execution.agent;
+  const renew =
+    extra.agents === undefined &&
+    self?.ref &&
+    (relationOf(client, self.thread, key)?.relation === "child" ||
+      hasStarted(execution.instance, key))
+      ? renewalFor(
+          client,
+          key,
+          self.thread,
+          Math.floor(Date.now() / 1000) + unattachedGrantSeconds,
+        )
+      : undefined;
   const event = agentMessage.create(
     {
       agent,
       thread: key,
       content,
       from: { ...senderOf(execution), ...extra.from },
+      ...(extra.agents && { "::agents": extra.agents(id) }),
+      ...(renew && { "::agents": { renew } }),
     } satisfies AgentMessageData,
     { meta, id },
   );
