@@ -42,6 +42,7 @@ import {
   withCompaction,
 } from "./context.ts";
 import { type AgentPrice, priceOf } from "./cost.ts";
+import { isTurnEnder } from "./endsTurn.ts";
 import { sortModelError } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
 import { untrustedText } from "./untrustedText.ts";
@@ -1195,14 +1196,15 @@ const storedCost = (usd: unknown): number | undefined => {
 
 /**
  * Adds tools to a loop's own. The same name twice is an error, since the
- * model could only reach one of them.
+ * model could only reach one of them, except over a built-in that ends the
+ * turn (`wait`): yours replaces it.
  */
 export const addTools = <TTools extends SandboxTools>(
   own: SandboxTools | undefined,
   extra: TTools | undefined,
 ): SandboxTools => {
   for (const name of Object.keys(extra ?? {})) {
-    if (own && Object.hasOwn(own, name)) {
+    if (own && Object.hasOwn(own, name) && !isTurnEnder(own[name])) {
       throw new Error(
         `The tool "${name}" is added twice: the loop already has a tool of that name`,
       );
@@ -1585,6 +1587,28 @@ const runLoop = async <TTools extends SandboxTools>(
       );
     };
 
+    // A model that stops while a report is owed is reminded, up to a few
+    // times, and the loop goes on within `maxTurns` and the budget.
+    const remindOwed = async (): Promise<boolean> => {
+      const owed = (await wiring?.owed?.()) ?? [];
+
+      if (
+        owed.length === 0 ||
+        owedReminders >= maxOwedReminders ||
+        turn >= maxTurns
+      ) {
+        return false;
+      }
+
+      owedReminders += 1;
+      messages.push({
+        role: "user",
+        content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
+      });
+
+      return true;
+    };
+
     if (reply.toolCalls.length === 0) {
       onTurn(options.onTurn);
 
@@ -1604,20 +1628,7 @@ const runLoop = async <TTools extends SandboxTools>(
         continue;
       }
 
-      // A model that stops while a report is owed is reminded, up to a few
-      // times, and the loop goes on within `maxTurns` and the budget.
-      const owed = (await wiring?.owed?.()) ?? [];
-
-      if (
-        owed.length > 0 &&
-        owedReminders < maxOwedReminders &&
-        turn < maxTurns
-      ) {
-        owedReminders += 1;
-        messages.push({
-          role: "user",
-          content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
-        });
+      if (await remindOwed()) {
         continue;
       }
 
@@ -1648,6 +1659,20 @@ const runLoop = async <TTools extends SandboxTools>(
     turnInfo.runs = done.map(({ run: finished }) => finished) as AgentToolRun[];
     messages.push({ role: "tool", results: done.map(({ result }) => result) });
     onTurn(options.onTurn);
+
+    // A built-in that ends the turn (`wait`) ran: once every call of the
+    // reply has run, the loop ends as it does on a reply with no tool call.
+    const endedTurn = done.some(({ run: finished }) => {
+      return !finished.isError && isTurnEnder(tools[finished.name]);
+    });
+
+    if (endedTurn) {
+      if (await remindOwed()) {
+        continue;
+      }
+
+      return finish("done", turn);
+    }
   }
 
   return finish("maxTurns", maxTurns);

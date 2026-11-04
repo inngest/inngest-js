@@ -137,7 +137,7 @@ import {
   schemaProblem,
   singletonKey,
 } from "../threads/threadTrigger.ts";
-import { agentToolsFor, codeAgentTools } from "./agentTools.ts";
+import { agentToolsFor, codeAgentTools, waitTool } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -313,6 +313,8 @@ const createHandlerLoop = async (options: {
     ...agentToolsFor(config.discovery),
     ...listenTools,
     ...(skills.length > 0 && createSkillTools(skills)),
+    // Ends the turn on purpose. A tool of the agent's own named `wait` wins.
+    ...(!(tools && Object.hasOwn(tools, "wait")) && { wait: waitTool }),
   } as SandboxTools;
   // Shared tools the definition lists are called through their hosted
   // function; the others `discovery.tools` allows are added beside them.

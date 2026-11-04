@@ -44,6 +44,7 @@ import {
 } from "../inbox/reports.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { kv } from "../kv/kv.ts";
+import { endsTurn } from "../loop/endsTurn.ts";
 import {
   sendMessage,
   threadHandle,
@@ -537,11 +538,47 @@ export const agentToolSet = (
 export const replyTool: AgentToolSet["reply"] = tool({
   id: "reply",
   description:
-    "Answers a question another agent asked you, by the question's ID.",
+    "Answers a question another agent asked you, by the question's ID. Use it only when you have received a question with an ID that you have not answered yet. It is not for sending results or updates: a run's result reaches whoever started it on its own.",
   group: true,
   input: replyInput,
   run: replyTo,
 });
+
+/**
+ * What the model reads for `wait`.
+ */
+export const waitDescription =
+  "Call this when you have nothing to do until a message arrives. It ends your turn, and you are woken when the next message arrives. Agents you started report and finish by sending you messages; don't message them for status.";
+
+/**
+ * What `wait` gives back, kept in the history as the call's result.
+ */
+export const waitResult = "Waiting. You'll be woken when a message arrives.";
+
+/**
+ * EXPERIMENTAL: `wait({ reason? })`: ends the model's turn on purpose. Once it
+ * and the other calls of the same reply have run, the loop ends as it does on
+ * a reply with no tool call, and the run waits for its next message as it
+ * already does. Its result is a constant, so it costs no step and replays the
+ * same. Every model agent's loop has it; a tool of yours named `wait` replaces
+ * it.
+ */
+export const waitTool = endsTurn(
+  tool({
+    id: "wait",
+    description: waitDescription,
+    group: true,
+    input: z.object({
+      reason: z
+        .string()
+        .optional()
+        .describe("Why you are waiting, in a few words."),
+    }),
+    run: async () => {
+      return waitResult;
+    },
+  }) as unknown as AgentTool<{ reason?: string }, string>,
+);
 
 /**
  * The tools a model agent gets by default, from its definition's `discovery`
