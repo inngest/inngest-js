@@ -628,7 +628,8 @@ export const sandboxAgentTools = (
  * `stop_agent` and the waiting `agent_result`. They follow the agent's
  * `discovery` as the model's do, and `false` gives none. `ask_agent` and
  * `reply` are the model's alone: their answers arrive as messages, and code
- * has no inbox.
+ * has no inbox. A run that owes reports also gives code `report`, whatever
+ * its `discovery` (see `codeReportTool`).
  */
 export const codeAgentTools = (
   discovery: AgentDiscovery | undefined,

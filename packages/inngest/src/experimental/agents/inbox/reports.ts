@@ -17,6 +17,7 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
@@ -793,12 +794,17 @@ export const owedReminder = (types: string[]): string => {
  * @param type The report's type name.
  * @param data The report's data.
  * @param check Checks the data against the schema; gives the problem, if any.
+ * @param key Names this send for good, for a caller whose steps already sit
+ * under an ID of their own (a `runCode` call): the step is `report:<type>`
+ * under it and the events are named by the key, not by a count of the run's
+ * reports.
  */
 export const sendReport = async (
   book: ReportBook,
   type: string,
   data: unknown,
   check?: (data: unknown) => Promise<string | undefined> | string | undefined,
+  key?: string,
 ): Promise<void> => {
   const entry = book.spec[type];
 
@@ -848,13 +854,13 @@ export const sendReport = async (
     return;
   }
 
-  const n = nextCount(execution.instance, "report");
+  const n = key ?? nextCount(execution.instance, "report");
   const event = eventType(reportWireEvent, {
     schema: staticSchema<ReportEnvelope>(),
   });
 
   await step.sendEvent(
-    `report:${type}:${n}`,
+    key === undefined ? `report:${type}:${n}` : `report:${type}`,
     destinations.map((destination, index) => {
       // The ID is the event's own, so a proof can be made for it.
       const id = `report:${execution.ctx.runId}.${n}.${index}`;
@@ -913,6 +919,45 @@ export const reportTool = (book: ReportBook): AgentTool => {
     run: async ({ type, data }: { type: string; data: unknown }) => {
       try {
         await sendReport(book, type, data);
+      } catch (error) {
+        return toolErrorOf(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+
+      return { ok: true as const };
+    },
+  }) as unknown as AgentTool;
+};
+
+/**
+ * EXPERIMENTAL: the `report({ type, data })` tool sandbox code gets in a
+ * `runCode` when the run owes reports. It checks and sends a report exactly as
+ * the model's `report` tool does. Each call runs under the step ID of its own
+ * `runCode` call, and its events are named by that call, so a script that
+ * reports several times, in a loop or across waits, sends each report once.
+ */
+export const codeReportTool = (book: ReportBook): AgentTool => {
+  return tool({
+    id: "report",
+    description: reportDescription(book.spec),
+    group: true,
+    input: z.object({
+      type: z.string().describe("The report's type."),
+      data: z.any().describe("The report's data, fitting its schema."),
+    }),
+    run: async (
+      { type, data }: { type: string; data: unknown },
+      context: { idempotencyKey: string },
+    ) => {
+      const key = hashjs
+        .sha256()
+        .update(context.idempotencyKey)
+        .digest("hex")
+        .slice(0, 16);
+
+      try {
+        await sendReport(book, type, data, undefined, key);
       } catch (error) {
         return toolErrorOf(
           error instanceof Error ? error.message : String(error),

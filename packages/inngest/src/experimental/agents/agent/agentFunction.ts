@@ -40,6 +40,7 @@ import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
   hostOfSharedTool,
   isSharedTool,
+  type SandboxTool,
   type SandboxTools,
 } from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
@@ -54,6 +55,7 @@ import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
+  codeReportTool,
   flushOwes,
   handleAddressKey,
   isReportMessage,
@@ -1022,6 +1024,14 @@ export function createAgentFunction(
         };
 
         bridge.reports = reportBook;
+
+        // Code in a `runCode` can send the run's reports too.
+        if (reportBook) {
+          bridge.codeTools = {
+            ...bridge.codeTools,
+            report: codeReportTool(reportBook) as unknown as SandboxTool,
+          };
+        }
 
         // The loop reads this when it runs, inside the agent, whichever way
         // the app made it.

@@ -44,7 +44,8 @@ export interface AgentBridge {
   /**
    * The agent tools sandbox code can call as `tools.<name>(...)` in a `runCode`
    * the run lists: discovery, `start_agent`, `message_agent`, `stop_agent` and
-   * `agent_result`. Empty when the agent has `discovery: false`.
+   * `agent_result`, which `discovery: false` leaves out, and `report` when the
+   * run owes reports.
    */
   codeTools?: SandboxTools;
 }
