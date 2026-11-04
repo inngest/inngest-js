@@ -31,6 +31,7 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { IsAny } from "../../../helpers/types.ts";
+import { type BriefingParts, briefingText } from "../agent/briefing.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import { taggedKeyAddress } from "../agent/relations.ts";
 import type { Json } from "../json.ts";
@@ -378,6 +379,14 @@ export interface AgentModelRequest {
    * The tools in the shape model APIs take. Pass them straight to your SDK.
    */
   tools: ToolJsonDefinition[];
+
+  /**
+   * EXPERIMENTAL: The agent's briefing (see `BriefingParts`), only for a model
+   * marked `placesBriefing`, which places it itself: `runtime` is stable for
+   * an agent with the same tools, `situation` for the run. Any other model
+   * gets the briefing at the end of `system` instead.
+   */
+  briefing?: BriefingParts;
 }
 
 /**
@@ -440,6 +449,14 @@ export interface AgentModel {
    * summarises the conversation once it fills 70% of it.
    */
   contextWindow?: number;
+
+  /**
+   * EXPERIMENTAL: Whether the model places the agent's briefing itself, from
+   * the request's `briefing` (`anthropic()` does, with a cache breakpoint
+   * between its sections). Otherwise the loop adds the briefing to the end of
+   * `system`.
+   */
+  placesBriefing?: boolean;
 }
 
 const modelBrand: unique symbol = Symbol.for("inngest.agents.model");
@@ -777,6 +794,18 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
    * reuses it.
    */
   price?: AgentPrice;
+
+  /**
+   * @internal The agent's briefing, made from the loop's tools at the start
+   * of each call of the loop. Only the loops the agent builds have it.
+   */
+  "~briefing"?: (tools: SandboxTools) => BriefingParts | undefined;
+
+  /**
+   * @internal Tools added once a question has reached the run, and kept for
+   * the rest of it (the agent's `reply`).
+   */
+  "~afterQuestion"?: SandboxTools;
 }
 
 /**
@@ -965,6 +994,11 @@ export interface AgentLoopWiring {
    * to its question. Filled by the messaging work.
    */
   questions?: () => ReadonlyMap<string, string>;
+
+  /**
+   * Whether a question has reached this run, so the loop adds `reply`.
+   */
+  questionArrived?: () => boolean;
 
   /**
    * Called with the IDs of the messages folded into a model call.
@@ -1257,8 +1291,35 @@ const runLoop = async <TTools extends SandboxTools>(
   const price = options.price ?? wiring?.price;
   const id = uniqueLoopId(options.id ?? "agent");
   // The key of an MCP server in `tools` names its tools; its list is a step.
-  const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
-  const definitions = toolDefinitions(tools);
+  let tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
+  let definitions = toolDefinitions(tools);
+  // Tools that come with the first question (`reply`): once added they stay,
+  // so the cached tool list changes once at most.
+  const late = Object.fromEntries(
+    Object.entries(options["~afterQuestion"] ?? {}).filter(([name]) => {
+      return !Object.hasOwn(tools, name);
+    }),
+  );
+  const addLate = () => {
+    if (
+      Object.keys(late).length > 0 &&
+      !Object.hasOwn(tools, Object.keys(late)[0] as string) &&
+      wiring?.questionArrived?.()
+    ) {
+      tools = { ...tools, ...late } as TTools;
+      definitions = toolDefinitions(tools);
+    }
+  };
+
+  addLate();
+
+  // The briefing is made once, from the tools the call starts with.
+  const briefing = options["~briefing"]?.(tools);
+  const placed = model.placesBriefing === true;
+  const fullSystem =
+    briefing && !placed
+      ? [system, briefingText(briefing)].filter(Boolean).join("\n\n")
+      : system;
   const format =
     options.format ??
     ((event: AgentEvent) => {
@@ -1406,6 +1467,8 @@ const runLoop = async <TTools extends SandboxTools>(
         messages.push({ role: "user", content: contentOf(event) });
       }
 
+      addLate();
+
       steered = chosen.length;
       wiring?.folded?.({
         turn,
@@ -1460,7 +1523,8 @@ const runLoop = async <TTools extends SandboxTools>(
           }
 
           answer = await model({
-            system,
+            ...(fullSystem !== undefined && { system: fullSystem }),
+            ...(briefing && placed && { briefing }),
             messages: last
               ? [...sent, { role: "user", content: options.wrapUp as string }]
               : sent,

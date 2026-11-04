@@ -34,6 +34,7 @@ const make = () => {
 
   const parent = agents.agent({
     id: "bot",
+    discovery: true,
     model: model(async (request) => {
       requests.push(
         request.messages.flatMap((m) => {

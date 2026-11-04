@@ -18,6 +18,7 @@ import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import type { ToolDescriptionParts } from "../../../components/sandbox/toolDescription.ts";
 import {
   type AgentTool,
   type SandboxTool,
@@ -27,6 +28,7 @@ import {
   type AgentDiscovery,
   type DiscoveryToolSet,
   type DiscoveryToolSetOptions,
+  discoveryOptionsOf,
   discoveryToolSet,
   findCard,
   prepareInput,
@@ -132,7 +134,7 @@ const reportsInput = z
         .boolean()
         .optional()
         .describe(
-          "True when the agent must send this report before it finishes.",
+          "Whether the agent must send this report before it finishes. Default true; set false for a report it may skip.",
         ),
     }),
   )
@@ -233,7 +235,8 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
             report.type,
             {
               ...(report.schema && { schema: report.schema }),
-              ...(report.required && { required: true as const }),
+              // A report the model asks for is owed unless it says otherwise.
+              ...(report.required !== false && { required: true as const }),
               to: [{ agent: self.address, thread: self.key }],
             },
           ];
@@ -472,10 +475,65 @@ const replyTo = async ({ to, text }: { to: string; text: string }) => {
   return { ok: true as const };
 };
 
-const startDescription =
-  "Starts another agent on a new thread and returns at once with the thread's key. It does not wait. Use describe_agent to see what input it takes.";
-const stopDescription =
-  "Stops the run of an agent you started, the agent that started you, or a member of your group.";
+/**
+ * What a model reads about `start_agent`.
+ */
+const startDescription: ToolDescriptionParts = {
+  does: "Starts another agent on a new thread to work on its own. It returns the new thread's key at once and does not wait: the agent's reports, questions and final result reach you later as messages.",
+  use: "to hand off work that another agent does (`describe_agent` shows the input it takes). Ask for `reports` if you want updates while it works; a report you ask for is required unless you set `required: false`",
+  avoid:
+    "to wait for an agent: end your turn instead, and its result reaches you as a message",
+  context:
+    "Agents you start run on their own. Their reports, questions and final results reach you as messages, so you never need to ask them for status: to wait for them, end your turn. A report needs no answer.",
+};
+
+/**
+ * What sandbox code reads about `start_agent`: code has no inbox, so it
+ * waits for a result with `agent_result`.
+ */
+const codeStartDescription: ToolDescriptionParts = {
+  does: "Starts another agent on a new thread and returns at once with the thread's key. It does not wait.",
+  use: "to hand off work that another agent does; `describe_agent` shows the input it takes",
+  avoid:
+    "to get the agent's result: call `agent_result` with the thread key for that",
+};
+
+const stopDescription: ToolDescriptionParts = {
+  does: "Stops the run of an agent you started, the agent that started you, or a member of your group, by its thread key. You get the agent's outcome as a message.",
+  use: "when its work is no longer needed",
+  avoid:
+    "to end your own turn or to wait: for that, end your turn or call `wait`",
+};
+
+const codeStopDescription: ToolDescriptionParts = {
+  does: "Stops the run of an agent this code started, by its thread key.",
+  use: "when its work is no longer needed",
+};
+
+const messageDescription: ToolDescriptionParts = {
+  does: "Sends a message to an agent you started, the agent that started you, or a member of your group, by its thread key. It returns at once; any answer comes later as a message.",
+  use: "to give new information or change what you asked for",
+  avoid:
+    "to ask for status, to acknowledge a report, or to send your own final result: results and reports arrive on their own, and your final result goes to whoever started you when you finish",
+  context:
+    "With `ask_agent` and `stop_agent`, it reaches only the thread that started you, threads you started and members of your group, by their thread keys. No other thread can be reached.",
+};
+
+const askDescription: ToolDescriptionParts = {
+  does: "Asks an agent you started, the agent that started you, or a member of your group a question that needs an answer. It returns the question's ID at once. The answer arrives later as a message that names the ID, or a message saying there was none within an hour.",
+  use: "when you can't go on without the answer",
+  avoid: "when no answer is needed: use `message_agent` for that",
+};
+
+const replyDescription: ToolDescriptionParts = {
+  does: "Answers a question another agent asked you, by the question's ID. It returns at once.",
+  use: "only for a question that arrived with an ID and has no answer yet",
+  avoid:
+    "to send your result, a report or an update: your result reaches whoever started you when you finish, and reports go through `report`",
+};
+
+const okOutput = z.object({ ok: z.literal(true) });
+const threadOutput = z.object({ thread: z.string() });
 
 /**
  * `start_agent` and `stop_agent` for a model.
@@ -498,57 +556,81 @@ export const agentToolSet = (
   return {
     start_agent: tool({
       id: "start_agent",
-      description: `${startDescription} When the agent finishes you get its outcome as a message.`,
+      description: startDescription,
       group: true,
       input: startInput,
+      output: threadOutput,
       run: startAgent(options, "start_agent"),
     }),
-    message_agent: tool({
-      id: "message_agent",
-      description:
-        "Sends a message to an agent you started, the agent that started you, or a member of your group. It does not wait for a reply.",
-      group: true,
-      input: messageInput,
-      run: messageAgent,
-    }),
-    ask_agent: tool({
-      id: "ask_agent",
-      description:
-        "Asks an agent you started, the agent that started you, or a member of your group a question and returns the question's ID at once. The answer arrives later as a message that names the ID; if there is none within an hour, you get a message that says so.",
-      group: true,
-      input: askInput,
-      run: askAgent,
-    }),
-    stop_agent: tool({
-      id: "stop_agent",
-      description: `${stopDescription} You get its outcome as a message.`,
-      group: true,
-      input: stopInput,
-      run: stopAgent,
-    }),
+    ...relativeTools,
     reply: replyTool,
   };
 };
 
 /**
+ * `message_agent`, `ask_agent` and `stop_agent`: the tools that reach the
+ * threads related to the caller's (its starter, its children, its group).
+ */
+const relativeTools = {
+  message_agent: tool({
+    id: "message_agent",
+    description: messageDescription,
+    group: true,
+    input: messageInput,
+    output: okOutput,
+    run: messageAgent,
+  }),
+  ask_agent: tool({
+    id: "ask_agent",
+    description: askDescription,
+    group: true,
+    input: askInput,
+    output: z.object({ id: z.string() }),
+    run: askAgent,
+  }),
+  stop_agent: tool({
+    id: "stop_agent",
+    description: stopDescription,
+    group: true,
+    input: stopInput,
+    output: okOutput,
+    run: stopAgent,
+  }),
+};
+
+/**
  * `reply({ to, text })`: answers a question that reached the agent, by the
- * ID it came with. It is not a discovery tool: a model agent always has it,
- * even with `discovery: false`.
+ * ID it came with. A model agent gets it once a question reaches its run,
+ * whatever its `discovery`, and keeps it for the rest of the run.
  */
 export const replyTool: AgentToolSet["reply"] = tool({
   id: "reply",
-  description:
-    "Answers a question another agent asked you, by the question's ID. Use it only when you have received a question with an ID that you have not answered yet. It is not for sending results or updates: a run's result reaches whoever started it on its own.",
+  description: replyDescription,
   group: true,
   input: replyInput,
+  output: okOutput,
   run: replyTo,
 });
 
 /**
- * What the model reads for `wait`.
+ * What the model reads for `wait` in the SDK's own handler, which wakes the
+ * model for the next message.
  */
-export const waitDescription =
-  "Call this when you have nothing to do until a message arrives. It ends your turn, and you are woken when the next message arrives. Agents you started report and finish by sending you messages; don't message them for status.";
+export const waitDescription: ToolDescriptionParts = {
+  does: "Ends your turn on purpose. You are woken when the next message arrives.",
+  use: "when you have nothing to do until a message arrives, such as while agents you started are working",
+  avoid:
+    "to end a turn by calling some other tool: a reply without a tool call also ends your turn",
+};
+
+/**
+ * What the model reads for `wait` in a handler of the agent's own, whose code
+ * decides whether the model runs again.
+ */
+export const handlerWaitDescription: ToolDescriptionParts = {
+  does: "Ends your turn on purpose. Your last text goes back to your agent's code.",
+  use: "when you have nothing more to do",
+};
 
 /**
  * What `wait` gives back, kept in the history as the call's result.
@@ -563,39 +645,55 @@ export const waitResult = "Waiting. You'll be woken when a message arrives.";
  * same. Every model agent's loop has it; a tool of yours named `wait` replaces
  * it.
  */
-export const waitTool = endsTurn(
-  tool({
-    id: "wait",
-    description: waitDescription,
-    group: true,
-    input: z.object({
-      reason: z
-        .string()
-        .optional()
-        .describe("Why you are waiting, in a few words."),
-    }),
-    run: async () => {
-      return waitResult;
-    },
-  }) as unknown as AgentTool<{ reason?: string }, string>,
-);
+const makeWait = (description: ToolDescriptionParts, result: string) => {
+  return endsTurn(
+    tool({
+      id: "wait",
+      description,
+      group: true,
+      input: z.object({
+        reason: z
+          .string()
+          .optional()
+          .describe("Why you are waiting, in a few words."),
+      }),
+      run: async () => {
+        return result;
+      },
+    }) as unknown as AgentTool<{ reason?: string }, string>,
+  );
+};
+
+export const waitTool = makeWait(waitDescription, waitResult);
 
 /**
- * The tools a model agent gets by default, from its definition's `discovery`
- * field: `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
- * `ask_agent`, `stop_agent` and `reply`. `false` leaves only `reply`.
+ * `wait` for a handler of the agent's own: the same tool, with a description
+ * that promises no wake-up.
+ */
+export const handlerWaitTool = makeWait(handlerWaitDescription, "Turn ended.");
+
+/**
+ * The agent tools a model agent starts a run with. Discovery is opt-in: a
+ * `discovery` of `true` or options gives `list_agents`, `describe_agent`,
+ * `start_agent`, `message_agent`, `ask_agent` and `stop_agent`. Without it,
+ * a run another agent started, or of a thread in a group, still gets
+ * `message_agent`, `ask_agent` and `stop_agent`, which reach only its
+ * relatives. `reply` is not here: the loop adds it once a question arrives.
+ * @param discovery The definition's `discovery`.
+ * @param related Whether the thread has relatives to reach (a starting
+ * agent, or a group).
  */
 export const agentToolsFor = (
   discovery: AgentDiscovery | undefined,
+  related = false,
 ): Record<string, AgentTool> => {
-  if (discovery === false) {
-    return { reply: replyTool };
+  if (!discoveryOptionsOf(discovery)) {
+    return related ? { ...relativeTools } : {};
   }
 
-  return {
-    ...discoveryToolSet({ discovery }),
-    ...agentToolSet({ discovery }),
-  };
+  const { reply: _reply, ...actions } = agentToolSet({ discovery });
+
+  return { ...discoveryToolSet({ discovery }), ...actions };
 };
 
 /**
@@ -610,21 +708,33 @@ export const sandboxAgentTools = (
 ): Record<"start_agent" | "stop_agent" | "agent_result", SandboxTool> => {
   return {
     start_agent: tool.group({
-      description: startDescription,
+      description: codeStartDescription,
       input: startInput,
+      output: threadOutput,
       run: startAgent(options),
     }),
     stop_agent: tool.group({
-      description: stopDescription,
+      description: codeStopDescription,
       input: stopInput,
+      output: okOutput,
       run: stopAgent,
     }),
     agent_result: tool.group({
-      description:
-        "Waits for an agent you started to finish and gives its outcome: `completed` with `output`, `failed` with `error`, or `stopped`.",
+      description: {
+        does: "Waits for an agent this code started to finish and gives its outcome: `completed` with `output`, `failed` with `error`, or `stopped`.",
+        use: "once the code needs the agent's result",
+      },
       input: z.object({
         thread: z.string().describe("The thread key `start_agent` returned."),
       }),
+      output: z.union([
+        z.object({
+          outcome: z.literal("completed"),
+          output: z.any().optional(),
+        }),
+        z.object({ outcome: z.literal("failed"), error: z.string() }),
+        z.object({ outcome: z.literal("stopped") }),
+      ]),
       waits: true,
       run: async ({ thread }: { thread: string }) => {
         const started = startedBySandbox
@@ -671,7 +781,7 @@ export const sandboxAgentTools = (
 export const codeAgentTools = (
   discovery: AgentDiscovery | undefined,
 ): Record<string, SandboxTool> => {
-  if (discovery === false) {
+  if (!discoveryOptionsOf(discovery)) {
     return {};
   }
 

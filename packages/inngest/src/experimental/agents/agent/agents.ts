@@ -439,6 +439,7 @@ export type {
   AgentCardConfig,
   AgentCardSkill,
   AgentDiscovery,
+  AgentDiscoveryOptions,
   AgentEffects,
   AgentShare,
   AgentSummary,

@@ -64,6 +64,7 @@ import type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 import type { AgentToolSet } from "./agentTools.ts";
+import type { BriefingOption } from "./briefing.ts";
 import type { LendOptions } from "./lending.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
@@ -226,19 +227,26 @@ export interface AgentFunctionConfig<
   card?: AgentCardConfig;
 
   /**
-   * Discovery for the agent's model: on by default (`list_agents`,
-   * `describe_agent` and the tools that start or reach other agents).
-   * `false` removes them, and the agent's own card is still published.
+   * Discovery for the agent's model. Off unless set: `true` gives the model
+   * `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
+   * `ask_agent` and `stop_agent`, and the shared tools `discovery.tools`
+   * allows. Without it, a run another agent started (or of a thread in a
+   * group) still gets `message_agent`, `ask_agent` and `stop_agent` for the
+   * threads related to it. The agent's own card is published either way.
    * `{ prepare }` fills part of the input of a call to another agent from the
    * host, in the run. `{ agents, tools }` filter what the model can see and
-   * may start; agents it starts never see more than it was allowed.
+   * may start; agents it starts never see more than it was allowed. Both
+   * turn discovery on.
    */
   discovery?: AgentDiscovery;
 
   /**
    * How long a run waits in quiet before it ends: a number of milliseconds, a
    * string such as `"7d"` or a Temporal duration, or a function of
-   * `{ event, thread }` returning one. Default: 10 minutes. It ends the run of
+   * `{ event, thread }` returning one. Default: 2 minutes for a run a trigger
+   * opened; a run opened through a handle (`start()`, `message()`, a model's
+   * `start_agent`) ends once it has answered and nothing is unread, unless
+   * `idle` is set. It ends the run of
    * a handler that loops over its inbox, with `for await (const batch of
    * inbox.batches())` or `for await (const m of inbox)`: the loop returns after
    * that much quiet. A later message starts a new run on the same thread. A
@@ -265,9 +273,29 @@ export interface AgentFunctionConfig<
 
   /**
    * The model's system prompt: a value, or a function of `{ event, thread }`
-   * read once at the start of each run.
+   * read once at the start of each run. The SDK adds its briefing after it
+   * (see `briefing`).
    */
   system?: RunField<string, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
+
+  /**
+   * EXPERIMENTAL: Changes the briefing, the facts the SDK adds after `system`
+   * in the loops it builds: how turns work (`<inngest-runtime>`, the same for
+   * every run of the agent with the same tools) and this run's situation
+   * (`<inngest-situation>`: who started the thread, where the final text
+   * goes, the reports owed, how long the run stays open, limits, and the
+   * `context` of the model's tools). Gets the default `text`, its `sections`
+   * by name and the `facts` they were made from. Return a string to use in
+   * place of the whole briefing, or anything falsy to send none. Default:
+   * the SDK's briefing. A `loop` that is a whole loop of its own gets no
+   * briefing; it can make one with `briefingFacts()` and `renderBriefing()`.
+   *
+   * @example
+   * ```ts
+   * briefing: ({ sections }) => sections.situation,
+   * ```
+   */
+  briefing?: BriefingOption;
 
   /**
    * The tools the model can call, beside the ones the SDK adds (the inbox

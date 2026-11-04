@@ -101,7 +101,6 @@ describe("discovery types", () => {
             if (!call.isError && call.name === "list_agents") {
               expectTypeOf(call.call.input).toEqualTypeOf<{
                 query?: string;
-                refresh?: boolean;
               }>();
               expectTypeOf(call.output).toEqualTypeOf<{
                 agents: AgentSummary[];

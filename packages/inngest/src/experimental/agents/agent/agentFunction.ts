@@ -48,11 +48,19 @@ import { internalEvents } from "../../../helpers/consts.ts";
 import type { Logger } from "../../../middleware/logger.ts";
 import { compileKey, toAsync } from "../cel.ts";
 import { cardToolsOf } from "../discovery/cardTools.ts";
-import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
+import {
+  cardOf,
+  discoveryOptionsOf,
+  validateDiscoveryList,
+} from "../discovery/discovery.ts";
 import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
-import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
+import {
+  agentGroupJoined,
+  agentMessage,
+  type SenderData,
+} from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
   codeReportTool,
@@ -137,8 +145,21 @@ import {
   schemaProblem,
   singletonKey,
 } from "../threads/threadTrigger.ts";
-import { agentToolsFor, codeAgentTools, waitTool } from "./agentTools.ts";
+import {
+  agentToolsFor,
+  codeAgentTools,
+  handlerWaitTool,
+  replyTool,
+  waitTool,
+} from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import {
+  type BriefingParty,
+  briefingParts,
+  type RunBriefingFacts,
+  registerBriefingFacts,
+  toolFacts,
+} from "./briefing.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
@@ -167,7 +188,7 @@ import {
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
-import { groupOf, taggedKeyAddress } from "./relations.ts";
+import { groupOf, starterOfKey, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
   idleMs,
@@ -242,9 +263,30 @@ const createHandlerLoop = async (options: {
    * is told not to call them.
    */
   lentEnded?: string[];
+
+  /**
+   * The facts of this run that the briefing is made from, apart from the
+   * loop's tools.
+   */
+  briefing: RunBriefingFacts;
+
+  /**
+   * Whether the thread has relatives its model can reach without discovery:
+   * an agent started it, or it is in a group.
+   */
+  related: boolean;
 }): Promise<AgentHandlerLoop> => {
-  const { client, logger, config, fields, listenTools, skills, lentEnded } =
-    options;
+  const {
+    client,
+    logger,
+    config,
+    fields,
+    listenTools,
+    skills,
+    lentEnded,
+    briefing,
+    related,
+  } = options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -310,11 +352,13 @@ const createHandlerLoop = async (options: {
   }
 
   const own = {
-    ...agentToolsFor(config.discovery),
+    ...agentToolsFor(config.discovery, related),
     ...listenTools,
     ...(skills.length > 0 && createSkillTools(skills)),
     // Ends the turn on purpose. A tool of the agent's own named `wait` wins.
-    ...(!(tools && Object.hasOwn(tools, "wait")) && { wait: waitTool }),
+    ...(!(tools && Object.hasOwn(tools, "wait")) && {
+      wait: briefing.loop === "default" ? waitTool : handlerWaitTool,
+    }),
   } as SandboxTools;
   // Shared tools the definition lists are called through their hosted
   // function; the others `discovery.tools` allows are added beside them.
@@ -338,6 +382,17 @@ const createHandlerLoop = async (options: {
     model,
     ...(system !== undefined && { system }),
     tools: addTools(addTools(own, shared), tools),
+    // `reply` comes with the run's first question, unless the agent has a
+    // tool of that name.
+    ...(!(tools && Object.hasOwn(tools, "reply")) && {
+      "~afterQuestion": { reply: replyTool },
+    }),
+    "~briefing": (loopTools: SandboxTools) => {
+      return briefingParts(
+        { ...briefing, tools: toolFacts(loopTools) },
+        config.briefing,
+      );
+    },
   }) as unknown as AgentHandlerLoop;
 };
 
@@ -376,9 +431,11 @@ export function createAgentFunction(
     typeof config.skills === "function" || config.skills === undefined
       ? []
       : collectSkills(config.skills);
-  if (config.discovery) {
-    validateDiscoveryList(config.id, "agents", config.discovery.agents);
-    validateDiscoveryList(config.id, "tools", config.discovery.tools);
+  const discovery = discoveryOptionsOf(config.discovery);
+
+  if (discovery) {
+    validateDiscoveryList(config.id, "agents", discovery.agents);
+    validateDiscoveryList(config.id, "tools", discovery.tools);
   }
 
   // A source written as just an event is placed by the agent's `thread`.
@@ -643,9 +700,9 @@ export function createAgentFunction(
             narrowInherited(started.inherited, passed),
             {
               appId: client.id,
-              ...(config.discovery && {
-                agents: config.discovery.agents,
-                tools: config.discovery.tools,
+              ...(discovery && {
+                agents: discovery.agents,
+                tools: discovery.tools,
               }),
             },
           ),
@@ -1067,6 +1124,82 @@ export function createAgentFunction(
           thread: data.thread,
         });
 
+        // Who started the thread and who opened this run, for the briefing. A
+        // starting agent is read from the signed grant, else from the key a
+        // start made (the tools that reach it check the key's tag).
+        const opening = [runEvent, startMessage]
+          .map((candidate) => {
+            return (candidate.data as { from?: SenderData } | undefined)?.from;
+          })
+          .find((from) => {
+            return from !== undefined;
+          });
+        const starterAddress =
+          startGrant?.par?.address || starterOfKey(data.thread);
+        const starter: BriefingParty | undefined = starterAddress
+          ? {
+              kind: "agent",
+              address: starterAddress,
+              ...((startGrant?.par?.key ??
+                (opening?.kind === "agent" && opening.address === starterAddress
+                  ? opening.key
+                  : undefined)) !== undefined && {
+                thread: (startGrant?.par?.key ?? opening?.key) as string,
+              }),
+            }
+          : undefined;
+        const opener =
+          opening === undefined
+            ? undefined
+            : {
+                ...(opening.kind === "agent"
+                  ? {
+                      kind: "agent" as const,
+                      address: opening.address,
+                      thread: opening.key,
+                    }
+                  : { kind: "function" as const, run: opening.id }),
+                start: opening.thread !== undefined,
+              };
+        const remembered =
+          (await fields.get(
+            "remember",
+            config.remember as RunField<boolean | undefined>,
+          )) !== false;
+        const runBriefing: RunBriefingFacts = {
+          agent: ref,
+          thread: data.thread,
+          loop: bodyOrDefault === undefined ? "default" : "handler",
+          ...(starter && { starter }),
+          ...(opener && { opener }),
+          run: {
+            endsWhenRead: idle === 0,
+            idleMs: idle,
+            remember: remembered,
+          },
+          reports: Object.entries(reportSpec ?? {}).map(([type, entry]) => {
+            return {
+              type,
+              required: entry.required === true,
+              ...(entry.schema !== undefined && { schema: entry.schema }),
+              to: [
+                ...new Set(
+                  entry.to.map((destination) => {
+                    return destination.agent;
+                  }),
+                ),
+              ],
+            };
+          }),
+          group: groupOf(data.thread) !== undefined,
+          ...(limits.limits.depth !== undefined && {
+            depth: limits.limits.depth,
+          }),
+          ...(limits.budget && { budget: limits.budget }),
+        };
+
+        registerBriefingFacts(instance, runBriefing);
+
         const handlerLoop = await createHandlerLoop({
           client,
           logger,
@@ -1074,6 +1207,8 @@ export function createAgentFunction(
           fields,
           skills: runSkills,
           lentEnded,
+          briefing: runBriefing,
+          related: starter !== undefined || runBriefing.group,
           listenTools: {
             ...sandboxTools(opened),
             ...listenTools,

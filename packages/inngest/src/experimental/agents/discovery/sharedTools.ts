@@ -22,6 +22,7 @@ import {
   type AgentDiscovery,
   cardsOf,
   currentCards,
+  discoveryOptionsOf,
   mayUse,
 } from "./discovery.ts";
 import { defaultDiscovery, matchesDiscovery } from "./match.ts";
@@ -101,12 +102,14 @@ export const sharedToolsFor = async (
     logger?: Logger;
   },
 ): Promise<SandboxTools> => {
-  if (discovery === false) {
+  const on = discoveryOptionsOf(discovery);
+
+  if (!on) {
     return {};
   }
 
   const appId = client.id;
-  const own = discovery?.tools ?? defaultDiscovery;
+  const own = on.tools ?? defaultDiscovery;
   const instance = getAsyncCtxSync()?.execution?.instance;
   const chain =
     (instance ? limitStateOf(instance, undefined) : undefined)?.limits.discovery

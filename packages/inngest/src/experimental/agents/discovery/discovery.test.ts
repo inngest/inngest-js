@@ -20,6 +20,7 @@ import {
   agentsRegisteredEvent,
   announceCron,
   announcement,
+  cardsFreshMs,
   currentCards,
   discoveryToolSet,
   discoveryToolsFor,
@@ -635,32 +636,45 @@ describe("the tools", () => {
     expect(JSON.stringify(unknown)).toMatch(/is shared with you/);
   });
 
-  test("a second call in a run reads nothing; refresh reads again", async () => {
+  test("a read is reused for 30 seconds, then read again; refresh is ignored", async () => {
+    let clock = 1_000_000;
+    let advance = 0;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      return clock;
+    });
     const options = {
       functions: async () => {
+        // Each read takes `advance` of the clock with it.
+        clock += advance;
+
         return new Map([["docs", { paused: false, archived: false }]]);
       },
     };
 
-    await runTools(
-      [
-        { name: "list_agents", input: {} },
-        { name: "list_agents", input: {} },
-        { name: "describe_agent", input: { address: "other-app/docs" } },
-      ],
-      options,
-    );
-    expect(reads).toBe(1);
+    try {
+      await runTools(
+        [
+          { name: "list_agents", input: {} },
+          { name: "list_agents", input: { refresh: true } },
+          { name: "describe_agent", input: { address: "other-app/docs" } },
+        ],
+        options,
+      );
+      expect(reads).toBe(1);
 
-    reads = 0;
-    await runTools(
-      [
-        { name: "list_agents", input: {} },
-        { name: "list_agents", input: { refresh: true } },
-      ],
-      options,
-    );
-    expect(reads).toBe(2);
+      reads = 0;
+      advance = cardsFreshMs;
+      await runTools(
+        [
+          { name: "list_agents", input: {} },
+          { name: "list_agents", input: {} },
+        ],
+        options,
+      );
+      expect(reads).toBe(2);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 
@@ -681,9 +695,10 @@ describe("the tools run as groups", () => {
 });
 
 describe("discovery on the definition", () => {
-  test("false removes both tools; anything else keeps them", () => {
+  test("discovery is opt-in: true or options give both tools, nothing else does", () => {
     expect(Object.keys(discoveryToolsFor(false))).toEqual([]);
-    expect(Object.keys(discoveryToolsFor(undefined)).sort()).toEqual([
+    expect(Object.keys(discoveryToolsFor(undefined))).toEqual([]);
+    expect(Object.keys(discoveryToolsFor(true)).sort()).toEqual([
       "describe_agent",
       "list_agents",
     ]);

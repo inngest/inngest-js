@@ -94,10 +94,11 @@ export const createRunFields = <TContext>(
 };
 
 /**
- * How long a run waits in quiet before it ends, when the agent sets no `idle`:
- * 10 minutes.
+ * How long a run a trigger opened waits in quiet before it ends, when the
+ * agent sets no `idle`: 2 minutes. A later message starts a new run, which
+ * picks up the thread's history.
  */
-export const defaultIdle = 600_000;
+export const defaultIdle = 120_000;
 
 /**
  * The `idle` of a run in milliseconds. `0` means the run never waits.

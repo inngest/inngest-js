@@ -65,11 +65,11 @@ describe("run fields", () => {
 });
 
 describe("idle", () => {
-  test("defaults to 10 minutes", async () => {
+  test("defaults to 2 minutes", async () => {
     const fields = createRunFields(context);
 
-    expect(defaultIdle).toBe(600_000);
-    expect(await idleMs(fields, undefined)).toBe(600_000);
+    expect(defaultIdle).toBe(120_000);
+    expect(await idleMs(fields, undefined)).toBe(120_000);
   });
 
   test("takes a number of milliseconds or a string", async () => {

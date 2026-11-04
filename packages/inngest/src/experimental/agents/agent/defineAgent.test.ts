@@ -126,12 +126,12 @@ describe("idle", () => {
     },
   );
 
-  test("without idle the default is 10 minutes", async () => {
+  test("without idle the default is 2 minutes", async () => {
     const { fn } = defineLoop("batches");
 
     const { ops } = await run(fn, { event: order, timeouts: 1 });
 
-    expect(waitTimeouts(ops)).toEqual(["10m"]);
+    expect(waitTimeouts(ops)).toEqual(["2m"]);
   });
 
   test("a function of the thread is read once and gives the idle", async () => {

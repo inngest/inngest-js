@@ -126,6 +126,9 @@ export const createLoopWiring = (options: {
     questions() {
       return questions.texts();
     },
+    questionArrived() {
+      return questions.hasReceived();
+    },
     inboxes() {
       return [...named.values()].map((open) => {
         return { as: open.as, source: open.source };

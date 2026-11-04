@@ -623,26 +623,16 @@ describe("inbox sources", () => {
         },
       ],
     ]);
-    expect(asked[0]).toEqual([
-      "list_agents",
-      "describe_agent",
-      "start_agent",
-      "message_agent",
-      "ask_agent",
-      "stop_agent",
-      "reply",
-      "inbox_listen",
-      "inbox_close",
-      "wait",
-    ]);
+    expect(asked[0]).toEqual(["inbox_listen", "inbox_close", "wait"]);
   });
 
-  test("an agent with no listen gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
+  test("an agent with no listen and discovery: true gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
     const asked: string[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
+        discovery: true,
         model: model(async (request) => {
           asked.push((request.tools ?? []).map((tool) => tool.name));
 
@@ -667,7 +657,6 @@ describe("inbox sources", () => {
         "message_agent",
         "ask_agent",
         "stop_agent",
-        "reply",
         "wait",
       ],
     ]);
@@ -696,7 +685,7 @@ describe("inbox sources", () => {
 
     await run(fn, { event: trigger("go") });
 
-    expect(asked).toEqual([["reply", "wait"]]);
+    expect(asked).toEqual([["wait"]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
@@ -1706,7 +1695,9 @@ describe("the loop in an agent", () => {
 
     expect(output).toBe("all done");
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.system).toBe("Be brief.");
+    expect(requests[0]?.system).toMatch(
+      /^Be brief\.\n\n<inngest-runtime v="1">/,
+    );
   });
 
   test("the definition's loop options apply to the loop the agent builds", async () => {
@@ -1752,7 +1743,9 @@ describe("the loop in an agent", () => {
 
     expect(output).toBe("other");
     expect(own.requests).toHaveLength(0);
-    expect(other.requests[0]?.system).toBe("Agent system.");
+    expect(other.requests[0]?.system).toMatch(
+      /^Agent system\.\n\n<inngest-runtime/,
+    );
   });
 
   test("a second run of the same thread starts with the first run's history; another thread does not; remember: false stops it", async () => {

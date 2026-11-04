@@ -17,6 +17,7 @@ import {
   type ToolJsonDefinition,
   toJsonSchema,
 } from "../../../components/sandbox/tools.ts";
+import type { BriefingParts } from "../agent/briefing.ts";
 import { type AgentPriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
@@ -230,6 +231,14 @@ export interface AnthropicCall {
   system?: string;
 
   /**
+   * EXPERIMENTAL: The agent's briefing, which the loop passes. It goes after
+   * `system` in two blocks with a cache breakpoint on each: `runtime`, stable
+   * for an agent with the same tools, so it caches with the tools across
+   * runs, then `situation`, stable for the run.
+   */
+  briefing?: BriefingParts;
+
+  /**
    * The conversation. Default: one user message with `prompt`.
    */
   messages?: ModelMessage[];
@@ -311,6 +320,11 @@ export interface AnthropicModel extends ModelValue {
    * The model's context size in tokens.
    */
   readonly contextWindow: number;
+
+  /**
+   * Always true: the adapter places the agent's briefing itself.
+   */
+  readonly placesBriefing: true;
 }
 
 const defaultContextWindow = 200_000;
@@ -605,6 +619,7 @@ const buildBody = (
   ];
   const request: AgentModelRequest = {
     system: call.system,
+    ...(call.briefing && { briefing: call.briefing }),
     messages,
     tools: call.tools ?? [],
     turn: call.turn ?? 1,
@@ -634,12 +649,25 @@ const buildBody = (
   const listed = call.output
     ? [...request.tools, outputTool(call.output)]
     : request.tools;
+  // The system prompt is the app's `system` with the briefing's runtime
+  // section, then the situation: a breakpoint on each, so the first caches
+  // across runs of an agent and only the second is written again for a new
+  // run. With the two in the conversation that is four breakpoints, the
+  // API's limit. A briefing the agent replaced has no runtime section.
+  const head = [request.system, request.briefing?.runtime]
+    .filter(Boolean)
+    .join("\n\n");
+  const system = [head, request.briefing?.situation ?? ""]
+    .filter(Boolean)
+    .map((text) => {
+      return { ...textBlock(text), ...(control && { cache_control: control }) };
+    });
   const tools =
     listed.length > 0
       ? listed.map((tool, index) => {
           // With no system prompt to carry it, the last tool carries the
           // breakpoint that caches the tools.
-          return control && !request.system && index === listed.length - 1
+          return control && system.length === 0 && index === listed.length - 1
             ? withCacheControl(tool, control)
             : tool;
         })
@@ -648,14 +676,7 @@ const buildBody = (
   return {
     model: options.model,
     max_tokens: options.maxTokens ?? defaultMaxTokens,
-    ...(request.system && {
-      system: [
-        {
-          ...textBlock(request.system),
-          ...(control && { cache_control: control }),
-        },
-      ],
-    }),
+    ...(system.length > 0 && { system }),
     ...(tools && { tools }),
     ...(tools &&
       request.toolChoice !== undefined && {
@@ -932,6 +953,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
 
     return Object.assign(agentModel(call as unknown as AgentModel), {
       contextWindow: current.contextWindow ?? defaultContextWindow,
+      placesBriefing: true as const,
       with: (overrides: AnthropicOverrides) => {
         return make({
           ...current,

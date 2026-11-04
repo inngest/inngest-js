@@ -216,43 +216,62 @@ export interface AgentCardConfig {
 }
 
 /**
- * EXPERIMENTAL: the `discovery` field of an agent's definition: `false` turns
- * off `list_agents`, `describe_agent` and the tools that start or reach other
- * agents (the agent's own card is still published). `{ prepare }` fills part
- * of the input of a call to another agent from the host, and `agents` and
- * `tools` filter what the model can see and may start.
+ * EXPERIMENTAL: the `discovery` field of an agent's definition. Discovery is
+ * opt-in: with no `discovery` (or `false`) the model gets no `list_agents`,
+ * `describe_agent` or `start_agent`, and no shared tools from other apps
+ * (the agent's own card is still published). `true` turns them on with the
+ * defaults, as do the options: `{ prepare }` fills part of the input of a
+ * call to another agent from the host, and `agents` and `tools` filter what
+ * the model can see and may start.
  */
-export type AgentDiscovery =
-  | false
-  | {
-      /**
-       * Runs in the run, before a call to another agent: gets the card, the
-       * input the model gave, the run's trigger event and its thread. Returns
-       * the input to use.
-       */
-      prepare?: (call: {
-        card: AgentCard;
-        input: Record<string, Json>;
-        event: Context.Any["event"];
-        thread: { key: string };
-      }) => Record<string, Json> | Promise<Record<string, Json>>;
+export type AgentDiscovery = boolean | AgentDiscoveryOptions;
 
-      /**
-       * EXPERIMENTAL: the agents the model can see (`list_agents`,
-       * `describe_agent`) and may start (`start_agent`). Any entry may match;
-       * the fields of one filter object must all match. Default: the agent's
-       * own app plus read-only agents of other apps,
-       * `[{ app: "self" }, { effects: "read" }]` (still subject to `share`).
-       * A started agent never sees more than its starter allowed. Code that
-       * calls `agent.start()` directly is not filtered.
-       */
-      agents?: DiscoveryEntry[];
+/**
+ * EXPERIMENTAL: the options of `discovery`.
+ */
+export type AgentDiscoveryOptions = {
+  /**
+   * Runs in the run, before a call to another agent: gets the card, the
+   * input the model gave, the run's trigger event and its thread. Returns
+   * the input to use.
+   */
+  prepare?: (call: {
+    card: AgentCard;
+    input: Record<string, Json>;
+    event: Context.Any["event"];
+    thread: { key: string };
+  }) => Record<string, Json> | Promise<Record<string, Json>>;
 
-      /**
-       * EXPERIMENTAL: the same filter for shared tools. Same default.
-       */
-      tools?: DiscoveryEntry[];
-    };
+  /**
+   * EXPERIMENTAL: the agents the model can see (`list_agents`,
+   * `describe_agent`) and may start (`start_agent`). Any entry may match;
+   * the fields of one filter object must all match. Default: the agent's
+   * own app plus read-only agents of other apps,
+   * `[{ app: "self" }, { effects: "read" }]` (still subject to `share`).
+   * A started agent never sees more than its starter allowed. Code that
+   * calls `agent.start()` directly is not filtered.
+   */
+  agents?: DiscoveryEntry[];
+
+  /**
+   * EXPERIMENTAL: the same filter for shared tools. Same default.
+   */
+  tools?: DiscoveryEntry[];
+};
+
+/**
+ * The options of a `discovery` field that turns discovery on (`true` is the
+ * defaults), or `undefined` when it is off (left out, or `false`).
+ */
+export const discoveryOptionsOf = (
+  discovery: AgentDiscovery | undefined,
+): AgentDiscoveryOptions | undefined => {
+  if (discovery === undefined || discovery === false) {
+    return undefined;
+  }
+
+  return discovery === true ? {} : discovery;
+};
 
 /**
  * What `list_agents` returns for each agent.
@@ -763,13 +782,18 @@ const callerOf = (): { client: Inngest.Any; appId: string } => {
 };
 
 /**
- * What a run has read so far: the first discovery call reads, the rest reuse
- * it, and `refresh` reads again. Keyed by the run's execution, so a replay
- * starts fresh and finds each read memoized as a step.
+ * How long a read of the agents' cards is reused within a run.
+ */
+export const cardsFreshMs = 30_000;
+
+/**
+ * What a run has read so far: the cards, and when they were read. Keyed by
+ * the run's execution, so a replay starts fresh and finds each read memoized
+ * as a step.
  */
 const readsByRun = new WeakMap<
   object,
-  { cards?: Promise<AgentCard[]>; reads: number }
+  { cards?: Promise<{ at: number; cards: AgentCard[] }>; reads: number }
 >();
 
 /**
@@ -789,11 +813,13 @@ export interface DiscoveryToolSetOptions {
 }
 
 /**
- * The current cards, read once per run as a durable step. `refresh` reads
- * again.
+ * The current cards. Each call is a step: inside it, a read less than
+ * `cardsFreshMs` old is reused (the step says so and stores nothing), and an
+ * older one is read again. The clock is read inside the step, so a replay
+ * takes the same path. Agents added or removed while a run is live show up
+ * within 30 seconds.
  */
 export const discoverCards = async (
-  refresh = false,
   options: DiscoveryToolSetOptions = {},
 ): Promise<AgentCard[]> => {
   const { client } = callerOf();
@@ -802,17 +828,28 @@ export const discoverCards = async (
 
   readsByRun.set(key, state);
 
-  if (state.cards && !refresh) {
-    return state.cards;
-  }
-
+  const before = state.cards;
   const id = `discover:cards:${state.reads++}`;
 
-  state.cards = step.run(id, async () => {
-    return currentCards(client, { functions: options.functions });
-  }) as Promise<AgentCard[]>;
+  state.cards = (async () => {
+    const previous = await before?.catch(() => undefined);
+    const read = (await step.run(id, async () => {
+      if (previous && Date.now() - previous.at < cardsFreshMs) {
+        return { reused: true };
+      }
 
-  return state.cards;
+      return {
+        at: Date.now(),
+        cards: await currentCards(client, { functions: options.functions }),
+      };
+    })) as { reused: true } | { at: number; cards: AgentCard[] };
+
+    return "reused" in read
+      ? (previous as { at: number; cards: AgentCard[] })
+      : read;
+  })();
+
+  return (await state.cards).cards;
 };
 
 /**
@@ -828,8 +865,7 @@ export const allowsAgent = (
   const instance = getAsyncCtxSync()?.execution?.instance;
   const state = instance ? limitStateOf(instance, undefined) : undefined;
   const chain = state?.limits.discovery?.agents ?? [];
-  const own =
-    options.discovery === false ? undefined : options.discovery?.agents;
+  const own = discoveryOptionsOf(options.discovery)?.agents;
   const lists = [...chain, own ?? defaultDiscovery];
 
   return lists.every((list) => {
@@ -849,7 +885,7 @@ export const findCard = async (
   purpose: "describe" | "start" = "describe",
 ): Promise<AgentCard> => {
   const { appId } = callerOf();
-  const cards = await discoverCards(false, options);
+  const cards = await discoverCards(options);
   const found = cards.find((card) => {
     return card.address === address;
   });
@@ -880,7 +916,9 @@ export const prepareInput = async (
   discovery: AgentDiscovery | undefined,
   call: { card: AgentCard; input: Record<string, Json> },
 ): Promise<Record<string, Json>> => {
-  if (!discovery || !discovery.prepare) {
+  const prepare = discoveryOptionsOf(discovery)?.prepare;
+
+  if (!prepare) {
     return call.input;
   }
 
@@ -892,7 +930,7 @@ export const prepareInput = async (
 
   const agent = (execution as { agent?: { thread?: string } }).agent;
 
-  return discovery.prepare({
+  return prepare({
     ...call,
     event: execution.ctx.event,
     thread: { key: agent?.thread ?? "" },
@@ -903,18 +941,33 @@ export const prepareInput = async (
  * `list_agents` and `describe_agent`.
  */
 export type DiscoveryToolSet = {
-  list_agents: AgentTool<
-    { query?: string; refresh?: boolean },
-    { agents: AgentSummary[] }
-  >;
+  list_agents: AgentTool<{ query?: string }, { agents: AgentSummary[] }>;
   describe_agent: AgentTool<{ address: string }, AgentCard>;
 };
+
+/**
+ * What `list_agents` returns, which its description shows the model.
+ */
+const listOutput = z.object({
+  agents: z.array(
+    z.object({
+      address: z.string(),
+      description: z.string().optional(),
+      skills: z
+        .array(z.object({ name: z.string(), description: z.string() }))
+        .optional(),
+      tags: z.array(z.string()).optional(),
+      effects: z.enum(["read", "write"]),
+      paused: z.boolean().optional(),
+    }),
+  ),
+});
 
 /**
  * The two tools that let an agent find other agents without naming them in
  * code.
  *
- * - `list_agents({ query?, refresh? })`: the visible agents that match.
+ * - `list_agents({ query? })`: the visible agents that match.
  * - `describe_agent({ address })`: the whole card of one.
  *
  * An agent is visible to its own app, and to any app when its card says
@@ -927,24 +980,21 @@ export const discoveryToolSet = (
     list_agents: tool({
       id: "list_agents",
       group: true,
-      description:
-        "Lists the agents you can start or message, with what each does, not counting yourself. Pass a few words in `query` to narrow the list. `refresh` reads again instead of reusing this run's list.",
+      description: {
+        does: "Lists the agents you can start, with what each does. Agents you can't start, and you yourself, are never listed.",
+        use: "to find an agent for a piece of work; a few words in `query` narrow the list",
+        avoid:
+          "to decide an agent doesn't exist from an old answer: the list can change while you run, so search again",
+        context:
+          "Agents can be added or removed while you run. `list_agents` reads the current list (at most 30 seconds old).",
+      },
       input: z.object({
         query: z.string().optional().describe("Words to look for."),
-        refresh: z
-          .boolean()
-          .optional()
-          .describe("Read the agents again instead of reusing the list."),
       }),
-      run: async ({
-        query,
-        refresh,
-      }: {
-        query?: string;
-        refresh?: boolean;
-      }) => {
+      output: listOutput,
+      run: async ({ query }: { query?: string }) => {
         const { appId } = callerOf();
-        const cards = await discoverCards(refresh === true, options);
+        const cards = await discoverCards(options);
         // The agent that calls is never one of the agents it can find. Naming
         // its own address in `describe_agent` or `start_agent` still works.
         const self = getAsyncCtxSync()?.execution?.agent?.ref;
@@ -967,8 +1017,10 @@ export const discoveryToolSet = (
     describe_agent: tool({
       id: "describe_agent",
       group: true,
-      description:
-        "The whole card of one agent: what it does, its skills and the input a call takes.",
+      description: {
+        does: "Shows one agent's whole card: what it does, its skills and the input a start takes. It refuses an agent that isn't shared with you.",
+        use: "before `start_agent` when you don't know the input an agent takes",
+      },
       input: z.object({
         address: z.string().describe("The agent's address, `app/agent`."),
       }),
@@ -981,10 +1033,10 @@ export const discoveryToolSet = (
 
 /**
  * The discovery tools an agent gets, from its definition's `discovery` field:
- * none for `false`.
+ * none unless it turns discovery on.
  */
 export const discoveryToolsFor = (
   discovery: AgentDiscovery | undefined,
 ): Partial<DiscoveryToolSet> => {
-  return discovery === false ? {} : discoveryToolSet({ discovery });
+  return discoveryOptionsOf(discovery) ? discoveryToolSet({ discovery }) : {};
 };
