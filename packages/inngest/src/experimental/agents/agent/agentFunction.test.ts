@@ -190,6 +190,32 @@ describe("agent function", () => {
     },
   );
 
+  test("a message that arrives while the thread starts is read by the first drain", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot" },
+      async ({ inbox }) => {
+        return (await inbox.drain()).map(textOf);
+      },
+    );
+
+    const { output, ops } = await run(fn, {
+      event: trigger("go"),
+      arrive: [{ event: message("user", "early"), at: "thread:start" }],
+    });
+
+    expect(output).toEqual(["go", "early"]);
+
+    // The inbox opens first, once, and every replay finds it in the same
+    // place: no second open.
+    expect(ops[0]).toMatchObject({ id: "inbox", op: "open" });
+    expect(
+      ops.filter((op) => {
+        return op.op === "open";
+      }),
+    ).toHaveLength(1);
+  });
+
   test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),

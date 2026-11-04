@@ -485,6 +485,61 @@ export function createAgentFunction(
       // for an event of `triggers` does not carry them: the whole run reads them
       // from here.
       async function main() {
+        // Opened before anything else the run does, the thread start included
+        // (on the ledger that is a subscription, a read and a write, which can
+        // take a second or more). A message that arrives before this op matches
+        // no inbox, and the thread's singleton skips it as a trigger, so it is
+        // lost: the gap is kept to the run's first request. Everything the
+        // sources need is known from the trigger. The open is awaited here so
+        // the thread start does not share a request with it.
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the inbox.
+        await using subscription = step.subscribe("inbox", [
+          ...ownEvents.map((name) => {
+            return {
+              event: name,
+              if: ownInboxFilter(name, ref, data.thread),
+            };
+          }),
+          ...triggers
+            .filter((trigger) => {
+              return trigger.listen;
+            })
+            .map((trigger) => {
+              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+              return {
+                event: trigger.event,
+                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+              };
+            }),
+          // A thread in a group hears of each new member. It is an inbox
+          // source of its own: the event never starts a run.
+          ...(groupOf(data.thread) === undefined
+            ? []
+            : [
+                {
+                  event: agentGroupJoined.name,
+                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
+                },
+              ]),
+          ...inboxSources.flatMap((source) => {
+            const missing = missingThreadFilter(source, config.thread);
+
+            return [
+              {
+                event: eventNameOf(source.event),
+                if: inboxFilter(source, data.thread, config.thread),
+              },
+              ...(missing === undefined
+                ? []
+                : [{ event: eventNameOf(source.event), if: missing }]),
+            ];
+          }),
+        ]);
+
+        await inboxOpenedPromise(subscription);
+
         // Writes what `thread.state()` shows. One step per change.
         const recorder = threadRecorder(store, ref, runId, onLedger());
 
@@ -628,56 +683,6 @@ export function createAgentFunction(
         for (const source of inboxSources) {
           noteSource(source);
         }
-
-        // Opened first, so the gap in which a message could be missed is the few
-        // milliseconds between the run starting and this op.
-        // Closed when the run's work is done, whichever way it ends. That only
-        // ends the inbox.
-        await using subscription = step.subscribe("inbox", [
-          ...ownEvents.map((name) => {
-            return {
-              event: name,
-              if: ownInboxFilter(name, ref, data.thread),
-            };
-          }),
-          ...triggers
-            .filter((trigger) => {
-              return trigger.listen;
-            })
-            .map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
-
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
-          // A thread in a group hears of each new member. It is an inbox
-          // source of its own: the event never starts a run.
-          ...(groupOf(data.thread) === undefined
-            ? []
-            : [
-                {
-                  event: agentGroupJoined.name,
-                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
-                },
-              ]),
-          ...inboxSources.flatMap((source) => {
-            const missing = missingThreadFilter(source, config.thread);
-
-            return [
-              {
-                event: eventNameOf(source.event),
-                if: inboxFilter(source, data.thread, config.thread),
-              },
-              ...(missing === undefined
-                ? []
-                : [{ event: eventNameOf(source.event), if: missing }]),
-            ];
-          }),
-        ]);
-
-        await inboxOpenedPromise(subscription);
 
         // The inboxes the model opened, by the name it gave them. They end with
         // the run, whichever way it ends, before the thread's own inbox.

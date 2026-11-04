@@ -155,8 +155,20 @@ export const run = async (
   };
 
   // A message arrives: it is saved, and the first read waiting for one is
-  // answered with it.
+  // answered with it. An event that arrives before any inbox of the run
+  // listens for it matches no pause, so the executor saves nothing.
   const arriveNow = (value: unknown) => {
+    const name = (value as { name?: unknown } | null)?.name;
+
+    if (
+      typeof name === "string" &&
+      !pauses.some((pause) => {
+        return pause.event === name;
+      })
+    ) {
+      return;
+    }
+
     save(value);
 
     for (const [id, op] of pendingWaits) {
