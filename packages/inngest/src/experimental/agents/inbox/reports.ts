@@ -46,6 +46,7 @@ import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { type Kv, typedKey } from "../kv/kv.ts";
 import type { SenderData } from "./events.ts";
+import { handleAddressKey } from "./handleAddressKey.ts";
 
 /**
  * The name a report travels under. Triggers and inbox subscriptions match an
@@ -169,14 +170,7 @@ export const reportSenderProblem = (
   return "its sender is not a thread this thread started, or one whose start granted it, so it is not a report this thread can take";
 };
 
-/**
- * The key a thread handle carries its agent's address under, so a report can
- * be routed to it. Present on `agent.thread(key)`, `me`, the handle `start()`
- * returns and `msg.from`.
- */
-export const handleAddressKey: unique symbol = Symbol.for(
-  "inngest.agents.handleAddress",
-);
+export { handleAddressKey };
 
 /**
  * What can receive a report: a thread handle (`me`, `agent.thread(key)`, a

@@ -45,7 +45,7 @@ import {
   agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
-import { handleAddressKey } from "../inbox/reports.ts";
+import { handleAddressKey } from "../inbox/handleAddressKey.ts";
 import type { Json } from "../json.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
