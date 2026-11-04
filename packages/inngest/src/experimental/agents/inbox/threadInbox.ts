@@ -32,6 +32,15 @@ import type {
   AgentRecoverData,
   SenderData,
 } from "./events.ts";
+import {
+  isReportEvent,
+  reportDataProblem,
+  reportEventPrefix,
+  reportWireEvent,
+  routingKey,
+  routingOf,
+  withoutRouting,
+} from "./reports.ts";
 
 /**
  * The messages whose drop was already logged, so a replay does not log it
@@ -48,7 +57,16 @@ export const ownEvents: string[] = [
   agentQuestionEvent,
   agentAnswerEvent,
   agentFinishedEvent,
+  reportWireEvent,
 ];
+
+/**
+ * Whether an event is one the agent layer sends to a thread, including a
+ * typed report.
+ */
+export const isOwnEvent = (name: string): boolean => {
+  return ownEvents.includes(name) || isReportEvent(name);
+};
 
 /**
  * The message a turn answers, as a failed run resends it, or `undefined` for a
@@ -69,7 +87,16 @@ export const inflightOf = (event: {
   if (event.name === agentMessageEvent) {
     const data = event.data as Partial<AgentMessageData>;
 
-    return data.content === undefined ? undefined : { content: data.content };
+    // The message's ID and sender are kept with its text, so a resend is the
+    // same message: its sender hears how the run ended, and the run that takes
+    // it up knows who sent it.
+    return data.content === undefined
+      ? undefined
+      : {
+          content: data.content,
+          ...(event.id !== undefined && { id: event.id }),
+          ...(data.from !== undefined && { from: data.from }),
+        };
   }
 
   return { event: { id: event.id, name: event.name, data: event.data } };
@@ -123,6 +150,24 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
         }
       : {}),
   };
+  // A report is sent with its routing around it; the message is the report's
+  // own data, with the sender beside it as `from`.
+  if (as.name === reportWireEvent || isReportEvent(as.name)) {
+    const routing = routingOf(as.data);
+
+    if (as.name === reportWireEvent && routing?.type !== undefined) {
+      return addEventIs({
+        ...as,
+        name: `${reportEventPrefix}${routing.type}`,
+        data: withoutRouting(as.data),
+        ...(routing.from !== undefined && { from: routing.from }),
+        ...(routing.grant !== undefined && { grant: routing.grant }),
+      } as UntypedInboxMessage);
+    }
+
+    return addEventIs(as);
+  }
+
   const data = as.data as
     | { content?: unknown; from?: { typed?: boolean } }
     | undefined;
@@ -228,9 +273,44 @@ export function threadInbox(
     }
 
     const unwrapped = resentAs(message);
-    const sender = (unwrapped.data as { from?: SenderData } | undefined)?.from;
 
-    if (sender && senderFor && senderMessages.includes(unwrapped.name)) {
+    // A report narrows to its type only when its data fits that type's own
+    // schema: the sender wrote the data, and it is not trusted until then.
+    if (isReportEvent(unwrapped.name)) {
+      const checkedIs = (unwrapped as { is: (types: unknown) => boolean }).is;
+
+      Object.defineProperty(unwrapped, "is", {
+        value: (types: { name: string } | readonly { name: string }[]) => {
+          const list = Array.isArray(types) ? types : [types];
+
+          return list.some((type: { name: string }) => {
+            if (!checkedIs([type])) {
+              return false;
+            }
+
+            const problem = reportDataProblem(type, unwrapped.data);
+
+            if (problem) {
+              warnOnce(message, problem);
+            }
+
+            return problem === undefined;
+          });
+        },
+        enumerable: false,
+        configurable: true,
+      });
+    }
+
+    const sender = isReportEvent(unwrapped.name)
+      ? (unwrapped as { from?: SenderData }).from
+      : (unwrapped.data as { from?: SenderData } | undefined)?.from;
+
+    if (
+      sender &&
+      senderFor &&
+      (senderMessages.includes(unwrapped.name) || isReportEvent(unwrapped.name))
+    ) {
       Object.assign(unwrapped, { from: senderFor(sender) });
     }
 
@@ -605,6 +685,56 @@ export interface RawEvent {
 export function quote(value: string) {
   return JSON.stringify(value);
 }
+
+/**
+ * The path in a CEL expression to the routing fields of an own event: the
+ * data itself, or for a report the reserved key, which only a bracket reaches.
+ * @param name The event's name.
+ * @param root `event` or `async`.
+ */
+const routingPath = (name: string, root: "event" | "async"): string => {
+  return name === reportWireEvent
+    ? `${root}.data[${quote(routingKey)}]`
+    : `${root}.data`;
+};
+
+/**
+ * The condition under which an own event starts a run of an agent: it is for
+ * that agent, and not `quiet`.
+ * @param name The event's name.
+ * @param ref The agent, as `"appId/functionId"`.
+ */
+export const ownTriggerFilter = (name: string, ref: string): string => {
+  const path = routingPath(name, "event");
+
+  return name === reportWireEvent
+    ? `${path}.agent == ${quote(ref)}`
+    : `${path}.agent == ${quote(ref)} && ${path}.quiet != true`;
+};
+
+/**
+ * The condition under which an own event belongs to one thread's inbox.
+ * @param name The event's name.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param thread The thread's key.
+ */
+export const ownInboxFilter = (
+  name: string,
+  ref: string,
+  thread: string,
+): string => {
+  const path = routingPath(name, "async");
+
+  return `${path}.agent == ${quote(ref)} && ${path}.thread == ${quote(thread)}`;
+};
+
+/**
+ * The CEL for the thread an own event names, over `event`.
+ * @param name The event's name.
+ */
+export const ownThreadPath = (name: string): string => {
+  return `${routingPath(name, "event")}.thread`;
+};
 
 /**
  * The subscription source of an inbox source: its `if` and `thread`

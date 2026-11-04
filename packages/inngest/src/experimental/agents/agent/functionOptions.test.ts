@@ -51,7 +51,11 @@ describe("function options", () => {
     expect(options.concurrency).toEqual({ limit: 3, key: "event.data.tenant" });
     expect(options.retries).toBe(2);
     expect(options.timeouts).toEqual({ finish: "1h" });
-    expect(options.cancelOn).toEqual(cancelOn);
+    // The agent's own entry for `agent/parent.ended` follows the caller's.
+    expect(options.cancelOn).toEqual([
+      ...cancelOn,
+      { event: "agent/parent.ended", if: expect.any(String) },
+    ]);
     expect(options.onFailure).toBe(onFailure);
     expect(options.idempotency).toBe("event.id");
     expect(options.rateLimit).toEqual({ limit: 5, period: "1m" });

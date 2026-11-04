@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: what an agent function writes for `thread.state()`: one
- * record in the thread's KV scope (`__state`).
+ * record in the thread's KV scope (`__state:<agent>`), one per agent.
  *
  * Only the live run writes the record while it runs, so nothing races it. The
  * run's cleanup writes once more, `idle`, after the run has ended and only if
@@ -11,6 +11,7 @@
  * record on its next status change or turn.
  */
 
+import type { LentRecord } from "../agent/lending.ts";
 import {
   type AgentBudget,
   type EffectiveLimits,
@@ -21,6 +22,7 @@ import {
   type Finished,
   fingerprint,
   type LastRun,
+  runScore,
   summarize,
   turnInFlight,
   turnOf,
@@ -35,8 +37,14 @@ import {
   threadRecordKey,
 } from "./thread.ts";
 
-const recordKey = typedKey<ThreadRecord>(threadRecordKey);
-const lastRunKey = typedKey<LastRun>(lastRunRecordKey);
+export { runScore };
+
+const recordKey = (agent: string) => {
+  return typedKey<ThreadRecord>(threadRecordKey(agent));
+};
+const lastRunKey = (agent: string) => {
+  return typedKey<LastRun>(lastRunRecordKey(agent));
+};
 
 /**
  * Names this process, so a run that continues in another one is noticed.
@@ -86,14 +94,20 @@ export const threadRecorder = (
   /**
    * KV store of the thread state.
    */
-  store: Kv | undefined,
+  store: Kv,
+  /**
+   * The agent, as `"appId/functionId"`: the record is its own.
+   */
+  agent: string,
   /**
    * The live run, stamped on every write.
    */
   runId: string,
+  /**
+   * Whether the run is the only writer of its record (the ledger KV store).
+   */
+  single = false,
 ) => {
-  // With no store the record lives in this process only.
-  let local: ThreadRecord | undefined;
   // How many times this run has continued in another process, as the latest
   // write saw it. Every write is a memoized step, so a replay reads the same
   // number at the same point of the body.
@@ -106,11 +120,7 @@ export const threadRecorder = (
     change: (current: ThreadRecord) => Partial<ThreadRecord>,
     thread?: string,
   ) => {
-    const scope = store
-      ? thread
-        ? store.scope("thread", thread)
-        : store.thread
-      : undefined;
+    const scope = thread ? store.scope("thread", thread) : store.thread;
     const apply = (found: ThreadRecord | undefined) => {
       const current = found ?? emptyRecord();
       const mine = current.runId === runId;
@@ -125,9 +135,17 @@ export const threadRecorder = (
         restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
       });
     };
-    const written = scope
-      ? await scope.update(recordKey, apply)
-      : (local = apply(local));
+    // The run is the only writer of its own record while it lives, so the
+    // ledger, which keeps a local copy and settles a conditional write with a
+    // round trip, takes a plain read and write; a store keeps its atomic update.
+    let written: ThreadRecord;
+
+    if (single) {
+      written = apply(await scope.get(recordKey(agent)));
+      await scope.set(recordKey(agent), written);
+    } else {
+      written = await scope.update(recordKey(agent), apply);
+    }
 
     restarts = written.restarts ?? 0;
 
@@ -185,12 +203,25 @@ export const threadRecorder = (
        * The IDs of the messages this turn takes in, noted for their senders.
        */
       folded?: string[],
+
+      /**
+       * The lend the start event carries, kept the first time only: the
+       * record names the run that took it first.
+       */
+      lend?: Omit<LentRecord, "takenBy">,
     ) => {
       return record((current) => {
         const inherited = narrowInherited(current.inherited, startedWith);
 
         return {
           status: "running",
+          // A lend from the parent run the record already names is not taken
+          // again; a thread with a key of its own can be lent to by another
+          // parent run.
+          ...(lend &&
+            current.lent?.parentRun !== lend.parentRun && {
+              lent: { ...lend, takenBy: runId },
+            }),
           ...(inherited && { inherited }),
           ...(current.budget === undefined && budget && { budget }),
           ...(folded &&
@@ -299,12 +330,17 @@ export const readLastRun = (
   store: Kv,
 
   /**
+   * The agent, as `"appId/functionId"`.
+   */
+  agent: string,
+
+  /**
    * The thread's key, when called inside a step's callback.
    */
   thread?: string,
 ): Promise<LastRun | undefined> => {
   return (thread ? store.scope("thread", thread) : store.thread).get(
-    lastRunKey,
+    lastRunKey(agent),
   );
 };
 
@@ -319,6 +355,11 @@ export const markThreadIdle = async (
   store: Kv,
 
   /**
+   * The agent, as `"appId/functionId"`.
+   */
+  agent: string,
+
+  /**
    * Thread key.
    */
   thread: string,
@@ -328,7 +369,7 @@ export const markThreadIdle = async (
    */
   runId: string,
 ): Promise<void> => {
-  await store.scope("thread", thread).update(recordKey, (found) => {
+  await store.scope("thread", thread).update(recordKey(agent), (found) => {
     const current = found ?? emptyRecord();
 
     return current.runId === runId
@@ -350,6 +391,11 @@ export const recordEnd = async (
    * KV store of the thread state.
    */
   store: Kv,
+
+  /**
+   * The agent, as `"appId/functionId"`.
+   */
+  agent: string,
 
   /**
    * Thread key.
@@ -388,14 +434,21 @@ export const recordEnd = async (
      */
     resume?: boolean;
   },
+  options: {
+    /**
+     * Whether to write the record. Default: yes. With `false` the record is
+     * only worked out and returned.
+     */
+    persist?: boolean;
+  } = {},
 ) => {
   const scope = store.scope("thread", thread);
 
   // The record is only read here: it is written by the run and by its
   // cleanup, and the run's ending goes under a key of its own, so none of
   // the writes can lose another's.
-  const record = (await scope.get(recordKey)) ?? emptyRecord();
-  const last = await scope.update(lastRunKey, (found) => {
+  const record = (await scope.get(recordKey(agent))) ?? emptyRecord();
+  const decided = (found: LastRun | undefined | null): LastRun => {
     if (
       found &&
       found.runId !== end.runId &&
@@ -426,7 +479,7 @@ export const recordEnd = async (
       next =
         end.resume === undefined
           ? { ...next, error, fingerprint: print }
-          : decide(found, {
+          : decide(found ?? undefined, {
               runId: end.runId,
               at: end.at,
               error,
@@ -437,36 +490,16 @@ export const recordEnd = async (
     }
 
     return next;
-  });
+  };
+
+  // With the ledger the ledger stores the record: the caller sends it in
+  // `agent/run.ended`.
+  const last =
+    options.persist === false
+      ? decided(await scope.get(lastRunKey(agent)))
+      : await scope.update(lastRunKey(agent), decided);
 
   return { last, record };
-};
-
-const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-/**
- * When a run started, from its ID: run IDs are ULIDs, whose first ten
- * characters are a millisecond timestamp. Anything else scores 0.
- */
-export const runScore = (
-  /**
-   * The run ID.
-   */
-  runId: string,
-): number => {
-  let score = 0;
-
-  for (const char of runId.slice(0, 10).toUpperCase()) {
-    const digit = crockford.indexOf(char);
-
-    if (digit < 0) {
-      return 0;
-    }
-
-    score = score * 32 + digit;
-  }
-
-  return score;
 };
 
 /**
@@ -606,6 +639,11 @@ export const threadBusyFor = async (
   store: Kv,
 
   /**
+   * The agent, as `"appId/functionId"`.
+   */
+  agent: string,
+
+  /**
    * Thread key.
    */
   thread: string,
@@ -615,7 +653,7 @@ export const threadBusyFor = async (
    */
   arrivedAt: number | undefined,
 ): Promise<boolean> => {
-  const current = await store.scope("thread", thread).get(recordKey);
+  const current = await store.scope("thread", thread).get(recordKey(agent));
 
   return statusAt(current, arrivedAt) === "running";
 };

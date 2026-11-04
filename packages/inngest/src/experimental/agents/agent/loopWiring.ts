@@ -6,6 +6,7 @@
 
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import type { QuestionBook } from "../inbox/questionBook.ts";
+import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
@@ -49,6 +50,23 @@ export const createLoopWiring = (options: {
    * itself: the handler passes it, or passes its own input instead.
    */
   triggerId?: string;
+
+  /**
+   * The reports the run was started with, if any.
+   */
+  reports?: ReportBook;
+
+  /**
+   * The agent, as `"appId/functionId"`: its history is its own on the thread.
+   */
+  agent: string;
+
+  /**
+   * Whether a turn is recorded inside its model step (a store), so a replay
+   * does not write it again. The ledger cannot be written inside a step: the
+   * turn is recorded after it.
+   */
+  recordInStep?: boolean;
 }): AgentLoopWiring => {
   const {
     config,
@@ -61,10 +79,14 @@ export const createLoopWiring = (options: {
     questions,
     remember,
     triggerId,
+    reports,
+    agent,
+    recordInStep = true,
   } = options;
 
   return {
     remember,
+    agent,
     async drain() {
       // The handler's inbox first, then each inbox the model opened, in the
       // order it opened them. The run's trigger is the handler's to give.
@@ -83,6 +105,9 @@ export const createLoopWiring = (options: {
         return questions.admit(event);
       });
     },
+    async owed() {
+      return owedReports(reports);
+    },
     answered(id: string) {
       return questions.isReplied(id);
     },
@@ -98,11 +123,13 @@ export const createLoopWiring = (options: {
       return budgetReason(limits);
     },
     ...(config.price && { price: config.price }),
-    async recordTurn(turn: AgentTurn) {
-      const next = await recorder.turn(turn, threadKey);
+    ...(recordInStep && {
+      async recordTurn(turn: AgentTurn) {
+        const next = await recorder.turn(turn, threadKey);
 
-      return { usage: next.usage, restarts: next.restarts ?? 0 };
-    },
+        return { usage: next.usage, restarts: next.restarts ?? 0 };
+      },
+    }),
     async observeTurn(turn: AgentTurn, recorded: unknown) {
       // A turn recorded inside its step came back with the reply, also on a
       // replay. One from before that is recorded now.

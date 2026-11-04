@@ -11,6 +11,7 @@ import { createFnRunner, testClientId } from "../../../test/helpers.ts";
 import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
 import { agentToolSet } from "../agent/agentTools.ts";
+import { signCards } from "../agent/relations.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import {
   type AgentCard,
@@ -22,12 +23,20 @@ import {
   discoveryToolSet,
   discoveryToolsFor,
   matchCards,
+  matchesDiscovery,
   mayUse,
   prepareInput,
   readCards,
+  validateDiscoveryList,
 } from "./discovery.ts";
 
 const client = new Inngest({ id: testClientId });
+
+// What an app's announcement carries: its cards and the signature over them.
+// The fake clients below have no signing key, like the real one in this file.
+const signedData = (app: string, cards: AgentCard[]) => {
+  return { app, cards, sig: signCards({ id: app } as Inngest.Any, cards) };
+};
 const agents = createAgents(client, { store: memoryKvAdapter() });
 
 const docs = agents.agent(
@@ -35,6 +44,7 @@ const docs = agents.agent(
     id: "docs",
     card: {
       description: "Answers questions about the docs",
+      tags: ["docs", "support"],
       share: "team",
       owner: "docs-team",
       effects: "read",
@@ -68,6 +78,7 @@ describe("an agent's card", () => {
       address: `${testClientId}/docs`,
       description: "Answers questions about the docs",
       input: expect.objectContaining({ required: ["question"] }),
+      tags: ["docs", "support"],
       share: "team",
       owner: "docs-team",
       effects: "read",
@@ -177,6 +188,27 @@ describe("sharing and matching", () => {
     expect(ids()).toHaveLength(2);
     expect(ids("zebra")).toEqual([]);
   });
+
+  test("a query matches a card's tags", () => {
+    const cards = [
+      card({ address: "a/one", description: "Writes code", tags: ["sdk"] }),
+      card({ address: "a/two", description: "Answers questions" }),
+    ];
+
+    expect(matchCards(cards, "sdk").map(addressOf)).toEqual(["a/one"]);
+  });
+
+  test("a card without tags publishes none, and empty tags are dropped", () => {
+    const untagged = agents.agent(
+      { id: "untagged", card: { tags: [] } },
+      async () => {
+        return null;
+      },
+    );
+
+    expect("tags" in secret.card).toBe(false);
+    expect("tags" in untagged.card).toBe(false);
+  });
 });
 
 describe("reading the current cards", () => {
@@ -185,7 +217,7 @@ describe("reading the current cards", () => {
       id,
       internalId: id,
       name: agentsRegisteredEvent,
-      data: { app, cards },
+      data: signedData(app, cards),
       ts: ts ?? Date.now(),
     };
   };
@@ -268,7 +300,7 @@ describe("reading the current cards", () => {
       queryInsights: async () => {
         return {
           columns: ["data"],
-          rows: [[JSON.stringify({ app: "a", cards: [x] })]],
+          rows: [[JSON.stringify(signedData("a", [x]))]],
         };
       },
     });
@@ -298,7 +330,7 @@ describe("reading the current cards", () => {
     expect(broken.listEvents).not.toHaveBeenCalled();
   });
 
-  test("a full 1000-row answer is a readable error, never a short list", async () => {
+  test("a full 1000-row answer is read, not an error, and warns", async () => {
     const reader = fakeClient({
       queryInsights: async () => {
         return {
@@ -310,7 +342,7 @@ describe("reading the current cards", () => {
       },
     });
 
-    await expect(readCards(reader)).rejects.toThrow(/1000/);
+    await expect(readCards(reader)).resolves.toEqual([]);
   });
 });
 
@@ -324,7 +356,7 @@ describe("paused and gone agents", () => {
             id: "e",
             internalId: "e",
             name: agentsRegisteredEvent,
-            data: { app, cards },
+            data: signedData(app, cards),
             ts: Date.now(),
           },
         ];
@@ -390,8 +422,16 @@ describe("the tools", () => {
       share: "team",
       description: "Docs",
       input: { type: "object" },
+      effects: "read",
     }),
     card({ address: "other-app/hidden", share: "private" }),
+    card({ address: "other-app/writer", share: "team", tags: ["sdk"] }),
+    card({
+      address: "other-app/special",
+      share: "team",
+      effects: "read",
+      explicit: true,
+    }),
   ];
   let reads = 0;
 
@@ -468,7 +508,7 @@ describe("the tools", () => {
         id: "e1",
         internalId: "e1",
         name: agentsRegisteredEvent,
-        data: { app: "other-app", cards: registered },
+        data: signedData("other-app", registered),
         ts: Date.now(),
       },
     ]);
@@ -496,6 +536,46 @@ describe("the tools", () => {
       ]),
     );
     expect(listed(result)).not.toContain("other-app/hidden");
+  });
+
+  const everyone = async () => {
+    return new Map(
+      ["docs", "hidden", "writer", "special"].map((id) => {
+        return [id, { paused: false, archived: false }] as const;
+      }),
+    );
+  };
+
+  test("by default other apps show only read-only agents, and never an explicit one", async () => {
+    const result = await runTools([{ name: "list_agents", input: {} }], {
+      functions: everyone,
+    });
+
+    expect(listed(result)).toContain("other-app/docs");
+    expect(listed(result)).not.toContain("other-app/writer");
+    expect(listed(result)).not.toContain("other-app/special");
+  });
+
+  test("discovery.agents decides what is listed and described", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        { name: "describe_agent", input: { address: "other-app/docs" } },
+        { name: "describe_agent", input: { address: "other-app/writer" } },
+      ],
+      {
+        functions: everyone,
+        discovery: { agents: [{ tags: ["sdk"] }, "other-app/special"] },
+      },
+    );
+    const [, refused, allowed] = (result as { data: unknown[] }).data;
+
+    expect(listed(result).sort()).toEqual([
+      "other-app/special",
+      "other-app/writer",
+    ]);
+    expect(JSON.stringify(refused)).toMatch(/is shared with you/);
+    expect(JSON.stringify(allowed)).toMatch(/other-app\/writer/);
   });
 
   test("describe_agent gives the whole card; an unshared address reads like an unknown one", async () => {
@@ -617,5 +697,63 @@ describe("discovery on the definition", () => {
     expect(
       await prepareInput({}, { card: card({ address: "a/b" }), input }),
     ).toBe(input);
+  });
+});
+
+describe("matchesDiscovery", () => {
+  const entry = card({
+    address: "platform/reviewer",
+    tags: ["sdk", "ci"],
+    owner: "platform",
+    effects: "read",
+  });
+  const as = { appId: "x" };
+
+  test("a filter needs every field; a list needs one entry; self is the caller's app", () => {
+    const both = [{ app: "platform", effects: "read" as const }];
+    const wrong = [{ app: "platform", effects: "write" as const }];
+
+    expect(matchesDiscovery(entry, both, as)).toBe(true);
+    expect(matchesDiscovery(entry, wrong, as)).toBe(false);
+    expect(matchesDiscovery(entry, [{ tags: ["sdk", "ci"] }, "o/a"], as)).toBe(
+      true,
+    );
+    expect(matchesDiscovery(entry, [{ tags: ["sdk", "no"] }], as)).toBe(false);
+    expect(
+      matchesDiscovery(entry, [{ app: "self" }], { appId: "platform" }),
+    ).toBe(true);
+    expect(matchesDiscovery(entry, [{ app: "self" }], as)).toBe(false);
+    expect(matchesDiscovery(entry, [], as)).toBe(false);
+  });
+
+  test("a card without effects counts as write", () => {
+    expect(
+      matchesDiscovery({ address: "a/b" }, [{ effects: "write" }], as),
+    ).toBe(true);
+  });
+
+  test("an explicit card matches only an agent or its address", () => {
+    const hidden = { ...entry, explicit: true };
+
+    expect(matchesDiscovery(hidden, [{ app: "platform" }], as)).toBe(false);
+    expect(matchesDiscovery(hidden, ["platform/reviewer"], as)).toBe(true);
+    expect(
+      matchesDiscovery(hidden, [{ address: "platform/reviewer" }], as),
+    ).toBe(true);
+  });
+
+  test("a malformed list is refused when validated", () => {
+    expect(() => validateDiscoveryList("a", "agents", [{}])).toThrow(
+      /empty filter/,
+    );
+    expect(() => validateDiscoveryList("a", "agents", ["nope"])).toThrow(
+      /app\/name/,
+    );
+    expect(() => validateDiscoveryList("a", "tools", [{ tag: ["x"] }])).toThrow(
+      /"tag"/,
+    );
+    expect(() =>
+      validateDiscoveryList("a", "agents", [{ app: "self" }, "a/b"]),
+    ).not.toThrow();
   });
 });

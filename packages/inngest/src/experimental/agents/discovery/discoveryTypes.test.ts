@@ -15,10 +15,13 @@ const model = agentModel(async (): Promise<AgentModelResponse> => {
 describe("discovery types", () => {
   test("discovery: a card has the documented fields and no others", () => {
     expectTypeOf<AgentCard>().toEqualTypeOf<{
+      kind?: "tool";
       address: string;
       description?: string;
       input?: JsonSchema;
       skills?: { name: string; description: string }[];
+      tags?: string[];
+      explicit?: boolean;
       share: "private" | "team";
       owner?: string;
       effects: "read" | "write";
@@ -132,7 +135,7 @@ describe("discovery types", () => {
     expectTypeOf<AgentSummary>().toEqualTypeOf<
       Pick<
         AgentCard,
-        "address" | "description" | "skills" | "effects" | "paused"
+        "address" | "description" | "skills" | "tags" | "effects" | "paused"
       >
     >();
   });

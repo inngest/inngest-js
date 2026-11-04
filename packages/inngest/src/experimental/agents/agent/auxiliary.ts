@@ -6,20 +6,24 @@
  */
 
 import { createDefer } from "../../../components/DeferredFunction.ts";
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import {
+  agentFinished,
   agentMessageResult,
   agentRecover,
   type MessageOutcome,
 } from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import type { Kv } from "../kv/kv.ts";
+import { type Kv, kvHash } from "../kv/kv.ts";
 import {
   cleanupThreadSandbox,
   type ThreadSandboxCleanup,
 } from "../sandboxes/threadSandboxes.ts";
+import { runEnded } from "../threads/ledger.ts";
+import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
   agentMessageEvent,
   agentRecoverEvent,
@@ -27,19 +31,34 @@ import {
 } from "../threads/thread.ts";
 import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
+import { finishedNotice } from "./finishedRelay.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
+import { signLedgerData } from "./relations.ts";
 import { startData, startInflight } from "./startEvent.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
 /**
+ * Ends this function run's ledger subscriptions, if it made any.
+ */
+const closeCopies = async (): Promise<void> => {
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  if (instance) {
+    await closeThreadCopies(instance).catch(() => undefined);
+  }
+};
+
+/**
  * The function that runs after every run of an agent ends, whichever way: it
- * saves and destroys a sandbox the run left open, and clears the run's KV.
+ * saves and destroys a sandbox the run left open, clears the run's KV and marks
+ * the thread idle.
  */
 export const createCleanupFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: Kv | undefined,
+  store: Kv,
+  onLedger: () => boolean,
 ): ReturnType<typeof createDefer> => {
   return createDefer(
     client,
@@ -51,46 +70,50 @@ export const createCleanupFunction = (
         sandbox?: ThreadSandboxCleanup;
       };
 
-      // With no store nothing is kept: a sandbox the run did not close is
-      // destroyed.
-      if (!store) {
-        if (sandbox) {
-          await step.run(`${sandbox.name}:run:destroy`, async () => {
-            const found = await client.sandboxes.get(sandbox.sandboxId);
-            await found?.destroy();
+      // A sandbox of a run with no thread to keep it for is destroyed.
+      if (sandbox && !thread) {
+        await step.run(`${sandbox.name}:run:destroy`, async () => {
+          const found = await client.sandboxes.get(sandbox.sandboxId);
+          await found?.destroy();
 
-            return null;
-          });
-        }
-
-        return;
-      }
-
-      // A sandbox the run created and did not close: save it for the
-      // thread's next run and destroy it.
-      if (sandbox && thread) {
-        await cleanupThreadSandbox({
-          client: client as unknown as Parameters<
-            typeof cleanupThreadSandbox
-          >[0]["client"],
-          ref,
-          thread,
-          runId,
-          scope: store.scope("thread", thread),
-          sandbox,
-          run: (id, fn) => {
-            return step.run(id, fn) as ReturnType<typeof fn>;
-          },
+          return null;
         });
 
         return;
       }
 
-      // Each KV call is its own step.
-      await store.scope("run", runId).clear();
+      try {
+        // A sandbox the run created and did not close: save it for the
+        // thread's next run and destroy it.
+        if (sandbox && thread) {
+          await cleanupThreadSandbox({
+            client: client as unknown as Parameters<
+              typeof cleanupThreadSandbox
+            >[0]["client"],
+            ref,
+            thread,
+            runId,
+            scope: store.scope("thread", thread),
+            sandbox,
+            run: (id, fn) => {
+              return step.run(id, fn) as ReturnType<typeof fn>;
+            },
+          });
 
-      if (thread) {
-        await markThreadIdle(store, thread, runId);
+          return;
+        }
+
+        // Each KV call is its own step. With the ledger a run's own keys live
+        // in the run, so there is nothing to clear.
+        if (!onLedger()) {
+          await store.scope("run", runId).clear();
+        }
+
+        if (thread) {
+          await markThreadIdle(store, ref, thread, runId);
+        }
+      } finally {
+        await closeCopies();
       }
     },
   );
@@ -116,15 +139,20 @@ const senderIdsOf = (start: RawEvent): string[] => {
 
 /**
  * The function that runs when the executor reports that a run of the agent
- * ended: it writes the thread's `lastRun` and, with `recovery` on, resends the
- * turn that was in flight.
+ * ended. It writes the thread's `lastRun` for the agent and, with `recovery`
+ * on, resends the turn that was in flight. The senders of the messages the run
+ * took hear how it ended. With the ledger KV store the ledger stores the record
+ * of the end (`agent/run.ended`), and the end of a run `start_agent` began goes
+ * to its starter as `agent/finished`, which the starter's SDK completes with
+ * `missing`. With another store the `agents-finished` relay sends the latter.
  */
 export const createFinishedFunction = (
   client: Inngest.Any,
   config: AgentFunctionConfig,
   ref: string,
-  store: Kv | undefined,
+  store: Kv,
   triggers: CompiledTrigger[],
+  onLedger: () => boolean,
 ): InngestFunction.Any => {
   const recovery = config.recovery === true;
 
@@ -158,45 +186,25 @@ export const createFinishedFunction = (
       const ended = finishedOf(data);
       const runId = String(data.run_id);
 
-      if (!store) {
-        // Nothing is recorded; the senders still hear how the run ended.
-        const ids = senderIdsOf(start);
-
-        if (ids.length > 0) {
-          await step.sendEvent(
-            "message-results",
-            ids.map((id) => {
-              return agentMessageResult.create({
-                id,
-                run_id: runId,
-                ...(ended.status === "completed"
-                  ? { status: "completed", output: data.result as Json }
-                  : ended.status === "failed"
-                    ? {
-                        status: "failed",
-                        error: ended.error?.message ?? "unknown error",
-                      }
-                    : { status: "stopped" }),
-              } as Parameters<typeof agentMessageResult.create>[0]);
-            }),
-          );
-        }
-
-        return undefined;
-      }
-
       // How the run ended is written first and whatever else happens next.
-      const { last, record } = await recordEnd(store, message.thread, {
-        runId,
-        at: event.ts ?? 0,
-        finished: ended,
-        inflight: started,
-        turn: started !== undefined,
-        resume:
-          ended.status === "failed" && recovery
-            ? !ended.error?.nonRetriable
-            : undefined,
-      });
+      const { last, record } = await recordEnd(
+        store,
+        ref,
+        message.thread,
+        {
+          runId,
+          at: event.ts ?? 0,
+          finished: ended,
+          inflight: started,
+          turn: started !== undefined,
+          resume:
+            ended.status === "failed" && recovery
+              ? !ended.error?.nonRetriable
+              : undefined,
+        },
+        // With the ledger the ledger stores it, from `agent/run.ended`.
+        { persist: !onLedger() },
+      );
 
       // Only a run that `recordEnd` marked as resumed is resumed: a late report
       // for an older run, after a newer one has ended, is not.
@@ -232,7 +240,41 @@ export const createFinishedFunction = (
         );
       }
 
+      // With the ledger the end of a run goes to the thread's ledger, which
+      // stores how it ended, and a run `start_agent` began is reported to its
+      // starter, which knows which owed reports it took. One send for both.
+      if (onLedger() && last) {
+        const notice = finishedNotice(data);
+
+        await step.sendEvent("run-ended", [
+          runEnded.create(
+            signLedgerData(client, runEnded.name, {
+              thread: kvHash("thread", {
+                env: client.env ?? "default",
+                app: client.id,
+                thread: message.thread,
+              }),
+              app: client.id,
+              agent: ref,
+              runId,
+              last,
+            }),
+            { id: `ended-${runId}` },
+          ),
+          ...(notice
+            ? [
+                agentFinished.create(notice, {
+                  id: `finished-${runId}`,
+                  meta: { sessions: threadSessions(notice.thread) },
+                }),
+              ]
+            : []),
+        ]);
+      }
+
       if (!resumed) {
+        await closeCopies();
+
         return last;
       }
 
@@ -246,30 +288,37 @@ export const createFinishedFunction = (
       );
 
       if (!inflight || (!inflight.event && inflight.content === undefined)) {
+        await closeCopies();
+
         return last;
       }
 
       await step.sendEvent(
         "recover-resend",
         agentRecover.create(
-          {
+          // Signed, so a run takes the lend a resent start carries only from
+          // a resend this app made.
+          signLedgerData(client, agentRecover.name, {
             agent: ref,
             thread: message.thread,
             event: inflight.event ?? {
+              ...(inflight.id !== undefined && { id: inflight.id }),
               name: agentMessageEvent,
               data: {
                 agent: ref,
                 thread: message.thread,
                 content: inflight.content,
+                ...(inflight.from !== undefined && { from: inflight.from }),
               },
             },
-          },
+          }),
           {
             id: `recover-${runId}`,
             meta: { sessions: threadSessions(message.thread) },
           },
         ),
       );
+      await closeCopies();
 
       return last;
     },

@@ -34,6 +34,7 @@ import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import type { Json } from "../json.ts";
 import { kv } from "../kv/kv.ts";
+import { historyRecordKey } from "../threads/thread.ts";
 import {
   type AgentCompaction,
   type AgentCompactionOptions,
@@ -82,6 +83,11 @@ type Sender =
   | { kind: "function"; id?: string; key?: string };
 
 // Who sent a message, as the model reads it.
+/**
+ * How many times a model that stops while it owes a report is reminded.
+ */
+const maxOwedReminders = 2;
+
 const whoOf = (from: Sender | undefined): string => {
   if (from?.kind === "function") {
     return `function ${from.id ?? "unknown"}`;
@@ -104,7 +110,11 @@ const textOfJson = (value: unknown): string => {
  * - `agent/question`: the question, its id, who asked, and a pointer to the
  *   `reply` tool.
  * - `agent/finished`: which agent and thread finished, the outcome, then the
- *   output or the error.
+ *   output or the error, and the owed reports it never sent when the app has
+ *   no KV store.
+ * - `agent/group.joined`: who joined the group and the thread key to reach it
+ *   with.
+ * - `agent/report/<type>`: `Report "<type>" from <address> (thread <key>): <data>`.
  * - `agent/answer`: the answer next to the question it answers (`questions`
  *   maps a question's id to its text); `refused` and `timed_out` read as a
  *   plain "no answer" line.
@@ -118,7 +128,12 @@ export const formatEvent = (
   questions?: ReadonlyMap<string, string>,
 ): string => {
   const data = (event.data ?? {}) as Record<string, unknown>;
-  const from = data.from as Sender | undefined;
+  // A report's data is its own, so its sender is beside it.
+  const from = (
+    event.name.startsWith("agent/report/")
+      ? (event as { from?: unknown }).from
+      : data.from
+  ) as Sender | undefined;
   const where = from?.key === undefined ? "" : ` (thread ${from.key})`;
 
   if (event.name === "agent/message") {
@@ -139,18 +154,33 @@ export const formatEvent = (
 
   if (event.name === "agent/finished") {
     const who = `${whoOf(from)}${where}`;
+    const missing = Array.isArray(data.missing) ? data.missing : [];
+    const owed =
+      missing.length > 0
+        ? ` It never sent the report${missing.length > 1 ? "s" : ""} it owed: ${missing.join(", ")}.`
+        : "";
 
     if (data.outcome === "completed") {
       return data.output === undefined
-        ? `${who} finished: completed.`
-        : `${who} finished: completed. Output: ${textOfJson(data.output)}`;
+        ? `${who} finished: completed.${owed}`
+        : `${who} finished: completed. Output: ${textOfJson(data.output)}${owed}`;
     }
 
     if (data.outcome === "failed") {
-      return `${who} finished: failed. Error: ${String(data.error)}`;
+      return `${who} finished: failed. Error: ${String(data.error)}${owed}`;
     }
 
-    return `${who} finished: stopped.`;
+    return `${who} finished: stopped.${owed}`;
+  }
+
+  if (event.name === "agent/group.joined") {
+    const joined = data as {
+      name?: unknown;
+      agent?: unknown;
+      thread?: unknown;
+    };
+
+    return `${String(joined.agent)} (thread ${String(joined.thread)}) joined your group "${String(joined.name)}". You can reach it with message_agent or ask_agent.`;
   }
 
   if (event.name === "agent/answer") {
@@ -167,6 +197,12 @@ export const formatEvent = (
     }
 
     return `Answer to ${about} from ${whoOf(from)}: ${textOfJson(data.text)}`;
+  }
+
+  if (event.name.startsWith("agent/report/")) {
+    const type = event.name.slice("agent/report/".length);
+
+    return `Report "${type}" from ${whoOf(from)}${where}: ${JSON.stringify(event.data)}`;
   }
 
   return JSON.stringify({ event: event.name, data: event.data });
@@ -887,11 +923,23 @@ export interface AgentLoopWiring {
   observeTurn?: (turn: AgentTurn, recorded: unknown) => Promise<void>;
 
   /**
+   * The agent, as `"appId/functionId"`: the history is kept under its own key
+   * on the thread, so two agents sharing a thread key each remember their own.
+   */
+  agent?: string;
+
+  /**
    * Whether the loop saves the model's history in thread KV after each batch
    * and picks it up when the thread's next run starts. The agent's `remember`
    * field, `true` unless it says `false`.
    */
   remember?: boolean;
+
+  /**
+   * The report types the run still owes. A model that tries to finish while
+   * this is not empty is reminded and the loop continues.
+   */
+  owed?: () => string[] | Promise<string[]>;
 
   /**
    * Whether a question already has a reply, so the model spends no turn on it.
@@ -1164,8 +1212,10 @@ export const addTools = <TTools extends SandboxTools>(
   return { ...own, ...extra };
 };
 
-// The thread KV key the model's history is kept under.
-const historyKey = kv.key<Remembered>("__history");
+// The thread KV key an agent's model history is kept under.
+const historyKeyOf = (agent: string | undefined) => {
+  return kv.key<Remembered>(historyRecordKey(agent ?? ""));
+};
 
 interface Remembered {
   history: ModelMessage[];
@@ -1233,7 +1283,9 @@ const runLoop = async <TTools extends SandboxTools>(
   const remembering = wiring?.remember === true;
   const stored =
     remembering && options.history === undefined
-      ? ((await kv.thread.get(historyKey)) as Remembered | undefined)
+      ? ((await kv.thread.get(historyKeyOf(wiring?.agent))) as
+          | Remembered
+          | undefined)
       : undefined;
   const messages: ModelMessage[] = [
     ...(options.history ?? stored?.history ?? []),
@@ -1249,6 +1301,8 @@ const runLoop = async <TTools extends SandboxTools>(
   let steered = 0;
   // Replies with no tool call that were asked again.
   let noToolCallTurns = 0;
+  // Times the model was reminded of a report it owes.
+  let owedReminders = 0;
   // The summary of the conversation's start, once there is one.
   let compaction: AgentCompaction | undefined = stored?.compaction;
   const compactWith = compactionFor(options.compaction, model.contextWindow);
@@ -1261,10 +1315,20 @@ const runLoop = async <TTools extends SandboxTools>(
     await Promise.allSettled(hooks);
 
     if (remembering) {
-      await kv.thread.set(historyKey, {
-        history: messages,
-        ...(compaction && { compaction }),
-      } as Remembered as never);
+      try {
+        await kv.thread.set(historyKeyOf(wiring?.agent), {
+          history: messages,
+          ...(compaction && { compaction }),
+        } as Remembered as never);
+      } catch (error) {
+        // The ledger KV store holds 128 KB per thread: a history past it is
+        // not kept, and the run does not fail for it.
+        if (!/past the limit of \d+ bytes/.test(String(error))) {
+          throw error;
+        }
+
+        logHookError("remember", error);
+      }
     }
 
     return {
@@ -1537,6 +1601,23 @@ const runLoop = async <TTools extends SandboxTools>(
           content: "Use the tools: every reply must be a tool call.",
         });
         turn -= 1;
+        continue;
+      }
+
+      // A model that stops while a report is owed is reminded, up to a few
+      // times, and the loop goes on within `maxTurns` and the budget.
+      const owed = (await wiring?.owed?.()) ?? [];
+
+      if (
+        owed.length > 0 &&
+        owedReminders < maxOwedReminders &&
+        turn < maxTurns
+      ) {
+        owedReminders += 1;
+        messages.push({
+          role: "user",
+          content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
+        });
         continue;
       }
 

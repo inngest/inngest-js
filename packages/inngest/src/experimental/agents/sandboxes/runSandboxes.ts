@@ -15,6 +15,7 @@ import type { Kv } from "../kv/kv.ts";
 import type { Skill } from "../skills/skills.ts";
 import type { TriggerEvent } from "../threads/thread.ts";
 import {
+  type LentMachine,
   openSandboxes,
   resolveSandboxes,
   type SandboxRuntime,
@@ -33,7 +34,7 @@ export const openRunSandboxes = async (options: {
   context: RunFieldContext<TriggerEvent>;
   thread: string;
   runId: string;
-  store: Kv | undefined;
+  store: Kv;
   step: typeof step;
   logger: Logger;
   defer: Context.Any["defer"];
@@ -43,6 +44,12 @@ export const openRunSandboxes = async (options: {
    * The run's skills; their files go to the first sandbox the model can use.
    */
   skills?: readonly Skill[];
+
+  /**
+   * Machines the run's parent lent, by name: adopted by ID, never created or
+   * destroyed here.
+   */
+  lent?: Record<string, LentMachine>;
 }) => {
   const { config, client, ref, thread, runId, store, logger, defer, cleanup } =
     options;
@@ -51,7 +58,8 @@ export const openRunSandboxes = async (options: {
 
   const bindings = await resolveSandboxes(config.sandboxes, context);
   const opened =
-    Object.keys(bindings).length > 0
+    Object.keys(bindings).length > 0 ||
+    Object.keys(options.lent ?? {}).length > 0
       ? openSandboxes(
           bindings,
           stepSandboxes(step),
@@ -60,10 +68,9 @@ export const openRunSandboxes = async (options: {
             run: (id, fn) => {
               return step.run(id, fn) as ReturnType<typeof fn>;
             },
-            // With no store nothing is kept, but a run that ends without
-            // closing a sandbox (cancelled, or failed for good) still has it
-            // destroyed. A defer ID is used once per run, so a recycled
-            // sandbox's cleanup has its own.
+            // A run that ends without closing a sandbox (cancelled, or failed
+            // for good) still has it destroyed. A defer ID is used once per
+            // run, so a recycled sandbox's cleanup has its own.
             guard: (name, sandbox, epoch) => {
               const suffix = epoch > 0 ? `:g${epoch}` : "";
 
@@ -73,30 +80,42 @@ export const openRunSandboxes = async (options: {
               });
             },
           },
-          store &&
-            threadSandboxOwner({
-              client: client as unknown as Parameters<
-                typeof threadSandboxOwner
-              >[0]["client"],
-              ref,
-              thread: thread,
-              runId,
-              scope: store.thread,
-              warn: (data, message) => {
-                logger.warn(data, message);
-              },
-              run: (id, fn) => {
-                return step.run(id, fn) as ReturnType<typeof fn>;
-              },
-              defer: (id, sandbox) => {
-                return defer(id, {
-                  function: cleanup,
-                  data: { runId, thread: thread, sandbox },
-                });
-              },
-            }),
+          threadSandboxOwner({
+            client: client as unknown as Parameters<
+              typeof threadSandboxOwner
+            >[0]["client"],
+            ref,
+            thread: thread,
+            runId,
+            scope: store.thread,
+            warn: (data, message) => {
+              logger.warn(data, message);
+            },
+            run: (id, fn) => {
+              return step.run(id, fn) as ReturnType<typeof fn>;
+            },
+            defer: (id, sandbox) => {
+              return defer(id, {
+                function: cleanup,
+                data: { runId, thread: thread, sandbox },
+              });
+            },
+          }),
+          undefined,
+          options.lent,
         )
       : {};
+
+  // Machines lent for their tools only: the model's, not the handler's code.
+  const toolsOnly = new Set(
+    Object.entries(options.lent ?? {})
+      .filter(([, machine]) => {
+        return !machine.code;
+      })
+      .map(([name]) => {
+        return name;
+      }),
+  );
 
   // Closes every sandbox. Returns the first failure instead of throwing, so
   // a failed eager start nothing used never replaces the body's own error.
@@ -112,5 +131,5 @@ export const openRunSandboxes = async (options: {
     });
   };
 
-  return { opened, closeAll };
+  return { opened, closeAll, toolsOnly };
 };

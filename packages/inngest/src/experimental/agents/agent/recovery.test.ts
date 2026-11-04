@@ -201,14 +201,14 @@ describe("the finished function", () => {
       return (await store
         .with(client)
         .scope("thread", "t1")
-        .get("__lastRun")) as LastRun | undefined;
+        .get(`__lastRun:${testClientId}/bot`)) as LastRun | undefined;
     };
 
     const seed = async (record: Record<string, unknown>) => {
       await store
         .with(client)
         .scope("thread", "t1")
-        .set("__state", {
+        .set(`__state:${testClientId}/bot`, {
           status: "idle",
           turn: 0,
           usage: { input: 0, output: 0 },
@@ -444,7 +444,7 @@ describe("the finished function", () => {
       client.createFunction(
         { id: "idle", triggers: [{ event: "x" }] },
         async () => {
-          await markThreadIdle(store, "t1", "r1");
+          await markThreadIdle(store, `${testClientId}/bot`, "t1", "r1");
         },
       ),
       { event: { name: "x", data: {} } },
@@ -497,13 +497,16 @@ describe("what the body is told", () => {
     const store = freshKv();
 
     if (lastRun) {
-      await store.with(client).scope("thread", "t1").set("__lastRun", lastRun);
+      await store
+        .with(client)
+        .scope("thread", "t1")
+        .set(`__lastRun:${testClientId}/bot`, lastRun);
     }
 
     await store
       .with(client)
       .scope("thread", "t1")
-      .set("__state", {
+      .set(`__state:${testClientId}/bot`, {
         status: "idle",
         turn: 0,
         usage: { input: 0, output: 0 },
@@ -512,7 +515,10 @@ describe("what the body is told", () => {
 
     const agent = createAgentFunction(client, { id: "bot" }, body);
     const read = async () => {
-      return (await store.with(client).scope("thread", "t1").get("__state")) as
+      return (await store
+        .with(client)
+        .scope("thread", "t1")
+        .get(`__state:${testClientId}/bot`)) as
         | Record<string, unknown>
         | undefined;
     };

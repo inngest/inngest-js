@@ -61,7 +61,7 @@ describe.each([true, false])(
       const fn = client.createFunction(
         { id: "recorder", triggers: [{ event: "agent/message" }] },
         async ({ runId }) => {
-          const recorder = threadRecorder(store, runId);
+          const recorder = threadRecorder(store, "app/recorder", runId);
 
           await recorder.running();
           await pause();
@@ -86,12 +86,14 @@ describe.each([true, false])(
 
       // The IDs are the ones the engine indexes repeats to, so a run that began
       // before the fix replays against the same steps.
-      const base = _internals.hashId("kv.update:thread:__state");
+      const base = _internals.hashId("kv.update:thread:__state:app/recorder");
 
       expect(ids).toEqual([
         base,
         ...[1, 2, 3, 4].map((n) => {
-          return _internals.hashId(`kv.update:thread:__state:${n}`);
+          return _internals.hashId(
+            `kv.update:thread:__state:app/recorder:${n}`,
+          );
         }),
       ]);
 

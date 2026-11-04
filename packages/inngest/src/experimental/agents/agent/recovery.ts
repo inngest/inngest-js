@@ -281,6 +281,66 @@ export const finishedOf = (data: Record<string, unknown>): Finished => {
   return { status: "completed" };
 };
 
+const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * When a run started, from its ID: run IDs are ULIDs, whose first ten
+ * characters are a millisecond timestamp. Anything else scores 0.
+ */
+export const runScore = (
+  /**
+   * The run ID.
+   */
+  runId: string,
+): number => {
+  let score = 0;
+
+  for (const char of runId.slice(0, 10).toUpperCase()) {
+    const digit = crockford.indexOf(char);
+
+    if (digit < 0) {
+      return 0;
+    }
+
+    score = score * 32 + digit;
+  }
+
+  return score;
+};
+
+/**
+ * How a run ended as the thread's `lastRun`, with no recovery guard: the
+ * record a thread without a KV store keeps.
+ */
+export const lastRunOf = (
+  /**
+   * The run that ended.
+   */
+  runId: string,
+
+  /**
+   * When it ended, in milliseconds since the epoch.
+   */
+  at: number,
+
+  /**
+   * How it ended.
+   */
+  finished: Finished,
+): LastRun => {
+  const last: LastRun = { runId, status: finished.status, at };
+
+  if (finished.status === "failed" && finished.error) {
+    return {
+      ...last,
+      error: summarize(finished.error.message),
+      fingerprint: fingerprint(finished.error.name, finished.error.message),
+    };
+  }
+
+  return last;
+};
+
 /**
  * What to do about a failed run, given the guard of the run before it.
  */

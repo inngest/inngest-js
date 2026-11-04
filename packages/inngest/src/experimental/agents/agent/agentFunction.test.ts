@@ -74,6 +74,9 @@ const userTexts = (messages: { role: string; content?: unknown }[]) => {
   });
 };
 
+const reportAwareThread =
+  'event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread';
+
 describe("agent function", () => {
   test("is addressed as appId/functionId and starts on its own non-stop messages", () => {
     const { fn, ref } = createAgentFunction(
@@ -88,7 +91,7 @@ describe("agent function", () => {
       triggers: { event: string; if: string }[];
     };
     expect(config.singleton).toEqual({
-      key: "event.data.thread",
+      key: reportAwareThread,
       mode: "skip",
     });
     expect(config.triggers.map((t) => t.event)).toEqual([
@@ -97,6 +100,7 @@ describe("agent function", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -465,6 +469,7 @@ describe("inbox sources", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
       "ci/status",
       "ci/status",
     ]);
@@ -844,6 +849,7 @@ describe("agent cleanup", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
   });
 });
@@ -873,6 +879,7 @@ describe("createAgents", () => {
       `${testClientId}-agents-announce`,
       `${testClientId}-agents-finished`,
       `${testClientId}-agents-ask-timeout`,
+      `${testClientId}-agents-parent-ended`,
     ]);
   });
 
@@ -891,7 +898,7 @@ describe("thread state", () => {
     const found = await kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1")
-      .get("__state");
+      .get(`__state:${testClientId}/bot`);
 
     // The status changes with their times are not part of what state() shows.
     const { transitions: _transitions, ...rest } = (found ?? {}) as {
@@ -1053,7 +1060,11 @@ describe("thread state", () => {
       .with({ id: testClientId, env: null })
       .scope("thread", "t1");
     const base = { turn: 2, usage: { input: 1, output: 1 } };
-    await thread.set("__state", { ...base, status: "running", runId: "r1" });
+    await thread.set(`__state:${testClientId}/bot`, {
+      ...base,
+      status: "running",
+      runId: "r1",
+    });
 
     await run(cleanup, {
       event: {
@@ -1070,13 +1081,17 @@ describe("thread state", () => {
       },
     });
 
-    expect(await thread.get("__state")).toMatchObject({
+    expect(await thread.get(`__state:${testClientId}/bot`)).toMatchObject({
       status: "idle",
       runId: "r1",
       turn: 2,
     });
 
-    await thread.set("__state", { ...base, status: "running", runId: "r2" });
+    await thread.set(`__state:${testClientId}/bot`, {
+      ...base,
+      status: "running",
+      runId: "r2",
+    });
     await run(cleanup, {
       event: {
         name: "inngest/deferred.schedule",
@@ -1092,7 +1107,7 @@ describe("thread state", () => {
       },
     });
 
-    expect(await thread.get("__state")).toMatchObject({
+    expect(await thread.get(`__state:${testClientId}/bot`)).toMatchObject({
       status: "running",
       runId: "r2",
     });

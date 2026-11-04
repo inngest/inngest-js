@@ -11,6 +11,9 @@ import { compileTriggers, singletonKey, startOf } from "./threadTrigger.ts";
 
 freshKv();
 
+const reportAwareThread =
+  'event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread';
+
 const chatThread =
   'event.data.room + "/" + (has(event.data.thread_ts) ? event.data.thread_ts : event.data.ts)';
 
@@ -50,8 +53,9 @@ describe("thread key from a trigger", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
     ]);
-    expect(opts.singleton.key).toBe("event.data.thread");
+    expect(opts.singleton.key).toBe(reportAwareThread);
   });
 
   test("the function triggers on the on events and keys its singleton on their expressions", () => {
@@ -81,12 +85,13 @@ describe("thread key from a trigger", () => {
       expect.objectContaining({ event: "agent/question" }),
       expect.objectContaining({ event: "agent/answer" }),
       expect.objectContaining({ event: "agent/finished" }),
+      expect.objectContaining({ event: "agent/report" }),
       { event: "chat/message", if: "event.data.bot != true" },
       { event: "gh/comment" },
     ]);
     expect(opts.singleton.mode).toBe("skip");
     expect(opts.singleton.key).toBe(
-      `event.name == "chat/message" ? ((has(event.data) && has(event.data.room)) ? (${chatThread}) : "fresh:" + event.id) : event.name == "gh/comment" ? ((has(event.data) && has(event.data.repo) && has(event.data.pr)) ? (event.data.repo + "#" + event.data.pr) : "fresh:" + event.id) : event.data.thread`,
+      `event.name == "chat/message" ? ((has(event.data) && has(event.data.room)) ? (${chatThread}) : "fresh:" + event.id) : event.name == "gh/comment" ? ((has(event.data) && has(event.data.repo) && has(event.data.pr)) ? (event.data.repo + "#" + event.data.pr) : "fresh:" + event.id) : ${reportAwareThread}`,
     );
   });
 
@@ -137,10 +142,11 @@ describe("thread key from a trigger", () => {
       "agent/question",
       "agent/answer",
       "agent/finished",
+      "agent/report",
       "chat/message",
     ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[5]?.if).toBe(
+    expect(opened[6]?.if).toBe(
       `(event.data.bot != true) && (${chatThread}) == "C1/1.2"`.replaceAll(
         "event.",
         "async.",

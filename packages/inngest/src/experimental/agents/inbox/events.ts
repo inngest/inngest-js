@@ -15,6 +15,8 @@ import {
   staticSchema,
 } from "../../../components/triggers/triggers.ts";
 import type { Json } from "../json.ts";
+import type { LentMachine } from "../sandboxes/defs.ts";
+import type { ReportSpec } from "./reports.ts";
 
 /**
  * What every event sent to a thread carries, to route it.
@@ -58,6 +60,39 @@ export type SenderData = (
   thread?: string;
   limits?: unknown;
   typed?: boolean;
+
+  /**
+   * On the message `start()` sends: the reports the agent owes the starter
+   * and others, by type, with the JSON Schema of each and where it goes.
+   */
+  reports?: ReportSpec;
+
+  /**
+   * An HMAC over the destinations of `reports`, the child's thread and its
+   * app, so a report can prove the starter granted its destination.
+   */
+  reports_sig?: string;
+
+  /**
+   * On the message `start()` or `start_agent` sends to an attached child:
+   * the run ID of the parent. The child is cancelled by the `agent/parent.ended`
+   * event of that run.
+   */
+  parent_run?: string;
+
+  /**
+   * On the message `start()` sends when it lends the child tools or sandboxes:
+   * what is lent, by sandbox name.
+   */
+  lent?: Record<string, LentMachine>;
+
+  /**
+   * The signature of `lent`, made with the app's signing key over the lent
+   * machines, `parent_run` and the child's thread. A child refuses a `lent`
+   * that is unsigned or does not match. It carries no time: the lend lasts as
+   * long as the parent's run, whose end cancels the child.
+   */
+  lent_sig?: string;
 };
 
 /**
@@ -80,6 +115,13 @@ export type AgentRecoverData = AgentRouting & {
    * were sent.
    */
   event: { id?: string; name: string; data: unknown };
+
+  /**
+   * The app that made the resend and its signature over the data. A run
+   * accepts a lend carried by a resent start only when the resend is signed.
+   */
+  by?: string;
+  sig?: string;
 };
 
 /**
@@ -128,6 +170,22 @@ export type AgentFinishedData = AgentRouting & {
    * The agent and thread that finished.
    */
   from?: SenderData;
+
+  /**
+   * Set on the report of an attached child that was stopped. A run that is
+   * live on the thread reads it; it never starts a run, so a child cancelled
+   * because its parent ended does not wake the parent's thread.
+   */
+  quiet?: true;
+
+  /**
+   * The names of the reports the run owed (`report.required()`) and finished
+   * without sending. An empty list means every owed report was sent. The
+   * starter's SDK sets it when the message reaches the starter's inbox: it
+   * subtracts the reports it took from that child from the ones it owed. It
+   * is not set when the child owed none.
+   */
+  missing?: string[];
 } & (
     | { outcome: "completed"; output?: Json }
     | { outcome: "failed"; error: string }
@@ -153,6 +211,25 @@ export const agentAnswer = eventType("agent/answer", {
  */
 export const agentFinished = eventType("agent/finished", {
   schema: staticSchema<AgentFinishedData>(),
+});
+
+/**
+ * The data of `agent/parent.ended`: the run that ended for good.
+ */
+export type AgentParentEndedData = {
+  /**
+   * The ID of the run that ended: completed, failed after its retries, or
+   * cancelled.
+   */
+  run_id: string;
+};
+
+/**
+ * Sent once when a run that started attached children ends for good. Each
+ * attached child is cancelled by it, matched on its `parent_run`.
+ */
+export const agentParentEnded = eventType("agent/parent.ended", {
+  schema: staticSchema<AgentParentEndedData>(),
 });
 
 /**
@@ -216,4 +293,40 @@ export type AgentAskTimeoutData = AgentRouting & {
  */
 export const agentAskTimeout = eventType("agent/ask.timeout", {
   schema: staticSchema<AgentAskTimeoutData>(),
+});
+
+/**
+ * The data of `agent/group.joined`: a thread joined a group.
+ */
+export type AgentGroupJoinedData = {
+  /**
+   * The group's id, which every member's thread key carries. A live member
+   * hears of a join through an inbox source filtered by it.
+   */
+  group: string;
+
+  /**
+   * The name the starter gave the group.
+   */
+  name: string;
+
+  /**
+   * The new member's agent, `"appId/functionId"`.
+   */
+  agent: string;
+
+  /**
+   * The new member's thread key, which the other members use to reach it.
+   */
+  thread: string;
+};
+
+/**
+ * EXPERIMENTAL: tells the members of a group that a thread joined it. It is
+ * sent once when `start()` or `start_agent` is given a `group`, not once per
+ * member, and live members receive it through an inbox source that filters on
+ * the group's id. It never starts a run.
+ */
+export const agentGroupJoined = eventType("agent/group.joined", {
+  schema: staticSchema<AgentGroupJoinedData>(),
 });

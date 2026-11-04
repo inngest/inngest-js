@@ -36,28 +36,52 @@ import {
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
-import type { SandboxTools } from "../../../components/sandbox/tools.ts";
+import {
+  hostOfSharedTool,
+  isSharedTool,
+  type SandboxTools,
+} from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
+import type { Logger } from "../../../middleware/logger.ts";
 import { compileKey, toAsync } from "../cel.ts";
-import { cardOf } from "../discovery/discovery.ts";
+import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
+import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
-import { agentMessage } from "../inbox/events.ts";
+import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
+import {
+  type AgentReport,
+  flushOwes,
+  handleAddressKey,
+  isReportEvent,
+  owesRecord,
+  type ReportBook,
+  reportEventPrefix,
+  reportSenderProblem,
+  reportsOf,
+  reportsSigOf,
+  reportTool,
+  sendReport,
+} from "../inbox/reports.ts";
 import { senderFrom } from "../inbox/sender.ts";
 import {
   eventNameOf,
   inboxFilter,
   inflightOf,
+  isOwnEvent,
   missingThreadFilter,
   ownEvents,
+  ownInboxFilter,
+  ownTriggerFilter,
   quote,
   type RawEvent,
   resentAs,
   threadInbox,
 } from "../inbox/threadInbox.ts";
-import { hasKvStore, kv } from "../kv/kv.ts";
+import type { Json } from "../json.ts";
+import { kv, usesLedger } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
   type AgentLoop,
@@ -70,6 +94,7 @@ import {
 import { createAgentScore } from "../loop/scores.ts";
 import {
   agentSandbox,
+  type LentMachine,
   openSandboxes,
   resolveSandboxes,
   sandboxTools,
@@ -88,7 +113,9 @@ import {
   type SkillSources,
   skillsPrompt,
 } from "../skills/skills.ts";
+import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
+  agentFinishedEvent,
   agentMessageEvent,
   agentQuestionEvent,
   agentRecoverEvent,
@@ -114,6 +141,13 @@ import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
+  lendIsOpen,
+  lendOf,
+  lentEndedNote,
+  lentToolNames,
+  parentEndedCancel,
+} from "./lending.ts";
+import {
   type AgentBudget,
   budgetReason,
   narrowInherited,
@@ -124,6 +158,7 @@ import {
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
+import { groupOf, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
   idleMs,
@@ -186,12 +221,21 @@ const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
  * `loop` field. A `loop` field that is a whole loop replaces it.
  */
 const createHandlerLoop = async (options: {
+  client: Inngest.Any;
+  logger: Logger;
   config: AgentFunctionConfig;
   fields: RunFields<RunFieldContext>;
   listenTools: Record<string, unknown>;
   skills: readonly Skill[];
+
+  /**
+   * The names of tools a parent lent this thread that are over, so the model
+   * is told not to call them.
+   */
+  lentEnded?: string[];
 }): Promise<AgentHandlerLoop> => {
-  const { config, fields, listenTools, skills } = options;
+  const { client, logger, config, fields, listenTools, skills, lentEnded } =
+    options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -210,8 +254,14 @@ const createHandlerLoop = async (options: {
     config.system as RunField<string | undefined>,
   );
   const system =
-    skills.length > 0
-      ? [written, skillsPrompt(skills)].filter(Boolean).join("\n\n")
+    skills.length > 0 || lentEnded
+      ? [
+          written,
+          skills.length > 0 ? skillsPrompt(skills) : undefined,
+          lentEnded ? lentEndedNote(lentEnded) : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
       : written;
   const tools = await fields.get(
     "tools",
@@ -250,20 +300,33 @@ const createHandlerLoop = async (options: {
     }) as unknown as AgentHandlerLoop;
   }
 
+  const own = {
+    ...agentToolsFor(config.discovery),
+    ...listenTools,
+    ...(skills.length > 0 && createSkillTools(skills)),
+  } as SandboxTools;
+  // Shared tools the definition lists are called through their hosted
+  // function; the others `discovery.tools` allows are added beside them.
+  const listed = new Set(
+    Object.values(tools ?? {}).flatMap((entry) => {
+      const host = isSharedTool(entry) ? hostOfSharedTool(entry) : undefined;
+
+      return isSharedTool(entry) && host ? [`${host}/${entry.id}`] : [];
+    }),
+  );
+  const shared = await sharedToolsFor(client, config.discovery, {
+    taken: new Set([...Object.keys(own), ...Object.keys(tools ?? {})]),
+    listed,
+    logger,
+  });
+
   return buildHandlerLoop({
     // `format` and `steer` are typed with the agent's own messages on the
     // definition; the loop hands them those same messages, with `is()`.
     ...(config.loop as Omit<AgentLoopOptions, "model">),
     model,
     ...(system !== undefined && { system }),
-    tools: addTools(
-      {
-        ...agentToolsFor(config.discovery),
-        ...listenTools,
-        ...(skills.length > 0 && createSkillTools(skills)),
-      } as SandboxTools,
-      tools,
-    ),
+    tools: addTools(addTools(own, shared), tools),
   }) as unknown as AgentHandlerLoop;
 };
 
@@ -297,6 +360,11 @@ export function createAgentFunction(
     typeof config.skills === "function" || config.skills === undefined
       ? []
       : collectSkills(config.skills);
+  if (config.discovery) {
+    validateDiscoveryList(config.id, "agents", config.discovery.agents);
+    validateDiscoveryList(config.id, "tools", config.discovery.tools);
+  }
+
   // A source written as just an event is placed by the agent's `thread`.
   const inboxSources = (config.inbox ?? []).map((source): InboxSource => {
     if (typeof source !== "string" && "event" in source) {
@@ -317,40 +385,31 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  // With no store, a run touches KV nowhere.
-  const stored = hasKvStore(client.id);
-  const storeFix =
-    "give createAgents(client, { store }) a store, or set INNGEST_EXPERIMENTAL_KV_URL to a Redis URL";
+  // The KV is a configured store, else the ledger. The ledger keeps its own
+  // steps and cannot be written inside a step's callback, so a run on it does
+  // its thread bookkeeping between steps.
+  const store = kv;
+  const onLedger = () => {
+    return usesLedger(client.id);
+  };
 
-  if (!stored) {
-    if (config.remember === true) {
-      throw new Error(
-        `Agent "${config.id}" sets \`remember: true\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-
-    if (config.budget !== undefined) {
-      throw new Error(
-        `Agent "${config.id}" sets \`budget\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-
-    if (config.recovery === true) {
-      throw new Error(
-        `Agent "${config.id}" sets \`recovery: true\`, which needs a KV store: ${storeFix}`,
-      );
-    }
-  }
-
-  const store = stored ? kv : undefined;
-
-  const cleanup = createCleanupFunction(client, config, ref, store);
-  const finished = createFinishedFunction(client, config, ref, store, triggers);
+  const cleanup = createCleanupFunction(client, config, ref, store, onLedger);
+  const finished = createFinishedFunction(
+    client,
+    config,
+    ref,
+    store,
+    triggers,
+    onLedger,
+  );
 
   const fn = client.createFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // A child started attached ends with its parent's run.
+      cancelOn: [...(config.cancelOn ?? []), parentEndedCancel],
 
       // An agent's reads wake it as soon as a message lands, and a reader left
       // waiting beside its work never holds the run back.
@@ -358,7 +417,11 @@ export function createAgentFunction(
       ...(quietOptimizeParallelism as object),
       triggers: [
         ...ownEvents.map((name) => {
-          return { event: name, if: `event.data.agent == ${quote(ref)}` };
+          // A `quiet` message is for a live run only: it never starts one.
+          return {
+            event: name,
+            if: ownTriggerFilter(name, ref),
+          };
         }),
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
@@ -376,11 +439,26 @@ export function createAgentFunction(
         return t.event === event.name;
       });
       const data = startData(ref, found, event);
+
+      // A message names its thread, and the thread's key can carry tags that
+      // prove relations (parent, child, peer). A key a start made for another
+      // agent is not this agent's thread: running under it would borrow its
+      // reach.
+      if (!found) {
+        const owner = taggedKeyAddress(data.thread);
+
+        if (owner !== undefined && owner !== ref) {
+          throw new NonRetriableError(
+            `The thread ${data.thread} belongs to ${owner}, not to ${ref}`,
+          );
+        }
+      }
       // Read by `agent.loop()` once the body's inbox exists.
       const questions = new QuestionBook();
       const bridge: AgentBridge = { questions };
 
-      // Run-scoped KV keys end with the run, whichever way it ends.
+      // Run-scoped KV keys end with the run, whichever way it ends, and the
+      // thread is marked idle.
       defer("kv-cleanup", {
         function: cleanup,
         data: { runId, thread: data.thread },
@@ -393,7 +471,7 @@ export function createAgentFunction(
       // from here.
       async function main() {
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, runId);
+        const recorder = threadRecorder(store, ref, runId, onLedger());
 
         // What a sub-agent inherited is kept on its thread, so a later run that
         // a plain message starts has the same limits.
@@ -405,12 +483,6 @@ export function createAgentFunction(
               : data) as Record<string, unknown>
           ).from,
         );
-        // A run that began with the start as separate KV steps replays them
-        // as they were: the KV steps are numbered by how many came before, so
-        // folding the start would shift every later one.
-        const startedBefore =
-          getAsyncCtxSync()?.execution?.stepAnswer?.("kv.update:thread:__state")
-            .found === true;
         // The thread's budget as this agent defines it, read before the start
         // so the first run can keep it on the thread.
         const ownBudget =
@@ -420,6 +492,10 @@ export function createAgentFunction(
                 event: event as unknown as AgentBodyContext["event"],
                 thread: { key: data.thread },
               });
+        // What the start event lends, with its signature checked before the
+        // thread records anything. Whether the thread may use it is decided
+        // once the record is written.
+        const claim = lendOf(client, event, data.thread);
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
@@ -427,17 +503,22 @@ export function createAgentFunction(
               startInflight(found, event) ?? null,
               inStep,
               ownBudget,
+              undefined,
+              claim && {
+                parentRun: claim.parentRun,
+                tools: lentToolNames(claim.machines),
+              },
             ),
-            previousRun: store
-              ? ((await readLastRun(store, inStep)) ?? null)
-              : null,
+            previousRun: (await readLastRun(store, ref, inStep)) ?? null,
           };
         };
 
         // How the run before this one ended is a key of its own, read apart
         // from the record. Both are KV calls inside one step, so the start
         // costs one step; the write is safe to repeat if the step is retried.
-        const begun = startedBefore
+        // The ledger cannot be written inside a step, so a run on it makes the
+        // same two KV calls between steps, and reads the ledger once, here.
+        const begun = onLedger()
           ? await startWith()
           : await step.run(
               { id: "thread:start", name: "Thread state" },
@@ -458,6 +539,14 @@ export function createAgentFunction(
         const started = begun.started as ThreadRecord;
         const previousRun = begun.previousRun ?? undefined;
 
+        if (onLedger() && data.fresh) {
+          traceWarning(
+            logger,
+            "thread.fresh",
+            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+          );
+        }
+
         recorder.observe({
           usage: started.usage,
           restarts: started.restarts ?? 0,
@@ -477,6 +566,13 @@ export function createAgentFunction(
           narrowLimits(
             config.limits,
             narrowInherited(started.inherited, passed),
+            {
+              appId: client.id,
+              ...(config.discovery && {
+                agents: config.discovery.agents,
+                tools: config.discovery.tools,
+              }),
+            },
           ),
           { ...started.usage },
           started.budget,
@@ -525,7 +621,7 @@ export function createAgentFunction(
           ...ownEvents.map((name) => {
             return {
               event: name,
-              if: `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(data.thread)}`,
+              if: ownInboxFilter(name, ref, data.thread),
             };
           }),
           ...triggers
@@ -540,6 +636,16 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
+          // A thread in a group hears of each new member. It is an inbox
+          // source of its own: the event never starts a run.
+          ...(groupOf(data.thread) === undefined
+            ? []
+            : [
+                {
+                  event: agentGroupJoined.name,
+                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
+                },
+              ]),
           ...inboxSources.flatMap((source) => {
             const missing = missingThreadFilter(source, config.thread);
 
@@ -636,7 +742,19 @@ export function createAgentFunction(
           )) ?? [],
         );
 
-        const { opened, closeAll } = await openRunSandboxes({
+        // A lend is signed for its parent run and this thread, and has no
+        // clock: it lasts as long as the parent's run, whose end cancels this
+        // one. The thread's record decides whether this run may use it (the
+        // first run of the start message, or a recovery's resend); any other
+        // message gets none, and its model is told the lent tools are gone.
+        const lent =
+          claim && lendIsOpen(claim, started.lent, runId)
+            ? claim.machines
+            : undefined;
+        const lentEnded =
+          !lent && started.lent ? started.lent.tools : undefined;
+
+        const { opened, closeAll, toolsOnly } = await openRunSandboxes({
           skills: runSkills,
           config,
           client,
@@ -649,6 +767,7 @@ export function createAgentFunction(
           logger,
           defer,
           cleanup,
+          lent,
         });
 
         const agentScore = createAgentScore(client);
@@ -670,12 +789,79 @@ export function createAgentFunction(
 
         bridge.handleOpened = openedByHandle;
 
+        // The starter keeps what each child it started owes in its own thread
+        // state: a report that comes is noted, and a child's `agent/finished`
+        // is given the `missing` that follows from the two. Nothing the
+        // sender wrote in `missing` is believed.
+        const owes = owesRecord(kv.thread, ref);
+        const owesChecked = new WeakSet<object>();
+        const noteOwed = async (raw: UntypedInboxMessage) => {
+          const as = resentAs(raw);
+
+          try {
+            // What a child owes, noted while sandbox code started it.
+            await flushOwes(instance, owes);
+
+            if (isReportEvent(as.name)) {
+              const child = (as as { from?: { key?: unknown } }).from?.key;
+
+              if (typeof child === "string") {
+                await owes.received(
+                  child,
+                  as.name.slice(reportEventPrefix.length),
+                );
+              }
+
+              return;
+            }
+
+            if (as.name === agentFinishedEvent && !owesChecked.has(raw)) {
+              owesChecked.add(raw);
+
+              const data = as.data as {
+                from?: { key?: unknown };
+                missing?: string[];
+              };
+              const missing =
+                typeof data.from?.key === "string"
+                  ? await owes.missing(data.from.key)
+                  : undefined;
+
+              if (missing === undefined) {
+                delete data.missing;
+              } else {
+                data.missing = missing;
+              }
+            }
+          } catch (error) {
+            logger.warn(
+              { error: error instanceof Error ? error.message : String(error) },
+              "could not read or write what a started child owes",
+            );
+          }
+        };
+
         const { inbox, view } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
           async function problemOf(raw, started) {
-            if (ownEvents.includes(raw.name)) {
+            // A report is taken only from a thread this thread started: the
+            // `from` of an event is whatever its sender wrote, and the key's
+            // tag is what proves it. Anything else is dropped.
+            const senderProblem = reportSenderProblem(
+              client,
+              data.thread,
+              resentAs(raw as UntypedInboxMessage),
+            );
+
+            if (senderProblem) {
+              return senderProblem;
+            }
+
+            await noteOwed(raw as UntypedInboxMessage);
+
+            if (isOwnEvent(raw.name)) {
               return undefined;
             }
 
@@ -736,9 +922,22 @@ export function createAgentFunction(
           },
         );
 
+        // What the run owes: the reports its start event carries, and which of
+        // them it has sent.
+        const reportSpec = reportsOf({ name: event.name, data: event.data });
+        const grantSig = reportsSigOf({ name: event.name, data: event.data });
+        const reportBook: ReportBook | undefined = reportSpec && {
+          spec: reportSpec,
+          sent: new Set(),
+          ...(grantSig !== undefined && { grantSig }),
+        };
+
+        bridge.reports = reportBook;
+
         // The loop reads this when it runs, inside the agent, whichever way
         // the app made it.
         bridge.wiring = createLoopWiring({
+          reports: reportBook,
           config,
           inbox,
           view,
@@ -748,12 +947,14 @@ export function createAgentFunction(
           threadKey: thread.key,
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
+          // History is remembered unless `remember` is off.
           remember:
-            store !== undefined &&
             (await fields.get(
               "remember",
               config.remember as RunField<boolean | undefined>,
             )) !== false,
+          agent: ref,
+          recordInStep: !onLedger(),
         });
 
         const listenTools = createBodyInboxTools({
@@ -766,10 +967,17 @@ export function createAgentFunction(
         });
 
         const handlerLoop = await createHandlerLoop({
+          client,
+          logger,
           config,
           fields,
           skills: runSkills,
-          listenTools: { ...sandboxTools(opened), ...listenTools },
+          lentEnded,
+          listenTools: {
+            ...sandboxTools(opened),
+            ...listenTools,
+            ...(reportBook && { report: reportTool(reportBook) }),
+          },
         });
 
         let result: unknown;
@@ -788,7 +996,34 @@ export function createAgentFunction(
             // Slot: me. The handle to the run's own thread.
             me: {
               key: data.thread,
-              message: async (content) => {
+              ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
+              report: async (
+                type: AgentReport,
+                reported: Record<string, unknown>,
+              ) => {
+                if (!reportBook) {
+                  throw new Error(
+                    "This run was not started with reports, so it has none to send.",
+                  );
+                }
+
+                await sendReport(
+                  reportBook,
+                  type.type,
+                  reported,
+                  async (value) => {
+                    const checked =
+                      await type.schema["~standard"].validate(value);
+
+                    return checked.issues
+                      ?.map((issue) => {
+                        return issue.message;
+                      })
+                      .join("; ");
+                  },
+                );
+              },
+              message: async (content: Json) => {
                 const execution = getAsyncCtxSync()?.execution;
 
                 if (!execution) {
@@ -812,9 +1047,14 @@ export function createAgentFunction(
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: Object.fromEntries(
-              Object.entries(opened).map(([name, lazy]) => {
-                return [name, agentSandbox(lazy)];
-              }),
+              Object.entries(opened)
+                .filter(([name]) => {
+                  // A machine lent for its tools only is not the code's.
+                  return !toolsOnly.has(name);
+                })
+                .map(([name, lazy]) => {
+                  return [name, agentSandbox(lazy)];
+                }),
             ) as unknown as AgentBodyContext["sandboxes"],
 
             // Slot: inbox. The thread's messages and how the run before this
@@ -835,11 +1075,14 @@ export function createAgentFunction(
 
           // The last thread work is done: end the subscription before the
           // sandboxes close. A second close, from the scope exit, does nothing.
+          await flushOwes(instance, owes).catch(() => undefined);
           await inbox.close();
+          await closeThreadCopies(instance);
 
           // A score the handler did not await is still written.
           await agentScore.flush();
         } catch (error) {
+          await closeThreadCopies(instance).catch(() => undefined);
           await closeAll();
 
           throw error;
@@ -908,8 +1151,11 @@ export function createAgentFunction(
             return trigger.event === internalEvents.FunctionInvoked;
           }),
           ...(options?.thread !== undefined && { thread: options.thread }),
+          ...(options?.group !== undefined && { group: options.group }),
+          ...(options?.reports && { reports: options.reports }),
         },
         input,
+        options,
       );
     },
   };

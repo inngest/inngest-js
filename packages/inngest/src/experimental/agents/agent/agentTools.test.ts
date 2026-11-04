@@ -16,6 +16,7 @@ import {
   agentToolsFor,
   sandboxAgentTools,
 } from "./agentTools.ts";
+import { relatedKey } from "./relations.ts";
 import { run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });
@@ -286,8 +287,20 @@ describe("reply", () => {
   });
 });
 
+/**
+ * The key of a thread the caller (thread "c1") started.
+ */
+const childOf = (name: string, group?: string) => {
+  return relatedKey(
+    client,
+    `${plain.card.address}:${name}.0`,
+    { key: "c1", address: `${testClientId}/caller` },
+    group,
+  );
+};
+
 describe("message_agent", () => {
-  const thread = `${plain.card.address}:run-1.0`;
+  const thread = childOf("run-1");
 
   test("sends an agent/message to the thread and returns at once", async () => {
     const { results } = await callTools([
@@ -316,10 +329,100 @@ describe("message_agent", () => {
     expect(JSON.stringify(results[0])).toMatch(/start_agent/);
     expect(sent).toEqual([]);
   });
+
+  test("refuses a guessed or forged key, a stranger's key and a key from another starter", async () => {
+    const forged = `${plain.card.address}:run-1.0.${"0".repeat(16)}`;
+    const strangers = relatedKey(client, `${plain.card.address}:run-1.0`, {
+      key: "someone-else",
+      address: plain.card.address,
+    });
+    const { results } = await callTools(
+      [`${plain.card.address}:sdk`, forged, strangers].map((thread) => {
+        return { tool: "message_agent", input: { thread, content: "hi" } };
+      }),
+    );
+
+    expect(results).toHaveLength(3);
+    for (const result of results) {
+      expect(JSON.stringify(result)).toMatch(/can't reach thread/);
+    }
+    expect(sent).toEqual([]);
+  });
+
+  test("reaches the parent that started the caller, and a member of its group", async () => {
+    const boss = `${plain.card.address}:boss.0`;
+    const callerKey = relatedKey(
+      client,
+      `${testClientId}/caller:c-run.0`,
+      { key: boss, address: plain.card.address },
+      "crew",
+    );
+    const peer = relatedKey(
+      client,
+      `${plain.card.address}:p-run.0`,
+      { key: boss, address: plain.card.address },
+      "crew",
+    );
+    const otherGroup = relatedKey(
+      client,
+      `${plain.card.address}:o-run.0`,
+      { key: boss, address: plain.card.address },
+      "ops",
+    );
+
+    // The caller runs on `callerKey`, started by "boss" in group "crew".
+    const results: unknown[] = [];
+    const tools = agentToolSet({ functions: live });
+    const caller = agents.agent({ id: "caller" }, async () => {
+      for (const thread of [boss, peer, otherGroup]) {
+        const resolved = await resolveToolCall(
+          tools,
+          {
+            op: "call",
+            id: 1,
+            tool: "message_agent",
+            args: [],
+            kwargs: { thread, content: "hi" },
+          },
+          "{}",
+        );
+
+        try {
+          results.push(
+            resolved.error !== undefined
+              ? { error: resolved.error }
+              : await resolved.invoke({
+                  signal: new AbortController().signal,
+                  idempotencyKey: "k",
+                }),
+          );
+        } catch (error) {
+          results.push({ error: String(error) });
+        }
+      }
+    });
+
+    await run(caller.fn, {
+      event: {
+        name: "agent/message",
+        data: {
+          agent: `${testClientId}/caller`,
+          thread: callerKey,
+          content: "go",
+        },
+      },
+    });
+
+    // The boss started the caller, so the caller reaches it; another group is
+    // refused.
+    // The body replays after each send, so the last three are the final pass.
+    expect(results.slice(-3, -1)).toEqual([{ ok: true }, { ok: true }]);
+    expect(JSON.stringify(results[results.length - 1])).toMatch(/can't reach/);
+  });
 });
 
 describe("ask_agent", () => {
-  const thread = `${plain.card.address}:run-1.0`;
+  const thread = childOf("run-1");
 
   test("returns the question's id at once and sends the question and its timeout", async () => {
     const { results } = await callTools([
@@ -366,13 +469,16 @@ describe("stop_agent", () => {
   test("cancels the live run of the thread", async () => {
     const cancel = cancelled();
 
-    await threadKv(client, "t-live").set(threadRecordKey, {
-      runId: "run-1",
-      status: "running",
-    });
+    await threadKv(client, childOf("t-live")).set(
+      threadRecordKey(plain.card.address),
+      {
+        runId: "run-1",
+        status: "running",
+      },
+    );
 
     const { results } = await callTools([
-      { tool: "stop_agent", input: { thread: "t-live" } },
+      { tool: "stop_agent", input: { thread: childOf("t-live") } },
     ]);
 
     expect(results).toEqual([{ ok: true }]);
@@ -382,14 +488,17 @@ describe("stop_agent", () => {
   test("does nothing for a thread with no live run", async () => {
     const cancel = cancelled();
 
-    await threadKv(client, "t-idle").set(threadRecordKey, {
-      runId: "run-2",
-      status: "idle",
-    });
+    await threadKv(client, childOf("t-idle")).set(
+      threadRecordKey(plain.card.address),
+      {
+        runId: "run-2",
+        status: "idle",
+      },
+    );
 
     const { results } = await callTools([
-      { tool: "stop_agent", input: { thread: "t-idle" } },
-      { tool: "stop_agent", input: { thread: "t-never" } },
+      { tool: "stop_agent", input: { thread: childOf("t-idle") } },
+      { tool: "stop_agent", input: { thread: childOf("t-never") } },
     ]);
 
     expect(results).toEqual([{ ok: true }, { ok: true }]);

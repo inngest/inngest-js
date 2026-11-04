@@ -15,9 +15,12 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import * as z4 from "zod/v4";
+import type { AgentCardConfig } from "../../experimental/agents/discovery/discovery.ts";
 import { toolScore } from "../../experimental/agents/loop/scores.ts";
 import { internalEvents } from "../../helpers/consts.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
+import type { Logger } from "../../middleware/logger.ts";
+import type { Context } from "../../types.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
@@ -107,7 +110,7 @@ export interface SandboxToolContext<TSandbox = Sandbox> {
  */
 export type JsonSchemaObject = { type: "object"; [key: string]: unknown };
 
-type ToolInput = StandardSchemaV1 | JsonSchemaObject;
+export type ToolInput = StandardSchemaV1 | JsonSchemaObject;
 
 const isStandardSchema = (input: ToolInput): input is StandardSchemaV1 => {
   return "~standard" in input;
@@ -392,6 +395,155 @@ export interface WaitingToolDefinition<
 }
 
 /**
+ * EXPERIMENTAL: What a shared tool's `run` receives besides its input: the
+ * function context of the run that hosts it, so it has the usual step tools.
+ */
+export type SharedToolContext = Pick<
+  Context.Any,
+  "step" | "runId" | "event" | "attempt"
+> & { logger: Logger };
+
+/**
+ * EXPERIMENTAL: What `tool.shared()` takes.
+ */
+export interface SharedToolDefinition<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1 | undefined,
+  TReturn = unknown,
+> {
+  /**
+   * The ID of the function that hosts the tool, and the second half of its
+   * address `"<app>/<id>"`.
+   */
+  id: string;
+
+  /**
+   * What the tool does. It is the card's description unless `card` sets one,
+   * and the description the model reads.
+   */
+  description?: string;
+
+  /**
+   * Any Standard Schema that describes an object. It becomes the schema of
+   * the hosted function's `invoke()` trigger, so callers in other apps are
+   * checked against it.
+   */
+  input: TInput;
+
+  /**
+   * Any Standard Schema. A result that doesn't match fails the call.
+   */
+  output?: TOutput;
+
+  /**
+   * What the tool's card says: `description`, `tags`, `share`, `owner`,
+   * `effects` and `speed`. The defaults are those of an agent's card.
+   */
+  card?: AgentCardConfig;
+
+  /**
+   * Marks the tool's results as text from outside, like `tool()`'s
+   * `untrusted`.
+   */
+  untrusted?: true | ((input: ToolInputOf<TInput>) => string);
+
+  /**
+   * What the tool's step is called in a trace. Default: the tool's name.
+   */
+  displayName?: string | ((input: ToolInputOf<TInput>) => string);
+
+  /**
+   * Runs in the hosting app, in a function of its own, with that app's
+   * secrets. Every call is one run of that function.
+   */
+  run: (
+    input: ToolInputOf<TInput>,
+    ctx: SharedToolContext,
+  ) => ToolRunReturn<TOutput, TReturn>;
+}
+
+/**
+ * EXPERIMENTAL: A tool made with `tool.shared()`: hosted by one app and
+ * callable from others. List it in `createAgents(client, { tools })` to host
+ * it. List it in an agent's `tools` to call it like any tool.
+ */
+export interface SharedTool<TInput = unknown, TOutput = unknown>
+  extends SandboxTool<TInput, TOutput> {
+  readonly kind: "inngest/shared-tool";
+  readonly id: string;
+  readonly card?: AgentCardConfig;
+
+  /**
+   * `"<app>/<id>"`, once an app hosts the tool. Reading it earlier throws.
+   * It lets the tool stand in `discovery.tools` like an imported agent.
+   */
+  readonly address: string;
+}
+
+/**
+ * Whether `entry` was made with `tool.shared()`.
+ */
+export const isSharedTool = (entry: unknown): entry is SharedTool => {
+  return (
+    typeof entry === "object" &&
+    entry !== null &&
+    (entry as { kind?: unknown }).kind === "inngest/shared-tool"
+  );
+};
+
+/**
+ * The app that hosts each shared tool, set when `createAgents(client, { tools })`
+ * lists it.
+ */
+const sharedHosts = new WeakMap<object, string>();
+
+/**
+ * Records that `appId` hosts `shared`.
+ */
+export const hostSharedTool = (shared: SharedTool, appId: string): void => {
+  sharedHosts.set(shared, appId);
+};
+
+/**
+ * The app that hosts `shared`, once `createAgents` has listed it.
+ */
+export const hostOfSharedTool = (shared: SharedTool): string | undefined => {
+  return sharedHosts.get(shared);
+};
+
+/**
+ * A tool that calls the function `functionId` of app `appId` as a durable step
+ * and gives back its result. A shared tool supplies its description, schema
+ * and labels; a discovered tool has only what its card says.
+ */
+export const invokeHostedTool = (options: {
+  appId: string;
+  functionId: string;
+  description?: string;
+  input?: ToolInput;
+  untrusted?: SandboxTool["untrusted"];
+  displayName?: SandboxTool["displayName"];
+}): SandboxTool => {
+  const target = new InngestFunctionReference({
+    appId: options.appId,
+    functionId: options.functionId,
+  });
+
+  return {
+    group: true,
+    ...(options.description !== undefined && {
+      description: options.description,
+    }),
+    input: options.input ?? z4.record(z4.string(), z4.unknown()),
+    ...(options.untrusted && { untrusted: options.untrusted }),
+    ...(options.displayName && { displayName: options.displayName }),
+    run: (data: Record<string, unknown>) => {
+      return step.invoke("invoke", { function: target, data });
+    },
+  } as SandboxTool;
+};
+
+/**
  * EXPERIMENTAL: `tool.step()` declares a tool that sandbox code can call. It
  * runs its body as one durable step.
  *
@@ -421,6 +573,71 @@ const toolMethods = {
     definition: ToolDefinition<TInput, TOutput, TReturn>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
     return definition;
+  },
+
+  /**
+   * EXPERIMENTAL: A tool one app hosts and other apps' agents discover and
+   * call, so an app can post to X or charge a card without knowing how.
+   * List it in `createAgents(client, { tools })`: `agents.functions()` then
+   * serves it as a function with an `invoke()` trigger built from `input`,
+   * and its card is announced with the agents' cards (kind `"tool"`, address
+   * `"<app>/<id>"`). Each call is a run of that function in the hosting app,
+   * where its secrets are.
+   *
+   * Listed in an agent's `tools`, it is called like any tool: the call
+   * invokes the hosted function as a durable step and returns the result in
+   * the same turn. Other apps' agents get it through `discovery.tools`.
+   *
+   * @example
+   * ```ts
+   * export const postToX = tool.shared({
+   *   id: "post-to-x",
+   *   input: z.object({ text: z.string() }),
+   *   card: { description: "Posts to X as Acme", tags: ["social"], share: "team", effects: "write" },
+   *   run: async ({ text }, { step }) => {
+   *     return await step.run("post", () => x.post(text));
+   *   },
+   * });
+   *
+   * createAgents(inngest, { tools: [postToX] });
+   * ```
+   */
+  shared: <
+    TInput extends StandardSchemaV1,
+    TOutput extends StandardSchemaV1 | undefined = undefined,
+    TReturn = unknown,
+  >(
+    definition: SharedToolDefinition<TInput, TOutput, TReturn>,
+  ): SharedTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
+    if (!definition.id || definition.id.includes("/")) {
+      throw new SandboxValidationError(
+        `Shared tool id "${definition.id}" must be a non-empty function ID without "/"`,
+      );
+    }
+
+    const made = { ...definition, kind: "inngest/shared-tool" as const };
+
+    // Like an agent's `address`: it names the tool in `discovery.tools`.
+    // It exists once an app hosts the tool.
+    Object.defineProperty(made, "address", {
+      enumerable: false,
+      get: () => {
+        const appId = sharedHosts.get(made);
+
+        if (!appId) {
+          throw new SandboxValidationError(
+            `The shared tool "${definition.id}" has no address yet: list it in createAgents(client, { tools }) in its app first, or name another app's tool by its "app/id" address`,
+          );
+        }
+
+        return `${appId}/${definition.id}`;
+      },
+    });
+
+    return Object.freeze(made) as unknown as SharedTool<
+      ToolCallInput<TInput>,
+      ToolCallResult<TOutput, TReturn>
+    >;
   },
 
   /**
@@ -650,6 +867,25 @@ const toTool = (entry: SandboxToolEntry): SandboxTool => {
     return { run: entry };
   }
 
+  if (isSharedTool(entry)) {
+    const appId = sharedHosts.get(entry);
+
+    if (!appId) {
+      throw new SandboxValidationError(
+        `The shared tool "${entry.id}" is not hosted by any app in this process: list it in createAgents(client, { tools }) in its app, or reach it from another app with discovery.tools`,
+      );
+    }
+
+    return invokeHostedTool({
+      appId,
+      functionId: entry.id,
+      description: entry.description ?? entry.card?.description,
+      input: entry.input,
+      untrusted: entry.untrusted,
+      displayName: entry.displayName,
+    });
+  }
+
   return entry instanceof InngestFunction ||
     entry instanceof InngestFunctionReference
     ? functionTool(entry)
@@ -685,6 +921,7 @@ export const bindSandbox = (
     entry instanceof McpServer ||
     entry instanceof InngestFunction ||
     entry instanceof InngestFunctionReference ||
+    isSharedTool(entry) ||
     isInternalTool(entry) ||
     typeof (entry as SandboxTool).run !== "function"
   ) {

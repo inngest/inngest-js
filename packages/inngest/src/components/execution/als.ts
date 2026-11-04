@@ -1,6 +1,7 @@
 import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.ts";
-import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
+import type { ReportBook } from "../../experimental/agents/inbox/reports.ts";
 import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
+import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
@@ -33,6 +34,11 @@ export interface AgentBridge {
    * and waits for the children it started.
    */
   handleOpened?: boolean;
+
+  /**
+   * The typed reports the run was started with and the types it has sent.
+   */
+  reports?: ReportBook;
 }
 
 export interface AsyncContext {

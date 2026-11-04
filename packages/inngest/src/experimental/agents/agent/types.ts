@@ -4,6 +4,7 @@
  * the messages of its inbox and the agent function it makes.
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { GetFunctionInput, Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -36,6 +37,7 @@ import type {
   AgentMessageData,
   AgentQuestionData,
 } from "../inbox/events.ts";
+import type { AgentReport, AgentReportRoute } from "../inbox/reports.ts";
 import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
 import type { AgentPrice } from "../loop/cost.ts";
@@ -47,6 +49,7 @@ import type {
   AgentUserContent,
   ModelValue,
 } from "../loop/loop.ts";
+import type { AgentScoreFn } from "../loop/scores.ts";
 import type {
   AgentSandbox,
   AgentSandboxWithRepo,
@@ -61,9 +64,9 @@ import type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 import type { AgentToolSet } from "./agentTools.ts";
+import type { LendOptions } from "./lending.ts";
 import type { AgentBudget, AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
-import type { AgentScoreFn } from "../loop/scores.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
 import type { StartedThreadPromise } from "./startThread.ts";
@@ -215,7 +218,7 @@ export interface AgentFunctionConfig<
 
   /**
    * What the agent publishes about itself for discovery: `description`,
-   * `share` (`"private"` by default, only agents of its own app; `"team"`, the
+   * `tags`, `share` (`"private"` by default, only agents of its own app; `"team"`, the
    * whole environment), `owner`, `effects` (`"read"` or `"write"`, default
    * `"write"`) and `speed`. An agent without a `card` still publishes its
    * address, private.
@@ -227,7 +230,8 @@ export interface AgentFunctionConfig<
    * `describe_agent` and the tools that start or reach other agents).
    * `false` removes them, and the agent's own card is still published.
    * `{ prepare }` fills part of the input of a call to another agent from the
-   * host, in the run.
+   * host, in the run. `{ agents, tools }` filter what the model can see and
+   * may start; agents it starts never see more than it was allowed.
    */
   discovery?: AgentDiscovery;
 
@@ -304,11 +308,12 @@ export interface AgentFunctionConfig<
 
   /**
    * Whether the loop remembers the model's history across runs of a thread.
-   * Default `true` with a KV store, `false` without one; `false` starts each
-   * run clean. Setting `true` with no store is an error when the agent is
-   * defined. A value, or a function of `{ event, thread }` read once at the
-   * start of each run. Needs a store: `createAgents(client, { store })` or
-   * `INNGEST_EXPERIMENTAL_KV_URL`.
+   * Default `true`; `false` starts each run clean. A value, or a function of
+   * `{ event, thread }` read once at the start of each run. The history is
+   * kept under this agent's own key on the thread, so two agents sharing a
+   * thread key each remember their own. On the ledger KV store it counts
+   * against the 128 KB the thread holds: a history past it is not kept (a
+   * warning is logged and the run goes on).
    */
   remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
 
@@ -362,9 +367,9 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * What this agent may start: `depth` (default 1, so it may start
-   * sub-agents and they may not) and `mayCall`. Sub-agents inherit them
-   * narrowed.
+   * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 1,
+   * so it may start sub-agents and they may not). The lowest `depth` in the
+   * chain wins. What the model may start is set by `discovery.agents`.
    */
   limits?: AgentLimits;
 
@@ -374,9 +379,10 @@ export interface AgentFunctionConfig<
    * the thread's first run starts. The loop always enforces it, ending with
    * `end: "budget"` before its next model call once it is spent. The budget
    * is kept on the thread and belongs to this agent's own definition: it is
-   * never handed down by the agent that started the thread. Needs a KV store
-   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
-   * with none, setting it is an error when the agent is defined.
+   * never handed down by the agent that started the thread. The spend is
+   * kept in this agent's record on the thread, written once per model turn: on
+   * the ledger KV store that is one step for the run and two for the ledger
+   * per write.
    */
   budget?: RunField<
     AgentBudget,
@@ -401,9 +407,9 @@ export interface AgentFunctionConfig<
    * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
    * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
    * reported nor resumed, and a completed run is neither. How every run ended
-   * is kept either way: see `previousRun`. Needs a KV store
-   * (`createAgents(client, { store })` or `INNGEST_EXPERIMENTAL_KV_URL`);
-   * with none, `recovery: true` is an error when the agent is defined.
+   * is kept either way: see `previousRun`. The guard (the error
+   * fingerprints of the turn) is kept in this agent's own `lastRun` record on
+   * the thread, so two agents sharing a thread key never share a guard.
    */
   recovery?: boolean;
 }
@@ -451,6 +457,34 @@ export type ModelFieldOf<TEvent> =
   | ((context: RunFieldContext<TEvent>) => AgentModel | Promise<AgentModel>);
 
 /**
+ * EXPERIMENTAL: the options of `agent.start()`.
+ */
+export interface StartOptions extends LendOptions {
+  /**
+   * The key of the thread to start the run on. Default: a new thread with a
+   * generated key.
+   */
+  thread?: string;
+
+  /**
+   * The name of the group the new thread joins, together with every thread the
+   * same starter put in a group of that name. Needs a generated key, so it
+   * cannot be set with `thread`.
+   */
+  group?: string;
+
+  /**
+   * What the started agent owes back, as typed reports: each line is a
+   * report type with `.to(...threads)` (where it goes; with no thread, back
+   * to the starter) and `.required()` (it is owed: the agent's loop reminds
+   * its model before it may finish). The lines of one type merge. The
+   * routing travels in the start event, so the agent needs no prior
+   * knowledge of the types.
+   */
+  reports?: readonly AgentReportRoute[];
+}
+
+/**
  * The handle to a run's own thread.
  */
 export interface Me {
@@ -465,6 +499,22 @@ export interface Me {
    * replay sends it once.
    */
   message(content: Json): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: sends a typed report to the destinations the run's starter
+   * listed for its type (every one whose `if` passes). The data is checked
+   * against the report's schema first and a bad report throws, sending
+   * nothing. It throws when the run was not started with this report type.
+   * Counts toward a required report. Sent from a step, so a replay sends it
+   * once.
+   */
+  report<
+    TName extends string,
+    TSchema extends StandardSchemaV1<Record<string, unknown>>,
+  >(
+    type: AgentReport<TName, TSchema>,
+    data: StandardSchemaV1.InferInput<TSchema>,
+  ): Promise<void>;
 }
 
 /**
@@ -801,11 +851,20 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * an op nothing awaited), so `await` it there.
    * @param input What the agent is asked to do.
    * @param options `thread`: the key of the thread to start the run on.
+   * `group`: the name of a group the new thread joins. Threads that the same
+   * thread started with the same group name can `message_agent` and
+   * `ask_agent` each other, and the live ones hear of each join. A group needs
+   * a generated key, so it cannot be set with `thread`.
+   * `reports`: the typed reports the agent may send back, where each goes and
+   * which it owes, made with `report.to(...)` and `report.required()`. The
+   * agent's model gets a `report` tool, and its handler `me.report()`.
+   * `tools` and `sandboxes` lend the parent's sandbox tools and sandboxes to
+   * the child, which runs them as steps of its own run (same app only), and
+   * `attach` ties the child to this run: it is cancelled when this run ends
+   * for good. A child that borrows is attached by default; `attach: false`
+   * with lending is an error.
    */
-  start(
-    input: TInput,
-    options?: { thread?: string },
-  ): StartedThreadPromise<TOutput>;
+  start(input: TInput, options?: StartOptions): StartedThreadPromise<TOutput>;
 
   /**
    * The handle of a thread of this agent.

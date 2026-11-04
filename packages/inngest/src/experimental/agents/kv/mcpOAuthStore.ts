@@ -2,7 +2,8 @@
  * @module
  * EXPERIMENTAL: `kvOAuthStore()`, the default place `tool.mcp()` keeps OAuth
  * tokens: the agents KV's store (Redis, D1 or the one `createAgents` was
- * given), with every value encrypted at rest using AES-256-GCM.
+ * given), with every value encrypted at rest using AES-256-GCM. It needs a
+ * store adapter: with the ledger KV store it throws an error that says so.
  *
  * It talks to the store directly, not through `kv`, because it runs inside the
  * step that makes a tool call, where a nested step is not allowed.
@@ -11,6 +12,7 @@ import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { McpOAuthStore } from "../../../components/sandbox/mcpOAuth.ts";
 import { Secret } from "../../../components/sandbox/secret.ts";
+import { isLedgerKvStore } from "../threads/ledgerClient.ts";
 import { type KvStore, kvAdapterFor } from "./kv.ts";
 
 const hash = "inngest:mcp-oauth";
@@ -75,13 +77,22 @@ export const kvOAuthStore = (
   let key: Promise<CryptoKey> | undefined;
 
   const adapter = (): KvStore => {
-    return (
+    const found =
       options.adapter ??
       kvAdapterFor(
         options.app ??
           (getAsyncCtxSync()?.app as { id?: string } | undefined)?.id,
-      )
-    );
+      );
+
+    // Tokens are read and swapped inside the step of a tool call and from a
+    // callback route, which the ledger KV store cannot serve.
+    if (isLedgerKvStore(found)) {
+      throw new NonRetriableError(
+        "MCP OAuth tokens need a store adapter: the ledger KV store cannot be used inside a tool call or from a route. Configure one with createAgents(client, { store }), or pass your own store to tool.mcp({ auth: { oauth: { store } } }).",
+      );
+    }
+
+    return found;
   };
 
   const cryptoKey = (): Promise<CryptoKey> => {

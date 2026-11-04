@@ -265,6 +265,7 @@ const reservedEvents: string[] = [
   agentQuestionEvent,
   agentAnswerEvent,
   agentFinishedEvent,
+  "agent/report",
 ];
 
 /**
@@ -552,7 +553,8 @@ export function singletonKey(
         : `((${trigger.thread.present}) ? (${trigger.thread.source}) : ${freshKey})`;
 
     return `event.name == ${literal(trigger.event)} ? ${key} : ${rest}`;
-  }, "event.data.thread");
+    // A report carries its routing under the reserved key of its data.
+  }, `event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread`);
 }
 
 /**

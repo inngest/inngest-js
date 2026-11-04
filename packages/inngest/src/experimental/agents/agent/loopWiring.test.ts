@@ -25,6 +25,7 @@ const wiringFor = (questions: QuestionBook, events: AgentEvent[]) => {
     threadKey: "t1",
     questions,
     remember: true,
+    agent: "app/bot",
   });
 };
 
