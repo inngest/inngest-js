@@ -24,9 +24,16 @@ type ValidatorsByTrigger = Record<string, EventValidator>;
 type SchemasByTrigger = Record<string, AnySchema[]>;
 
 class EventValidationError extends NonRetriableError {
-  constructor(message: string) {
+  /**
+   * The validation issues as reported by the schema library, so callers can
+   * inspect the failing fields instead of parsing the message.
+   */
+  public readonly issues: readonly StandardSchemaV1.Issue[];
+
+  constructor(message: string, issues: readonly StandardSchemaV1.Issue[] = []) {
     super(message);
     this.name = this.constructor.name;
+    this.issues = issues;
   }
 
   static fromIssues(
@@ -34,21 +41,86 @@ class EventValidationError extends NonRetriableError {
   ): EventValidationError {
     if (issues.length === 0) {
       // Unreachable
-      return new EventValidationError("Validation failed");
+      return new EventValidationError("Validation failed", issues);
     }
 
-    const message = issues
-      .map((issue) => {
-        let path = "value";
-        if (issue.path && issue.path.length > 0) {
-          path = issue.path.join(".");
-        }
-        return `${path}: ${issue.message}`;
-      })
-      .join(", ");
+    const lines = new Set<string>();
+    for (const issue of issues) {
+      for (const line of formatIssue(issue)) {
+        lines.add(line);
+      }
+    }
 
-    return new EventValidationError(message);
+    return new EventValidationError([...lines].join(", "), issues);
   }
+}
+
+/**
+ * Formats one issue as `path: message`. A union issue only says "Invalid
+ * input" at the top level, which gives the user nothing to act on, so the
+ * issues of each union member are listed after it. Zod 4 keeps them in
+ * `errors` (one array per member) and Zod 3 in `unionErrors` (one error per
+ * member); other Standard Schema libraries have neither and get the plain
+ * line.
+ */
+function formatIssue(issue: StandardSchemaV1.Issue): string[] {
+  const path =
+    issue.path && issue.path.length > 0
+      ? issue.path.map(pathSegmentToString).join(".")
+      : "value";
+  const lines = [`${path}: ${issue.message}`];
+
+  for (const memberIssues of unionMemberIssues(issue)) {
+    for (const memberIssue of memberIssues) {
+      lines.push(...formatIssue(memberIssue));
+    }
+  }
+
+  return lines;
+}
+
+function pathSegmentToString(
+  segment: PropertyKey | StandardSchemaV1.PathSegment,
+): string {
+  if (typeof segment === "object" && segment !== null && "key" in segment) {
+    return String(segment.key);
+  }
+  return String(segment);
+}
+
+function unionMemberIssues(
+  issue: StandardSchemaV1.Issue,
+): readonly (readonly StandardSchemaV1.Issue[])[] {
+  const candidate = issue as {
+    errors?: unknown;
+    unionErrors?: unknown;
+  };
+
+  if (Array.isArray(candidate.errors)) {
+    return candidate.errors.filter(isIssueArray);
+  }
+
+  if (Array.isArray(candidate.unionErrors)) {
+    return candidate.unionErrors
+      .map((error: unknown) =>
+        error && typeof error === "object" && "issues" in error
+          ? (error as { issues: unknown }).issues
+          : undefined,
+      )
+      .filter(isIssueArray);
+  }
+
+  return [];
+}
+
+function isIssueArray(value: unknown): value is StandardSchemaV1.Issue[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        item && typeof item === "object" && typeof item.message === "string",
+    )
+  );
 }
 
 /**
