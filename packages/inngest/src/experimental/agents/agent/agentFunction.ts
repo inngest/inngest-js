@@ -36,6 +36,7 @@ import {
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
   hostOfSharedTool,
   isSharedTool,
@@ -45,6 +46,7 @@ import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import type { Logger } from "../../../middleware/logger.ts";
 import { compileKey, toAsync } from "../cel.ts";
+import { cardToolsOf } from "../discovery/cardTools.ts";
 import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
 import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
@@ -358,6 +360,11 @@ export function createAgentFunction(
    * output; an agent without a `model` ends with output `undefined`.
    */
   bodyOrDefault?: AgentBody<{ model: AgentModel }>,
+
+  /**
+   * Where the agent was defined.
+   */
+  source?: SourceLocation,
 ): AgentFunction {
   // Skills given as a value are known now: a clash is an error here, and
   // the card lists them.
@@ -1212,6 +1219,8 @@ export function createAgentFunction(
     card: cardOf(client.id, config.id, fn, {
       card: config.card,
       description: config.description,
+      ...(source && { source }),
+      tools: cardToolsOf(config),
       skills: definedSkills.map((skill) => {
         return { name: skill.name, description: skill.description };
       }),

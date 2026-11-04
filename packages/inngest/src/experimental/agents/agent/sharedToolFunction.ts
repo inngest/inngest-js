@@ -8,6 +8,7 @@
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { toolSourceOf } from "../../../components/sandbox/callSite.ts";
 import {
   isToolError,
   type SharedTool,
@@ -85,6 +86,7 @@ export const createSharedToolFunction = (
       card: shared.card,
       description: shared.description,
       kind: "tool",
+      ...(toolSourceOf(shared) && { source: toolSourceOf(shared) }),
     }),
   };
 };

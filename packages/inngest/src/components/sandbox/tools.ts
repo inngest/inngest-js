@@ -26,6 +26,7 @@ import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
 import { EventType } from "../triggers/triggers.ts";
+import { callSite, rememberToolSource } from "./callSite.ts";
 import { isInternalTool } from "./internalTool.ts";
 import { McpServer, mcp } from "./mcp.ts";
 import { type SandboxShim, shim } from "./shims.ts";
@@ -572,7 +573,7 @@ const toolMethods = {
   >(
     definition: ToolDefinition<TInput, TOutput, TReturn>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
-    return definition;
+    return rememberToolSource(definition, callSite());
   },
 
   /**
@@ -616,6 +617,7 @@ const toolMethods = {
     }
 
     const made = { ...definition, kind: "inngest/shared-tool" as const };
+    const source = callSite();
 
     // Like an agent's `address`: it names the tool in `discovery.tools`.
     // It exists once an app hosts the tool.
@@ -634,10 +636,13 @@ const toolMethods = {
       },
     });
 
-    return Object.freeze(made) as unknown as SharedTool<
-      ToolCallInput<TInput>,
-      ToolCallResult<TOutput, TReturn>
-    >;
+    return rememberToolSource(
+      Object.freeze(made) as unknown as SharedTool<
+        ToolCallInput<TInput>,
+        ToolCallResult<TOutput, TReturn>
+      >,
+      source,
+    );
   },
 
   /**
@@ -719,7 +724,7 @@ const toolMethods = {
   >(
     definition: WaitingToolDefinition<TInput, TOutput, TReturn, SandboxHandle>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
-    return { ...definition, group: true };
+    return rememberToolSource({ ...definition, group: true }, callSite());
   },
 };
 
@@ -774,7 +779,10 @@ const defineTool = <
     );
   }
 
-  return Object.freeze({ ...definition, kind: "inngest/tool" as const });
+  return rememberToolSource(
+    Object.freeze({ ...definition, kind: "inngest/tool" as const }),
+    callSite(),
+  );
 };
 
 /**

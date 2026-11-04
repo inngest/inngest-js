@@ -11,6 +11,7 @@
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
+import { callSite } from "../../../components/sandbox/callSite.ts";
 import {
   hostSharedTool,
   type SharedTool,
@@ -364,6 +365,7 @@ export const createAgents = <TClient extends Inngest.Any>(
         client,
         config as AgentFunctionConfig,
         body,
+        callSite(),
       );
 
       made.push(created);

@@ -17,6 +17,7 @@ import {
 } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
   type AgentTool,
   toJsonSchema,
@@ -27,6 +28,7 @@ import type { Context } from "../../../types.ts";
 import { limitStateOf } from "../agent/limits.ts";
 import { cardsAreSigned, signCards } from "../agent/relations.ts";
 import type { Json, JsonSchema } from "../json.ts";
+import type { AgentCardTool } from "./cardTools.ts";
 import { type AppFunctions, readAppFunctions } from "./functions.ts";
 import {
   type DiscoveryEntry,
@@ -34,6 +36,8 @@ import {
   matchesDiscovery,
 } from "./match.ts";
 
+export type { SourceLocation } from "../../../components/sandbox/callSite.ts";
+export type { AgentCardTool } from "./cardTools.ts";
 export type {
   DiscoveryEntry,
   DiscoveryFilter,
@@ -116,6 +120,22 @@ export interface AgentCard {
    * `list_agents` matches them like words of the description.
    */
   tags?: string[];
+
+  /**
+   * EXPERIMENTAL: where the agent was defined (the call to `agents.agent()`),
+   * for tools such as "open in VS Code". Only published in dev mode, and
+   * absent when the location could not be read. Not in `list_agents`.
+   */
+  source?: SourceLocation;
+
+  /**
+   * EXPERIMENTAL: the agent's tools by the names its model sees (`getOrg`,
+   * `lab_run`), with their descriptions, and in dev mode where each was
+   * defined. Lists the tools written in the definition: a `tools` or
+   * `sandboxes` that is a function of the run, and the tools of an MCP
+   * server, are not listed. Not in `list_agents`; `describe_agent` has it.
+   */
+  tools?: AgentCardTool[];
 
   /**
    * EXPERIMENTAL: set when the card says `explicit: true`. Filter entries in
@@ -344,6 +364,16 @@ export const cardOf = (
      * `"tool"` for the card of a shared tool.
      */
     kind?: "tool";
+
+    /**
+     * Where the agent or shared tool was defined.
+     */
+    source?: SourceLocation;
+
+    /**
+     * The agent's tools.
+     */
+    tools?: AgentCardTool[];
   },
 ): AgentCard => {
   const schema = triggerSchema(fn, true);
@@ -369,6 +399,8 @@ export const cardOf = (
     ...(input && { input }),
     ...(parts.skills && parts.skills.length > 0 && { skills: parts.skills }),
     ...(config.tags && config.tags.length > 0 && { tags: config.tags }),
+    ...(parts.source && { source: parts.source }),
+    ...(parts.tools && parts.tools.length > 0 && { tools: parts.tools }),
     ...(config.explicit === true && { explicit: true }),
     share: config.share ?? "private",
     ...(config.owner !== undefined && { owner: config.owner }),
@@ -378,12 +410,38 @@ export const cardOf = (
 };
 
 /**
+ * A card as it is published: `source` of the agent and of its tools only in
+ * dev mode.
+ */
+export const publishedCard = (
+  client: Inngest.Any,
+  card: AgentCard,
+): AgentCard => {
+  if (client.mode === "dev" || (!card.source && !card.tools)) {
+    return card;
+  }
+
+  const { source: _source, tools, ...rest } = card;
+
+  return {
+    ...rest,
+    ...(tools && {
+      tools: tools.map(({ source: _toolSource, ...tool }) => {
+        return tool;
+      }),
+    }),
+  };
+};
+
+/**
  * The event of an app's announcement: its own agents' cards.
  */
 export const announcement = (
   client: Inngest.Any,
 ): { name: string; data: AgentsRegisteredData } => {
-  const cards = cardsOf(client.id);
+  const cards = cardsOf(client.id).map((card) => {
+    return publishedCard(client, card);
+  });
 
   return {
     name: agentsRegisteredEvent,
@@ -607,7 +665,12 @@ export const currentCards = async (
     ];
   });
 
-  return [...cardsOf(client.id), ...others];
+  return [
+    ...cardsOf(client.id).map((card) => {
+      return publishedCard(client, card);
+    }),
+    ...others,
+  ];
 };
 
 /**

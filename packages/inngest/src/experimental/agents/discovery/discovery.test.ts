@@ -75,6 +75,9 @@ const card = (over: Partial<AgentCard> & { address: string }) => {
 describe("an agent's card", () => {
   test("is made from the card field and the invoke() trigger", () => {
     expect(docs.card).toEqual({
+      source: expect.objectContaining({
+        file: expect.stringMatching(/discovery\.test\.ts$/),
+      }),
       address: `${testClientId}/docs`,
       description: "Answers questions about the docs",
       input: expect.objectContaining({ required: ["question"] }),
@@ -88,6 +91,7 @@ describe("an agent's card", () => {
 
   test("without a card field it is private, write and has only its address", () => {
     expect(secret.card).toEqual({
+      source: expect.objectContaining({ line: expect.any(Number) }),
       address: `${testClientId}/secret`,
       share: "private",
       effects: "write",
