@@ -129,7 +129,7 @@ export const run = async (
   // the executor finds them for a batch read.
   const sinceOf = (op: OutgoingOp) => {
     const opts = op.opts as Record<string, unknown> | undefined;
-    const batch = opts?.batch as { room?: number } | undefined;
+    const batch = opts?.batch as { max?: number } | undefined;
     const seen = String(opts?.seen ?? "");
     const want = opts?.want as
       | { events?: string[]; src?: string[] }
@@ -151,7 +151,7 @@ export const run = async (
       );
     });
 
-    return batch?.room === undefined ? ids : ids.slice(0, batch.room);
+    return batch?.max === undefined ? ids : ids.slice(0, batch.max);
   };
 
   // A message arrives: it is saved, and the first read waiting for one is
@@ -173,9 +173,19 @@ export const run = async (
 
       if (ids.length > 0) {
         pendingWaits.delete(id);
-        answer(id, { seen: String(opts?.seen ?? ""), ids });
+        answer(id, { cut: ids.at(-1) ?? null });
 
         return;
+      }
+    }
+  };
+
+  // The messages that arrive at a step, while it runs or just after it.
+  const arriveAt = (stepName: string, when: "during" | "after") => {
+    for (const arrival of [...arrivals]) {
+      if (arrival.at === stepName && (arrival.when ?? "during") === when) {
+        arrivals.splice(arrivals.indexOf(arrival), 1);
+        arriveNow(arrival.event);
       }
     }
   };
@@ -249,12 +259,7 @@ export const run = async (
 
         // A message that arrives while the step runs is saved before the
         // step's result.
-        for (const arrival of arrivals) {
-          if (arrival.at === stepName && arrival.when !== "after") {
-            arrivals.splice(arrivals.indexOf(arrival), 1);
-            arriveNow(arrival.event);
-          }
-        }
+        arriveAt(stepName, "during");
 
         // A planned step runs in a request of its own, as the executor does.
         const ran = await runFnWithStack(fn, state, {
@@ -293,12 +298,7 @@ export const run = async (
           stack.push(op.id);
         }
 
-        for (const arrival of arrivals) {
-          if (arrival.at === stepName && arrival.when === "after") {
-            arrivals.splice(arrivals.indexOf(arrival), 1);
-            arriveNow(arrival.event);
-          }
-        }
+        arriveAt(stepName, "after");
 
         continue;
       }
@@ -343,15 +343,23 @@ export const run = async (
         }
 
         const batch = opts?.batch as
-          | { drain?: boolean; unread?: boolean; room?: number }
+          | { drain?: boolean; unread?: boolean; max?: number }
           | undefined;
-        const seen = String(opts?.seen ?? "");
 
         if (batch !== undefined) {
-          const found = sinceOf(op);
+          let found = sinceOf(op);
+
+          // The unread messages the SDK holds are before the step it saw, so
+          // with none since, the cut covers every message of the inbox.
+          if (found.length === 0 && batch.unread) {
+            found = sinceOf({
+              ...op,
+              opts: { ...opts, seen: "", batch: { ...batch, max: undefined } },
+            } as OutgoingOp);
+          }
 
           if (batch.drain || batch.unread || found.length > 0) {
-            answer(op.id, { seen, ids: found });
+            answer(op.id, { cut: found.at(-1) ?? null });
             pendingWaits.delete(op.id);
             continue;
           }
@@ -371,8 +379,16 @@ export const run = async (
         continue;
       }
 
+      // A step that ran in this request, with nothing beside it to plan. A
+      // message that arrives while it runs is saved before its result.
+      const ranHere = op.op === StepOpCode.StepRun && !(op.id in state);
+
       if (op.op === StepOpCode.StepRun) {
         options.onStep?.(op);
+      }
+
+      if (ranHere) {
+        arriveAt(op.userland?.id ?? op.id, "during");
       }
 
       // A wait for an event ends unanswered, as it does when its timeout runs
@@ -419,6 +435,10 @@ export const run = async (
         [op.id]: { id: op.id, data: op.data, error: op.error },
       };
       stack.push(op.id);
+
+      if (ranHere) {
+        arriveAt(op.userland?.id ?? op.id, "after");
+      }
     }
 
     // Nothing happened this request: the run waits on reads. A message
