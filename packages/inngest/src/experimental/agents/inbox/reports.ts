@@ -333,7 +333,8 @@ export interface AgentReportRoute<
 
   /**
    * Whether the report is owed: the agent's loop reminds its model before it
-   * may finish.
+   * may finish. Default `false`. Set it for a report the work is not done
+   * without; leave progress notes optional.
    */
   required?: boolean;
 }

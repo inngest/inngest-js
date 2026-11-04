@@ -350,6 +350,11 @@ export interface ToolDefinition<
    * one paragraph. `context` is a fact about what having the tool means for
    * the agent: it goes in the agent's briefing, not in the description. A
    * tool with `output` also gets a `Returns:` line made from that schema.
+   *
+   * Write `use` for the situation that should make the model reach for the
+   * tool, and `avoid` for the tempting wrong use (often a neighbouring
+   * tool), instead of repeating `does`. Don't describe the result's shape in
+   * the text; give `output` a schema and the `Returns:` line says it.
    */
   description?: ToolDescription;
 
@@ -614,6 +619,17 @@ const toolMethods = {
    * Listed in an agent's `tools`, it is called like any tool: the call
    * invokes the hosted function as a durable step and returns the result in
    * the same turn. Other apps' agents get it through `discovery.tools`.
+   *
+   * Share a tool when one app owns a capability that others should reuse and
+   * the capability needs something only the owner has (a secret, an API
+   * client). Don't share a tool every app can write for itself, and don't
+   * share one only agents of the same app use: list it in their `tools`
+   * directly. Give it a card like an agent's: a `description` in parts, a few
+   * `tags` and an honest `effects`. To be found from another app it needs
+   * `share: "team"`, and since it is usually a write (`effects: "write"`), the
+   * calling agent must list it: an address in `discovery.tools`, or a filter
+   * such as `[{ tags: ["social"], effects: "write" }]`, because the default
+   * `discovery.tools` only shows read tools of other apps.
    *
    * @example
    * ```ts

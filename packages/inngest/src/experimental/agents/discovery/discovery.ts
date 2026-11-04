@@ -204,19 +204,49 @@ export type AgentCardDescription =
   | Pick<ToolDescriptionParts, "does" | "use" | "avoid">;
 
 /**
- * The `card` field of an agent's definition.
+ * The `card` field of an agent's definition: what the agent publishes about
+ * itself so other agents can find it, and who may.
+ *
+ * @example
+ * ```ts
+ * card: {
+ *   description: {
+ *     does: "Answers questions about the docs.",
+ *     use: "when the question is about how a product works",
+ *     avoid: "for account or billing questions",
+ *   },
+ *   tags: ["docs", "research"],
+ *   share: "team",
+ *   effects: "read",
+ * }
+ * ```
  */
 export interface AgentCardConfig {
   /**
    * What the agent does: a string, or `{ does, use?, avoid? }` (see
    * `AgentCardDescription`). The card stores and announces the rendered
    * string. Without it the card uses the function's own `description` option.
+   *
+   * A model choosing between agents reads this and little else, so write it
+   * for that choice. `does` says what the agent produces. `use` names the
+   * work it suits, as a clause that finishes "Use it ...". `avoid` names the
+   * tempting wrong job, as a clause that finishes "Don't use it ...". These
+   * follow the clause rules of a tool's `description`. The common mistake is
+   * a vague `does` ("Helps with docs") and no `avoid`, so a model sends the
+   * wrong work to the agent.
    */
   description?: AgentCardDescription;
 
   /**
-   * Free-form labels, such as `["sdk", "billing"]`. `list_agents` matches
-   * them like words of the description.
+   * Labels for discovery. Name the capability or role the agent has, in
+   * lower-case words that other agents will search for: `["research"]`,
+   * `["billing", "refunds"]`. `list_agents` matches a query against the tags
+   * like words of the description, and a `{ tags }` filter in
+   * `discovery.agents` needs the card to have every tag it lists, exactly as
+   * spelled. So keep a few, and spell them the same way on every agent of the
+   * environment: `"research"` on one agent and `"researcher"` on another will
+   * not match one filter. Tags for roles you filter on are better than tags
+   * that restate the agent's name.
    */
   tags?: string[];
 
@@ -224,26 +254,52 @@ export interface AgentCardConfig {
    * EXPERIMENTAL: when `true`, broad `discovery` filters (objects such as
    * `{ app: "platform" }`) never match this agent. Only an agent that imports
    * it, or names its exact address, can find or start it. Default `false`.
+   *
+   * Use it for agents that should only be reached on purpose: those that act
+   * on money, production systems or people's data. It hides the agent from
+   * `list_agents` for everyone else; to reach it anyway, import the agent into
+   * the caller's `discovery.agents` or list its `"app/name"` address there.
+   * `share` limits which apps may find the agent; `explicit` limits which
+   * kinds of entry may. Use both for the most sensitive agents.
    */
   explicit?: boolean;
 
   /**
-   * Who may find the agent. Default `"private"`.
+   * Who may find the agent. Default `"private"`: only agents of its own app.
+   * Choose `"team"` for an agent that other apps in the environment should be
+   * able to use, and then keep it narrow with `effects` and `explicit`. A
+   * `"private"` agent is invisible to other apps even when they name its
+   * address. This is not access control: code that imports the agent and
+   * calls `agent.start()` is not filtered.
    */
   share?: AgentShare;
 
   /**
-   * The team or person who owns the agent.
+   * The team or person who owns the agent, such as `"payments"`. Other agents
+   * can filter on it with `{ owner }` in `discovery.agents`, and a person
+   * reading the card knows whom to ask.
    */
   owner?: string;
 
   /**
    * What a call does: `"read"` or `"write"`. Default `"write"`.
+   *
+   * Choose `"read"` when a call only looks things up or computes an answer
+   * and changes nothing outside its own thread. Choose `"write"` when it can
+   * send, post, charge, delete or otherwise change the world. The default is
+   * the safe one: by default `discovery` shows an agent only the read agents
+   * of other apps (`[{ app: "self" }, { effects: "read" }]`), so an agent you
+   * leave at `"write"` is not found by other apps until they list it. Marking
+   * an agent `"read"` that does write is the mistake to avoid; it makes it
+   * discoverable to every app.
    */
   effects?: AgentEffects;
 
   /**
-   * How long a call takes.
+   * How long a call takes: `"seconds"` or `"minutes"`. It is published on the
+   * card for whoever reads it and changes nothing else. Say `"minutes"` for an
+   * agent that works through many steps or waits on people, and leave it out
+   * when the time varies too much to promise.
    */
   speed?: "seconds" | "minutes";
 }
@@ -283,11 +339,32 @@ export type AgentDiscoveryOptions = {
    * `[{ app: "self" }, { effects: "read" }]` (still subject to `share`).
    * A started agent never sees more than its starter allowed. Code that
    * calls `agent.start()` directly is not filtered.
+   *
+   * Narrow beats broad: list only what the agent has a reason to start. A
+   * long list costs the model attention and widens what a mistaken or
+   * manipulated call can reach. Filter by the roles you tagged
+   * (`{ tags: ["research"] }`), pin the few agents you know
+   * (an imported agent, or `"platform/triage"`), and leave out `explicit`
+   * agents unless you name them. An empty list matches nothing.
+   *
+   * @example
+   * ```ts
+   * discovery: {
+   *   // Any read-only agent tagged "research", in any app, and one exact agent.
+   *   agents: [
+   *     { tags: ["research"], effects: "read" },
+   *     "platform/triage",
+   *   ],
+   * }
+   * ```
    */
   agents?: DiscoveryEntry[];
 
   /**
-   * EXPERIMENTAL: the same filter for shared tools. Same default.
+   * EXPERIMENTAL: the same filter for shared tools (`tool.shared()`), which
+   * the model then calls like its own tools. Same default, and the same
+   * advice: name the few shared tools the agent needs, by address or by tag,
+   * as in `[{ tags: ["social"] }]` or `["acme/post-to-x"]`.
    */
   tools?: DiscoveryEntry[];
 };

@@ -332,7 +332,6 @@ const search = configurable((options: CommandToolOptions) => {
  *
  * export const work = sandbox({
  *   id: "work",
- *   cwd: "/work/app",
  *   tools: { run: run.with({ timeout: "10m" }), read },
  * });
  * ```
@@ -381,6 +380,25 @@ const run = configurable((options: RunToolOptions) => {
  * EXPERIMENTAL: `sandbox.tools.runCode`: runs a Python or TypeScript script in
  * the sandbox, whose code can call tools and wait durably. Give it tools with
  * `runCode.with({ tools })`.
+ *
+ * List it when the model should write a script that calls your host tools,
+ * loops over their results or waits, instead of making one model call per
+ * tool call. The tools you give it are hidden from the model's own tool list
+ * and are the only host tools the script can call, so give it the few the
+ * job needs. For single shell commands, list `run` instead.
+ *
+ * @example
+ * ```ts
+ * const getOrder = tool.step({
+ *   input: z.object({ id: z.string() }),
+ *   run: async ({ id }) => db.orders.find(id),
+ * });
+ *
+ * const reports = sandbox({
+ *   id: "reports",
+ *   tools: { runCode: sandbox.tools.runCode.with({ tools: { getOrder } }) },
+ * });
+ * ```
  */
 const runCode = configurable((options: RunCodeToolOptions) => {
   const { timeout = "5m" } = options;
@@ -498,15 +516,18 @@ const runCode = configurable((options: RunCodeToolOptions) => {
  * EXPERIMENTAL: The built-in tools of a sandbox, ready-made: `run`, `read`,
  * `edit`, `write`, `search` and `runCode`, plus `defaults`, the tools a sandbox with no
  * `tools` brings (`run`). List them in `sandbox({ tools })`; the model sees
- * them as `<sandbox key>_<tool key>`.
+ * them as `<sandbox key>_<tool key>`. A sandbox offers only the tools you
+ * list: `run` for shell commands, `read`, `edit`, `write` and `search` when
+ * the model works with files, and `runCode` when it writes scripts that call
+ * your host tools.
  *
  * @example
  * ```ts
  * const { run, read, edit } = sandbox.tools;
  *
+ * // An agent with `sandboxes: { work }` gets work_run, work_read and work_edit.
  * export const work = sandbox({
  *   id: "work",
- *   cwd: "/work",
  *   tools: { run, read, edit },
  * });
  * ```

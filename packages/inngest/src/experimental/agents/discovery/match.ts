@@ -11,6 +11,13 @@ import type { AgentCard } from "./discovery.ts";
 /**
  * A filter over card fields. Every field given must match; a list of filters
  * matches when any one does. It never matches a card with `explicit: true`.
+ * Give as many fields as you need to be sure of the match: a filter with
+ * `{ tags: ["research"], effects: "read" }` is narrower than either alone.
+ *
+ * @example
+ * ```ts
+ * discovery: { agents: [{ tags: ["research"] }, { app: "self", owner: "docs" }] }
+ * ```
  */
 export interface DiscoveryFilter {
   /**
@@ -20,7 +27,9 @@ export interface DiscoveryFilter {
   app?: string;
 
   /**
-   * EXPERIMENTAL: tags the card must all have.
+   * EXPERIMENTAL: tags the card must all have, spelled exactly as the card
+   * spells them. Agents choose their tags in `card.tags`, so agree on the
+   * words across agents.
    */
   tags?: string[];
 

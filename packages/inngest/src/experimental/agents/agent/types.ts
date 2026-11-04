@@ -222,7 +222,9 @@ export interface AgentFunctionConfig<
    * `tags`, `share` (`"private"` by default, only agents of its own app; `"team"`, the
    * whole environment), `owner`, `effects` (`"read"` or `"write"`, default
    * `"write"`) and `speed`. An agent without a `card` still publishes its
-   * address, private.
+   * address, private. See `AgentCardConfig` for how to choose each field;
+   * the ones that matter most are `description` (written for a model that
+   * is choosing an agent), `tags` and `effects`.
    */
   card?: AgentCardConfig;
 
@@ -237,6 +239,17 @@ export interface AgentFunctionConfig<
    * host, in the run. `{ agents, tools }` filter what the model can see and
    * may start; agents it starts never see more than it was allowed. Both
    * turn discovery on.
+   *
+   * Turn it on only for an agent whose job needs other agents, and scope it:
+   * `true` gives the defaults (its own app and read-only agents of other
+   * apps), and filters such as `{ agents: [{ tags: ["research"] }] }` give
+   * less. Each discovery tool is another tool for the model to weigh, so an
+   * agent that does one thing is better without it. See `DiscoveryFilter`.
+   *
+   * @example
+   * ```ts
+   * discovery: { agents: [{ tags: ["research"] }], tools: [] }
+   * ```
    */
   discovery?: AgentDiscovery;
 
@@ -252,6 +265,12 @@ export interface AgentFunctionConfig<
    * that much quiet. A later message starts a new run on the same thread. A
    * long `idle` keeps a run live across deploys, and every step it takes counts
    * toward the step limit.
+   *
+   * Choose it by how soon the next message is likely. Leave the default for
+   * work that is done when it has answered. Raise it (`"1h"`) for an agent in
+   * a conversation or one waiting on a person, so a reply finds the run still
+   * live and its context warm. Don't set days to be safe: a later message
+   * starts a new run on the same thread and the thread's history carries on.
    */
   idle?: RunField<
     DurationInput,
@@ -275,6 +294,20 @@ export interface AgentFunctionConfig<
    * The model's system prompt: a value, or a function of `{ event, thread }`
    * read once at the start of each run. The SDK adds its briefing after it
    * (see `briefing`).
+   *
+   * Write policy: what this agent is for, how it should behave, and how to
+   * judge the cases where tools and instructions don't decide. Don't explain
+   * the protocol. The briefing already tells the model how turns work, how
+   * to wait, how messages and reports work, who started the thread and what
+   * it owes, so repeating it risks the two disagreeing. Don't list tools
+   * either: each tool describes itself, and a tool's `context` is the place
+   * for a fact about having it.
+   *
+   * @example
+   * ```ts
+   * system:
+   *   "You triage support tickets for Acme. Be brief. Escalate anything that mentions a refund over $500 to a person instead of deciding it yourself.",
+   * ```
    */
   system?: RunField<string, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
 
@@ -290,9 +323,17 @@ export interface AgentFunctionConfig<
    * the SDK's briefing. A `loop` that is a whole loop of its own gets no
    * briefing; it can make one with `briefingFacts()` and `renderBriefing()`.
    *
+   * Leave the default unless you have a reason. The briefing is how the model
+   * learns the runtime, so dropping a section it relies on (for example the
+   * reports it owes) leaves it guessing. To add to it, return the default `text`
+   * with your own appended; returning one section alone drops the other. Put policy in `system`.
+   *
    * @example
    * ```ts
-   * briefing: ({ sections }) => sections.situation,
+   * // Keep the whole briefing and add a line.
+   * briefing: ({ text }) => `${text}\n\nThe team is offline until Monday.`,
+   * // Or drop the runtime part and keep only this run's situation.
+   * // briefing: ({ sections }) => sections.situation,
    * ```
    */
   briefing?: BriefingOption;
@@ -302,6 +343,30 @@ export interface AgentFunctionConfig<
    * tools, and the sandboxes', discovery and agent tools as they arrive): a
    * value, or a function of `{ event, thread }` read once at the start of each
    * run.
+   *
+   * Prefer small tools that each do one thing, with a `description` in parts
+   * (`does`, `use`, `avoid`) and, where the result has a shape, an `output`
+   * schema, so the model is told what it gets back. Several focused tools are
+   * easier for a model to choose between than one that takes a `mode` field.
+   * A fixed operation belongs here, as a tool that runs in your app with your
+   * secrets; code the model writes and runs belongs in a sandbox (see
+   * `sandbox()`). A tool shared across apps is made with `tool.shared()`.
+   *
+   * @example
+   * ```ts
+   * tools: {
+   *   getOrder: tool({
+   *     description: {
+   *       does: "Looks up an order by ID.",
+   *       use: "when the customer names an order",
+   *       avoid: "to search orders by customer",
+   *     },
+   *     input: z.object({ id: z.string() }),
+   *     output: z.object({ status: z.string(), total: z.number() }),
+   *     run: async ({ id }) => db.orders.find(id),
+   *   }),
+   * },
+   * ```
    */
   tools?: RunField<
     SandboxTools,
@@ -373,6 +438,11 @@ export interface AgentFunctionConfig<
    * `{ event, thread }` read once at the start of each run. The model sees
    * each skill's name and description, and opens a body with `open_skill`.
    * The files go to the first sandbox the model can use. Skills add no tools.
+   *
+   * Use a skill for know-how that is long or needed only sometimes (a house
+   * style, a runbook, how to use a CLI), so it stays out of `system` until
+   * the model opens it. Write each skill's description as a "use when" line,
+   * since that is all the model sees before it decides to open the body.
    */
   skills?: RunField<
     SkillSources,
@@ -388,6 +458,12 @@ export interface AgentFunctionConfig<
    * belongs to the thread: it is restored from the thread's newest snapshot
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
+   *
+   * A sandbox offers the model only the tools it lists in `sandbox({ tools })`,
+   * named `<key>_<tool>` here (`work_run`). Use `start: "eager"` when the first
+   * thing the run does needs it, so it exists, with its `setup` done, before the
+   * model's first call; leave it lazy otherwise. `.with({ model: false })` keeps a sandbox for your
+   * handler's code and gives the model no tools on it.
    */
   sandboxes?: SandboxesConfig<
     RunFieldContext<AgentTypesOf<TTypes>["event"]>,
@@ -398,6 +474,10 @@ export interface AgentFunctionConfig<
    * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 1,
    * so it may start sub-agents and they may not). The lowest `depth` in the
    * chain wins. What the model may start is set by `discovery.agents`.
+   *
+   * Keep `depth` at the default 1 unless sub-agents need to start their own;
+   * a deep chain multiplies cost and is hard to follow. To cap what a thread
+   * may spend, use `budget`, not `limits`.
    */
   limits?: AgentLimits;
 
@@ -511,6 +591,26 @@ export interface StartOptions extends LendOptions {
    * type merge. The routing travels in the signed grant of the start, so the
    * agent needs no prior knowledge of the types. `msg.is(milestone)` narrows
    * the report in the receiver's inbox, typed as the event type's data.
+   *
+   * Ask for typed reports when you want the agent to hand back results you
+   * will act on in code or in a CEL condition, or progress while it works,
+   * and not only a final text answer. Name each type for the fact it
+   * reports, in the past tense or as a noun (`milestone`, `ticket-triaged`),
+   * give it a schema with only the fields the receiver reads, and use one
+   * type per kind of fact. Mark a report `required` when the work is not done
+   * without it (a verdict, an artifact link) and leave it optional for
+   * progress notes. Don't make everything `required`: the loop keeps
+   * reminding the agent until each owed type is sent. A type name does not
+   * start with `agent/` or `inngest/`.
+   *
+   * @example
+   * ```ts
+   * const verdict = eventType("review-verdict", {
+   *   schema: z.object({ approve: z.boolean(), reason: z.string() }),
+   * });
+   *
+   * agent.start(input, { reports: [{ event: verdict, required: true }] });
+   * ```
    */
   reports?: readonly AgentReportLine[];
 }
@@ -537,7 +637,8 @@ export interface Me {
    * ordinary `eventType()`. The data is checked against its schema first and a
    * bad report throws, sending nothing. It throws when the run was not started
    * with this report type. Counts toward a required report. Sent from a step,
-   * so a replay sends it once.
+   * so a replay sends it once. See `StartOptions.reports` for when to ask for
+   * reports and how to name them.
    */
   report<TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined>(
     type: { readonly name: string; readonly schema: TSchema },

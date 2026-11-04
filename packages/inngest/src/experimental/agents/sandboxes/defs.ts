@@ -110,6 +110,38 @@ export interface SandboxDefinitionOptions<
    * whether the model or sandbox code calls it, and the SDK adds "Works on the
    * `<key>` sandbox." to its description. Without `tools` the sandbox brings
    * `sandbox.tools.defaults` (`run`).
+   *
+   * A sandbox offers only the tools you list, so list what the job needs and
+   * nothing more:
+   * - `run` for shell commands (installing, building, running tests);
+   * - `read`, `edit`, `write` and `search` when the model edits or looks
+   *   through files;
+   * - `runCode` when the model should write a script that calls your host
+   *   tools and loops over the results, which you give it with
+   *   `runCode.with({ tools })`. Those tools are hidden from the model and
+   *   reachable only through the script.
+   *
+   * Reach for a sandbox when the model writes and runs code, or does
+   * untrusted work. When the operation is fixed (look up an order, post a
+   * message), make it a host tool in the agent's `tools` instead: it runs in
+   * your app, with your secrets, and needs no machine.
+   *
+   * @example
+   * ```ts
+   * const { run, read, edit, runCode } = sandbox.tools;
+   *
+   * const lookup = tool.step({
+   *   input: z.object({ id: z.string() }),
+   *   run: async ({ id }) => db.customers.find(id),
+   * });
+   *
+   * export const analysis = sandbox({
+   *   id: "analysis",
+   *   // The model sees analysis_run, analysis_read, analysis_edit and
+   *   // analysis_runCode when the agent names this sandbox `analysis`.
+   *   tools: { run, read, edit, runCode: runCode.with({ tools: { lookup } }) },
+   * });
+   * ```
    */
   tools?: TTools;
 
@@ -398,6 +430,12 @@ const defineSandbox = (
  * EXPERIMENTAL: Defines a sandbox for agents: its image and the tools it
  * brings. Define it at module scope and name it in an agent's `sandboxes`. It
  * is created lazily, on the first call that needs it.
+ *
+ * Use a sandbox when the model writes and runs code or does untrusted work;
+ * use a host tool for a fixed operation. The sandbox brings only the tools
+ * you list in `tools`, and the model sees them as `<sandbox key>_<tool key>`,
+ * so a sandbox named `work` with `run` gives it `work_run`. See
+ * `SandboxDefinitionOptions.tools` for which to list.
  *
  * @example
  * ```ts
