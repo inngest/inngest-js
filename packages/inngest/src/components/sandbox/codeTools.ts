@@ -16,9 +16,11 @@ import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
 import {
   bindSandbox,
+  liveDescriptions,
   type SandboxTool,
   type SandboxTools,
   tool,
+  toolSignature,
 } from "./tools.ts";
 import {
   type SandboxDuration,
@@ -366,9 +368,11 @@ const runCode = configurable((options: RunCodeToolOptions) => {
     }
   }
 
-  return tool.group({
-    description:
-      'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.',
+  const description =
+    'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. `language` is "python" or "typescript" (there is no "javascript": write TypeScript). It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.';
+
+  const made = tool.group({
+    description,
     input: z.object({
       language: z.enum(["python", "typescript"]),
       code: z.string(),
@@ -440,6 +444,24 @@ const runCode = configurable((options: RunCodeToolOptions) => {
       }
     },
   });
+
+  // The tools code can call, read when the model's tool list is made: the
+  // agent's own (its bridge for this run) and the ones given with `with()`.
+  liveDescriptions.set(made, () => {
+    const given = {
+      ...getAsyncCtxSync()?.execution?.agentBridge?.codeTools,
+      ...options.tools,
+    };
+    const lines = Object.entries(given).map(([name, entry]) => {
+      return `- ${toolSignature(name, entry)}`;
+    });
+
+    return lines.length === 0
+      ? description
+      : `${description}\nTools your code can call (keyword arguments in Python):\n${lines.join("\n")}`;
+  });
+
+  return made;
 });
 
 /**

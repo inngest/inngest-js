@@ -940,8 +940,7 @@ export const bindSandbox = (
   const run = bound.run as (...args: unknown[]) => unknown;
   const note = name === undefined ? "" : `Works on the \`${name}\` sandbox.`;
   const description = [bound.description, note].filter(Boolean).join(" ");
-
-  return {
+  const result = {
     ...bound,
     ...(description && { description }),
     ...(bound.group === true && {
@@ -953,6 +952,93 @@ export const bindSandbox = (
       },
     }),
   } as SandboxTool;
+  const live = liveDescriptions.get(bound);
+
+  if (live) {
+    liveDescriptions.set(result, () => {
+      return [live(), note].filter(Boolean).join(" ");
+    });
+  }
+
+  return result;
+};
+
+/**
+ * Tools whose description is made when the model's tool list is, inside the
+ * run, because it names what that run gives them (`runCode` lists the tools
+ * its code can call). Internal.
+ */
+export const liveDescriptions = new WeakMap<object, () => string>();
+
+/**
+ * A JSON Schema type as a short TypeScript-like type.
+ */
+const shortType = (schema: unknown): string => {
+  const node = (schema ?? {}) as {
+    type?: unknown;
+    enum?: unknown[];
+    items?: unknown;
+    anyOf?: unknown[];
+  };
+
+  if (Array.isArray(node.enum)) {
+    return node.enum
+      .map((value) => {
+        return JSON.stringify(value);
+      })
+      .join(" | ");
+  }
+
+  if (Array.isArray(node.anyOf)) {
+    return node.anyOf.map(shortType).join(" | ");
+  }
+
+  if (node.type === "array") {
+    return `${shortType(node.items)}[]`;
+  }
+
+  if (node.type === "integer") {
+    return "number";
+  }
+
+  return typeof node.type === "string" ? node.type : "any";
+};
+
+/**
+ * One line that says how code calls a tool: `tools.name({ a: string, b?:
+ * number })` and the first sentence of its description. Internal.
+ * @param name The name the tool is listed under.
+ * @param entry The tool.
+ */
+export const toolSignature = (
+  name: string,
+  entry: SandboxToolEntry,
+): string => {
+  let args = "";
+  let about = "";
+
+  try {
+    const { description, input } = toTool(entry);
+    const schema = (
+      !input
+        ? { type: "object" }
+        : isStandardSchema(input)
+          ? toJsonSchema(name, input)
+          : input
+    ) as { properties?: Record<string, unknown>; required?: string[] };
+    const required = new Set(schema.required ?? []);
+
+    args = Object.entries(schema.properties ?? {})
+      .map(([key, value]) => {
+        return `${key}${required.has(key) ? "" : "?"}: ${shortType(value)}`;
+      })
+      .join(", ");
+    about = description?.split(/(?<=\.)\s/)[0] ?? "";
+  } catch {
+    // A tool whose schema can't be shown is still listed by name.
+  }
+
+  return `tools.${name}(${args ? `{ ${args} }` : ""})${about ? `: ${about}` : ""}`;
 };
 
 /**
@@ -1222,7 +1308,11 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
   validateTools(tools);
 
   return Object.entries(tools).map(([name, entry]) => {
-    const { description, input } = toTool(entry);
+    const { input } = toTool(entry);
+    const description =
+      (typeof entry === "object" && entry !== null
+        ? liveDescriptions.get(entry)?.()
+        : undefined) ?? toTool(entry).description;
 
     return {
       name,
