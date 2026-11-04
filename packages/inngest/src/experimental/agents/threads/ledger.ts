@@ -770,6 +770,17 @@ type Message = {
 };
 
 /**
+ * How often a ledger request that failed is tried again. The thread's state
+ * lives only in the ledger run, so a run that fails loses it, and the next
+ * read starts a ledger from empty state: a live run's record is gone until
+ * that run next touches thread state, and `thread.stop()` finds no run to
+ * cancel. A request fails when the app cannot be reached, which a deploy or a
+ * restart causes, so the ledger rides that out instead of failing at once.
+ * Its steps are memoized, so a retry repeats nothing.
+ */
+const ledgerRetries = 10;
+
+/**
  * The ledger of an app: a function per thread key whose run holds the thread's
  * state. Served with the app's agents.
  */
@@ -783,7 +794,7 @@ export const createLedgerFunctions = (
   const run = client.createFunction(
     {
       id: "agents-thread-ledger-run",
-      retries: 0,
+      retries: ledgerRetries,
       optimizeParallelism: false,
       triggers: [invoke(staticSchema<LedgerRunInput>())],
     },
@@ -1027,7 +1038,7 @@ export const createLedgerFunctions = (
   const ledger = client.createFunction(
     {
       id: "agents-thread-ledger",
-      retries: 0,
+      retries: ledgerRetries,
       triggers: [threadWrite.name, threadRead.name, runEnded.name].map(
         (event) => {
           // A ledger function belongs to one app and takes only its events.
