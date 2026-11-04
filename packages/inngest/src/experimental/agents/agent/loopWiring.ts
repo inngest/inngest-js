@@ -24,7 +24,7 @@ export const createLoopWiring = (options: {
   /**
    * The handler's own inbox.
    */
-  inbox: Pick<Reader<AgentEvent>, "drain">;
+  inbox: Pick<Reader<AgentEvent>, "drain" | "~fold">;
 
   /**
    * Reads an inbox the model opened with the agent's rules.
@@ -87,10 +87,12 @@ export const createLoopWiring = (options: {
   return {
     remember,
     agent,
-    async drain() {
+    async drain({ turn }) {
       // The handler's inbox first, then each inbox the model opened, in the
       // order it opened them. The run's trigger is the handler's to give.
-      const taken: AgentEvent[] = (await inbox.drain()).filter((event) => {
+      const taken: AgentEvent[] = (
+        await (inbox["~fold"]?.(turn) ?? inbox.drain())
+      ).filter((event) => {
         return !triggerId || event.id !== triggerId;
       });
 

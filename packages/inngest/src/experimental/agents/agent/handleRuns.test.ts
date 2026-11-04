@@ -147,9 +147,10 @@ describe("a model agent opened through a handle (L58)", () => {
       );
     });
 
-    // The run's first read, the loop's read before its one model call, and
-    // the single drain after the answer; nothing waits for more.
-    expect(drains).toHaveLength(3);
+    // The run's first read and the single drain after the answer; the loop's
+    // fold does not read again right after the batch it was given, and
+    // nothing waits for more.
+    expect(drains).toHaveLength(2);
     expect(ops.at(-1)?.op).toBe("close");
     expect(requests).toHaveLength(1);
     expect(output).toBe("answer 1");

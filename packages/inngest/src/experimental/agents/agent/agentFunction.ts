@@ -1134,11 +1134,12 @@ export function createAgentFunction(
             loop: handlerLoop,
           });
 
-          // The last thread work is done: end the subscription before the
-          // sandboxes close. A second close, from the scope exit, does nothing.
+          // The last thread work is done: end the inbox. The thread-state
+          // copies stay until the sandboxes have closed, since closing them
+          // touches thread state (a second close, from the scope exit, does
+          // nothing).
           await flushOwes(instance, owes).catch(() => undefined);
           await inbox.close();
-          await closeThreadCopies(instance);
 
           // A score the handler did not await is still written.
           await agentScore.flush();
@@ -1150,6 +1151,8 @@ export function createAgentFunction(
         }
 
         const rejected = await closeAll();
+
+        await closeThreadCopies(instance);
 
         // The body succeeded, so an eager sandbox nothing used that failed to
         // create is a warning, not a failed run.

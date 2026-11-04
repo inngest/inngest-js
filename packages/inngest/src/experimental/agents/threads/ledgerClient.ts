@@ -28,7 +28,10 @@
  * this module sends is signed, and every one it takes in must be.
  */
 
-import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import {
+  getAsyncCtxSync,
+  stepsIssued,
+} from "../../../components/execution/als.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import {
   type Inbox,
@@ -126,6 +129,15 @@ interface Copy {
   ledgerLast: number;
   resend: boolean;
   justLoaded: boolean;
+  /**
+   * How many steps the run's code had called when it last drained,
+   * `undefined` before the first drain.
+   */
+  drainedAt?: number;
+  /**
+   * Whether the copy wrote since it last drained.
+   */
+  dirty: boolean;
 
   /**
    * How many reads and resends this copy sent, which number their steps.
@@ -215,6 +227,7 @@ const copyOf = (
       ledgerLast: 0,
       resend: false,
       justLoaded: false,
+      dirty: false,
       reads: 0,
       resends: 0,
       seq: 0,
@@ -385,10 +398,24 @@ const takeMessages = (copy: Copy, messages: UntypedInboxMessage[]): void => {
  * Everything waiting in the copy's inboxes.
  */
 const drainAll = async (copy: Copy): Promise<UntypedInboxMessage[]> => {
-  return [
+  const taken = [
     ...(copy.sub ? await copy.sub.drain() : []),
     ...(copy.echo ? await copy.echo.drain() : []),
   ];
+
+  copy.dirty = false;
+  copy.drainedAt = lastStep();
+
+  return taken;
+};
+
+/**
+ * How many step tools the run's code has called. The count is the same at a
+ * point of the code on a replay, so skipping a drain by it is replay safe.
+ * With no step called since the last drain, nothing is looked for again.
+ */
+const lastStep = (): number | undefined => {
+  return stepsIssued();
 };
 
 /**
@@ -526,6 +553,13 @@ const load = async (copy: Copy): Promise<void> => {
   copy.sub = sub;
   await inboxOpenedPromise(sub);
   await fetchState(copy);
+
+  // The read subscription hears every write the echo does.
+  if (copy.echo) {
+    await copy.echo.close();
+    copy.echo = undefined;
+  }
+
   copy.ready = true;
   copy.justLoaded = true;
 };
@@ -566,8 +600,13 @@ const sync = async (copy: Copy): Promise<void> => {
     return;
   }
 
-  takeMessages(copy, await drainAll(copy));
-  prune(copy);
+  const last = lastStep();
+
+  if (last === undefined || last !== copy.drainedAt) {
+    takeMessages(copy, await drainAll(copy));
+    prune(copy);
+  }
+
   await settle(copy);
 };
 
@@ -609,12 +648,13 @@ const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
     ]) as unknown as Inbox;
     await inboxOpenedPromise(copy.echo);
   } else {
-    // A ledger run that took over since the last write says what it lacks.
-    takeMessages(copy, await drainAll(copy));
-    prune(copy);
+    // A write listens for nothing: a ledger run that took over since says what
+    // it lacks at the next read or when the run ends, which is when a drain
+    // pays.
     await settle(copy);
   }
 
+  copy.dirty = true;
   copy.seq += 1;
 
   const seq = copy.seq;
@@ -871,6 +911,13 @@ export const ledgerKvAdapter = (
  */
 export const closeThreadCopies = async (instance: object): Promise<void> => {
   for (const copy of copies.get(instance)?.values() ?? []) {
+    // The last writes may have met a handover: hear it before leaving.
+    if (copy.dirty && (copy.sub || copy.echo)) {
+      takeMessages(copy, await drainAll(copy));
+      prune(copy);
+      await settle(copy);
+    }
+
     if (copy.sub && !copy.sub.closed) {
       await copy.sub.close();
     }

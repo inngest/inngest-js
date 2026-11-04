@@ -5,6 +5,7 @@
  * records), and the filters that tie a source to the thread.
  */
 
+import { stepsIssued } from "../../../components/execution/als.ts";
 import type {
   BatchOptions,
   Inbox,
@@ -217,6 +218,13 @@ export interface Reader<TMessage>
     options: BatchOptions & ReadOptions,
   ): Promise<TMessage[] | null | undefined>;
   drain(options?: BatchOptions): Promise<TMessage[]>;
+
+  /**
+   * Internal: what a loop's fold takes before a model call. The first call
+   * after `batches()` handed out a batch takes nothing, since the batch was
+   * just read; the next turn's fold picks up what arrived since.
+   */
+  "~fold"?: (turn: number) => Promise<TMessage[]>;
   batches(
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined>;
@@ -444,6 +452,30 @@ export function threadInbox(
         : idle;
     };
 
+    // How many steps the run's code had called when this reader last read the
+    // source. A drain with no step since finds nothing new, so it is skipped.
+    // The count is the same on a replay, so the skip is too.
+    let readAt: number | undefined;
+    const noteRead = () => {
+      readAt = stepsIssued();
+    };
+    // Whether `batches()` handed out a batch the fold has not yet followed.
+    let batchGiven = false;
+    const drainSource = async (options?: BatchOptions) => {
+      const now = stepsIssued();
+
+      if (now !== undefined && now === readAt && options?.max === undefined) {
+        return [];
+      }
+
+      const raws = await source.drain(options);
+
+      batchGiven = false;
+      noteRead();
+
+      return raws;
+    };
+
     const reader: Reader<TOut> = {
       next: (async (options?: ReadOptions) => {
         if (main && delivered > 0) {
@@ -461,6 +493,10 @@ export function threadInbox(
           const raw =
             queued ??
             (options ? await source.next(options) : await source.next());
+
+          if (!queued) {
+            noteRead();
+          }
 
           if (raw === undefined) {
             return undefined;
@@ -511,11 +547,13 @@ export function threadInbox(
           let raws: UntypedInboxMessage[];
 
           if (queued.length > 0) {
-            raws = [...queued, ...(await source.drain(options))];
+            raws = [...queued, ...(await drainSource(options))];
           } else {
             const got = await source.nextBatch(
               options as BatchOptions & ReadOptions,
             );
+
+            noteRead();
 
             if (got === undefined) {
               return got;
@@ -587,6 +625,7 @@ export function threadInbox(
               return;
             }
 
+            batchGiven = true;
             yield batch;
             continue;
           }
@@ -595,11 +634,21 @@ export function threadInbox(
             return;
           }
 
+          batchGiven = true;
           yield batch;
         }
       },
+      async "~fold"(turn: number) {
+        if (turn === 1 && batchGiven && first.length === 0) {
+          batchGiven = false;
+
+          return [];
+        }
+
+        return reader.drain();
+      },
       async drain(options?: BatchOptions) {
-        const raws = [...first.splice(0), ...(await source.drain(options))];
+        const raws = [...first.splice(0), ...(await drainSource(options))];
         const taken = (await keep(raws)).map(present);
 
         await noteFolded(taken, main);

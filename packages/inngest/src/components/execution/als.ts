@@ -192,6 +192,27 @@ export interface AsyncContext {
   };
 }
 
+const issuedSteps = new WeakMap<object, number>();
+
+/**
+ * Notes that the code of `instance` called a step tool. Replays run the same
+ * code, so the count at any point of the code is the same on every request.
+ */
+export const countStepIssued = (instance: object): void => {
+  issuedSteps.set(instance, (issuedSteps.get(instance) ?? 0) + 1);
+};
+
+/**
+ * How many step tools the code of this execution has called so far, or
+ * `undefined` outside one. Unlike what the state holds, it is the same at a
+ * given point of the code on a first run and on a replay.
+ */
+export const stepsIssued = (): number | undefined => {
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  return instance ? (issuedSteps.get(instance) ?? 0) : undefined;
+};
+
 /**
  * A local-only symbol used as a key in global state to store the async local
  * storage instance.

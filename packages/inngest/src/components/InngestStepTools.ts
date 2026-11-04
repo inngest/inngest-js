@@ -35,7 +35,11 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
+import {
+  countStepIssued,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { firstReport, hashedStepId } from "./execution/inboxState.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
@@ -409,6 +413,11 @@ export const createStepTools = <
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
       const alsCtx = getAsyncCtxSync()?.execution;
       const prefix = alsCtx?.stepIdPrefix;
+
+      if (alsCtx?.instance) {
+        countStepIssued(alsCtx.instance);
+      }
+
       const op = matchOp(
         prefix
           ? {
