@@ -32,6 +32,7 @@ import {
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { IsAny } from "../../../helpers/types.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import { taggedKeyAddress } from "../agent/relations.ts";
 import type { Json } from "../json.ts";
 import { kv } from "../kv/kv.ts";
 import { historyRecordKey } from "../threads/thread.ts";
@@ -107,7 +108,10 @@ const textOfJson = (value: unknown): string => {
  *
  * - `agent/message`: `Message from <address> (thread <key>): <content>` (from a
  *   plain function: `Message from function <id> (thread <key>): <content>`).
- *   A message with no sender is its text alone.
+ *   A message with no sender is its text alone, except in the thread of an
+ *   agent another agent started: there it reads `Message from outside the
+ *   agent team (not from an agent): <content>`, so the model does not take it
+ *   for its starter's.
  * - `agent/question`: the question, its id, who asked, and a pointer to the
  *   `reply` tool.
  * - `agent/finished`: which agent and thread finished, the outcome, then the
@@ -146,8 +150,16 @@ export const formatEvent = (
       return JSON.stringify({ event: event.name, data: event.data });
     }
 
-    return from
-      ? `Message from ${whoOf(from)}${where}: ${textOfJson(content)}`
+    if (from) {
+      return `Message from ${whoOf(from)}${where}: ${textOfJson(content)}`;
+    }
+
+    // An agent that another agent started works for it, so a message from
+    // anyone else says so. A thread a start made has a tagged key.
+    const thread = getAsyncCtxSync()?.execution?.agent?.thread;
+
+    return thread !== undefined && taggedKeyAddress(thread) !== undefined
+      ? `Message from outside the agent team (not from an agent): ${textOfJson(content)}`
       : textOfJson(content);
   }
 

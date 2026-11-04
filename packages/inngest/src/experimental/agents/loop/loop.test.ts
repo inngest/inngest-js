@@ -4,6 +4,10 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
+import {
+  getAsyncLocalStorage,
+  runWithAsyncCtx,
+} from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -1850,6 +1854,39 @@ describe("formatEvent", () => {
         },
       }),
     ).toBe("Message from function cron (thread k): hi");
+  });
+
+  test("a message with no sender says it is from outside the agent team, in a thread another agent started", async () => {
+    await getAsyncLocalStorage();
+
+    const inThread = (thread: string) => {
+      return runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { agent: { thread, ref: "app/optimizer" } } as never,
+        },
+        () => {
+          return formatEvent({
+            name: "agent/message",
+            data: { content: "try the cache first" },
+          });
+        },
+      );
+    };
+
+    // A key a start made: the child's address, then the run, a count, the
+    // tag and the starter.
+    expect(inThread("app/optimizer:run1.0.0123456789abcdef.app%2Flead")).toBe(
+      "Message from outside the agent team (not from an agent): try the cache first",
+    );
+
+    // A thread nobody started, such as a person's chat: the text alone.
+    expect(inThread("chat-42")).toBe("try the cache first");
+
+    // Outside a run: the text alone.
+    expect(
+      formatEvent({ name: "agent/message", data: { content: "hi" } }),
+    ).toBe("hi");
   });
 
   test("words a question with its id, who asked and a pointer to the reply tool", () => {
