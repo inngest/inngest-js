@@ -89,8 +89,14 @@ export type InboxToolsOf<T extends readonly EventTypeWithAnySchema<string>[]> =
   [T[number]] extends [never]
     ? Record<never, never>
     : {
-        inbox_listen: SandboxTool<InboxListenInput<T[number]["name"]>, unknown>;
-        inbox_close: SandboxTool<{ as: string }, unknown>;
+        inbox_listen: SandboxTool<
+          InboxListenInput<T[number]["name"]>,
+          { listening: string; source: string }
+        >;
+        inbox_close: SandboxTool<
+          { as: string },
+          { closed: string; unread?: { source: string; content: string }[] }
+        >;
       };
 
 const maxListeners = 5;
@@ -266,6 +272,7 @@ export const createListenTools = <
           .optional(),
         as: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/),
       }),
+      output: z.object({ listening: z.string(), source: z.string() }),
       run: async ({ source: name, match, as }) => {
         const source = sources.get(name);
 
@@ -327,6 +334,12 @@ export const createListenTools = <
         use: "once you no longer need what it hears",
       },
       input: z.object({ as: z.string() }),
+      output: z.object({
+        closed: z.string(),
+        unread: z
+          .array(z.object({ source: z.string(), content: z.string() }))
+          .optional(),
+      }),
       run: async ({ as }) => {
         const found = opened.get(as);
 

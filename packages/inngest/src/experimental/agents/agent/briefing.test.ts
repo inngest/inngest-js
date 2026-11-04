@@ -7,8 +7,10 @@
  */
 import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
-import { tool } from "../../../components/sandbox/tools.ts";
+import { tool, toolDefinitions } from "../../../components/sandbox/tools.ts";
+import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import { createListenTools } from "../inbox/inboxTools.ts";
 import { reportTool } from "../inbox/reports.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import type { AgentModelRequest, AgentModelResponse } from "../loop/loop.ts";
@@ -268,6 +270,34 @@ describe("tool context", () => {
         return entry.tool;
       }),
     ).toEqual(["list_agents", "start_agent", "message_agent", "chat"]);
+  });
+
+  test("inbox_listen carries one, and inbox tools show their result shape", () => {
+    const listen = createListenTools(
+      {
+        open: async () => {
+          return { close: async () => [] };
+        },
+      },
+      [eventType("ci/status", { schema: z.object({ n: z.number() }) })],
+    );
+
+    expect(toolFacts(listen).contexts).toEqual([
+      {
+        tool: "inbox_listen",
+        context:
+          "Events that reach an inbox you opened with `inbox_listen` are handed to you as messages at your next turn, until you close it or the run ends.",
+      },
+    ]);
+
+    const shown = toolDefinitions(listen);
+
+    expect(shown[0]?.description).toMatch(
+      /Returns: \{ listening: string, source: string \}$/,
+    );
+    expect(shown[1]?.description).toMatch(
+      /Returns: \{ closed: string, unread\?: \{ source: string, content: string \}\[\] \}$/,
+    );
   });
 });
 

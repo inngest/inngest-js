@@ -1236,11 +1236,17 @@ const lazySandbox = (
           use: "once your commits on the branch are ready to share",
           avoid:
             "with `git push` in a command: the sandbox has no credentials, and this tool pushes for you",
+          context: `The \`${name}\` sandbox has no git credentials: commits reach its remote only through \`${name}${toolNamespaceSeparator}push\`.`,
         },
         input: z.object({
           branch: z
             .string()
             .describe("The local branch to push, such as agent/fix-typo"),
+        }),
+        output: z.object({
+          branch: z.string(),
+          sha: z.string(),
+          notes: z.array(z.string()),
         }),
         run: async ({ branch }) => {
           try {

@@ -12,6 +12,7 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { renderToolDescription } from "../../../components/sandbox/toolDescription.ts";
 import {
   issuesMessage,
   type ToolJsonDefinition,
@@ -551,8 +552,10 @@ const outputToolName = "respond";
 const outputTool = (schema: StandardSchemaV1): ToolJsonDefinition => {
   return {
     name: outputToolName,
-    description:
-      "Give your reply by calling this tool once. Its input is the reply.",
+    description: renderToolDescription({
+      does: "Gives your reply: its input is the reply.",
+      use: "once, as your whole reply",
+    }),
     input_schema: toJsonSchema(outputToolName, schema),
   };
 };

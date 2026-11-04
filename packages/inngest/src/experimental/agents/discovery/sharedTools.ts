@@ -167,7 +167,9 @@ export const sharedToolsFor = async (
     tools[name] = invokeHostedTool({
       appId: hostApp,
       functionId,
-      description: `${card.description ?? functionId} (shared tool ${card.address})`,
+      description: {
+        does: `${card.description ?? functionId} (shared tool ${card.address})`,
+      },
       ...(card.input && { input: card.input as JsonSchemaObject }),
     });
   }

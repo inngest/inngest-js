@@ -428,6 +428,7 @@ export class McpServer {
           description: {
             does: `Connects the user's ${name} account, so its tools become available.`,
             use: `when the user wants something from ${name}`,
+            context: `The user's ${name} account isn't connected yet, so its tools appear only once \`${name}_connect\` has connected it.`,
           },
           input: { type: "object", properties: {} },
           run: (_input: Record<string, unknown>, ctx) => {
