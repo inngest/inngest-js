@@ -448,6 +448,7 @@ export type {
 export type {
   AgentCard,
   AgentCardConfig,
+  AgentCardDescription,
   AgentCardSkill,
   AgentDiscovery,
   AgentDiscoveryOptions,

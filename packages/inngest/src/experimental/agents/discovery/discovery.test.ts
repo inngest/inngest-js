@@ -70,11 +70,82 @@ const described = agents.agent(
   },
 );
 
+// A card whose description is in parts.
+const triage = agents.agent(
+  {
+    id: "triage",
+    card: {
+      description: {
+        does: "Routes a support request to the right team",
+        use: "when you do not know who should handle a request",
+        avoid: "for requests you can answer yourself",
+      },
+      share: "team",
+      effects: "read",
+    },
+    triggers: invoke(z.object({ request: z.string() })),
+  },
+  async () => {
+    return { team: "billing" };
+  },
+);
+
+const triageText =
+  "Routes a support request to the right team. Use it when you do not know who should handle a request. Don't use it for requests you can answer yourself.";
+
 const card = (over: Partial<AgentCard> & { address: string }) => {
   return { share: "private", effects: "write", ...over } as AgentCard;
 };
 
 describe("an agent's card", () => {
+  test("a string description is kept as written", () => {
+    expect(docs.card.description).toBe("Answers questions about the docs");
+  });
+
+  test("a description in parts is announced as the rendered string", () => {
+    expect(triage.card.description).toBe(triageText);
+
+    const announced = announcement(client).data.cards.find((c) => {
+      return c.address === `${testClientId}/triage`;
+    });
+
+    expect(announced?.description).toBe(triageText);
+    expect(announced).not.toHaveProperty("context");
+  });
+
+  test("parts render like a tool's: clauses get their lead, whole sentences stay", () => {
+    const made = agents.agent(
+      {
+        id: "phrased",
+        card: {
+          description: {
+            does: "Does a thing",
+            use: "Only for things",
+            avoid: "Never for other things",
+          },
+        },
+      },
+      async () => {
+        return {};
+      },
+    );
+
+    expect(made.card.description).toBe(
+      "Does a thing. Only for things. Never for other things.",
+    );
+  });
+
+  test("a description with only `does` is one sentence", () => {
+    const made = agents.agent(
+      { id: "plain-parts", card: { description: { does: "Does it" } } },
+      async () => {
+        return {};
+      },
+    );
+
+    expect(made.card.description).toBe("Does it.");
+  });
+
   test("is made from the card field and the invoke() trigger", () => {
     expect(docs.card).toEqual({
       source: expect.objectContaining({
@@ -550,6 +621,38 @@ describe("the tools", () => {
     expect(listed(result, 1)).not.toContain(`${testClientId}/docs`);
     expect((result as { data: unknown[] }).data[2]).toMatchObject({
       address: `${testClientId}/docs`,
+    });
+  });
+
+  test("list_agents and describe_agent show a description in parts as one paragraph", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        {
+          name: "describe_agent",
+          input: { address: `${testClientId}/triage` },
+        },
+      ],
+      {
+        functions: async () => {
+          return new Map([["triage", { paused: false, archived: false }]]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+    const data = (result as { data: unknown[] }).data;
+    const listedAgents = (
+      data[0] as { agents: { address: string; description?: string }[] }
+    ).agents;
+
+    expect(
+      listedAgents.find((a) => {
+        return a.address === `${testClientId}/triage`;
+      })?.description,
+    ).toBe(triageText);
+    expect(data[1]).toMatchObject({
+      address: `${testClientId}/triage`,
+      description: triageText,
     });
   });
 

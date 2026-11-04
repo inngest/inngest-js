@@ -21,6 +21,10 @@ import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
+  type ToolDescriptionParts,
+  toolDescriptionText,
+} from "../../../components/sandbox/toolDescription.ts";
+import {
   type AgentTool,
   toJsonSchema,
   tool,
@@ -175,14 +179,40 @@ export interface AgentCard {
 }
 
 /**
+ * EXPERIMENTAL: What a card's `description` takes: a string, used as it is, or
+ * the parts a tool's description has (`does`, `use`, `avoid`), which render
+ * into one paragraph the same way: "Does X. Use it when Y. Don't use it when
+ * Z." A model choosing an agent in `list_agents` reads that paragraph. There
+ * is no `returns`: what an agent gives back is described by its typed reports
+ * and schemas.
+ *
+ * @example
+ * ```ts
+ * card: {
+ *   description: {
+ *     does: "Answers questions about the docs.",
+ *     use: "when the question is about how a product works",
+ *     avoid: "for account or billing questions",
+ *   },
+ * }
+ * ```
+ * reads as "Answers questions about the docs. Use it when the question is
+ * about how a product works. Don't use it for account or billing questions."
+ */
+export type AgentCardDescription =
+  | string
+  | Pick<ToolDescriptionParts, "does" | "use" | "avoid">;
+
+/**
  * The `card` field of an agent's definition.
  */
 export interface AgentCardConfig {
   /**
-   * What the agent does. Without it the card uses the function's own
-   * `description` option.
+   * What the agent does: a string, or `{ does, use?, avoid? }` (see
+   * `AgentCardDescription`). The card stores and announces the rendered
+   * string. Without it the card uses the function's own `description` option.
    */
-  description?: string;
+  description?: AgentCardDescription;
 
   /**
    * Free-form labels, such as `["sdk", "billing"]`. `list_agents` matches
@@ -412,7 +442,17 @@ export const cardOf = (
   }
 
   const config = parts.card ?? {};
-  const description = config.description ?? parts.description;
+  const given = config.description;
+  const description =
+    given === undefined
+      ? parts.description
+      : typeof given === "string"
+        ? given
+        : toolDescriptionText({
+            does: given.does,
+            use: given.use,
+            avoid: given.avoid,
+          });
 
   return {
     ...(parts.kind === "tool" && { kind: "tool" as const }),
