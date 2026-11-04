@@ -928,7 +928,7 @@ export const discoveryToolSet = (
       id: "list_agents",
       group: true,
       description:
-        "Lists the agents you can start or message, with what each does. Pass a few words in `query` to narrow the list. `refresh` reads again instead of reusing this run's list.",
+        "Lists the agents you can start or message, with what each does, not counting yourself. Pass a few words in `query` to narrow the list. `refresh` reads again instead of reusing this run's list.",
       input: z.object({
         query: z.string().optional().describe("Words to look for."),
         refresh: z
@@ -945,12 +945,16 @@ export const discoveryToolSet = (
       }) => {
         const { appId } = callerOf();
         const cards = await discoverCards(refresh === true, options);
+        // The agent that calls is never one of the agents it can find. Naming
+        // its own address in `describe_agent` or `start_agent` still works.
+        const self = getAsyncCtxSync()?.execution?.agent?.ref;
 
         return {
           agents: matchCards(
             cards.filter((card) => {
               return (
                 card.kind !== "tool" &&
+                card.address !== self &&
                 mayUse(card, appId) &&
                 allowsAgent(card, options)
               );

@@ -4,6 +4,7 @@
  * it, how the current cards are read back and the two discovery tools.
  */
 import { z } from "zod/v4";
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
@@ -442,12 +443,18 @@ describe("the tools", () => {
   const runTools = async (
     calls: { name: string; input: Record<string, unknown> }[],
     options: Parameters<typeof discoveryToolSet>[0] = {},
+    self?: string, // the address of the agent that calls, if it is one
   ) => {
     const tools = discoveryToolSet(options);
     const fn = client.createFunction(
       { id: "caller", triggers: [{ event: "foo" }] },
       async () => {
         const out: unknown[] = [];
+        const execution = getAsyncCtxSync()?.execution;
+
+        if (self && execution) {
+          execution.agent = { thread: "t1", ref: self };
+        }
 
         for (const { name, input } of calls) {
           const resolved = await resolveToolCall(
@@ -520,6 +527,29 @@ describe("the tools", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  test("list_agents never lists the agent that calls, which can still describe itself", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        { name: "list_agents", input: { query: "docs" } },
+        { name: "describe_agent", input: { address: `${testClientId}/docs` } },
+      ],
+      {
+        functions: async () => {
+          return new Map([["docs", { paused: false, archived: false }]]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+
+    expect(listed(result)).not.toContain(`${testClientId}/docs`);
+    expect(listed(result)).toContain("other-app/docs");
+    expect(listed(result, 1)).not.toContain(`${testClientId}/docs`);
+    expect((result as { data: unknown[] }).data[2]).toMatchObject({
+      address: `${testClientId}/docs`,
+    });
   });
 
   test("list_agents lists same-app agents and shared ones of other apps", async () => {
