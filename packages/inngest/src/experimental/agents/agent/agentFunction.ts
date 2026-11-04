@@ -133,7 +133,7 @@ import {
   schemaProblem,
   singletonKey,
 } from "../threads/threadTrigger.ts";
-import { agentToolsFor } from "./agentTools.ts";
+import { agentToolsFor, codeAgentTools } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
@@ -460,7 +460,10 @@ export function createAgentFunction(
       }
       // Read by `agent.loop()` once the body's inbox exists.
       const questions = new QuestionBook();
-      const bridge: AgentBridge = { questions };
+      const bridge: AgentBridge = {
+        questions,
+        codeTools: codeAgentTools(config.discovery),
+      };
 
       // Run-scoped KV keys end with the run, whichever way it ends, and the
       // thread is marked idle.

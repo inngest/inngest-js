@@ -14,6 +14,7 @@ import { createAgents } from "./agents.ts";
 import {
   agentToolSet,
   agentToolsFor,
+  codeAgentTools,
   sandboxAgentTools,
 } from "./agentTools.ts";
 import {
@@ -610,6 +611,21 @@ describe("stop_agent", () => {
 });
 
 describe("the tools sandbox code gets", () => {
+  test("runCode gets discovery and the agent tools with no setup, none with discovery: false", () => {
+    expect(Object.keys(codeAgentTools(undefined)).sort()).toEqual([
+      "agent_result",
+      "describe_agent",
+      "list_agents",
+      "message_agent",
+      "start_agent",
+      "stop_agent",
+    ]);
+    expect(codeAgentTools(undefined).agent_result).toMatchObject({
+      waits: true,
+    });
+    expect(codeAgentTools(false)).toEqual({});
+  });
+
   test("hold start_agent and stop_agent plus the waiting agent_result", () => {
     const tools = sandboxAgentTools();
 

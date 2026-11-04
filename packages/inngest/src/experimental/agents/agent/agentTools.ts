@@ -621,3 +621,27 @@ export const sandboxAgentTools = (
     }),
   };
 };
+
+/**
+ * The agent tools sandbox code gets in a `runCode` the agent lists, with no
+ * setup: `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
+ * `stop_agent` and the waiting `agent_result`. They follow the agent's
+ * `discovery` as the model's do, and `false` gives none. `ask_agent` and
+ * `reply` are the model's alone: their answers arrive as messages, and code
+ * has no inbox.
+ */
+export const codeAgentTools = (
+  discovery: AgentDiscovery | undefined,
+): Record<string, SandboxTool> => {
+  if (discovery === false) {
+    return {};
+  }
+
+  const options = { discovery };
+
+  return {
+    ...discoveryToolSet(options),
+    message_agent: agentToolSet(options).message_agent,
+    ...sandboxAgentTools(options),
+  } as Record<string, SandboxTool>;
+};

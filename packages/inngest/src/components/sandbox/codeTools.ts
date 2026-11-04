@@ -9,6 +9,7 @@
  */
 import hashjs from "hash.js";
 import { z } from "zod/v4";
+import { getAsyncCtxSync } from "../execution/als.ts";
 import { step } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { editText } from "./editText.ts";
@@ -383,9 +384,15 @@ const runCode = configurable((options: RunCodeToolOptions) => {
         payloadPath: `${base}.json`,
         resultPath,
       });
+      // An agent's own tools (discovery and the agent tools) come first, so a
+      // tool you list under the same name wins.
       const scripted: SandboxTools = {};
+      const given = {
+        ...getAsyncCtxSync()?.execution?.agentBridge?.codeTools,
+        ...options.tools,
+      };
 
-      for (const [name, entry] of Object.entries(options.tools ?? {})) {
+      for (const [name, entry] of Object.entries(given)) {
         scripted[name] = bindSandbox(entry, sandbox);
       }
 

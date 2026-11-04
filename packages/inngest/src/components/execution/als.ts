@@ -5,6 +5,7 @@ import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 import type { InboxRead } from "./inboxState.ts";
 
@@ -39,6 +40,13 @@ export interface AgentBridge {
    * The typed reports the run was started with and the types it has sent.
    */
   reports?: ReportBook;
+
+  /**
+   * The agent tools sandbox code can call as `tools.<name>(...)` in a `runCode`
+   * the run lists: discovery, `start_agent`, `message_agent`, `stop_agent` and
+   * `agent_result`. Empty when the agent has `discovery: false`.
+   */
+  codeTools?: SandboxTools;
 }
 
 export interface AsyncContext {
