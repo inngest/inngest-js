@@ -4,8 +4,9 @@
  * thread with a generated key and sends the input to it as a message, then
  * returns at once. `result()` waits for the run that takes it, through an
  * inbox opened before the send.
- * The sender rides in `data.from` with the chain depth, the callee's thread
- * and the limits it inherits.
+ * The sender rides in `data.from` with the chain depth and the callee's
+ * thread. What the callee may do (limits it inherits, report routes, lend,
+ * who started it) rides in one signed grant under `data["::agents"]`.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
@@ -15,9 +16,11 @@ import type { Context } from "../../../types.ts";
 import type { SenderData } from "../inbox/events.ts";
 import { agentGroupJoined } from "../inbox/events.ts";
 import {
-  type AgentReportRoute,
+  type AgentReportLine,
   type ReportSpec,
   resolveReports,
+  routesOf,
+  schemasOf,
 } from "../inbox/reports.ts";
 import type { Json } from "../json.ts";
 import type { LentMachine } from "../sandboxes/defs.ts";
@@ -27,14 +30,20 @@ import {
   threadHandle,
 } from "../threads/thread.ts";
 import { nextCount } from "./executionCounter.ts";
-import { type LendOptions, parentEndedFunction, planLend } from "./lending.ts";
 import {
-  checkInvoke,
-  childLimits,
-  limitStateOf,
-  readInheritedLimits,
-} from "./limits.ts";
-import { groupId, relatedKey, signGrant, signLent } from "./relations.ts";
+  grantOfExecution,
+  lendDigest,
+  mintGrant,
+  noteStarted,
+  parentLine,
+  proofOf,
+  restrictionLines,
+  routeLine,
+  unattachedGrantSeconds,
+} from "./grant.ts";
+import { type LendOptions, parentEndedFunction, planLend } from "./lending.ts";
+import { checkInvoke, childLimits, limitStateOf } from "./limits.ts";
+import { groupId, relatedKey } from "./relations.ts";
 import type { ResultOptions } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
 import { currentSessions } from "./sessions.ts";
@@ -100,11 +109,11 @@ export interface StartTarget {
   group?: string;
 
   /**
-   * The typed reports the agent is started to owe. Lines are routes made with
-   * `report.to()`; a line already in wire form (from `start_agent`) is passed
-   * as `resolved`.
+   * The typed reports the agent is started to owe: event types, or
+   * `{ event, to, if, required }` lines; a spec already resolved (from
+   * `start_agent`) is passed as `resolved`.
    */
-  reports?: readonly AgentReportRoute[];
+  reports?: readonly AgentReportLine[];
 
   /**
    * Reports already resolved into what travels in the start event.
@@ -177,10 +186,9 @@ export function startThread<TOutput>(
   }
 
   const { ctx, instance } = execution;
-  const inherited = readInheritedLimits(
-    (ctx.event as { data?: { from?: unknown } }).data?.from,
-  );
-  const limits = limitStateOf(instance, inherited);
+  const limits = limitStateOf(instance, undefined);
+  // The grant this run was started with: what the child's grant follows.
+  const held = grantOfExecution(instance);
 
   if (limits) {
     checkInvoke(limits, target.address);
@@ -252,10 +260,40 @@ export function startThread<TOutput>(
     scheduleParentEnded(execution);
   }
 
+  noteStarted(instance, key);
+
   // A start is a message to the new thread: the sender carries the key of the
-  // thread it opens and what it passes down, and the result comes back to a
-  // private inbox opened before the send, so no step waits for the child.
+  // thread it opens, and one grant made for that thread carries what it
+  // passes down. The result comes back to a private inbox opened before the
+  // send, so no step waits for the child.
   const send = (lent?: Record<string, LentMachine>) => {
+    const at = Math.floor(Date.now() / 1000);
+    const grant = mintGrant(target.client, {
+      ...(held && { parent: held }),
+      thread: key,
+      restrict: limits
+        ? restrictionLines(childLimits(limits), held?.limits)
+        : [],
+      lines: [
+        `iss=${(getAsyncCtxSync()?.app as { id?: string } | undefined)?.id ?? target.client.id}`,
+        `iat=${at}`,
+        // An attached child ends with the run that started it, which cancels
+        // it. Any other lasts 7 days, and a message from its starter renews.
+        ...(attached ? [] : [`until=${at + unattachedGrantSeconds}`]),
+        ...(starter.address !== ""
+          ? [parentLine(starter.address, starter.key)]
+          : []),
+        ...(attached ? [`run=${ctx.runId as string}`] : []),
+        ...(reports ? routesOf(reports).map(routeLine) : []),
+        ...(lent ? [`lend=${lendDigest(lent)}`] : []),
+        ...(target.group !== undefined
+          ? [
+              `grp=${groupId(target.client, starter.key, target.group, starter.address)}`,
+            ]
+          : []),
+      ],
+    });
+
     return sendMessage<TOutput>(
       target.client,
       target.address,
@@ -265,27 +303,15 @@ export function startThread<TOutput>(
         sessions,
         from: {
           thread: key,
-          ...(limits && { limits: childLimits(limits) }),
           ...(target.typed && { typed: true }),
           ...(target.via && { via: target.via, target: target.address }),
           ...(reports &&
-            Object.keys(reports).length > 0 && {
-              reports,
-              reports_sig: signGrant(
-                target.client,
-                key,
-                Object.fromEntries(
-                  Object.entries(reports).map(([type, entry]) => {
-                    return [type, entry.to];
-                  }),
-                ),
-              ),
-            }),
+            Object.keys(reports).length > 0 && { reports: schemasOf(reports) }),
           ...(attached && { parent_run: ctx.runId as string }),
-          ...(lent && {
-            lent,
-            lent_sig: signLent(target.client, lent, ctx.runId as string, key),
-          }),
+          ...(lent && { lent }),
+        },
+        agents: (id) => {
+          return proofOf(target.client, grant, id, key);
         },
       },
     );

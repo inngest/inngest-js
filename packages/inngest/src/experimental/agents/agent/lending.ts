@@ -21,7 +21,8 @@ import {
   lendableTool,
 } from "../sandboxes/defs.ts";
 import { agentRecoverEvent } from "../threads/thread.ts";
-import { ledgerDataIsSigned, lentIsSigned } from "./relations.ts";
+import { type Grant, lendDigest } from "./grant.ts";
+import { ledgerDataIsSigned } from "./relations.ts";
 
 /**
  * What a start lends and how long the child lives: the part of the start
@@ -245,11 +246,14 @@ const startFrom = (event: {
  * @param client The app's client, whose signing key checks the signatures.
  * @param event The event that started the run.
  * @param thread The run's thread key.
+ * @param grant The grant the start carried, verified: it must be issued by this app, and names the lend by
+ * digest and the parent run that lends.
  */
 export const lendOf = (
   client: Inngest.Any,
   event: { name?: string; data?: unknown },
   thread: string,
+  grant?: Grant,
 ): LendClaim | undefined => {
   const { from, recovered } = startFrom(event);
   const lent = from?.lent as Record<string, LentMachine> | undefined;
@@ -259,7 +263,10 @@ export const lendOf = (
   }
 
   if (
-    !lentIsSigned(client, lent, from?.lent_sig, from?.parent_run, thread) ||
+    grant?.sub !== thread ||
+    grant.iss !== client.id ||
+    grant.run === undefined ||
+    grant.lend !== lendDigest(lent) ||
     (recovered && !ledgerDataIsSigned(client, agentRecoverEvent, event.data))
   ) {
     throw new NonRetriableError(
@@ -267,7 +274,7 @@ export const lendOf = (
     );
   }
 
-  return { machines: lent, parentRun: from?.parent_run as string, recovered };
+  return { machines: lent, parentRun: grant.run, recovered };
 };
 
 /**

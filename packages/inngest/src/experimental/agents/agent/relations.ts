@@ -42,7 +42,7 @@ const unsignedKey = "inngest-agents-unsigned";
 /**
  * What the HMACs need of a client: its signing key and its fallback.
  */
-interface SigningKeys {
+export interface SigningKeys {
   signingKey?: string;
   signingKeyFallback?: string;
 }
@@ -51,7 +51,7 @@ interface SigningKeys {
  * The HMAC keys to check a tag against: the signing key and its fallback, or
  * the fixed key when there is none. The first one makes new tags.
  */
-const secretsOf = (client: SigningKeys): string[] => {
+export const secretsOf = (client: SigningKeys): string[] => {
   const keys = [client.signingKey, client.signingKeyFallback]
     .filter((key): key is string => {
       return Boolean(key);
@@ -303,26 +303,10 @@ export const relationOf = (
 };
 
 /**
- * What a lent payload is signed over: the lent machines in a fixed order, the
- * parent's run and the child's thread, so a payload cannot be moved to another
- * child or run. There is no clock in it: the lend lasts as long as the
- * parent's run, whose end cancels the child. `lending.ts` explains how a
- * copied lend is kept from being used again.
- */
-const lentDigest = (
-  app: string,
-  lent: object,
-  parentRun: string,
-  thread: string,
-): string => {
-  return JSON.stringify(["lent", app, parentRun, thread, canonical(lent)]);
-};
-
-/**
  * The value with every object's keys in order: the executor may reorder keys
  * on the way, and the signature must not depend on it.
  */
-const canonical = (value: unknown): unknown => {
+export const canonical = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonical);
   }
@@ -342,131 +326,10 @@ const canonical = (value: unknown): unknown => {
   return value;
 };
 
-const fullMac = (secret: string, data: string): string => {
+export const fullMac = (secret: string, data: string): string => {
   return hmac(sha256 as unknown as Parameters<typeof hmac>[0], secret)
     .update(data)
     .digest("hex");
-};
-
-/**
- * Signs what a start lends, so the child can tell the lend came from a run of
- * this app and not from an event someone else sent. The signature covers the
- * app, the lending run, the child's thread and the machines.
- * @param client The client, whose signing key signs.
- * @param lent The lent machines, by name.
- * @param parentRun The lending run's ID.
- * @param thread The child's thread key.
- */
-export const signLent = (
-  client: Inngest.Any,
-  lent: object,
-  parentRun: string,
-  thread: string,
-): string => {
-  const [secret] = secretsOf(client) as [string];
-
-  return fullMac(secret, lentDigest(client.id, lent, parentRun, thread));
-};
-
-/**
- * Whether a lend carries a signature made for this app, payload, run and
- * thread.
- * @param client The client, whose signing key (or its fallback) signed.
- * @param lent The lent machines, by name.
- * @param signature The signature that came with them.
- * @param parentRun The lending run's ID that came with them.
- * @param thread The child's thread key.
- */
-export const lentIsSigned = (
-  client: Inngest.Any,
-  lent: object,
-  signature: unknown,
-  parentRun: unknown,
-  thread: string,
-): boolean => {
-  if (typeof signature !== "string" || typeof parentRun !== "string") {
-    return false;
-  }
-
-  const data = lentDigest(client.id, lent, parentRun, thread);
-
-  return secretsOf(client).some((secret) => {
-    return fullMac(secret, data) === signature;
-  });
-};
-
-/**
- * Where each report type of a start may go: the destinations by type, which a
- * start signs for the child so a receiver that is not the starter can tell the
- * starter granted it.
- */
-export type ReportGrantTable = Record<
-  string,
-  { agent: string; thread: string; if?: string }[]
->;
-
-const grantDigest = (
-  app: string,
-  child: string,
-  table: ReportGrantTable,
-): string => {
-  return JSON.stringify(["grant", app, child, canonical(table)]);
-};
-
-/**
- * Signs the routing of a start's reports for the child thread `child`.
- * @param client The client of the child's app, whose signing key signs.
- * @param child The child's thread key.
- * @param table The destinations by report type.
- */
-export const signGrant = (
-  client: Inngest.Any,
-  child: string,
-  table: ReportGrantTable,
-): string => {
-  const [secret] = secretsOf(client) as [string];
-
-  return fullMac(secret, grantDigest(client.id, child, table));
-};
-
-/**
- * Whether a report the thread `child` sent carries a grant, signed at its
- * start, that names `receiver` for report type `type`.
- * @param client The receiving app's client, whose signing key checks.
- * @param child The sender's thread key.
- * @param grant The routing table and signature the report carries.
- * @param receiver The receiving thread's key.
- * @param type The report type.
- */
-export const grantNames = (
-  client: Inngest.Any,
-  child: string,
-  grant: unknown,
-  receiver: string,
-  type: string,
-): boolean => {
-  const given = grant as { to?: unknown; sig?: unknown } | undefined;
-
-  if (
-    typeof given?.sig !== "string" ||
-    typeof given.to !== "object" ||
-    given.to === null
-  ) {
-    return false;
-  }
-
-  const table = given.to as ReportGrantTable;
-  const data = grantDigest(appOfBody(child), child, table);
-  const signed = secretsOf(client).some((secret) => {
-    return fullMac(secret, data) === given.sig;
-  });
-
-  return (
-    signed &&
-    (Array.isArray(table[type]) ? table[type] : []).some((place) => {
-      return place?.thread === receiver;
-    })
-  );
 };
 
 /**

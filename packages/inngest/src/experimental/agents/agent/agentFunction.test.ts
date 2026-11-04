@@ -20,6 +20,7 @@ import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
+import { mintGrant, proofOf } from "./grant.ts";
 import { freshKv, run, textOf } from "./test-helpers.ts";
 import type { AgentFunctionConfig } from "./types.ts";
 
@@ -64,6 +65,25 @@ const trigger = (content: string) => {
 
 const makeClient = () => {
   return new Inngest({ id: testClientId });
+};
+
+// A start as another agent's `start()` sends it: one grant made for the
+// thread, with the restriction lines the starter passed down.
+const granted = (content: string, restrict: string[] = []) => {
+  const client = makeClient();
+  const thread = "t1";
+  const id = "granted-1";
+  const grant = mintGrant(client, {
+    thread,
+    restrict,
+    lines: [`iss=${testClientId}`],
+  });
+
+  return message("user", content, thread, {
+    id,
+    from: { depth: 1, thread },
+    "::agents": proofOf(client, grant, id, thread),
+  });
 };
 
 const leaf = createAgentFunction(makeClient(), { id: "leaf" });
@@ -1303,16 +1323,7 @@ describe("agent limits", () => {
         return result.end;
       },
     );
-    const invoked = trigger("go");
-    const { output } = await run(fn, {
-      event: {
-        ...invoked,
-        data: {
-          ...invoked.data,
-          from: { depth: 1, limits: { budget: { tokens: 1, usd: 0.001 } } },
-        },
-      },
-    });
+    const { output } = await run(fn, { event: granted("go", ["depth=1"]) });
 
     expect(models).toBe(1);
     expect(output).not.toBe("budget");
@@ -1427,13 +1438,7 @@ describe("agent limits", () => {
         return "started";
       },
     );
-    const event = trigger("go");
-    const { output } = await run(fn, {
-      event: {
-        ...event,
-        data: { ...event.data, from: { depth: 1, limits: { depth: 0 } } },
-      },
-    });
+    const { output } = await run(fn, { event: granted("go", ["depth=0"]) });
 
     expect(output).toContain("/leaf was not started");
   });
@@ -1455,13 +1460,7 @@ describe("inherited limits persist on the thread", () => {
         return "started";
       },
     );
-    const first = trigger("go");
-    await run(fn, {
-      event: {
-        ...first,
-        data: { ...first.data, from: { depth: 1, limits: { depth: 0 } } },
-      },
-    });
+    await run(fn, { event: granted("go", ["depth=0"]) });
 
     const { output } = await run(fn, { event: trigger("again") });
 

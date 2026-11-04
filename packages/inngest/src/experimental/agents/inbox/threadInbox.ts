@@ -33,10 +33,10 @@ import type {
   SenderData,
 } from "./events.ts";
 import {
-  isReportEvent,
+  isReportMessage,
   reportDataProblem,
-  reportEventPrefix,
   reportWireEvent,
+  reservedReportType,
   routingKey,
   routingOf,
   withoutRouting,
@@ -65,7 +65,7 @@ export const ownEvents: string[] = [
  * typed report.
  */
 export const isOwnEvent = (name: string): boolean => {
-  return ownEvents.includes(name) || isReportEvent(name);
+  return ownEvents.includes(name);
 };
 
 /**
@@ -151,17 +151,24 @@ export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
       : {}),
   };
   // A report is sent with its routing around it; the message is the report's
-  // own data, with the sender beside it as `from`.
-  if (as.name === reportWireEvent || isReportEvent(as.name)) {
+  // own data under its type's name, with the sender beside it as `from` and
+  // what it relies on in `report`.
+  if (as.name === reportWireEvent) {
     const routing = routingOf(as.data);
 
-    if (as.name === reportWireEvent && routing?.type !== undefined) {
+    if (
+      typeof routing?.type === "string" &&
+      !reservedReportType(routing.type)
+    ) {
       return addEventIs({
         ...as,
-        name: `${reportEventPrefix}${routing.type}`,
+        name: routing.type,
         data: withoutRouting(as.data),
         ...(routing.from !== undefined && { from: routing.from }),
-        ...(routing.grant !== undefined && { grant: routing.grant }),
+        report: {
+          ...(routing.grant !== undefined && { grant: routing.grant }),
+          ...(routing.pop !== undefined && { pop: routing.pop }),
+        },
       } as UntypedInboxMessage);
     }
 
@@ -276,7 +283,7 @@ export function threadInbox(
 
     // A report narrows to its type only when its data fits that type's own
     // schema: the sender wrote the data, and it is not trusted until then.
-    if (isReportEvent(unwrapped.name)) {
+    if (isReportMessage(unwrapped)) {
       const checkedIs = (unwrapped as { is: (types: unknown) => boolean }).is;
 
       Object.defineProperty(unwrapped, "is", {
@@ -302,14 +309,14 @@ export function threadInbox(
       });
     }
 
-    const sender = isReportEvent(unwrapped.name)
+    const sender = isReportMessage(unwrapped)
       ? (unwrapped as { from?: SenderData }).from
       : (unwrapped.data as { from?: SenderData } | undefined)?.from;
 
     if (
       sender &&
       senderFor &&
-      (senderMessages.includes(unwrapped.name) || isReportEvent(unwrapped.name))
+      (senderMessages.includes(unwrapped.name) || isReportMessage(unwrapped))
     ) {
       Object.assign(unwrapped, { from: senderFor(sender) });
     }

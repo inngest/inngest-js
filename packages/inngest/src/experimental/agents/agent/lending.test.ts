@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Inngest } from "../../../components/Inngest.ts";
+import { lendDigest, mintGrant } from "./grant.ts";
 import {
   lendIsOpen,
   lendOf,
@@ -8,7 +9,7 @@ import {
   parentEndedCancel,
   planLend,
 } from "./lending.ts";
-import { signLedgerData, signLent } from "./relations.ts";
+import { signLedgerData } from "./relations.ts";
 
 describe("lending", () => {
   test("nothing lent is no plan", () => {
@@ -38,16 +39,30 @@ describe("lending", () => {
     },
   };
   const thread = "app/a:run1.0";
-  const sig = signLent(client, lent, "run1", thread);
-  const from = (over: object) => {
-    return { lent, lent_sig: sig, parent_run: "run1", ...over };
+  const grantFor = (over: {
+    thread?: string;
+    run?: string;
+    lend?: unknown;
+  }) => {
+    return mintGrant(client, {
+      thread: over.thread ?? thread,
+      lines: [
+        "iss=lend-sign",
+        ...(over.run === undefined ? [] : [`run=${over.run}`]),
+        `lend=${lendDigest(over.lend ?? lent)}`,
+      ],
+    });
   };
-  const message = (over: object) => {
-    return { name: "agent/message", data: { from: from(over) } };
+  const grant = grantFor({ run: "run1" });
+  const message = (over: object = {}) => {
+    return {
+      name: "agent/message",
+      data: { from: { lent, parent_run: "run1", ...over } },
+    };
   };
 
-  test("a lend is refused unless it is signed for its run and thread", () => {
-    expect(lendOf(client, message({}), thread)?.machines).toEqual(lent);
+  test("a lend is refused unless the grant names it, its run and its thread", () => {
+    expect(lendOf(client, message(), thread, grant)?.machines).toEqual(lent);
     // The executor may reorder keys on the way.
     const reordered = {
       work: {
@@ -59,34 +74,36 @@ describe("lending", () => {
     };
 
     expect(
-      lendOf(client, message({ lent: reordered }), thread)?.machines,
+      lendOf(client, message({ lent: reordered }), thread, grant)?.machines,
     ).toEqual(reordered);
-    expect(() => lendOf(client, message({}), "app/a:other")).toThrow(
+    // A grant made for another thread.
+    expect(() => lendOf(client, message(), "app/a:other", grant)).toThrow(
       "unsigned",
     );
-    expect(() =>
-      lendOf(client, message({ parent_run: "run2" }), thread),
-    ).toThrow("unsigned");
-    expect(() =>
-      lendOf(client, message({ lent_sig: undefined }), thread),
-    ).toThrow("unsigned");
+    // A grant with no parent run, or no grant at all.
+    expect(() => lendOf(client, message(), thread, grantFor({}))).toThrow(
+      "unsigned",
+    );
+    expect(() => lendOf(client, message(), thread)).toThrow("unsigned");
+    // Other machines than the grant's digest.
     expect(() =>
       lendOf(
         client,
         message({ lent: { work: { ...lent.work, id: "other" } } }),
         thread,
+        grant,
       ),
     ).toThrow("unsigned");
-    expect(lendOf(client, { name: "agent/message", data: {} }, thread)).toBe(
-      undefined,
-    );
+    expect(
+      lendOf(client, { name: "agent/message", data: {} }, thread, grant),
+    ).toBe(undefined);
   });
 
   test("a resent lend is taken only on a resend this app signed", () => {
     const resent = {
       agent: "app/a",
       thread,
-      event: { name: "agent/message", data: { from: from({}) } },
+      event: { name: "agent/message", data: { from: { lent } } },
     };
     const claim = lendOf(
       client,
@@ -95,12 +112,18 @@ describe("lending", () => {
         data: signLedgerData(client, "agent/recover", resent),
       },
       thread,
+      grant,
     );
 
     expect(claim?.recovered).toBe(true);
     expect(claim?.parentRun).toBe("run1");
     expect(() => {
-      return lendOf(client, { name: "agent/recover", data: resent }, thread);
+      return lendOf(
+        client,
+        { name: "agent/recover", data: resent },
+        thread,
+        grant,
+      );
     }).toThrow("unsigned");
     // A resend signed for another thread's lend does not carry this one.
     expect(() => {
@@ -111,12 +134,13 @@ describe("lending", () => {
           data: signLedgerData(client, "agent/recover", resent),
         },
         "app/a:run1.1",
+        grant,
       );
     }).toThrow("unsigned");
   });
 
   test("the thread's record decides whether a lend that checked out is used", () => {
-    const start = lendOf(client, message({}), thread);
+    const start = lendOf(client, message(), thread, grant);
     const kept = { parentRun: "run1", tools: ["work_run"], takenBy: "child1" };
 
     if (!start) {

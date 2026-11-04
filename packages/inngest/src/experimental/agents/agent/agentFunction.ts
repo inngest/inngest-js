@@ -52,16 +52,13 @@ import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
-  type AgentReport,
   flushOwes,
   handleAddressKey,
-  isReportEvent,
+  isReportMessage,
   owesRecord,
   type ReportBook,
-  reportEventPrefix,
   reportSenderProblem,
   reportsOf,
-  reportsSigOf,
   reportTool,
   sendReport,
 } from "../inbox/reports.ts";
@@ -141,6 +138,15 @@ import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
+  messageGrantProblem,
+  noteRenewal,
+  proofOf,
+  registerGrant,
+  renewalOfExecution,
+  renewedUntil,
+  startGrantOf,
+} from "./grant.ts";
+import {
   lendIsOpen,
   lendOf,
   lentEndedNote,
@@ -152,7 +158,6 @@ import {
   budgetReason,
   narrowInherited,
   narrowLimits,
-  readInheritedLimits,
   registerLimits,
 } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
@@ -473,16 +478,13 @@ export function createAgentFunction(
         // Writes what `thread.state()` shows. One step per change.
         const recorder = threadRecorder(store, ref, runId, onLedger());
 
-        // What a sub-agent inherited is kept on its thread, so a later run that
-        // a plain message starts has the same limits.
-        const passed = readInheritedLimits(
-          // An invoked agent is told its limits in the event's own data.
-          (
-            (found?.event === internalEvents.FunctionInvoked
-              ? event.data
-              : data) as Record<string, unknown>
-          ).from,
-        );
+        // The grant a start carries, checked: a start that claims a starter
+        // but has no valid grant fails for good, so limits, report routes and
+        // lends only come from a signed grant. What a sub-agent inherited is
+        // kept on its thread, so a later run that a plain message starts has
+        // the same limits.
+        const startGrant = startGrantOf(client, event, data.thread);
+        const passed = startGrant?.limits;
         // The thread's budget as this agent defines it, read before the start
         // so the first run can keep it on the thread.
         const ownBudget =
@@ -495,7 +497,7 @@ export function createAgentFunction(
         // What the start event lends, with its signature checked before the
         // thread records anything. Whether the thread may use it is decided
         // once the record is written.
-        const claim = lendOf(client, event, data.thread);
+        const claim = lendOf(client, event, data.thread, startGrant);
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
@@ -558,6 +560,10 @@ export function createAgentFunction(
 
         if (!instance) {
           throw new Error("An agent must run inside an Inngest function");
+        }
+
+        if (startGrant) {
+          registerGrant(instance, startGrant);
         }
 
         const limits = registerLimits(
@@ -802,14 +808,11 @@ export function createAgentFunction(
             // What a child owes, noted while sandbox code started it.
             await flushOwes(instance, owes);
 
-            if (isReportEvent(as.name)) {
+            if (isReportMessage(as)) {
               const child = (as as { from?: { key?: unknown } }).from?.key;
 
               if (typeof child === "string") {
-                await owes.received(
-                  child,
-                  as.name.slice(reportEventPrefix.length),
-                );
+                await owes.received(child, as.name);
               }
 
               return;
@@ -849,14 +852,57 @@ export function createAgentFunction(
             // A report is taken only from a thread this thread started: the
             // `from` of an event is whatever its sender wrote, and the key's
             // tag is what proves it. Anything else is dropped.
+            const presented = resentAs(raw as UntypedInboxMessage);
             const senderProblem = reportSenderProblem(
               client,
               data.thread,
-              resentAs(raw as UntypedInboxMessage),
+              presented,
             );
 
             if (senderProblem) {
               return senderProblem;
+            }
+
+            // A message that relies on its sender's grant carries a proof
+            // made for this very message; a message from the thread that
+            // started this one may renew this run's grant.
+            if (
+              !started &&
+              (presented.name === agentMessageEvent ||
+                presented.name === agentQuestionEvent)
+            ) {
+              const grantProblem = messageGrantProblem(
+                client,
+                presented,
+                data.thread,
+              );
+
+              if (grantProblem) {
+                return grantProblem;
+              }
+
+              const renew = (
+                presented.data as {
+                  from?: { key?: unknown };
+                  "::agents"?: { renew?: unknown };
+                }
+              )?.["::agents"]?.renew;
+
+              if (renew && startGrant) {
+                const until = renewedUntil(
+                  client,
+                  startGrant,
+                  renew,
+                  (presented.data as { from?: { key?: unknown } }).from?.key,
+                );
+
+                if (until !== undefined) {
+                  noteRenewal(
+                    instance,
+                    renew as { until: number; sig: string },
+                  );
+                }
+              }
             }
 
             await noteOwed(raw as UntypedInboxMessage);
@@ -924,12 +970,24 @@ export function createAgentFunction(
 
         // What the run owes: the reports its start event carries, and which of
         // them it has sent.
-        const reportSpec = reportsOf({ name: event.name, data: event.data });
-        const grantSig = reportsSigOf({ name: event.name, data: event.data });
+        const reportSpec = reportsOf(
+          { name: event.name, data: event.data },
+          startGrant,
+        );
         const reportBook: ReportBook | undefined = reportSpec && {
           spec: reportSpec,
           sent: new Set(),
-          ...(grantSig !== undefined && { grantSig }),
+          ...(startGrant && {
+            proof: (id: string, target: string) => {
+              return proofOf(
+                client,
+                startGrant,
+                id,
+                target,
+                renewalOfExecution(instance),
+              );
+            },
+          }),
         };
 
         bridge.reports = reportBook;
@@ -998,7 +1056,7 @@ export function createAgentFunction(
               key: data.thread,
               ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
               report: async (
-                type: AgentReport,
+                type: { name: string; schema?: StandardSchemaV1 },
                 reported: Record<string, unknown>,
               ) => {
                 if (!reportBook) {
@@ -1009,13 +1067,13 @@ export function createAgentFunction(
 
                 await sendReport(
                   reportBook,
-                  type.type,
+                  type.name,
                   reported,
                   async (value) => {
                     const checked =
-                      await type.schema["~standard"].validate(value);
+                      await type.schema?.["~standard"].validate(value);
 
-                    return checked.issues
+                    return checked?.issues
                       ?.map((issue) => {
                         return issue.message;
                       })
