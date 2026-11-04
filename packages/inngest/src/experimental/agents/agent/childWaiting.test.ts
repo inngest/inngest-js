@@ -113,7 +113,7 @@ describe("a handle-opened model agent that started a child", () => {
     } as never);
 
     // The model answered ("started") and the run did not end: it is blocked
-    // on a read that waits up to the bound for the child.
+    // on a sleep beside the read that waits up to the bound for the child.
     expect(requests).toHaveLength(2);
     expect(waiting).toBe(true);
     expect(output).toBeUndefined();
@@ -121,7 +121,7 @@ describe("a handle-opened model agent that started a child", () => {
       ops.some((op) => {
         return (
           op.op === "wait" &&
-          (op.opts as { timeout?: unknown }).timeout === "1d"
+          (op.opts as { timeout?: unknown }).timeout !== undefined
         );
       }),
     ).toBe(true);

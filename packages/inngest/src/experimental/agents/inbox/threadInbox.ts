@@ -6,11 +6,12 @@
  */
 
 import { stepsIssued } from "../../../components/execution/als.ts";
-import type {
-  BatchOptions,
-  Inbox,
-  ReadOptions,
-  UntypedInboxMessage,
+import {
+  type BatchOptions,
+  type Inbox,
+  inboxHasUnread,
+  type ReadOptions,
+  type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
@@ -278,6 +279,14 @@ export function threadInbox(
   // Told of each question that reaches the inbox, so the run can answer it
   // later by its ID.
   noteQuestion?: (data: AgentQuestionData) => void,
+
+  // Reads the thread's inbox in the background: one read waits for messages
+  // for the life of the run, beside the work, and what it brings goes to a
+  // queue. `batches()` and the fold take from the queue, so they cost no step
+  // of their own. `sleep` times the wait for `idle`.
+  background?: {
+    sleep: (id: string, ms: number) => Promise<unknown>;
+  },
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -476,6 +485,186 @@ export function threadInbox(
       return raws;
     };
 
+    // The background reader of the main view. One read of the source waits at
+    // a time and the batch it brings goes to a queue. Everything else the
+    // thread does with those messages (schema drops, the thread's status,
+    // children) happens where the queue is taken, in the order the run's code
+    // takes it, so a replay does it at the same places. A batch lands in the
+    // queue where its answer sits in the run's state.
+    //
+    // A read is issued only where the run's code is about to do work of its
+    // own (just before a model call) or to wait, never between: a read found
+    // while the code goes on to other asynchronous work would be reported
+    // alone, and the run would sit on it.
+    const bg =
+      main && background
+        ? {
+            queue: [] as UntypedInboxMessage[],
+            reading: false,
+            ended: false,
+            failure: undefined as { error: unknown } | undefined,
+            waiters: [] as (() => void)[],
+            idleWaits: 0,
+          }
+        : undefined;
+
+    const bgWake = () => {
+      for (const resolve of bg?.waiters.splice(0) ?? []) {
+        resolve();
+      }
+    };
+
+    // Makes sure a read is waiting for messages.
+    const bgArm = () => {
+      if (!bg || bg.reading || bg.ended) {
+        return;
+      }
+
+      bg.reading = true;
+
+      source.nextBatch().then(
+        (got) => {
+          bg.reading = false;
+
+          if (got === undefined) {
+            bg.ended = true;
+          } else {
+            bg.queue.push(...got);
+          }
+
+          bgWake();
+        },
+        (error) => {
+          bg.reading = false;
+          bg.failure = { error };
+          bg.ended = true;
+          bgWake();
+        },
+      );
+    };
+
+    // Settles once the queue has something or the source has ended.
+    const bgArrival = (): Promise<void> => {
+      if (!bg || bg.queue.length > 0 || bg.ended) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        bg.waiters.push(resolve);
+      });
+    };
+
+    // What the queue held, with the messages that break their schema dropped.
+    const bgTake = async (): Promise<UntypedInboxMessage[]> => {
+      return keep([...first.splice(0), ...(bg?.queue.splice(0) ?? [])]);
+    };
+
+    // Waits for something to take, or says the loop ends: a run with no quiet
+    // to wait ends the moment nothing is queued or saved unread, `idle` of
+    // quiet ends it, and the source closing ends it.
+    const bgWait = async (): Promise<boolean> => {
+      if (!bg || !background) {
+        return false;
+      }
+
+      if (bg.failure) {
+        throw bg.failure.error;
+      }
+
+      const quiet = quietNow();
+
+      if (quiet === 0) {
+        // A message saved in the run's state that the reader has not handed
+        // over yet is on its way: wait for it.
+        if (!bg.ended && inboxHasUnread(source)) {
+          bgArm();
+          await bgArrival();
+
+          return true;
+        }
+
+        return false;
+      }
+
+      if (bg.ended) {
+        return false;
+      }
+
+      if (delivered > 0) {
+        await recorder.waiting();
+      }
+
+      bgArm();
+
+      if (quiet === undefined) {
+        await bgArrival();
+
+        return !bg.ended || bg.queue.length > 0;
+      }
+
+      bg.idleWaits += 1;
+
+      const timedOut = await Promise.race([
+        bgArrival().then(() => {
+          return false;
+        }),
+        background.sleep(`inbox:idle:${bg.idleWaits}`, quiet).then(() => {
+          return true;
+        }),
+      ]);
+
+      if (timedOut) {
+        // The wait expired: the agent goes on working, so it is not waiting.
+        if (delivered > 0) {
+          await recorder.resumed();
+        }
+
+        return false;
+      }
+
+      return true;
+    };
+
+    // The next batch for a loop: what is queued, else what the wait brings.
+    const bgBatch = async (): Promise<TOut[] | undefined> => {
+      for (;;) {
+        const kept = await bgTake();
+
+        if (kept.length === 0) {
+          if (bg?.queue.length === 0 && !(await bgWait())) {
+            return undefined;
+          }
+
+          continue;
+        }
+
+        const batch = kept.map(present);
+
+        delivered += batch.length;
+        settleChildren(batch);
+
+        // The thread resends one message when a failed run recovers: the last
+        // one of the batch that starts a turn.
+        let inflight: Inflight | undefined;
+
+        for (const message of batch) {
+          inflight = inflightOf(message as unknown as AgentMessage) ?? inflight;
+        }
+
+        if (delivered > 1) {
+          await recorder.running(
+            undefined,
+            inflight,
+            undefined,
+            undefined,
+            senderIds(batch as unknown as { name: string }[], started),
+          );
+        }
+
+        return batch;
+      }
+    };
+
     const reader: Reader<TOut> = {
       next: (async (options?: ReadOptions) => {
         if (main && delivered > 0) {
@@ -606,6 +795,18 @@ export function threadInbox(
         }
       }) as Reader<TOut>["nextBatch"],
       async *batches(options?: BatchOptions & Partial<ReadOptions>) {
+        if (bg) {
+          for (;;) {
+            const batch = await bgBatch();
+
+            if (batch === undefined) {
+              return;
+            }
+
+            yield batch;
+          }
+        }
+
         for (;;) {
           const quiet = quietNow();
 
@@ -639,6 +840,18 @@ export function threadInbox(
         }
       },
       async "~fold"(turn: number) {
+        if (bg) {
+          const taken = (await bgTake()).map(present);
+
+          await noteFolded(taken, main);
+          settleChildren(taken);
+
+          // The model call follows at once: the read waits beside it.
+          bgArm();
+
+          return taken;
+        }
+
         if (turn === 1 && batchGiven && first.length === 0) {
           batchGiven = false;
 
@@ -660,7 +873,11 @@ export function threadInbox(
         return taken;
       },
       async close() {
-        const raws = [...first.splice(0), ...(await source.close())];
+        const raws = [
+          ...first.splice(0),
+          ...(bg?.queue.splice(0) ?? []),
+          ...(await source.close()),
+        ];
         const taken = (await keep(raws)).map(present);
 
         await noteFolded(taken, main);

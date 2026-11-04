@@ -787,10 +787,17 @@ export function createAgentFunction(
         // model's agent tools) has a sender, and ends once it has answered and
         // nothing is unread, unless the agent sets `idle`: then, like a run a
         // trigger started, it waits `idle` for more, keeping its sandboxes.
-        const openedByHandle =
-          (runEvent.name === agentMessageEvent ||
-            runEvent.name === agentQuestionEvent) &&
-          (runEvent.data as { from?: unknown } | undefined)?.from !== undefined;
+        // The start message is checked as well as the run's event: a typed
+        // start (an `invoke()` trigger) is handed to the handler as the typed
+        // input, which has no sender, but the message that carried it did.
+        const openedByHandle = [runEvent, startMessage].some((candidate) => {
+          return (
+            (candidate.name === agentMessageEvent ||
+              candidate.name === agentQuestionEvent) &&
+            (candidate.data as { from?: unknown } | undefined)?.from !==
+              undefined
+          );
+        });
         const idle =
           openedByHandle && config.idle === undefined
             ? 0
@@ -969,6 +976,15 @@ export function createAgentFunction(
           (data) => {
             questions.receive(data);
           },
+          // Only the default body reads in the background: a handler of the
+          // agent's own does exactly what it says with the inbox.
+          bodyOrDefault === undefined && config.model
+            ? {
+                sleep: (id, ms) => {
+                  return step.sleep(id, ms);
+                },
+              }
+            : undefined,
         );
 
         // What the run owes: the reports its start event carries, and which of

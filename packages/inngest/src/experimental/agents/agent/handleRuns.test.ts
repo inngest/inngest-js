@@ -4,8 +4,11 @@
  * once it has answered and nothing is unread, so its `result()` resolves
  * promptly. A run a trigger started waits `idle`.
  */
+
+import { z } from "zod";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
+import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { model } from "../loop/loopKit.ts";
 import { createAgentFunction } from "./agentFunction.ts";
@@ -134,7 +137,7 @@ describe("a model agent opened through a handle (L58)", () => {
     });
   };
 
-  test("the default handler does exactly one drain after the answer, and that drain is the last read", async () => {
+  test("the default handler never drains: one read waits beside the call, and nothing reads after the answer", async () => {
     const requests: unknown[][] = [];
     const agent = make(requests);
     const { ops, output } = await run(agent.fn, {
@@ -147,10 +150,14 @@ describe("a model agent opened through a handle (L58)", () => {
       );
     });
 
-    // The run's first read and the single drain after the answer; the loop's
-    // fold does not read again right after the batch it was given, and
-    // nothing waits for more.
-    expect(drains).toHaveLength(2);
+    // No read is a drain: the loop's fold takes from the queue, and the one
+    // read the run makes waits beside the model call.
+    expect(drains).toHaveLength(0);
+    expect(
+      ops.filter((op) => {
+        return op.op === "wait";
+      }),
+    ).toHaveLength(1);
     expect(ops.at(-1)?.op).toBe("close");
     expect(requests).toHaveLength(1);
     expect(output).toBe("answer 1");
@@ -249,5 +256,43 @@ describe("a run opened through a handle waits for the runs it started with start
     } finally {
       childWait.ms = before;
     }
+  });
+});
+
+describe("a typed agent opened through start()", () => {
+  test("ends once it has answered, not when `idle` runs out", async () => {
+    freshKv();
+
+    const requests: unknown[] = [];
+    const agent = createAgentFunction(new Inngest({ id: testClientId }), {
+      id: "bot",
+      triggers: invoke(z.object({ q: z.string() })),
+      model: model(async (request) => {
+        requests.push(request.messages.length);
+
+        return {
+          message: { role: "assistant", content: [] },
+          text: "answered",
+          toolCalls: [],
+          usage: { input: 1, output: 1 },
+        };
+      }),
+    });
+    const { output, waiting, ops } = await run(agent.fn, {
+      event: {
+        name: "agent/message",
+        data: {
+          agent: `${testClientId}/bot`,
+          thread: "t1",
+          content: { q: "why" },
+          from: { ...sender, typed: true },
+        },
+      },
+    });
+
+    expect(waiting).toBe(false);
+    expect(output).toBe("answered");
+    expect(requests).toHaveLength(1);
+    expect(waited(ops)).toEqual([]);
   });
 });
