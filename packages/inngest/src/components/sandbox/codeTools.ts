@@ -15,6 +15,10 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { editText } from "./editText.ts";
 import { buildRunner, parseRunnerResult } from "./runnerScripts.ts";
 import {
+  type ToolDescriptionParts,
+  toolDescriptionText,
+} from "./toolDescription.ts";
+import {
   bindSandbox,
   liveDescriptions,
   type SandboxTool,
@@ -112,14 +116,19 @@ const sandboxOf = (
 
 const scriptTools: SandboxTools = {
   now: tool.step({
-    description: "The current time as an ISO string. Same value on replay.",
+    description: {
+      does: "Gives the current time as an ISO string, the same on every run of the script.",
+      use: "instead of the clock, which changes when the script runs again after a wait",
+    },
     run: () => {
       return new Date().toISOString();
     },
   }),
   sleep: tool.group({
-    description:
-      'Wait without holding the script open: tools.sleep({ duration: "30s" }) (duration="30s" in Python).',
+    description: {
+      does: 'Waits without holding the script open: tools.sleep({ duration: "30s" }) (duration="30s" in Python).',
+      use: "to pause the script for longer than a command may run",
+    },
     input: z.object({ duration: z.union([z.string(), z.number()]) }),
     waits: true,
     run: ({ duration }) => {
@@ -172,8 +181,11 @@ const read = configurable((options: CommandToolOptions) => {
   const { timeout = "5m" } = options;
 
   return tool.group({
-    description:
-      "Read a file with line numbers. Use from and to to read a range.",
+    description: {
+      does: "Reads a file with line numbers. `from` and `to` choose a range of lines (default the first 400).",
+      use: "to look at a file before you change it",
+      avoid: "to list or search many files: `search` is faster",
+    },
     input: z.object({
       path: z.string(),
       from: z.number().optional(),
@@ -199,8 +211,11 @@ const read = configurable((options: CommandToolOptions) => {
  * installed. List it in `sandbox({ tools })`.
  */
 const edit = tool.group({
-  description:
-    "Edit a file by replacing exact text. old_string must match exactly once, or set replace_all to replace every match.",
+  description: {
+    does: "Edits a file by replacing exact text. `old_string` must match exactly once, or set `replace_all` to replace every match.",
+    use: "to change part of a file",
+    avoid: "to write a new file or replace a whole one: use `write`",
+  },
   input: z.object({
     path: z.string(),
     old_string: z.string(),
@@ -243,8 +258,11 @@ const edit = tool.group({
  * `sandbox({ tools })`.
  */
 const write = tool.group({
-  description:
-    "Write a file with the complete contents given, creating it and its parent directories if needed and replacing it if it exists. To change part of a file, use edit.",
+  description: {
+    does: "Writes a file with the complete contents given, creating it and its parent directories if needed and replacing it if it exists.",
+    use: "to create a file or replace all of it",
+    avoid: "to change part of a file: use `edit`",
+  },
   input: z.object({ path: z.string(), content: z.string() }),
   run: async ({ path, content }, context) => {
     if (content.trim() === "") {
@@ -283,7 +301,10 @@ const search = configurable((options: CommandToolOptions) => {
   const { timeout = "5m" } = options;
 
   return tool.group({
-    description: "Search file contents with a regular expression.",
+    description: {
+      does: "Searches file contents with a regular expression and gives matching lines with their file and line number.",
+      use: "to find where something is defined or used",
+    },
     input: z.object({ pattern: z.string(), path: z.string().optional() }),
     run: ({ pattern, path = "." }, context) => {
       return exec(
@@ -320,8 +341,12 @@ const run = configurable((options: RunToolOptions) => {
   const { timeout = "5m", session: persist = true } = options;
 
   return tool.group({
-    description:
-      "Run a shell command in the repository. Returns the exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
+    description: {
+      does: "Runs a shell command in the repository and gives its exit code, stdout and stderr. The working directory and exported environment variables persist between calls (shell functions, aliases and unexported variables do not), so cd once rather than in every command.",
+      use: "to build, test, or inspect the repository",
+      avoid:
+        "to read, edit or write a file when `read`, `edit` or `write` is listed: they are exact and cheaper",
+    },
     input: z.object({ command: z.string() }),
     run: async ({ command }, context) => {
       const sandbox = sandboxOf("run", context);
@@ -368,8 +393,11 @@ const runCode = configurable((options: RunCodeToolOptions) => {
     }
   }
 
-  const description =
-    'Run a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. `language` is "python" or "typescript" (there is no "javascript": write TypeScript). It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.';
+  const description: ToolDescriptionParts = {
+    does: 'Runs a Python or TypeScript snippet (the body of an async function; use return for a result) in the sandbox. `language` is "python" or "typescript" (there is no "javascript": write TypeScript). It can call tools as tools.name(...) and wait with tools.sleep({ duration: "30s" }) (keyword duration= in Python), which can take far longer than a command may run. The snippet runs again from the top after each wait, so it must make the same calls with the same arguments in the same order (get the time from tools.now(), not the clock), and anything it does besides calling tools, such as writing files, happens again on each run. Pass tools lists, not sets: iterating a set of strings can change order between runs.',
+    use: "for work that calls several tools in a row, loops over results, or waits",
+    avoid: "for a single tool call you can make yourself",
+  };
 
   const made = tool.group({
     description,
@@ -456,9 +484,11 @@ const runCode = configurable((options: RunCodeToolOptions) => {
       return `- ${toolSignature(name, entry)}`;
     });
 
+    const text = toolDescriptionText(description) ?? "";
+
     return lines.length === 0
-      ? description
-      : `${description}\nTools your code can call (keyword arguments in Python):\n${lines.join("\n")}`;
+      ? text
+      : `${text}\nTools your code can call (keyword arguments in Python):\n${lines.join("\n")}`;
   });
 
   return made;

@@ -221,8 +221,10 @@ export const createSkillTools = (list: readonly Skill[]) => {
 
   return {
     open_skill: tool.group({
-      description:
-        "Open a skill by name and read its instructions. The skills you have are listed in your instructions.",
+      description: {
+        does: "Opens a skill by name and gives its instructions. The skills you have are listed in your instructions.",
+        use: "when a task matches a skill's description, before you start it",
+      },
       input: z.object({ name: z.string() }),
       output: z.string(),
       run: async ({ name }): Promise<string> => {

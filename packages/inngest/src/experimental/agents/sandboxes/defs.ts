@@ -1231,8 +1231,12 @@ const lazySandbox = (
   if (repo && resolvedRepo?.push !== false) {
     tools[`${name}${toolNamespaceSeparator}push`] = bindSandbox(
       tool.group({
-        description:
-          "Push a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+        description: {
+          does: "Pushes a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+          use: "once your commits on the branch are ready to share",
+          avoid:
+            "with `git push` in a command: the sandbox has no credentials, and this tool pushes for you",
+        },
         input: z.object({
           branch: z
             .string()

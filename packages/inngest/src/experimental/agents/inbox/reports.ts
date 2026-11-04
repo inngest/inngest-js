@@ -22,6 +22,7 @@ import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import type { ToolDescriptionParts } from "../../../components/sandbox/toolDescription.ts";
 import { toolErrorOf } from "../../../components/sandbox/toolError.ts";
 import {
   type AgentTool,
@@ -892,15 +893,34 @@ export const sendReport = async (
 
 /**
  * What the model reads about the `report` tool: the types it may send and
- * the schema of each.
+ * the schema of each. The types are known when the run starts and don't
+ * change, so they stay in the description.
  */
-const reportDescription = (spec: ReportSpec): string => {
+const reportDescription = (spec: ReportSpec): ToolDescriptionParts => {
   const lines = Object.entries(spec).map(([type, entry]) => {
     return `- ${type}${entry.required ? " (owed: you must send it before you finish)" : ""}: data ${JSON.stringify(entry.schema ?? { type: "object" })}`;
   });
 
-  return `Sends a typed report to the agents that are waiting for it. Give the report's type and its data. A report whose data does not fit its schema is refused and you can send it again. The types you may send:\n${lines.join("\n")}`;
+  return {
+    does: `Sends a typed report to the agents that are waiting for it, with the report's type and its data. The types you may send:\n${lines.join("\n")}\nA report whose data does not fit its schema is refused, and you can send it again.`,
+    use: "as soon as you have something to report; don't save reports for the end",
+    avoid:
+      "to send your final result: it is not a report, and it goes to whoever started you when you finish",
+    context:
+      "You must send each report marked required before you finish; you are reminded if you don't.",
+  };
 };
+
+/**
+ * What sandbox code reads about its `report` tool.
+ */
+const codeReportDescription = (spec: ReportSpec): ToolDescriptionParts => {
+  const { context: _context, ...parts } = reportDescription(spec);
+
+  return parts;
+};
+
+const reportOutput = z.object({ ok: z.literal(true) });
 
 /**
  * The `report({ type, data })` tool a model gets when its run was started
@@ -911,6 +931,7 @@ export const reportTool = (book: ReportBook): AgentTool => {
   return tool({
     id: "report",
     description: reportDescription(book.spec),
+    output: reportOutput,
     group: true,
     input: z.object({
       type: z.string().describe("The report's type."),
@@ -940,7 +961,8 @@ export const reportTool = (book: ReportBook): AgentTool => {
 export const codeReportTool = (book: ReportBook): AgentTool => {
   return tool({
     id: "report",
-    description: reportDescription(book.spec),
+    description: codeReportDescription(book.spec),
+    output: reportOutput,
     group: true,
     input: z.object({
       type: z.string().describe("The report's type."),

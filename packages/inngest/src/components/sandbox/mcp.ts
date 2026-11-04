@@ -425,7 +425,10 @@ export class McpServer {
     if (listing.connect) {
       return {
         [`${name}_connect`]: {
-          description: `Connect the user's ${name} account. Call it when the user wants something from ${name}.`,
+          description: {
+            does: `Connects the user's ${name} account, so its tools become available.`,
+            use: `when the user wants something from ${name}`,
+          },
           input: { type: "object", properties: {} },
           run: (_input: Record<string, unknown>, ctx) => {
             return this.connect(name, ctx);

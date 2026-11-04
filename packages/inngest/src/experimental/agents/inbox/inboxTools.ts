@@ -252,7 +252,13 @@ export const createListenTools = <
 
   const tools = {
     inbox_listen: tool.group({
-      description: `Open a new inbox on an event type and carry on with your work. What arrives is handed to you at your next turn. Sources: ${allowed}. Give "match" (fields under the event's data and the values they must equal, such as { "pull_request.number": 12 }, at most ${maxMatchFields} fields) to narrow what you hear, and "as" to name the inbox.`,
+      description: {
+        does: `Opens a new inbox on an event type and returns at once, so you carry on with your work. Sources: ${allowed}. Give "match" (fields under the event's data and the values they must equal, such as { "pull_request.number": 12 }, at most ${maxMatchFields} fields) to narrow what you hear, and "as" to name the inbox.`,
+        use: "when you need to hear about events while you work, such as a pull request's checks finishing",
+        avoid: "to wait: end your turn, and what arrives wakes you",
+        context:
+          "Events that reach an inbox you opened with `inbox_listen` are handed to you as messages at your next turn, until you close it or the run ends.",
+      },
       input: z.object({
         source: z.string(),
         match: z
@@ -316,7 +322,10 @@ export const createListenTools = <
     }),
 
     inbox_close: tool.group({
-      description: "Close an inbox you opened with inbox_listen.",
+      description: {
+        does: "Closes an inbox you opened with `inbox_listen`, by its name.",
+        use: "once you no longer need what it hears",
+      },
       input: z.object({ as: z.string() }),
       run: async ({ as }) => {
         const found = opened.get(as);
