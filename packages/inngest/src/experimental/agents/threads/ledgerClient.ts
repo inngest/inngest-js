@@ -41,6 +41,7 @@
 import {
   getAsyncCtxSync,
   stepsIssued,
+  withoutStepCount,
 } from "../../../components/execution/als.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import {
@@ -631,11 +632,16 @@ const load = async (copy: Copy): Promise<void> => {
 /**
  * Starts the background reader of a loaded copy of a run that closes its
  * copies. It starts where the code is when the run says so, the same place on
- * every replay.
+ * every replay. Its reads are not counted as steps of the run's code: how far
+ * it reads before a given point of the code depends on what the request
+ * loaded, and a count that differs between replays would make an inbox drain
+ * skip a read on one replay and not on another.
  */
 const startReader = (copy: Copy): void => {
   if (copy.ready && !copy.reader && copy.sub && closing.has(copy.instance)) {
-    copy.reader = pump(copy);
+    copy.reader = withoutStepCount(() => {
+      return pump(copy);
+    });
   }
 };
 

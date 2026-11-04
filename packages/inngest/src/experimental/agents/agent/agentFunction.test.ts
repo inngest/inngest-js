@@ -159,6 +159,37 @@ describe("agent function", () => {
     ]);
   });
 
+  test.each(["during", "after"] as const)(
+    "a message that arrives %s a one-turn loop is taken by the handler's next drain",
+    async (when) => {
+      const { fn } = createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          model: model(async () => {
+            return say("done");
+          }),
+        },
+        async ({ inbox, loop }) => {
+          const first = await inbox.drain();
+
+          await loop(first);
+
+          const second = await inbox.drain();
+
+          return { first: first.map(textOf), second: second.map(textOf) };
+        },
+      );
+
+      const { output } = await run(fn, {
+        event: trigger("go"),
+        arrive: [{ event: message("user", "late"), at: "agent:model:1", when }],
+      });
+
+      expect(output).toEqual({ first: ["go"], second: ["late"] });
+    },
+  );
+
   test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),

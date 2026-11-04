@@ -5,7 +5,10 @@
  * saved and check that an arrival changes the same read of the code on every
  * replay, that nothing is applied twice, and that a handover still delivers.
  */
-import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import {
+  getAsyncCtxSync,
+  stepsIssued,
+} from "../../../components/execution/als.ts";
 import {
   hashedStepId,
   inboxKey,
@@ -422,5 +425,69 @@ describe("a handover mid-run", () => {
     expect((result as { step: { id: string } }).step.id).toBe(
       hashedStepId(`ledger-resend:${thread}:1`),
     );
+  });
+});
+
+describe("the background reader's reads are not the code's steps", () => {
+  // The step count at each place of the code, as the inbox's drains see it.
+  const counter = (counts: (number | undefined)[]) => {
+    return client.createFunction(
+      { id: "bg-count", triggers: [{ event: "bg/go" }] },
+      async ({ step }) => {
+        const store = ledgerKvAdapter();
+
+        begin();
+        await store.get(thread, "k");
+        counts.push(stepsIssued());
+        await step.run("a", () => {
+          return 1;
+        });
+        counts.push(stepsIssued());
+        await store.get(thread, "k");
+        counts.push(stepsIssued());
+        await step.run("b", () => {
+          return 2;
+        });
+        counts.push(stepsIssued());
+        await end();
+
+        return "done";
+      },
+    );
+  };
+
+  test("the step count at a place of the code is the same on every replay", async () => {
+    // Each request a replay of the one before, with writes saved meanwhile:
+    // the reader reads more or less, and waits at different times.
+    const requests: Entry[][] = [
+      [...base()],
+      [...base(), a],
+      [...base(), write("m1", 5, 1, "new"), a],
+      [...base(), write("m1", 5, 1, "new"), a, write("m2", 6, 2, "newer")],
+      [
+        ...base(),
+        write("m1", 5, 1, "new"),
+        a,
+        write("m2", 6, 2, "newer"),
+        b,
+        write("m3", 7, 3, "newest"),
+      ],
+    ];
+    const observed: (number | undefined)[][] = [];
+
+    for (const entries of requests) {
+      const counts: (number | undefined)[] = [];
+
+      await go(counter(counts), entries);
+      observed.push(counts);
+    }
+
+    const last = observed.at(-1) ?? [];
+
+    expect(last).toHaveLength(4);
+
+    for (const counts of observed) {
+      expect(counts).toEqual(last.slice(0, counts.length));
+    }
   });
 });

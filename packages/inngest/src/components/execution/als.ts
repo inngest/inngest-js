@@ -59,6 +59,12 @@ export interface AsyncContext {
   app: Inngest.Like;
 
   /**
+   * Set inside a background reader (`withoutStepCount`): the step tools it
+   * calls are not counted by `stepsIssued`.
+   */
+  uncounted?: boolean;
+
+  /**
    * Details of the current function execution context. If this doesn't exist,
    * then we're not currently in a function execution context.
    */
@@ -197,9 +203,27 @@ const issuedSteps = new WeakMap<object, number>();
 /**
  * Notes that the code of `instance` called a step tool. Replays run the same
  * code, so the count at any point of the code is the same on every request.
+ * A call from a background reader is not counted: how far such a reader gets
+ * before a given point of the code depends on what the request loaded, so
+ * counting it would make the count differ between replays.
  */
 export const countStepIssued = (instance: object): void => {
+  if (getAsyncCtxSync()?.uncounted) {
+    return;
+  }
+
   issuedSteps.set(instance, (issuedSteps.get(instance) ?? 0) + 1);
+};
+
+/**
+ * Runs `fn`, and everything it starts, as a background reader: the step tools
+ * it calls are not counted by `stepsIssued`. Internal.
+ * @param fn What reads in the background.
+ */
+export const withoutStepCount = <R>(fn: () => R): R => {
+  const store = getAsyncCtxSync();
+
+  return store ? runWithAsyncCtx({ ...store, uncounted: true }, fn) : fn();
 };
 
 /**
