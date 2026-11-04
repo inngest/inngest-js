@@ -4,11 +4,13 @@
  * they fold from, the thread's budget and the record of each turn.
  */
 
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import type { QuestionBook } from "../inbox/questionBook.ts";
 import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
+import { closesCopies } from "../threads/ledgerClient.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
 import { budgetReason, type LimitState } from "./limits.ts";
@@ -68,6 +70,14 @@ export const createLoopWiring = (options: {
    */
   recordInStep?: boolean;
 }): AgentLoopWiring => {
+  // The agent function closes the run's thread copies on every way out of the
+  // body, so they may keep a background reader from here on.
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  if (instance) {
+    closesCopies(instance);
+  }
+
   const {
     config,
     inbox,
