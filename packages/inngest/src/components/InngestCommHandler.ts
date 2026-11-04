@@ -72,7 +72,11 @@ import {
   type InngestExecutionOptions,
   PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
-import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
+import {
+  type Inngest,
+  internalLoggerSymbol,
+  syncHooksSymbol,
+} from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
   InngestFunction,
@@ -2153,6 +2157,8 @@ export class InngestCommHandler<
             url,
           });
 
+          await this.runSyncHooks();
+
           return {
             status: 200,
             body: stringify(respBody),
@@ -2170,6 +2176,10 @@ export class InngestCommHandler<
           deployId,
           getHeaders,
         );
+
+        if (status >= 200 && status < 300) {
+          await this.runSyncHooks();
+        }
 
         return {
           status,
@@ -2604,6 +2614,20 @@ export class InngestCommHandler<
     }
 
     return introspection;
+  }
+
+  /**
+   * Runs the hooks registered on the client for "the app was synced". A hook
+   * that throws is logged and never fails the sync.
+   */
+  private async runSyncHooks(): Promise<void> {
+    for (const hook of this.client[syncHooksSymbol]) {
+      try {
+        await hook();
+      } catch (err) {
+        this.client[internalLoggerSymbol].warn({ err }, "A sync hook failed");
+      }
+    }
   }
 
   protected async register(

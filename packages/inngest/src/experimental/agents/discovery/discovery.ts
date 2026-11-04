@@ -2,7 +2,8 @@
  * @module
  * EXPERIMENTAL: agent discovery. Every agent has a card that says what it does
  * and what it accepts. An app announces its cards in `agents/registered`
- * events from a cron function every 6 hours, and `list_agents` and
+ * events when the app syncs with Inngest and, as a fallback, from a cron
+ * function every 6 hours, and `list_agents` and
  * `describe_agent` read the newest card of each agent of the last 24 hours
  * back, so agents find each other across apps of one environment without
  * naming each other in code. The agents of the caller's own app are found at
@@ -14,6 +15,7 @@ import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import {
   type Inngest,
   internalLoggerSymbol,
+  syncHooksSymbol,
 } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -56,8 +58,9 @@ export {
 export const agentsRegisteredEvent = "agents/registered";
 
 /**
- * When an app announces its cards: every 6 hours, so a card stays inside the
- * 24-hour window discovery reads.
+ * When an app announces its cards regardless of change: every 6 hours, so a
+ * card stays inside the 24-hour window discovery reads. This is the fallback;
+ * an app also announces whenever it syncs with Inngest (`announceIfChanged`).
  */
 export const announceCron = "0 */6 * * *";
 
@@ -469,14 +472,89 @@ export const announcement = (
 };
 
 /**
- * The function that announces an app's cards every 6 hours. On the Dev Server
- * it can be invoked by hand.
+ * The signature of the cards each client last announced in this process. The
+ * signature is an HMAC over the cards, so it changes exactly when the cards do.
+ */
+const lastAnnounced = new WeakMap<object, string>();
+
+/**
+ * Announces the app's cards, and remembers what it sent.
+ */
+const announce = async (
+  client: Inngest.Any,
+  send: (event: ReturnType<typeof announcement>) => Promise<unknown>,
+): Promise<void> => {
+  const event = announcement(client);
+
+  await send(event);
+  lastAnnounced.set(client, event.data.sig ?? "");
+};
+
+/**
+ * EXPERIMENTAL: Announces the app's cards unless the same cards were the last
+ * thing this process announced. Runs whenever the app is synced with Inngest,
+ * so a newly deployed or reloaded app's agents are discoverable at once. The
+ * Dev Server syncs often, so the content check keeps it to one event per
+ * change. The cron announces regardless, to keep cards inside the window
+ * discovery reads.
+ *
+ * Never throws: an app without an event key, or a Dev Server that is not up,
+ * leaves the cron to announce.
+ * @param client The app's client.
+ */
+export const announceIfChanged = async (
+  client: Inngest.Any,
+): Promise<"sent" | "unchanged" | "failed"> => {
+  const { data } = announcement(client);
+
+  if (data.cards.length === 0 || lastAnnounced.get(client) === data.sig) {
+    return "unchanged";
+  }
+
+  try {
+    await announce(client, async (event) => {
+      return client.send(event);
+    });
+
+    return "sent";
+  } catch (err) {
+    client[internalLoggerSymbol].debug(
+      { err },
+      "Could not announce agent cards after sync; the cron will",
+    );
+
+    return "failed";
+  }
+};
+
+const syncHooked = new WeakSet<object>();
+
+/**
+ * Makes the app announce its cards (see `announceIfChanged`) each time it is
+ * synced with Inngest. Once per client.
+ */
+export const announceOnSync = (client: Inngest.Any): void => {
+  if (syncHooked.has(client)) {
+    return;
+  }
+
+  syncHooked.add(client);
+  client[syncHooksSymbol].add(async () => {
+    await announceIfChanged(client);
+  });
+};
+
+/**
+ * The function that announces an app's cards every 6 hours, as a fallback for
+ * the announcement on sync. On the Dev Server it can be invoked by hand.
  */
 export const announceFunction = (client: Inngest.Any): InngestFunction.Any => {
   return client.createFunction(
     { id: "agents-announce", triggers: [{ cron: announceCron }] },
     async ({ step: announceStep }) => {
-      await announceStep.sendEvent("announce", announcement(client));
+      await announce(client, async (event) => {
+        return announceStep.sendEvent("announce", event);
+      });
     },
   );
 };

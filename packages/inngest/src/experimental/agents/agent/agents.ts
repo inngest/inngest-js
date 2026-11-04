@@ -17,7 +17,11 @@ import {
   type SharedTool,
 } from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
-import { announceFunction, rememberCard } from "../discovery/discovery.ts";
+import {
+  announceFunction,
+  announceOnSync,
+  rememberCard,
+} from "../discovery/discovery.ts";
 import { type KvStore, setAppKvStore, usesLedger } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
@@ -327,6 +331,11 @@ export interface CreateAgentsOptions {
  * });
  * ```
  *
+ * The app announces its agents' cards (see `agents/registered`) each time it
+ * is synced with Inngest, if they changed since the last announcement of this
+ * process, and every 6 hours from a cron as a fallback. Announcing on sync
+ * needs an event key (none in dev) and happens in the serve handler's `PUT`.
+ *
  * @param client Inngest client.
  * @param options Where the agents keep their state.
  */
@@ -351,6 +360,8 @@ export const createAgents = <TClient extends Inngest.Any>(
   if (hosted.length > 0 && !announceFunctions.has(client)) {
     announceFunctions.set(client, announceFunction(client));
   }
+
+  announceOnSync(client);
 
   return {
     // One implementation backs every overload of `Agents["agent"]`. The
