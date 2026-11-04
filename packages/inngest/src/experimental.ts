@@ -154,6 +154,11 @@ export {
   snapshotSlot,
 } from "./components/sandbox/snapshotCache.ts";
 export type {
+  ToolDescription,
+  ToolDescriptionParts,
+} from "./components/sandbox/toolDescription.ts";
+export { renderToolDescription } from "./components/sandbox/toolDescription.ts";
+export type {
   AgentTool,
   AgentToolDefinition,
   JsonSchemaObject,

@@ -9,6 +9,7 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { toolSourceOf } from "../../../components/sandbox/callSite.ts";
+import { toolDescriptionText } from "../../../components/sandbox/toolDescription.ts";
 import {
   isToolError,
   type SharedTool,
@@ -25,7 +26,9 @@ export const createSharedToolFunction = (
   shared: SharedTool,
 ): { fn: InngestFunction.Any; card: AgentCard } => {
   const input = shared.input as Parameters<typeof invoke>[0];
-  const description = shared.description ?? shared.card?.description;
+  const description = toolDescriptionText(
+    shared.description ?? shared.card?.description,
+  );
   const run = shared.run as (
     input: unknown,
     ctx: SharedToolContext,
@@ -84,7 +87,7 @@ export const createSharedToolFunction = (
     fn,
     card: cardOf(client.id, shared.id, fn, {
       card: shared.card,
-      description: shared.description,
+      description: toolDescriptionText(shared.description),
       kind: "tool",
       ...(toolSourceOf(shared) && { source: toolSourceOf(shared) }),
     }),

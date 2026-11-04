@@ -25,12 +25,19 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { EventType } from "../triggers/triggers.ts";
 import { callSite, rememberToolSource } from "./callSite.ts";
 import { isInternalTool } from "./internalTool.ts";
 import { McpServer, mcp } from "./mcp.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
+import {
+  renderToolDescription,
+  type ToolDescription,
+  toolDescriptionText,
+  withNote,
+} from "./toolDescription.ts";
 import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import {
   type Sandbox,
@@ -184,7 +191,7 @@ export type ToolCallContext = Omit<SandboxToolContext, "runId" | "score"> & {
 };
 
 export interface SandboxTool<TInput = unknown, TOutput = unknown> {
-  readonly description?: string;
+  readonly description?: ToolDescription;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
   /**
@@ -194,6 +201,13 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly memo?: "none";
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
+
+  /**
+   * @internal The schema of what the tool returns, for its description only:
+   * a tool that calls a hosted function gets a result that the host already
+   * checked.
+   */
+  readonly "~returns"?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
 
   /**
@@ -331,9 +345,13 @@ export interface ToolDefinition<
   TSandbox = Sandbox,
 > {
   /**
-   * What the tool does, for the people reading the code.
+   * What the model reads about the tool: a string, used as it is, or its
+   * parts, `{ does, use?, avoid?, context? }`, which render in that order as
+   * one paragraph. `context` is a fact about what having the tool means for
+   * the agent: it goes in the agent's briefing, not in the description. A
+   * tool with `output` also gets a `Returns:` line made from that schema.
    */
-  description?: string;
+  description?: ToolDescription;
 
   /**
    * Marks the tool's results as text from outside: when the model reads one,
@@ -358,7 +376,11 @@ export interface ToolDefinition<
   input?: TInput;
 
   /**
-   * Any Standard Schema. A result that doesn't match fails the tool step.
+   * Any Standard Schema of what `run` returns. It types `run`'s return, it
+   * tells the model the shape (a `Returns:` line in the description), and it
+   * checks each result: one that doesn't match is not retried, since the
+   * tool already ran. A model gets it as an error result; sandbox code gets
+   * a `ToolError`.
    */
   output?: TOutput;
 
@@ -419,10 +441,11 @@ export interface SharedToolDefinition<
   id: string;
 
   /**
-   * What the tool does. It is the card's description unless `card` sets one,
+   * What the tool does: a string, or `{ does, use?, avoid?, context? }` as
+   * for `tool()`. Its text is the card's description unless `card` sets one,
    * and the description the model reads.
    */
-  description?: string;
+  description?: ToolDescription;
 
   /**
    * Any Standard Schema that describes an object. It becomes the schema of
@@ -432,7 +455,8 @@ export interface SharedToolDefinition<
   input: TInput;
 
   /**
-   * Any Standard Schema. A result that doesn't match fails the call.
+   * Any Standard Schema of what `run` returns. It types `run`'s return, the
+   * model reads its shape, and a result that doesn't match fails the call.
    */
   output?: TOutput;
 
@@ -520,8 +544,9 @@ export const hostOfSharedTool = (shared: SharedTool): string | undefined => {
 export const invokeHostedTool = (options: {
   appId: string;
   functionId: string;
-  description?: string;
+  description?: ToolDescription;
   input?: ToolInput;
+  output?: StandardSchemaV1;
   untrusted?: SandboxTool["untrusted"];
   displayName?: SandboxTool["displayName"];
 }): SandboxTool => {
@@ -536,6 +561,7 @@ export const invokeHostedTool = (options: {
       description: options.description,
     }),
     input: options.input ?? z4.record(z4.string(), z4.unknown()),
+    ...(options.output && { "~returns": options.output }),
     ...(options.untrusted && { untrusted: options.untrusted }),
     ...(options.displayName && { displayName: options.displayName }),
     run: (data: Record<string, unknown>) => {
@@ -889,6 +915,7 @@ const toTool = (entry: SandboxToolEntry): SandboxTool => {
       functionId: entry.id,
       description: entry.description ?? entry.card?.description,
       input: entry.input,
+      ...(entry.output && { output: entry.output }),
       untrusted: entry.untrusted,
       displayName: entry.displayName,
     });
@@ -939,7 +966,7 @@ export const bindSandbox = (
   const bound = entry as SandboxTool;
   const run = bound.run as (...args: unknown[]) => unknown;
   const note = name === undefined ? "" : `Works on the \`${name}\` sandbox.`;
-  const description = [bound.description, note].filter(Boolean).join(" ");
+  const description = withNote(bound.description, note);
   const result = {
     ...bound,
     ...(description && { description }),
@@ -1033,7 +1060,7 @@ export const toolSignature = (
         return `${key}${required.has(key) ? "" : "?"}: ${shortType(value)}`;
       })
       .join(", ");
-    about = description?.split(/(?<=\.)\s/)[0] ?? "";
+    about = toolDescriptionText(description)?.split(/(?<=\.)\s/)[0] ?? "";
   } catch {
     // A tool whose schema can't be shown is still listed by name.
   }
@@ -1222,8 +1249,10 @@ export const resolveToolCall = async (
 
       const result = await definition.output["~standard"].validate(value);
       if (result.issues) {
-        throw new SandboxValidationError(
-          `${name} returned an invalid result: ${issuesMessage(result.issues)}`,
+        // The tool ran: a retry would do its work again and most likely
+        // return the same shape, so this fails for good.
+        throw new NonRetriableError(
+          `${name} returned an invalid result: ${issuesMessage(result.issues)}. Its output schema refused it, so this is a fault in the tool, not in the call.`,
         );
       }
 
@@ -1308,11 +1337,13 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
   validateTools(tools);
 
   return Object.entries(tools).map(([name, entry]) => {
-    const { input } = toTool(entry);
+    const made = toTool(entry);
+    const { input } = made;
     const description =
       (typeof entry === "object" && entry !== null
         ? liveDescriptions.get(entry)?.()
-        : undefined) ?? toTool(entry).description;
+        : undefined) ??
+      renderToolDescription(made.description, made.output ?? made["~returns"]);
 
     return {
       name,

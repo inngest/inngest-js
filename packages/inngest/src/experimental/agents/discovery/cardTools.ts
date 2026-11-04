@@ -9,6 +9,10 @@ import {
 } from "../../../components/sandbox/callSite.ts";
 import { builtinTools } from "../../../components/sandbox/codeTools.ts";
 import { McpServer } from "../../../components/sandbox/mcp.ts";
+import {
+  type ToolDescription,
+  toolDescriptionText,
+} from "../../../components/sandbox/toolDescription.ts";
 import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 
 /**
@@ -37,8 +41,11 @@ const entryOf = (name: string, entry: unknown): AgentCardTool | undefined => {
     return undefined;
   }
 
-  const description = (entry as { description?: unknown } | undefined)
-    ?.description;
+  const given = (entry as { description?: unknown } | undefined)?.description;
+  const description =
+    typeof given === "string" || (typeof given === "object" && given !== null)
+      ? toolDescriptionText(given as ToolDescription)
+      : undefined;
   const source = toolSourceOf(entry);
 
   return {
