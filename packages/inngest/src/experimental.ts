@@ -98,6 +98,7 @@ export {
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
+export { guardedFetch } from "./components/sandbox/guardedFetch.ts";
 export { image } from "./components/sandbox/image.ts";
 export type {
   McpAuth,

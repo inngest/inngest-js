@@ -96,7 +96,10 @@ export interface McpServerOptions {
   timeout?: SandboxDuration;
 
   /**
-   * A `fetch` to use instead of the global one, for tests.
+   * A `fetch` to use instead of `guardedFetch()`, for every request to the
+   * server and its OAuth endpoints: for tests, or for a runtime without
+   * `node:https` such as an edge runtime. A plain loopback URL (`localhost`)
+   * uses the global `fetch` unless this is set.
    */
   fetch?: typeof fetch;
 }

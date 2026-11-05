@@ -1,9 +1,10 @@
 /**
  * @module
  * EXPERIMENTAL: A small client for the Streamable HTTP transport of the Model
- * Context Protocol: `initialize`, `tools/list` and `tools/call` over plain
- * `fetch`. It runs anywhere `fetch` does (Node, Bun, Deno, edge runtimes) and
- * adds no dependency. Sessions live in memory in this process only; a process
+ * Context Protocol: `initialize`, `tools/list` and `tools/call` over
+ * `mcpFetch()` (`guardedFetch()` for any server that is not plain loopback),
+ * which needs `node:https`; on an edge runtime pass your own `fetch`. It adds
+ * no dependency. Sessions live in memory in this process only; a process
  * that starts fresh initializes again.
  *
  * Errors say whether the server could have acted, because a caller must not
@@ -17,6 +18,8 @@
  */
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { refusedAddressCode } from "./guardedFetch.ts";
+import { mcpFetch } from "./mcpGuard.ts";
 import { redact } from "./secret.ts";
 
 export const mcpProtocolVersion = "2025-06-18";
@@ -165,6 +168,7 @@ export const forgetMcpSessions = (): void => {
 };
 
 const preSendCodes = new Set([
+  refusedAddressCode,
   "ECONNREFUSED",
   "ENOTFOUND",
   "EAI_AGAIN",
@@ -545,7 +549,7 @@ export class McpClient {
 
     try {
       // A redirect would carry the credentials to another origin.
-      response = await (this.#options.fetch ?? fetch)(this.#options.url, {
+      response = await (this.#options.fetch ?? mcpFetch)(this.#options.url, {
         method: "POST",
         redirect: "error",
         signal: timeout.signal,

@@ -5,11 +5,13 @@
  * https only, no private or internal addresses, and no credentials in the
  * URL. `http:` is allowed for localhost only, for tests and the Dev Server.
  *
- * Redirects are refused where the requests are made (`redirect: "error"`).
- *
- * The check reads the URL, not DNS: a public name that resolves to a private
- * address is not caught here.
+ * That check reads the URL. The requests go through `mcpFetch()`, which sends
+ * every URL that is not plain loopback through `guardedFetch()`: it refuses
+ * redirects and connects only to a public address it looked up and checked
+ * once, so a public name that resolves to a private address is refused at
+ * connect. A `fetch` passed to `tool.mcp({ fetch })` replaces both.
  */
+import { guardedFetch } from "./guardedFetch.ts";
 import { SandboxValidationError } from "./types.ts";
 
 const loopbackNames = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -194,6 +196,24 @@ export const isLoopbackUrl = (value: string): boolean => {
   } catch {
     return false;
   }
+};
+
+/**
+ * The `fetch` of the MCP code: the global one for a plain loopback URL (tests
+ * and the Dev Server), `guardedFetch()` for every other.
+ */
+export const mcpFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> => {
+  const url =
+    input instanceof Request
+      ? input.url
+      : input instanceof URL
+        ? input.href
+        : input;
+
+  return isLoopbackUrl(url) ? fetch(input, init) : guardedFetch(input, init);
 };
 
 /**

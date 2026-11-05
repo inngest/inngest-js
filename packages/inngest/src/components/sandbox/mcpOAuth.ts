@@ -22,7 +22,7 @@
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { mcpProtocolVersion } from "./mcpClient.ts";
-import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
+import { assertMcpUrl, isLoopbackUrl, mcpFetch } from "./mcpGuard.ts";
 import { redact, type Secret } from "./secret.ts";
 
 /**
@@ -375,7 +375,7 @@ export class McpOAuth {
     this.#url = server.url;
     this.#id = server.id;
     this.#store = store;
-    this.#fetch = fetchFn ?? ((...args) => fetch(...args));
+    this.#fetch = fetchFn ?? mcpFetch;
   }
 
   async userOf(ctx: McpOAuthUserContext): Promise<string> {
@@ -1204,7 +1204,8 @@ export interface McpCallbackOptions {
   }) => Promise<unknown>;
 
   /**
-   * A `fetch` to use instead of the global one, for tests.
+   * A `fetch` to use instead of `guardedFetch()` (the global one for a plain
+   * loopback URL), for tests or a runtime without `node:https`.
    */
   fetch?: typeof fetch;
 }
