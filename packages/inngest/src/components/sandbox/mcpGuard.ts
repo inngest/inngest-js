@@ -5,11 +5,15 @@
  * https only, no private or internal addresses, and no credentials in the
  * URL. `http:` is allowed for localhost only, for tests and the Dev Server.
  *
- * Redirects are refused where the requests are made (`redirect: "error"`).
+ * Redirects are refused: requests are sent with `redirect: "manual"`, which
+ * every runtime supports, and a redirect that comes back is refused. A custom
+ * `fetch` that ignores `"manual"` and follows the redirect has already sent
+ * the request by the time it is refused.
  *
  * The check reads the URL, not DNS: a public name that resolves to a private
  * address is not caught here.
  */
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { SandboxValidationError } from "./types.ts";
 
 const loopbackNames = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -239,4 +243,44 @@ export const assertMcpUrl = (
   }
 
   return url;
+};
+
+export class McpRedirectError extends NonRetriableError {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpRedirectError";
+  }
+}
+
+type RedirectSignals = Pick<Response, "type" | "status" | "redirected">;
+
+/**
+ * Whether `response` is a redirect, or came from a fetch that followed one.
+ */
+export const isRedirect = (response: RedirectSignals): boolean => {
+  return (
+    response.type === "opaqueredirect" ||
+    response.redirected ||
+    (response.status >= 300 && response.status < 400)
+  );
+};
+
+/**
+ * Throws a `McpRedirectError` if `response` is a redirect: it could carry
+ * credentials to another origin, or point at an address `assertMcpUrl()`
+ * refuses.
+ */
+export const refuseRedirect = async (
+  response: Response,
+  url: string,
+): Promise<Response> => {
+  if (isRedirect(response)) {
+    await response.body?.cancel().catch(() => {});
+
+    throw new McpRedirectError(
+      `tool.mcp() refuses redirects: ${new URL(url).origin} answered with one`,
+    );
+  }
+
+  return response;
 };

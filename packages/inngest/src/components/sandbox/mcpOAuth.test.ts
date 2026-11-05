@@ -46,6 +46,7 @@ const setup = (
     user?: string;
     registration?: boolean;
     clientSecret?: string;
+    fetch?: (inner: typeof fetch) => typeof fetch;
   } = {},
 ) => {
   const server = fakeMcpFetch({
@@ -56,12 +57,13 @@ const setup = (
       client: { id: "preset" },
     },
   });
+  const fetch = options.fetch?.(server.fetch) ?? server.fetch;
   const store = memoryOAuthStore();
   const needs: McpNeedsAuthorization[] = [];
   const hex = tool.mcp({
     id: "hex",
     url: server.url,
-    fetch: server.fetch,
+    fetch,
     auth: {
       oauth: {
         user: options.user ?? "U1",
@@ -76,7 +78,7 @@ const setup = (
     },
   });
 
-  return { server, store, hex, needs };
+  return { server, fetch, store, hex, needs };
 };
 
 const build = async (hex: ReturnType<typeof tool.mcp>) => {
@@ -98,13 +100,13 @@ type Fixture = ReturnType<typeof setup>;
 // What the person's browser does with the link the app was given: open it,
 // approve at the authorization server, come back with the same cookie.
 const browse = async (
-  fixture: Pick<Fixture, "server" | "store">,
+  fixture: Pick<Fixture, "server" | "fetch" | "store">,
   link: string,
   options: { code?: string; sent?: McpAuthorizedData[] } = {},
 ) => {
   const callback = mcpCallback({
     store: fixture.store,
-    fetch: fixture.server.fetch,
+    fetch: fixture.fetch,
     send: async (event) => {
       options.sent?.push(event.data);
     },
@@ -142,7 +144,7 @@ const nextLink = async (
   const other = tool.mcp({
     id: "hex",
     url: fixture.server.url,
-    fetch: fixture.server.fetch,
+    fetch: fixture.fetch,
     auth: {
       oauth: {
         user,
@@ -569,5 +571,141 @@ describe("tool.mcp OAuth", () => {
     expect(await other.get("k")).toBeNull();
     await store.delete("k");
     expect(await store.get("k")).toBeNull();
+  });
+});
+
+describe("tool.mcp OAuth on a guarded fetch", () => {
+  const isToken = (input: Parameters<typeof fetch>[0]) => {
+    return (
+      new URL(input instanceof Request ? input.url : String(input)).pathname ===
+      "/oauth/token"
+    );
+  };
+
+  // A fetch that answers the token endpoint with `answer` once it is set.
+  const tokenFetch = () => {
+    const control: {
+      answer?: () => Response;
+      redirects: unknown[];
+    } = { redirects: [] };
+    const wrap = (inner: typeof fetch): typeof fetch => {
+      return async (input, init) => {
+        control.redirects.push(init?.redirect);
+
+        if (init?.redirect === "error") {
+          throw new TypeError(
+            'Invalid redirect value, must be one of "follow" or "manual"',
+          );
+        }
+
+        return control.answer && isToken(input)
+          ? control.answer()
+          : inner(input, init);
+      };
+    };
+
+    return { control, wrap };
+  };
+
+  const redirect = () => {
+    return new Response(null, {
+      status: 307,
+      headers: { location: "https://elsewhere.example/token" },
+    });
+  };
+
+  const connected = async (ttl?: number) => {
+    const { control, wrap } = tokenFetch();
+    const fixture = setup({ ttl, fetch: wrap });
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
+
+    await connectUser(fixture, info);
+
+    return { fixture, control, built: await build(fixture.hex) };
+  };
+
+  const settle = async (value: unknown) => {
+    return Promise.resolve(value).catch((error: unknown) => error);
+  };
+
+  test("sign-in, code exchange and refresh work on a fetch that rejects redirect: error, as Workers' does", async () => {
+    const { fixture, control, built } = await connected(1);
+
+    await pause(1100);
+
+    expect(await run(built.hex_create_thread, { prompt: "p" })).toEqual({
+      id: "t-1",
+      prompt: "p",
+    });
+    expect(
+      fixture.server.oauthCalls.filter((c) => c.path === "/oauth/token"),
+    ).toHaveLength(2); // the code exchange, then the refresh
+    expect(control.redirects.every((value) => value === "manual")).toBe(true);
+  });
+
+  test("a redirecting token endpoint is refused at the code exchange", async () => {
+    const { control, wrap } = tokenFetch();
+    const fixture = setup({ fetch: wrap });
+    const info = needsAuth(
+      fixture,
+      await run((await build(fixture.hex)).hex_connect),
+    );
+
+    control.answer = redirect;
+
+    const response = await browse(fixture, info.url);
+
+    expect(response.status).not.toBe(200);
+    expect(
+      [...fixture.store.values.keys()].some(
+        (k) => k.startsWith("token:") && !k.endsWith(":lease"),
+      ),
+    ).toBe(false);
+  });
+
+  test("a redirecting token endpoint is refused at refresh", async () => {
+    const { control, built } = await connected(1);
+
+    control.answer = redirect;
+    await pause(1100);
+
+    const result = await settle(run(built.hex_create_thread, { prompt: "p" }));
+
+    expect(String(result)).toMatch(/refuses redirects/);
+  });
+
+  test.each([
+    [
+      "a name and code it does not know",
+      Object.assign(new Error("Bearer review-secret-value"), {
+        name: "TransportError (review-secret-value)",
+        cause: { code: "review-secret-value" },
+      }),
+      "failed: Error",
+    ],
+    [
+      "a known name and code",
+      new TypeError("fetch failed with Bearer review-secret-value", {
+        cause: { code: "ECONNREFUSED" },
+      }),
+      "failed: TypeError (ECONNREFUSED)",
+    ],
+  ])("a failed refresh names only %s", async (_name, error, expected) => {
+    const { control, built } = await connected(1);
+
+    control.answer = () => {
+      throw error;
+    };
+    await pause(1100);
+
+    const result = String(
+      await settle(run(built.hex_create_thread, { prompt: "p" })),
+    );
+
+    expect(result).toContain(expected);
+    expect(result).not.toContain("review-secret-value");
   });
 });
