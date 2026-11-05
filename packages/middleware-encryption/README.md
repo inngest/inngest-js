@@ -155,3 +155,6 @@ const inngest = new Inngest({
   middleware: [mw],
 });
 ```
+> [!NOTE]
+> The default LibSodium service can't run on Cloudflare Workers. Pass a custom
+> `encryptionService` there, such as one built on WebCrypto's AES-GCM.
