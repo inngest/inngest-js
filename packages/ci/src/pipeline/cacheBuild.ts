@@ -18,6 +18,7 @@
 
 import type { Inngest, InngestFunction } from "inngest";
 import { internalEvents, NonRetriableError } from "inngest";
+import type { SnapshotEntry } from "inngest/experimental";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
 import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
@@ -66,10 +67,16 @@ export interface CacheBuildData extends Record<string, unknown> {
    */
   ownKey: string;
   /**
-   * The name the snapshot is written under: scope, job and `ownKey`, where the
-   * scope of a job without a `cache` is the pipeline run.
+   * The entry the snapshot is written under: scope, job and `ownKey`, where
+   * the scope of a job without a `cache` is the pipeline run.
    */
-  cacheKey: string;
+  entry?: SnapshotEntry;
+  /**
+   * The full snapshot name a build run invoked by an earlier release carries
+   * instead of `entry`. Only read when `entry` is missing, so such a run, in
+   * flight across an upgrade, still builds.
+   */
+  cacheKey?: string;
   /** The named parts of the job's `cache.key` as the invoking run resolved them. */
   key?: Record<string, string>;
   /**
@@ -109,7 +116,7 @@ export interface CacheBuildData extends Record<string, unknown> {
   slot: string;
   /**
    * Set for a job the pipeline called itself, which nothing starts from: the
-   * run takes no snapshot, and `cacheKey` only keeps such runs apart.
+   * run takes no snapshot, and `entry` only keeps such runs apart.
    */
   direct?: boolean;
   /**

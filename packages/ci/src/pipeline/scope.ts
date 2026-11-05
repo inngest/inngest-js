@@ -9,6 +9,7 @@ import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, runWithAsyncCtx } from "inngest/experimental";
 import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import { buildEntryOf } from "../cache/names.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CommandRow } from "../github/render/commands.ts";
 import type { ResolvedSource } from "../github/source.ts";
@@ -141,7 +142,11 @@ export const cacheRefreshIdPrefix = "ci/cache-refresh/";
 /** What a build run is asked to build, from the data it was invoked with. */
 export const requestOf = (data: CacheBuildData): BuildRequest => {
   return {
-    target: { ownKey: data.ownKey, key: data.key ?? {}, name: data.cacheKey },
+    target: {
+      ownKey: data.ownKey,
+      key: data.key ?? {},
+      entry: buildEntryOf(data),
+    },
     ...(data.exclude ? { exclude: data.exclude } : {}),
     ...(data.broken ? { broken: data.broken } : {}),
     ...(data.unnamed ? { unnamed: data.unnamed } : {}),
@@ -460,6 +465,11 @@ export interface CiJobScope {
   /** Environment defaults for commands in this scope. */
   env: Record<string, string>;
   cwd?: string;
+  /**
+   * Variables a command unset, so that later commands start without them.
+   * `env` and `cwd` move as commands `export` and `cd`, like a shell.
+   */
+  unset: Set<string>;
   /** Secret values to mask in output. */
   secrets: string[];
   /**

@@ -148,7 +148,11 @@ describe("sessions", () => {
 
     const { image } = sessionsMeta(run, {
       jobId: "ビルド".repeat(100),
-      target: { ownKey, key: {}, name: "ci/x" },
+      target: {
+        ownKey,
+        key: {},
+        entry: { scope: "ci/x", key: "y", generation: "z" },
+      },
     }).sessions;
 
     expect(Buffer.byteLength(image as string)).toBeLessThanOrEqual(512);

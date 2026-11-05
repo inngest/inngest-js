@@ -268,6 +268,115 @@ export class InngestApi {
     });
   }
 
+  /**
+   * Lists events by name, newest first, through the public events API
+   * (`GET /v1/events`). The Dev Server and Cloud both serve it.
+   * @param options The event name, the page size and the cursor (the
+   * `internalId` of the last event of the previous page).
+   */
+  async listEvents(options: {
+    name: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<
+    {
+      id?: string;
+      internalId: string;
+      name: string;
+      data: unknown;
+      ts?: number;
+    }[]
+  > {
+    const params = new URLSearchParams({ name: options.name });
+
+    if (options.limit) {
+      params.set("limit", String(options.limit));
+    }
+
+    if (options.cursor) {
+      params.set("cursor", options.cursor);
+    }
+
+    const result = await this.req(`/v1/events?${params.toString()}`);
+
+    if (!result.ok) {
+      throw new Error(
+        getErrorMessage(result.error, "Unknown error listing events"),
+      );
+    }
+
+    const res = result.value;
+
+    if (!res.ok) {
+      throw new Error(
+        `Listing events failed: ${res.status} ${res.statusText} - ${await res.text()}`,
+      );
+    }
+
+    const body = (await res.json()) as {
+      data?: {
+        id?: string;
+        internal_id: string;
+        name: string;
+        data: unknown;
+        ts?: number;
+      }[];
+    };
+
+    return (body.data ?? []).map((event) => {
+      return {
+        id: event.id,
+        internalId: event.internal_id,
+        name: event.name,
+        data: event.data,
+        ts: event.ts,
+      };
+    });
+  }
+
+  /**
+   * Runs an Insights SQL query. Rows come back as lists of values in the order
+   * of `columns`.
+   * @param query The Insights query.
+   */
+  async queryInsights(
+    query: string,
+  ): Promise<{ columns: string[]; rows: unknown[][] }> {
+    const result = await this.req("/v2/insights/query", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+
+    if (!result.ok) {
+      throw new Error(
+        getErrorMessage(result.error, "Unknown error querying Insights"),
+      );
+    }
+
+    const res = result.value;
+    if (!res.ok) {
+      throw new Error(
+        `Insights query failed: ${res.status} ${res.statusText} - ${await res.text()}`,
+      );
+    }
+
+    const body = (await res.json()) as {
+      data?: {
+        columns?: { name: string }[];
+        rows?: { values: unknown[] }[];
+      };
+    };
+
+    return {
+      columns: (body.data?.columns ?? []).map((column) => {
+        return column.name;
+      }),
+      rows: (body.data?.rows ?? []).map((row) => {
+        return row.values;
+      }),
+    };
+  }
+
   async sendSignal(
     signalOptions: InngestApi.SendSignalOptions,
     options?: {
@@ -405,6 +514,35 @@ export class InngestApi {
           getErrorMessage(error, "Unknown error getting subscription token"),
         );
       });
+  }
+
+  /**
+   * Cancels a run: `DELETE /v1/runs/{runId}`. A run that is gone answers 404,
+   * which is the error returned here, so the caller decides whether that
+   * matters. A request that never got an answer has status 0.
+   * @param runId The run to cancel.
+   */
+  async cancelRun(runId: string): Promise<Result<void, ErrorResponse>> {
+    const result = await this.req(`/v1/runs/${encodeURIComponent(runId)}`, {
+      method: "DELETE",
+    });
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error cancelling run"),
+        status: 0,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      return ok<void>(undefined);
+    }
+
+    return err({
+      error: `Failed to cancel run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      status: res.status,
+    });
   }
 
   async updateMetadata(

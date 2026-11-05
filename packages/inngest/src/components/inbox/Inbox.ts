@@ -115,6 +115,19 @@ export const inboxOpenedPromise = (inbox: object): Promise<void> => {
   return openedPromises.get(inbox) ?? Promise.resolve();
 };
 
+// What each inbox asks about its state: whether messages are saved that no read
+// has taken yet. Kept here so nothing internal is part of the declaration.
+const unreadChecks = new WeakMap<object, () => boolean>();
+
+/**
+ * Whether the run's state holds messages of `inbox` that no read has taken yet.
+ * They are delivered to the read that is waiting, so a reader that is about to
+ * stop waits for it instead. Internal: the package root does not export it.
+ */
+export const inboxHasUnread = (inbox: object): boolean => {
+  return unreadChecks.get(inbox)?.() ?? false;
+};
+
 /**
  * The ID of the op of the `n`th read of an inbox.
  */
@@ -371,7 +384,18 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     });
     this._opened = deps.open(deps.id, deps.sources);
 
-    const settled = this._opened.then(() => {
+    let ready: OpenedInbox | undefined;
+
+    unreadChecks.set(this, () => {
+      return (
+        ready !== undefined &&
+        this._deps.unread(ready.inbox, this._taken).length > 0
+      );
+    });
+
+    const settled = this._opened.then((opened) => {
+      ready = opened;
+
       return undefined;
     });
 
@@ -554,6 +578,22 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     return ids.map((id) => {
       return addEventIs(this._deps.message(id) as object) as TMessage;
     });
+  }
+
+  /**
+   * Draws the read of a message that came from the run's own state and not
+   * from this inbox, such as the event that started the run: it gets a row like
+   * any read answered from state, and costs no step. Internal.
+   */
+  noteStart(): void {
+    // Only the trace needs this row, so the read does not wait for the open.
+    void this._opened
+      .then(({ id, inbox }) => {
+        this._deps.report(`${id}:start`, inbox, [], true);
+      })
+      .catch(() => {
+        // A failed open surfaces on the reads themselves.
+      });
   }
 
   private async _readOne(

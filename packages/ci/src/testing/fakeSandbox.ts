@@ -32,6 +32,8 @@ export interface FakeProcess {
   endedAt?: string;
   /** How many `wait` calls time out before this process exits. */
   ticksUntilExit: number;
+  /** The exit code the command was answered with, when answered by `respond`. */
+  plannedExit?: number;
 }
 
 export interface FakeSandbox {
@@ -78,6 +80,16 @@ export interface CommandScript {
   ambiguousStarts?: number;
   /** A captured exec of this command runs past its timeout. */
   execTimesOut?: boolean;
+  /**
+   * Answers the command itself, given the command exactly as the API got it
+   * (a job's shell session wraps it in a script) and where it was asked to
+   * run. A test can run it for real.
+   */
+  respond?: (request: {
+    command: string[];
+    cwd?: string;
+    environment?: Record<string, string>;
+  }) => { stdout?: string; stderr?: string; exitCode?: number };
 }
 
 export interface FakeSandboxApi {
@@ -94,6 +106,8 @@ export interface FakeSandboxApi {
   timeline: string[];
   /** Every request path, in order. */
   requests: string[];
+  /** The query of every listing of snapshots that is not by name. */
+  fullSnapshotListings: string[];
   script(scripts: CommandScript[]): void;
   /** Make snapshot creation fail the way an environment without it would. */
   disableSnapshots(): void;
@@ -195,8 +209,45 @@ const noContent = (): Response => {
   return new Response(null, { status: 204 });
 };
 
+/**
+ * A command a job's shell session wrapped in its report script, as it was
+ * written: the script after the trap line, which is an argv when every word is
+ * single-quoted (what `$` makes) and a shell script otherwise (`$.sh`).
+ */
+const unwrapSession = (argv: string[]): string[] => {
+  const [shell, flag, script] = argv;
+
+  if (argv.length !== 3 || shell !== "/bin/sh" || flag !== "-c") {
+    return argv;
+  }
+
+  const lines = (script ?? "").split("\n");
+  const trap = lines.findIndex((line) => {
+    return (
+      line.startsWith("trap '__rc=$?; ") && line.includes("__INGEST_SHELL_")
+    );
+  });
+
+  if (trap === -1) {
+    return argv;
+  }
+
+  const text = lines.slice(trap + 1).join("\n");
+  const quoted = /^'(?:[^']|'\\'')*'(?: '(?:[^']|'\\'')*')*$/;
+
+  if (!quoted.test(text)) {
+    return ["/bin/sh", "-c", text];
+  }
+
+  return [...text.matchAll(/'((?:[^']|'\\'')*)'/g)].map((word) => {
+    return (word[1] ?? "").split("'\\''").join("'");
+  });
+};
+
 const toArgv = (command: unknown): string[] => {
-  return Array.isArray(command) ? command : ["/bin/sh", "-c", String(command)];
+  return unwrapSession(
+    Array.isArray(command) ? command : ["/bin/sh", "-c", String(command)],
+  );
 };
 
 const sandboxResource = (sandbox: FakeSandbox) => {
@@ -272,6 +323,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const commands: string[][] = [];
   const timeline: string[] = [];
   const requests: string[] = [];
+  /** The listings of every snapshot, which have no name to look for. */
+  const fullSnapshotListings: string[] = [];
 
   let scripts: CommandScript[] = [];
   let snapshotsEnabled = true;
@@ -285,13 +338,33 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   };
 
   const scriptFor = (argv: string[]): CommandScript => {
-    const joined = argv.join(" ");
+    const joined = unwrapSession(argv).join(" ");
 
     return (
       scripts.find((script) => {
         return joined.includes(script.match);
       }) ?? { match: "" }
     );
+  };
+
+  const answered = (
+    script: CommandScript,
+    body: Record<string, unknown>,
+  ): CommandScript => {
+    if (!script.respond) {
+      return script;
+    }
+
+    return {
+      ...script,
+      ...script.respond({
+        command: Array.isArray(body.command)
+          ? (body.command as string[])
+          : ["/bin/sh", "-c", String(body.command)],
+        cwd: body.cwd as string | undefined,
+        environment: body.environment as Record<string, string> | undefined,
+      }),
+    };
   };
 
   /** Advance a running process one wait, exiting it once its ticks run out. */
@@ -303,7 +376,8 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     if (process.ticksUntilExit <= 0) {
       process.state = "EXITED";
 
-      process.exitCode = scriptFor(process.command).exitCode ?? 0;
+      process.exitCode =
+        process.plannedExit ?? scriptFor(process.command).exitCode ?? 0;
 
       process.endedAt = now();
 
@@ -468,7 +542,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     commands.push(argv);
     timeline.push(`command ${argv.join(" ")}`);
 
-    const script = scriptFor(argv);
+    const script = answered(scriptFor(argv), body);
 
     leaveFiles(sandbox, script);
 
@@ -605,14 +679,16 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     commands.push(argv);
     timeline.push(`command ${argv.join(" ")}`);
 
-    const script = scriptFor(argv);
+    const script = answered(scriptFor(argv), body);
 
     leaveFiles(sandbox, script);
 
     const process: FakeProcess = {
       id: nextId(),
       sandboxId: sandbox.id,
-      command: argv,
+      // As the API was given it, which a lookup after an ambiguous start
+      // compares with
+      command: Array.isArray(body.command) ? body.command : argv,
       pid: 42,
       state: "RUNNING",
       stdout: script.stdout ?? "",
@@ -620,6 +696,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       ...(script.chunks ? { chunks: script.chunks } : {}),
       startedAt: now(),
       ticksUntilExit: script.ticks ?? 0,
+      ...(script.exitCode !== undefined && { plannedExit: script.exitCode }),
     };
 
     processes.set(process.id, process);
@@ -867,6 +944,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     requests.push(`${method} ${url.pathname}`);
 
+    if (
+      method === "GET" &&
+      url.pathname === "/v2/snapshots" &&
+      !url.searchParams.get("name")
+    ) {
+      fullSnapshotListings.push(url.search);
+    }
+
     // File uploads send bytes, so only JSON bodies are parsed.
     const contentType = String(
       (init?.headers as Record<string, string> | undefined)?.["Content-Type"] ??
@@ -904,6 +989,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     commands,
     timeline,
     requests,
+    fullSnapshotListings,
     script: (next) => {
       scripts = next;
     },

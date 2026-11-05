@@ -44,6 +44,17 @@ export type {
   RunnerOptions,
 } from "./sandbox/runners.ts";
 export type {
+  SandboxShell,
+  SandboxShellOptions,
+  ShellStart,
+  ShellState,
+} from "./sandbox/shell.ts";
+export {
+  beginShellCommand,
+  endShellCommand,
+  stripShellReport,
+} from "./sandbox/shell.ts";
+export type {
   DurableSandbox,
   DurableSandboxProcess,
   DurableSandboxSnapshot,
