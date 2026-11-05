@@ -67,6 +67,12 @@ export namespace InngestApi {
     signingKeyFallback: () => string | undefined;
     environment: () => string | null;
     fetch: () => FetchT;
+
+    /**
+     * Returns the `INNGEST_CONNECT_INSTANCE_ID` value.  Checkpoint requests
+     * send it in the `x-inngest-instance-id` header.
+     */
+    instanceId?: () => string | undefined;
   }
 
   export interface Subscription {
@@ -90,6 +96,7 @@ export class InngestApi {
   private readonly _apiBaseUrl: () => string | undefined;
   private readonly _environment: () => string | null;
   private readonly _fetch: () => FetchT;
+  private readonly _instanceId: () => string | undefined;
 
   constructor({
     baseUrl,
@@ -97,12 +104,14 @@ export class InngestApi {
     signingKeyFallback,
     environment,
     fetch,
+    instanceId,
   }: InngestApi.Options) {
     this._apiBaseUrl = baseUrl;
     this._signingKey = signingKey;
     this._signingKeyFallback = signingKeyFallback;
     this._environment = environment;
     this._fetch = fetch;
+    this._instanceId = instanceId ?? (() => undefined);
   }
 
   private get apiBaseUrl(): string | undefined {
@@ -123,6 +132,11 @@ export class InngestApi {
       [headerKeys.SdkVersion]: `inngest-js:v${version}`,
       ...(environment ? { [headerKeys.Environment]: environment } : {}),
     };
+  }
+
+  private get checkpointHeaders(): Record<string, string> {
+    const instanceId = this._instanceId();
+    return instanceId ? { [headerKeys.InstanceId]: instanceId } : {};
   }
 
   private get hashedKey(): string {
@@ -490,6 +504,7 @@ export class InngestApi {
     const result = await this.req("/v1/checkpoint", {
       method: "POST",
       body,
+      headers: this.checkpointHeaders,
     });
 
     if (!result.ok) {
@@ -535,6 +550,7 @@ export class InngestApi {
       {
         method: "POST",
         body,
+        headers: this.checkpointHeaders,
       },
     );
 
@@ -582,6 +598,7 @@ export class InngestApi {
       {
         method: "POST",
         body,
+        headers: this.checkpointHeaders,
       },
     );
 
