@@ -147,7 +147,8 @@ export interface SandboxDefinitionOptions<
 
   /**
    * Where relative paths and commands start, and where the shell starts: the
-   * repository's path when the sandbox has a `repo`. Default `/work`.
+   * repository's path when the sandbox has a `repo`. Default `/work` with a
+   * `repo`, else `/tmp`.
    */
   cwd?: string;
 
@@ -391,6 +392,12 @@ export type SandboxToolsOf<TSandboxes extends SandboxToolNames> =
 const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * Where a sandbox with no `repo` and no `cwd` starts. `/work` is made by the
+ * checkout, so it is missing without one; `/tmp` is in every image.
+ */
+const defaultCwdWithoutRepo = "/tmp";
 
 /**
  * What a `repo` adds to a definition's tools: a marker that the sandbox has a
@@ -1166,7 +1173,12 @@ const lazySandbox = (
     });
   };
 
-  const cwd = lent?.cwd ?? definition.cwd ?? "/work";
+  // `/work` exists only once a repo is checked out, so a sandbox without one
+  // starts in `/tmp`, which every image has.
+  const cwd =
+    lent?.cwd ??
+    definition.cwd ??
+    (resolvedRepo ? resolvedRepo.path : defaultCwdWithoutRepo);
   const shims = definition.shims?.length ? definition.shims : undefined;
   let shellMade: ReturnType<SandboxHandle["shell"]> | undefined;
 
