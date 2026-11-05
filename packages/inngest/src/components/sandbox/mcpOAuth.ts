@@ -13,10 +13,11 @@
  *
  * A user with no token is given a sign-in link through the app's
  * `onNeedsAuthorization` hook; the model never sees it. The link opens on the
- * app's own route, `mcpCallback({ store })`, which ties it to the browser that
- * first opened it with a short-lived cookie, sends that browser to the
+ * app's own route, `mcpCallback({ store, send })`, which ties it to the browser
+ * that first opened it with a short-lived cookie, sends that browser to the
  * authorization server, and finishes the flow when the same browser comes
- * back. Tokens are stored under the server's `id`.
+ * back. Tokens are stored under the server's `id`, and `send`, if given, sends
+ * `agent/mcp.authorized` so the app can carry on with the request.
  */
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -1185,8 +1186,17 @@ export interface McpCallbackOptions {
   clientSecret?: string | Secret;
 
   /**
-   * Sends the event, such as `(event) => inngest.send(event)`. What it
-   * resolves to is ignored, so it is `unknown`.
+   * Called once a user has finished connecting a server, after the token is
+   * stored, with the `agent/mcp.authorized` event (`mcpAuthorizedEvent`). Its
+   * data (`McpAuthorizedData`) names the server, the user as `auth.oauth.user`
+   * named them, and the server's URL. Pass `(event) => inngest.send(event)` and
+   * trigger on it to carry on with the request that needed the sign-in, such
+   * as by messaging the thread that asked, instead of asking the user to send
+   * it again. Without `send`, nothing is sent and the next call finds the
+   * token.
+   *
+   * What it resolves to is ignored, so it is `unknown`. If it throws, the
+   * browser gets a 502 although the token is already stored.
    */
   send?: (event: {
     name: typeof mcpAuthorizedEvent;

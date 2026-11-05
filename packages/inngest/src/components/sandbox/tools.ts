@@ -68,7 +68,11 @@ export const byteLength = (text: string): number => {
  */
 export interface SandboxToolContext<TSandbox = Sandbox> {
   /**
-   * Aborts when the tool times out.
+   * Aborts when the tool times out, which today only a `tool.step()` called
+   * by sandbox code does: after `toolOptions.toolTimeout` (30 seconds unless
+   * set). It never aborts yet when the model calls a tool through the loop,
+   * which has no tool timeout, nor in a `tool.group()` body, nor when the run
+   * is cancelled: the SDK is not told of a cancel while a step runs.
    */
   signal: AbortSignal;
 
