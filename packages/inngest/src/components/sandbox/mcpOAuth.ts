@@ -1124,7 +1124,10 @@ const finishAuthorization = async (options: {
   code: string;
   clientSecret?: string | Secret;
   send?: McpCallbackOptions["send"];
-  fetch?: typeof fetch;
+  fetch?: (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => Promise<Response>;
 }): Promise<McpAuthorizedData> => {
   const { store, pending, key } = options;
 
@@ -1207,7 +1210,10 @@ export interface McpCallbackOptions {
    * A `fetch` to use instead of `guardedFetch()` (the global one for a plain
    * loopback URL), for tests or a runtime without `node:https`.
    */
-  fetch?: typeof fetch;
+  fetch?: (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => Promise<Response>;
 }
 
 /**

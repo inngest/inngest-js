@@ -101,7 +101,10 @@ export interface McpServerOptions {
    * `node:https` such as an edge runtime. A plain loopback URL (`localhost`)
    * uses the global `fetch` unless this is set.
    */
-  fetch?: typeof fetch;
+  fetch?: (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => Promise<Response>;
 }
 
 /**

@@ -108,7 +108,10 @@ export interface McpResolvedAuth {
 
 export interface McpClientOptions {
   url: string;
-  fetch?: typeof fetch;
+  fetch?: (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => Promise<Response>;
 
   /**
    * Reads the auth headers. Runs for every call, so a secret is read inside
