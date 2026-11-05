@@ -13,6 +13,7 @@ import { secret } from "../../../components/sandbox/secret.ts";
 import { resolveToolCall, tool } from "../../../components/sandbox/tools.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import type { OutgoingOp } from "../../../types.ts";
+import * as entry from "../index.ts";
 import type {
   AgentLoopOptions,
   AgentModelRequest,
@@ -295,6 +296,13 @@ describe("untrusted text escaping", () => {
       '<untrusted source="">'.length + 120,
     );
     expect(wrapped.split("\n")[0]).not.toContain("<>");
+  });
+
+  test("the public entry exports the same wrapper", () => {
+    expect(entry.untrustedText).toBe(untrustedText);
+    expect(entry.untrustedText("hi", { source: "slack" })).toBe(
+      '<untrusted source="slack">\nhi\n</untrusted>',
+    );
   });
 });
 

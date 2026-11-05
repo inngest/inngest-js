@@ -91,7 +91,8 @@ export {
   hasToolCall,
 } from "./loop/loop.ts";
 export { toolScore as score } from "./loop/scores.ts";
-export { untrustedTag } from "./loop/untrustedText.ts";
+export type { UntrustedOptions } from "./loop/untrustedText.ts";
+export { untrustedTag, untrustedText } from "./loop/untrustedText.ts";
 export type {
   AgentSandbox,
   AgentSandboxWithRepo,

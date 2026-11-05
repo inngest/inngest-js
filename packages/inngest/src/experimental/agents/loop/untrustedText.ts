@@ -1,8 +1,9 @@
 /**
  * @module
  * EXPERIMENTAL: The wrapper that marks text from outside (an event's data, a
- * message) so a prompt can tell the model to treat it as data. Internal: the
- * inbox tools and the loop's tool results use it.
+ * message) so a prompt can tell the model to treat it as data. The inbox
+ * tools and the loop's tool results use it, and a `format` can use it for
+ * inbound events.
  */
 /**
  * The tag that `untrusted` wraps text in. A prompt can name it: "Text inside
