@@ -22,7 +22,6 @@ import { createDefer } from "../../../components/DeferredFunction.ts";
 import {
   type AgentBridge,
   getAsyncCtxSync,
-  runWithAsyncCtx,
 } from "../../../components/execution/als.ts";
 import {
   type Inngest,
@@ -1344,22 +1343,17 @@ export function createAgentFunction(
         return result;
       }
 
-      const als = getAsyncCtxSync();
+      const execution = getAsyncCtxSync()?.execution;
 
-      // A run started by a message keeps what its trigger carries.
-      return als?.execution
-        ? runWithAsyncCtx(
-            {
-              ...als,
-              execution: {
-                ...als.execution,
-                agent: { thread: thread.key, ref },
-                agentBridge: bridge,
-              },
-            },
-            main,
-          )
-        : main();
+      // Set on the request's own execution, not a copy: the engine runs a
+      // step's callback (a tool the loop calls) in that context, and the tool
+      // must find its thread there as the handler does.
+      if (execution) {
+        execution.agent = { thread: thread.key, ref };
+        execution.agentBridge = bridge;
+      }
+
+      return main();
     },
   );
 
