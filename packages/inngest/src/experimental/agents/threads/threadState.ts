@@ -49,7 +49,11 @@ const lastRunKey = (agent: string) => {
 /**
  * Names this process, so a run that continues in another one is noticed.
  */
-const bootId = globalThis.crypto.randomUUID();
+let bootId: string | undefined;
+const hostId = () => {
+  bootId ??= globalThis.crypto.randomUUID();
+  return bootId;
+};
 
 const emptyRecord = (): ThreadRecord => {
   return { status: "idle", turn: 0, usage: { input: 0, output: 0 } };
@@ -124,14 +128,14 @@ export const threadRecorder = (
     const apply = (found: ThreadRecord | undefined) => {
       const current = found ?? emptyRecord();
       const mine = current.runId === runId;
-      const moved =
-        mine && current.host !== undefined && current.host !== bootId;
+      const host = hostId();
+      const moved = mine && current.host !== undefined && current.host !== host;
 
       return withTransition(current, {
         ...current,
         ...change(current),
         runId,
-        host: bootId,
+        host,
         restarts: (mine ? (current.restarts ?? 0) : 0) + (moved ? 1 : 0),
       });
     };

@@ -21,7 +21,12 @@
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { mcpProtocolVersion } from "./mcpClient.ts";
-import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
+import {
+  assertMcpUrl,
+  isLoopbackUrl,
+  isRedirect,
+  refuseRedirect,
+} from "./mcpGuard.ts";
 import { redact, type Secret } from "./secret.ts";
 
 /**
@@ -315,6 +320,55 @@ const sleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+const knownErrorNames = new Set([
+  "AbortError",
+  "Error",
+  "TimeoutError",
+  "TypeError",
+]);
+
+const knownErrorCodes = new Set([
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "EAI_AGAIN",
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EPIPE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ETIMEDOUT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+// Only names and codes we recognize: any other part of the error, its name
+// included, can be set by a custom fetch and carry headers or bodies.
+const describeFetchError = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return "unknown error";
+  }
+
+  const name = knownErrorNames.has(error.name) ? error.name : "Error";
+  const cause: unknown = error.cause;
+  const code =
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    typeof cause.code === "string" &&
+    knownErrorCodes.has(cause.code)
+      ? cause.code
+      : undefined;
+
+  return code ? `${name} (${code})` : name;
 };
 
 // An endpoint a remote server names may never point at loopback; a server in
@@ -738,15 +792,21 @@ export class McpOAuth {
   }
 
   async #request(url: string, init: RequestInit = {}): Promise<Response> {
+    return refuseRedirect(await this.#send(url, init), url);
+  }
+
+  // Like `#request`, but hands a redirect back unread for the caller to skip.
+  async #send(url: string, init: RequestInit): Promise<Response> {
     try {
       return await this.#fetch(url, {
-        redirect: "error",
         ...init,
+        redirect: "manual",
         signal: AbortSignal.timeout(requestTimeoutMs),
       });
-    } catch {
-      // The cause of a failed fetch can name headers and bodies.
-      throw new Error(`OAuth request to ${new URL(url).origin} failed`);
+    } catch (error) {
+      throw new Error(
+        `OAuth request to ${new URL(url).origin} failed: ${describeFetchError(error)}`,
+      );
     }
   }
 
@@ -769,7 +829,6 @@ export class McpOAuth {
 
     const response = await this.#request(url, {
       method: "POST",
-      redirect: "error",
       headers,
       body,
     });
@@ -857,14 +916,14 @@ export class McpOAuth {
   }
 
   async #json(url: string): Promise<Record<string, unknown> | undefined> {
-    const response = await this.#request(
+    const response = await this.#send(
       secureUrl(this.#url, url, "metadata URL").href,
       {
         headers: { accept: "application/json" },
       },
     );
 
-    if (!response.ok) {
+    if (!response.ok || isRedirect(response)) {
       await response.body?.cancel().catch(() => {});
 
       return undefined;
@@ -884,7 +943,6 @@ export class McpOAuth {
     // An unauthenticated request makes the server say where its metadata is.
     const probe = await this.#request(this.#url, {
       method: "POST",
-      redirect: "error",
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",

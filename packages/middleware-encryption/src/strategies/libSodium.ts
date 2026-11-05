@@ -1,5 +1,10 @@
-import sodium from "libsodium-wrappers";
+import type Sodium from "libsodium-wrappers";
 import type { EncryptionService } from "../middleware";
+
+interface LoadedSodium {
+  sodium: typeof Sodium;
+  hashedKeys: Uint8Array[];
+}
 
 /**
  * The default encryption service used by the encryption middleware.
@@ -12,7 +17,8 @@ import type { EncryptionService } from "../middleware";
  * flag.
  */
 export class LibSodiumEncryptionService implements EncryptionService {
-  private readonly keys: Promise<Uint8Array[]>;
+  private readonly keys: string[];
+  private loading: Promise<LoadedSodium> | undefined;
 
   public identifier = "inngest/libsodium";
 
@@ -21,33 +27,48 @@ export class LibSodiumEncryptionService implements EncryptionService {
       throw new Error("Missing encryption key(s) in encryption middleware");
     }
 
-    const keys = (Array.isArray(key) ? key : [key])
+    this.keys = (Array.isArray(key) ? key : [key])
       .map((s) => s.trim())
       .filter(Boolean);
 
-    if (!keys.length) {
+    if (!this.keys.length) {
       throw new Error("Missing encryption key(s) in encryption middleware");
     }
+  }
 
-    /**
-     * Ensure we pre-hash the keys to the correct length before using them, and
-     * also always wait for sodium to be ready. Accessing keys in other
-     * functions always requires awaiting this value, so we can never skip this
-     * readiness check.
-     */
-    this.keys = sodium.ready.then(() => {
-      return keys.map((k) => {
-        return sodium.crypto_generichash(sodium.crypto_secretbox_KEYBYTES, k);
+  /**
+   * Loaded on first use: libsodium calls `crypto.getRandomValues` on load,
+   * which Cloudflare Workers forbid at global scope.
+   */
+  private load(): Promise<LoadedSodium> {
+    this.loading ??= import("libsodium-wrappers")
+      .then(async ({ default: sodium }) => {
+        await sodium.ready;
+        return {
+          sodium,
+          hashedKeys: this.keys.map((k) =>
+            sodium.crypto_generichash(sodium.crypto_secretbox_KEYBYTES, k),
+          ),
+        };
+      })
+      .catch((err: unknown) => {
+        this.loading = undefined;
+        throw err;
       });
-    });
+
+    return this.loading;
   }
 
   async encrypt(value: unknown): Promise<string> {
-    const keys = await this.keys;
+    const { sodium, hashedKeys } = await this.load();
 
     const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
     const message = sodium.from_string(JSON.stringify(value));
-    const ciphertext = sodium.crypto_secretbox_easy(message, nonce, keys[0]);
+    const ciphertext = sodium.crypto_secretbox_easy(
+      message,
+      nonce,
+      hashedKeys[0],
+    );
 
     const combined = new Uint8Array(nonce.length + ciphertext.length);
     combined.set(nonce);
@@ -57,11 +78,11 @@ export class LibSodiumEncryptionService implements EncryptionService {
   }
 
   async decrypt(value: string): Promise<unknown> {
-    const keys = await this.keys;
+    const { sodium, hashedKeys } = await this.load();
 
     let err: unknown;
 
-    for (const key of keys) {
+    for (const key of hashedKeys) {
       try {
         const combined = sodium.from_base64(
           value,
