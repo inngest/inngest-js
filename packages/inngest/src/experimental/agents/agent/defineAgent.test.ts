@@ -255,6 +255,10 @@ describe("the handler's event, me and inbox", () => {
     ).not.toHaveProperty("agent");
     expect(Object.keys(seen.me as object)).toEqual([
       "key",
+      "listen",
+      "unlisten",
+      "wake",
+      "cancelWake",
       "report",
       "message",
     ]);

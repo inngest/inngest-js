@@ -229,6 +229,18 @@ export interface AgentFunctionConfig<
   card?: AgentCardConfig;
 
   /**
+   * What happens to an event that would start a run of a thread that already
+   * has a live one. `"skip"` (default): the live run reads it from its inbox
+   * if it listens for it, and no run starts. `"queue"`: the Dev Server runs the
+   * function with singleton mode `queue`. The event is saved in the live run's
+   * `singleton` inbox, which the run reads, so the run takes it exactly once;
+   * if the run's inbox has closed, the event is held and starts the next run
+   * when the live one ends. A run started that way may begin with several
+   * events.
+   */
+  delivery?: "skip" | "queue";
+
+  /**
    * Discovery for the agent's model. Off unless set: `true` gives the model
    * `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
    * `ask_agent` and `stop_agent`, and the shared tools `discovery.tools`
@@ -630,6 +642,44 @@ export interface Me {
    * replay sends it once.
    */
   message(content: Json): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: keeps listening for an event after this run ends. A hidden
+   * function, `agents-listen`, waits for events named `event` that pass `if`
+   * and sends each to this thread as an `agent/message` whose content is
+   * `{ event: { id, name, ts, data } }` from `{ listen: name }`, which starts a run
+   * when none is live. The rule is also kept in the thread's KV as
+   * `listen:<name>`. A rule of the same name is replaced: the new rule starts,
+   * then the old one is cancelled by its own id.
+   *
+   * `if` is a CEL condition over the incoming event as `async`, for example
+   * `async.data.pr == 42`. `ttl` (default `"7d"`) is how long the rule lives.
+   *
+   * Call it from the handler or from a `tool.group()`; a `tool.step()` runs
+   * inside a step and cannot send events.
+   */
+  listen(
+    name: string,
+    options: { event: string; if?: string; ttl?: string | number },
+  ): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: ends the rule `name`. Nothing happens when there is none.
+   */
+  unlisten(name: string): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: wakes this thread once after `after` (such as `"30s"`, or
+   * milliseconds) with an `agent/message` whose content is `{ wake: { name, at } }` from `{ wake: name }`.
+   * Each arming has an id of its own; `cancelWake` ends the latest.
+   */
+  wake(name: string, after: string | number): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: cancels the wake `name` armed last. A wake that has already
+   * fired, or none, is left alone.
+   */
+  cancelWake(name: string): Promise<void>;
 
   /**
    * EXPERIMENTAL: sends a typed report to the destinations the run's starter

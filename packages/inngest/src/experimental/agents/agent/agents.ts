@@ -39,6 +39,7 @@ import { createAgentFunction } from "./agentFunction.ts";
 import { askTimeoutFunction } from "./askTimeout.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
 import { parentEndedFunction } from "./lending.ts";
+import { listenFunction, wakeFunction } from "./scheduling.ts";
 import { createSharedToolFunction } from "./sharedToolFunction.ts";
 import type {
   AgentBody,
@@ -285,6 +286,11 @@ const finishedFunctions = new WeakMap<object, InngestFunction.Any>();
 const askTimeoutFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
+ * The hidden functions behind `me.listen()` and `me.wake()`, by client.
+ */
+const schedulingFunctions = new WeakMap<object, InngestFunction.Any[]>();
+
+/**
  * The thread ledger functions of each client, made once.
  */
 const ledgers = new WeakMap<object, InngestFunction.Any[]>();
@@ -389,6 +395,10 @@ export const createAgents = <TClient extends Inngest.Any>(
       if (!finishedFunctions.has(client)) {
         finishedFunctions.set(client, agentFinishedFunction(client));
         askTimeoutFunctions.set(client, askTimeoutFunction(client));
+        schedulingFunctions.set(client, [
+          listenFunction(client),
+          wakeFunction(client),
+        ]);
       }
 
       // Sent by a run that started attached children, once it ends for good.
@@ -422,6 +432,7 @@ export const createAgents = <TClient extends Inngest.Any>(
           announcer,
           ...(stored ? [relay] : []),
           timeout,
+          ...(schedulingFunctions.get(client) ?? []),
           parentEndedFunction(client),
           ...ledger,
         ];

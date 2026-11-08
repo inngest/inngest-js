@@ -947,6 +947,8 @@ describe("createAgents", () => {
       `${testClientId}-agents-announce`,
       `${testClientId}-agents-finished`,
       `${testClientId}-agents-ask-timeout`,
+      `${testClientId}-agents-listen`,
+      `${testClientId}-agents-wake`,
       `${testClientId}-agents-parent-ended`,
     ]);
   });

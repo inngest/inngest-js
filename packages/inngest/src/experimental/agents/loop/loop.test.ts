@@ -149,6 +149,15 @@ const run = async (
   return { type, ran, steps, requests, result };
 };
 
+// How a message arrived is recorded on user messages; most tests do not look.
+const noArrival = <T>(value: T): T => {
+  return JSON.parse(
+    JSON.stringify(value, (key, v) => {
+      return key === "arrival" ? undefined : v;
+    }),
+  );
+};
+
 describe("agent.loop", () => {
   test("runs the model and its tools until the model is done", async () => {
     const { type, ran, requests, result } = await run([
@@ -532,7 +541,7 @@ describe("agent.loop", () => {
       wiring,
     });
 
-    expect(requests[1]?.messages.slice(-6)).toEqual([
+    expect(noArrival(requests[1]?.messages.slice(-6))).toEqual([
       expect.objectContaining({ role: "tool" }),
       { role: "user", content: "m1" },
       { role: "user", content: "m2" },
@@ -561,7 +570,7 @@ describe("agent.loop", () => {
       },
     });
 
-    expect(requests[0]?.messages).toEqual([
+    expect(noArrival(requests[0]?.messages)).toEqual([
       { role: "user", content: "go" },
       { role: "user", content: "early" },
     ]);
@@ -590,7 +599,7 @@ describe("agent.loop", () => {
     });
 
     expect(seen[0]).toEqual(taken);
-    expect(requests[0]?.messages.at(-1)).toEqual({
+    expect(noArrival(requests[0]?.messages.at(-1))).toEqual({
       role: "user",
       content: "keep",
     });
@@ -620,11 +629,17 @@ describe("agent.loop", () => {
       },
     );
 
-    expect(requests[0]?.messages[0]).toEqual({
+    expect(noArrival(requests[0]?.messages[0])).toEqual({
       role: "user",
       content: "hello",
     });
-    expect(requests[1]?.messages.slice(-2)).toEqual([
+    expect(requests[0]?.messages[0]).toMatchObject({
+      arrival: { eventId: "e1", via: "start" },
+    });
+    expect(requests[1]?.messages.at(-1)).toMatchObject({
+      arrival: { eventId: "e1", via: "steer" },
+    });
+    expect(noArrival(requests[1]?.messages.slice(-2))).toEqual([
       { role: "user", content: "faster" },
       {
         role: "user",
@@ -646,7 +661,7 @@ describe("agent.loop", () => {
       },
     });
 
-    expect(requests[0]?.messages[0]).toEqual({
+    expect(noArrival(requests[0]?.messages[0])).toEqual({
       role: "user",
       content: [
         { type: "text", text: "look" },

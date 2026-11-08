@@ -99,6 +99,84 @@ const whoOf = (from: Sender | undefined): string => {
   return from?.address ?? "an agent";
 };
 
+/**
+ * Where a user message of the conversation came from when events or wakes
+ * made it: `from` when they all share one origin, `items` when anything but
+ * a person or an agent is among them. Nothing when it is all people.
+ */
+const originOfEvents = (
+  events: readonly AgentEvent[],
+  via: "start" | "steer",
+): Pick<
+  Extract<ModelMessage, { role: "user" }>,
+  "from" | "items" | "arrival"
+> => {
+  const runId = String(getAsyncCtxSync()?.execution?.ctx.runId ?? "");
+  const arrivals = events.map((event) => {
+    return { eventId: String(event.id ?? ""), via, runId };
+  });
+  const items = events.map((event, i) => {
+    const data = (event.data ?? {}) as {
+      content?: unknown;
+      from?: { listen?: unknown; wake?: unknown; runId?: unknown };
+    };
+    const forwarder =
+      typeof data.from?.runId === "string" ? { runId: data.from.runId } : {};
+    const origin =
+      typeof data.from?.listen === "string"
+        ? { listen: data.from.listen, ...forwarder }
+        : typeof data.from?.wake === "string"
+          ? { wake: data.from.wake, ...forwarder }
+          : undefined;
+
+    return { origin, content: data.content, arrival: arrivals[i] };
+  });
+
+  if (events.length === 0) {
+    return {};
+  }
+
+  const arrival = events.length === 1 ? { arrival: arrivals[0] } : {};
+
+  if (!items.some((item) => item.origin)) {
+    return events.length > 1
+      ? {
+          items: items.map((item) => {
+            return { content: item.content, arrival: item.arrival };
+          }),
+        }
+      : arrival;
+  }
+
+  const first = items[0]?.origin;
+  const same =
+    first &&
+    items.every((item) => {
+      return (
+        (item.origin as { listen?: string; wake?: string }).listen ===
+          (first as { listen?: string }).listen &&
+        (item.origin as { wake?: string }).wake ===
+          (first as { wake?: string }).wake
+      );
+    });
+
+  return {
+    ...arrival,
+    ...(same && { from: first }),
+    ...(items.length > 1 || !same
+      ? {
+          items: items.map((item) => {
+            return {
+              ...(item.origin && { from: item.origin }),
+              content: item.content,
+              arrival: item.arrival,
+            };
+          }),
+        }
+      : {}),
+  };
+};
+
 const textOfJson = (value: unknown): string => {
   return typeof value === "string" ? value : JSON.stringify(value);
 };
@@ -149,6 +227,17 @@ export const formatEvent = (
 
     if (content === undefined) {
       return JSON.stringify({ event: event.name, data: event.data });
+    }
+
+    // A message an event or a wake made (`me.listen()`, `me.wake()`).
+    const origin = from as { listen?: string; wake?: string } | undefined;
+
+    if (origin?.listen !== undefined) {
+      return `Event from your listen rule "${origin.listen}": ${textOfJson(content)}`;
+    }
+
+    if (origin?.wake !== undefined) {
+      return `Your wake "${origin.wake}" fired: ${textOfJson(content)}`;
     }
 
     if (from) {
@@ -228,8 +317,47 @@ export const formatEvent = (
  * provider-specific parts (such as Anthropic thinking blocks and their
  * signatures) go back to the model untouched.
  */
+export type MessageArrival = {
+  /**
+   * The id of the `agent/message` event.
+   */
+  eventId: string;
+
+  /**
+   * `"start"` when it was in the batch that started the run (the trigger event
+   * or a handoff batch), `"steer"` when the run drained it mid-run.
+   */
+  via: "start" | "steer";
+
+  /**
+   * The run that took it.
+   */
+  runId: string;
+};
+
 export type ModelMessage =
-  | { role: "user"; content: AgentUserContent }
+  | {
+      role: "user";
+      content: AgentUserContent;
+
+      /**
+       * Set when this message came from an event or a wake the thread
+       * listens for (`me.listen()`, `me.wake()`) and not from a person or an
+       * agent: the rule's or wake's name. When a batch mixes origins, `items`
+       * has each one.
+       */
+      from?: { listen: string } | { wake: string };
+      items?: {
+        from?: { listen: string } | { wake: string };
+        content: unknown;
+        arrival?: MessageArrival;
+      }[];
+
+      /**
+       * How a single event reached the run. For a batch, each item has its own.
+       */
+      arrival?: MessageArrival;
+    }
   // Deliberate unknown: the assistant's blocks are the provider's own shape
   // and go back to the model untouched.
   | { role: "assistant"; content: unknown }
@@ -1364,7 +1492,21 @@ const runLoop = async <TTools extends SandboxTools>(
       : undefined;
   const messages: ModelMessage[] = [
     ...(options.history ?? stored?.history ?? []),
-    { role: "user", content: prompt },
+    {
+      role: "user",
+      content: prompt,
+      ...originOfEvents(
+        isEvents(batch)
+          ? batch
+          : typeof batch === "object" &&
+              batch !== null &&
+              !Array.isArray(batch) &&
+              typeof (batch as unknown as AgentEvent).name === "string"
+            ? [batch as unknown as AgentEvent]
+            : [],
+        "start",
+      ),
+    },
   ];
   const usage: AgentUsage = { input: 0, output: 0 };
   const toolRuns: AgentToolRun<TTools>[] = [];
@@ -1464,7 +1606,11 @@ const runLoop = async <TTools extends SandboxTools>(
       }
 
       for (const event of chosen) {
-        messages.push({ role: "user", content: contentOf(event) });
+        messages.push({
+          role: "user",
+          content: contentOf(event),
+          ...originOfEvents([event], "steer"),
+        });
       }
 
       addLate();

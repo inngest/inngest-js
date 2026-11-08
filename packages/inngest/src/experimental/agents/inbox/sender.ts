@@ -24,6 +24,17 @@ export type Sender =
  * @param from The sender as it travels in the event.
  */
 export const senderFrom = (client: Inngest.Any, from: SenderData): Sender => {
+  // A message an event or a wake made (`me.listen()`, `me.wake()`) has no
+  // sender to answer: its `from` is the rule or wake that made it.
+  const origin = from as unknown as { listen?: string; wake?: string };
+
+  if (origin.listen !== undefined || origin.wake !== undefined) {
+    return {
+      ...(origin.listen !== undefined && { listen: origin.listen }),
+      ...(origin.wake !== undefined && { wake: origin.wake }),
+    } as unknown as Sender;
+  }
+
   if (from.kind === "agent") {
     return {
       kind: "agent",

@@ -1,3 +1,4 @@
+import type { Me } from "../../experimental/agents/agent/types.ts";
 import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.ts";
 import type { ReportBook } from "../../experimental/agents/inbox/reports.ts";
 import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
@@ -48,6 +49,11 @@ export interface AgentBridge {
    * run owes reports.
    */
   codeTools?: SandboxTools;
+
+  /**
+   * The handle to the run's own thread, which a tool's context shares as `me`.
+   */
+  me?: Me;
 }
 
 export interface AsyncContext {

@@ -276,7 +276,10 @@ export interface InboxDeps {
    * Closes the inbox. Settles with the cut the executor saved: the last message
    * the inbox had at the first close that reached it, or `null`.
    */
-  close: (op: string, closing: { inbox: string }) => Promise<Cut>;
+  close: (
+    op: string,
+    closing: { inbox: string; taken: number },
+  ) => Promise<Cut>;
 
   /**
    * Settles when replay reaches the message step `id` in the run's stack. A read
@@ -698,7 +701,10 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   private async _close(): Promise<string[]> {
     const { id, inbox } = await this._opened;
 
-    const { cut } = await this._deps.close(closeId(id), { inbox });
+    const { cut } = await this._deps.close(closeId(id), {
+      inbox,
+      taken: this._taken,
+    });
 
     this._closed = true;
     this._markClosed();

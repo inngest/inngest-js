@@ -675,8 +675,11 @@ export namespace InngestFunction {
        * Determines how to handle new runs when one is already active for the same key.
        * - `"skip"` skips the new run.
        * - `"cancel"` cancels the existing run and starts the new one.
+       * - `"queue"` saves the event in the active run's `singleton` inbox
+       *   (`step.subscribe("singleton", [])`), or holds it for the next run if
+       *   that inbox has closed.
        */
-      mode: "skip" | "cancel";
+      mode: "skip" | "cancel" | "queue";
     };
 
     cancelOn?: Cancellation[];

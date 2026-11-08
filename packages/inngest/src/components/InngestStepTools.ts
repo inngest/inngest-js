@@ -829,7 +829,7 @@ export const createStepTools = <
     "~inboxClose": createTool<
       (
         idOrOptions: StepOptionsOrId,
-        opts: { inbox: string },
+        opts: { inbox: string; taken: number },
       ) => Promise<unknown>
     >(({ id, name }, opts) => {
       return {
@@ -838,7 +838,9 @@ export const createStepTools = <
         op: StepOpCode.SubscribeClose,
         name: id,
         displayName: name ?? id,
-        opts: { inbox: opts.inbox },
+        // `taken` is how many messages the run read. The Dev Server hands the
+        // rest of a singleton queue inbox to the next run.
+        opts: { inbox: opts.inbox, taken: opts.taken },
         userland: { id },
       };
     }),

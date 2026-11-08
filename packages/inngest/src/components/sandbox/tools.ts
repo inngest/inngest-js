@@ -15,6 +15,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import * as z4 from "zod/v4";
+import type { Me } from "../../experimental/agents/agent/types.ts";
 import type { AgentCardConfig } from "../../experimental/agents/discovery/discovery.ts";
 import { toolScore } from "../../experimental/agents/loop/scores.ts";
 import { internalEvents } from "../../helpers/consts.ts";
@@ -93,6 +94,15 @@ export interface SandboxToolContext<TSandbox = Sandbox> {
    * refuses logs a warning and the run goes on.
    */
   score(name: string, value: number | boolean): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: the handle to the thread of the agent run that is calling,
+   * for `listen`, `unlisten`, `wake` and `cancelWake`: a tool can leave a rule
+   * or a timer behind and let the turn end. Reading it outside an agent run
+   * throws. Use it in a `tool.group()`: those methods send events, which a
+   * `tool.step()` cannot do from inside its step.
+   */
+  readonly me: Pick<Me, "key" | "listen" | "unlisten" | "wake" | "cancelWake">;
 
   /**
    * The sandbox the tool works on, for reading and writing its files and
@@ -182,7 +192,10 @@ export type ToolCallResult<
  * `TOutput` are what the model passes and what the tool gives back, which
  * `agent.loop()` uses to type its tool runs.
  */
-export type ToolCallContext = Omit<SandboxToolContext, "runId" | "score"> & {
+export type ToolCallContext = Omit<
+  SandboxToolContext,
+  "runId" | "score" | "me"
+> & {
   /**
    * The ID of the run that is calling, when the caller knows it. Otherwise
    * the running function's.
@@ -1253,7 +1266,22 @@ export const resolveToolCall = async (
         ...given,
         runId: given.runId ?? getAsyncCtxSync()?.execution?.ctx.runId ?? "",
         score: toolScore,
-      };
+      } as unknown as SandboxToolContext;
+
+      // Read when the tool asks for it, so a tool that never does runs
+      // anywhere. Not enumerable: copying the context does not read it.
+      Object.defineProperty(ctx, "me", {
+        enumerable: false,
+        get() {
+          const me = getAsyncCtxSync()?.execution?.agentBridge?.me;
+
+          if (!me) {
+            throw new Error("`me` is only available to a tool in an agent run");
+          }
+
+          return me;
+        },
+      });
       // A plain function takes positional values and no context.
       const value = await run(
         ...values,

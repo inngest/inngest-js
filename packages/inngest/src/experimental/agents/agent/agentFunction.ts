@@ -72,6 +72,7 @@ import {
   reportSenderProblem,
   reportsOf,
   reportTool,
+  reportWireEvent,
   sendReport,
 } from "../inbox/reports.ts";
 import { senderFrom } from "../inbox/sender.ts";
@@ -197,6 +198,7 @@ import {
   type RunFields,
   resolveRunField,
 } from "./runField.ts";
+import { createScheduling } from "./scheduling.ts";
 import { senderOf } from "./sender.ts";
 import { startData, startInflight, triggerOf } from "./startEvent.ts";
 import { invokeDepthOf, startThread } from "./startThread.ts";
@@ -208,6 +210,7 @@ import type {
   AgentFunctionConfig,
   AgentMessage,
   InboxSource,
+  Me,
   OpenedInbox,
 } from "./types.ts";
 
@@ -396,6 +399,15 @@ const createHandlerLoop = async (options: {
   }) as unknown as AgentHandlerLoop;
 };
 
+/**
+ * Makes the run's handle the `me` a tool's context shares, and returns it.
+ */
+const shareMe = <T extends Me>(bridge: AgentBridge, me: T): T => {
+  bridge.me = me;
+
+  return me;
+};
+
 // The SDK's own marker for the option: no deprecation warning for agents.
 const quietOptimizeParallelism = { [internalQuietOptimizeParallelism]: true };
 
@@ -457,6 +469,16 @@ export function createAgentFunction(
   const ref = `${client.id}/${config.id}`;
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
+  // `delivery: "queue"`: the Dev Server holds the events that arrive while the
+  // thread has a live run (singleton mode `queue`). They are saved in the live
+  // run's `singleton` inbox, or handed to the next run when it has ended.
+  const queued = config.delivery === "queue";
+
+  if (config.delivery !== undefined && !queued && config.delivery !== "skip") {
+    throw new Error(
+      `Agent "${config.id}" has \`delivery: ${JSON.stringify(config.delivery)}\`: use "skip" or "queue"`,
+    );
+  }
 
   // The KV is a configured store, else the ledger. The ledger keeps its own
   // steps and cannot be written inside a step's callback, so a run on it does
@@ -500,7 +522,10 @@ export function createAgentFunction(
           return trigger.fnTrigger;
         }),
       ],
-      singleton: { key: threadExpression, mode: "skip" },
+      singleton: {
+        key: threadExpression,
+        mode: queued ? ("queue" as const) : ("skip" as const),
+      },
     },
     async (ctx) => {
       const { event, step, defer, runId, logger } = ctx;
@@ -555,49 +580,61 @@ export function createAgentFunction(
         // the thread start does not share a request with it.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the inbox.
-        await using subscription = step.subscribe("inbox", [
-          ...ownEvents.map((name) => {
-            return {
-              event: name,
-              if: ownInboxFilter(name, ref, data.thread),
-            };
-          }),
-          ...triggers
-            .filter((trigger) => {
-              return trigger.listen;
-            })
-            .map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+        // With `delivery: "queue"` the inbox is the one the Dev Server fills,
+        // named `singleton`. It holds every event that starts a run of the
+        // thread, so the sources below leave those out.
+        await using subscription = step.subscribe(
+          queued ? "singleton" : "inbox",
+          [
+            ...ownEvents.flatMap((name) => {
+              const own = ownInboxFilter(name, ref, data.thread);
 
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
-          // A thread in a group hears of each new member. It is an inbox
-          // source of its own: the event never starts a run.
-          ...(groupOf(data.thread) === undefined
-            ? []
-            : [
-                {
-                  event: agentGroupJoined.name,
-                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
-                },
-              ]),
-          ...inboxSources.flatMap((source) => {
-            const missing = missingThreadFilter(source, config.thread);
+              if (!queued) {
+                return [{ event: name, if: own }];
+              }
 
-            return [
-              {
-                event: eventNameOf(source.event),
-                if: inboxFilter(source, data.thread, config.thread),
-              },
-              ...(missing === undefined
+              // Only a quiet message is left: the others start runs.
+              return name === reportWireEvent
                 ? []
-                : [{ event: eventNameOf(source.event), if: missing }]),
-            ];
-          }),
-        ]);
+                : [{ event: name, if: `${own} && async.data.quiet == true` }];
+            }),
+            ...triggers
+              .filter((trigger) => {
+                return trigger.listen && !queued;
+              })
+              .map((trigger) => {
+                const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+                return {
+                  event: trigger.event,
+                  if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+                };
+              }),
+            // A thread in a group hears of each new member. It is an inbox
+            // source of its own: the event never starts a run.
+            ...(groupOf(data.thread) === undefined
+              ? []
+              : [
+                  {
+                    event: agentGroupJoined.name,
+                    if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
+                  },
+                ]),
+            ...inboxSources.flatMap((source) => {
+              const missing = missingThreadFilter(source, config.thread);
+
+              return [
+                {
+                  event: eventNameOf(source.event),
+                  if: inboxFilter(source, data.thread, config.thread),
+                },
+                ...(missing === undefined
+                  ? []
+                  : [{ event: eventNameOf(source.event), if: missing }]),
+              ];
+            }),
+          ],
+        );
 
         await inboxOpenedPromise(subscription);
 
@@ -1230,8 +1267,17 @@ export function createAgentFunction(
             ),
 
             // Slot: me. The handle to the run's own thread.
-            me: {
+            // Also what a tool's context shares as `me`.
+            me: shareMe(bridge, {
               key: data.thread,
+              ...createScheduling(
+                {
+                  agent: ref,
+                  thread: data.thread,
+                },
+                step as unknown as Parameters<typeof createScheduling>[1],
+                client,
+              ),
               ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
               report: async (
                 type: { name: string; schema?: StandardSchemaV1 },
@@ -1279,7 +1325,7 @@ export function createAgentFunction(
                   ),
                 );
               },
-            },
+            }),
 
             // Slot: sandboxes. The agent's sandboxes and their tools.
             sandboxes: Object.fromEntries(
@@ -1314,6 +1360,8 @@ export function createAgentFunction(
           // touches thread state (a second close, from the scope exit, does
           // nothing).
           await flushOwes(instance, owes).catch(() => undefined);
+          // `delivery: "queue"`: the Dev Server hands what the body did not
+          // read to the next run.
           await inbox.close();
 
           // A score the handler did not await is still written.
