@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import type { KnownKeys } from "../helpers/types.ts";
+import * as als from "./execution/als.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   type ScoreOptions,
@@ -384,6 +385,72 @@ describe("client.score.experiment", () => {
     // Same run-scoped target → merges into one ClickHouse row.
     expect(calls[0]!.target).toEqual(calls[1]!.target);
     expect(calls[0]!.target).toMatchObject({ run_id: "run_1" });
+  });
+
+  test("stays run-scoped when called inside step.run() without runId", async () => {
+    const addMetadata = vi.fn(() => false);
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run-ctx", attempt: 0 },
+        executingStep: { id: "step-ctx", userlandId: "my-step" },
+        instance: { addMetadata },
+      },
+    } as unknown as als.AsyncContext);
+
+    const client = new Inngest({ id: "app" });
+    const calls: Array<{
+      target: unknown;
+      kind: string;
+      values: Record<string, unknown>;
+    }> = [];
+    vi.spyOn(
+      client as unknown as {
+        updateMetadata: (a: {
+          target: unknown;
+          metadata: Array<{ kind: string; values: Record<string, unknown> }>;
+        }) => Promise<void>;
+      },
+      "updateMetadata",
+    ).mockImplementation(async ({ target, metadata }) => {
+      calls.push({
+        target,
+        kind: metadata[0]!.kind,
+        values: metadata[0]!.values,
+      });
+    });
+
+    try {
+      await client.score.experiment({
+        experiment: exp,
+        name: "user-rating",
+        value: 0.9,
+      });
+
+      expect(addMetadata).toHaveBeenCalledTimes(2);
+      expect(addMetadata).toHaveBeenNthCalledWith(
+        1,
+        "step-ctx",
+        "inngest.experiment",
+        "run",
+        "merge",
+        { name: "checkout-flow", variant: "control" },
+        undefined,
+      );
+      expect(addMetadata).toHaveBeenNthCalledWith(
+        2,
+        "step-ctx",
+        "inngest.score.user-rating",
+        "run",
+        "set",
+        { value: 0.9 },
+        undefined,
+      );
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.target).toEqual({ run_id: "run-ctx" });
+      expect(calls[1]!.target).toEqual({ run_id: "run-ctx" });
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

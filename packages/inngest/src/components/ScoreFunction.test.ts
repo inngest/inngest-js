@@ -78,4 +78,27 @@ describe("createScorer", () => {
     expect(score.experiment).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
   });
+
+  test("preserves parent.runId when handler returns runId: undefined", async () => {
+    const expResult = await runScorer(
+      { name: "rizz", value: 1, runId: undefined },
+      { fnSlug: "parent", runId: "run-1", experiment },
+    );
+    expect(expResult.score.experiment).toHaveBeenCalledWith({
+      experiment,
+      runId: "run-1",
+      name: "rizz",
+      value: 1,
+    });
+
+    const plainResult = await runScorer(
+      { name: "rizz", value: 1, runId: undefined },
+      { fnSlug: "parent", runId: "run-1" },
+    );
+    expect(plainResult.score).toHaveBeenCalledWith({
+      runId: "run-1",
+      name: "rizz",
+      value: 1,
+    });
+  });
 });
