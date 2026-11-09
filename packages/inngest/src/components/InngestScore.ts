@@ -47,10 +47,8 @@ export interface ClientScore {
    * `experiment` ref returned by `group.experiment()`. Writes the score and the
    * experiment attribution together so they co-locate on one row.
    *
-   * **Call at the function-body level** (outside any `step.run()` callback), or
-   * pass an explicit `runId`, so the write is run-scoped and attaches to the
-   * experiment. Calling inside `step.run()` without `runId` produces a
-   * step-scoped write the experiment detail backend never surfaces.
+   * When `runId` is omitted, the write targets the current run (even when
+   * called inside a `step.run()` callback).
    */
   experiment(options: ScoreExperimentOptions): Promise<void>;
 }
