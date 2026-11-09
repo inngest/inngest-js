@@ -267,3 +267,39 @@ test("add step method", async () => {
 
   expect(state.stepOutputs).toEqual(["replaced"]);
 });
+
+test("a middleware may hand the function a frozen event", async () => {
+  const state = createState({
+    output: null as unknown,
+  });
+
+  class FreezeEvent extends Middleware.BaseMiddleware {
+    readonly id = "freeze-event";
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
+      const event = Object.freeze({ ...arg.ctx.event });
+      return { ...arg, ctx: { ...arg.ctx, event } };
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [FreezeEvent],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ event, runId }) => {
+      state.runId = runId;
+      state.output = event.data;
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: { a: 1 } });
+  await state.waitForRunComplete();
+
+  expect(state.output).toEqual({ a: 1 });
+});

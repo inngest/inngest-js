@@ -2323,9 +2323,11 @@ class InngestExecutionEngine
       defer,
     } as unknown as Context.Any;
 
-    addEventIs(fnArg.event);
-    for (const event of fnArg.events ?? []) {
-      addEventIs(event);
+    fnArg.event = addEventIs(fnArg.event);
+    if (fnArg.events) {
+      fnArg.events = fnArg.events.map((event) => {
+        return addEventIs(event);
+      }) as typeof fnArg.events;
     }
 
     // Aggregate the run's triggering events into its propagated sessions in

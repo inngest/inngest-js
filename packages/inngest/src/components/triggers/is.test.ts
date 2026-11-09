@@ -200,3 +200,29 @@ describe("handler event.is", () => {
     });
   });
 });
+
+describe("addEventIs", () => {
+  test("adds is() without making the event enumerate it", () => {
+    const event = addEventIs({ name: "a", data: { a: "x" } });
+
+    expect(Object.keys(event)).toEqual(["name", "data"]);
+    expect((event as unknown as EventIs).is(a)).toBe(true);
+  });
+
+  test("copies a frozen event rather than throwing", () => {
+    const frozen = Object.freeze({ name: "a", data: { a: "x" } });
+    const event = addEventIs(frozen);
+
+    expect(event).not.toBe(frozen);
+    expect(event).toEqual(frozen);
+    expect((event as unknown as EventIs).is(a)).toBe(true);
+    expect("is" in frozen).toBe(false);
+  });
+
+  test("copies a sealed event rather than throwing", () => {
+    const sealed = Object.seal({ name: "b", data: { b: 1 } });
+    const event = addEventIs(sealed);
+
+    expect((event as unknown as EventIs).is(b)).toBe(true);
+  });
+});

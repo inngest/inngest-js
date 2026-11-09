@@ -3,9 +3,10 @@
  * EXPERIMENTAL: the `Inbox` returned by `step.subscribe()`.
  *
  * An inbox receives the events that match its sources, one saved message per
- * event, and is read in order. Where the reader is lives only here: every
- * replay rebuilds it from the run's state, which holds the messages (saved by
- * the executor as they arrive) and nothing else. A read with an unread message
+ * event, and is read in the order the messages arrive. Where the reader is
+ * lives only here: every replay rebuilds it from the run's state, which holds
+ * the messages (saved by the executor as they arrive) and nothing else. A read
+ * with an unread message
  * returns it in process. A read with none reports a wait to the executor, which
  * wakes the run when a message arrives; the replay then finds the message in
  * state.
@@ -624,8 +625,8 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
   }
 
   /**
-   * Reads the inbox in order with `for await`. The loop ends when the inbox
-   * closes or the code breaks out of it.
+   * Reads the inbox with `for await`, in the order the messages arrive. The
+   * loop ends when the inbox closes or the code breaks out of it.
    */
   async *[Symbol.asyncIterator](): AsyncGenerator<TMessage, void, undefined> {
     while (true) {
