@@ -115,6 +115,17 @@ export interface AsyncContext {
        * after every found step earlier in the stack has been handed back.
        */
       place: (id: string) => Promise<void>;
+
+      /**
+       * Puts a message read from the run's state through `wrapStep`, as every
+       * other step's value is: a message is a step of its own, and the answer
+       * the executor gives a waiting read already goes through it, so a read
+       * answered from state must too or the same read would hand back a
+       * different shape depending on whether the run was waiting.
+       * @param op The unhashed ID of the read's op.
+       * @param id The message's step ID.
+       */
+      transform: (op: string, id: string, message: unknown) => Promise<unknown>;
     };
 
     /**

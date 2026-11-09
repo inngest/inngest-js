@@ -117,17 +117,27 @@ export const inboxOpenedPromise = (inbox: object): Promise<void> => {
 };
 
 /**
+ * The namespace the ops of an inbox are named in. A read scans the run's state
+ * for its own op before that op exists, so it has to know its ID up front: it
+ * cannot learn the ID the engine settled on the way the open does. A step the
+ * user named the same thing would take that ID and the read would scan for the
+ * user's step instead, so the ops of an inbox are named here, where a step ID
+ * is not, rather than beside the inbox's own ID.
+ */
+const inboxOpNamespace = "inngest/inbox";
+
+/**
  * The ID of the op of the `n`th read of an inbox.
  */
 const readId = (base: string, n: number): string => {
-  return n === 0 ? `${base}:next` : `${base}:next:${n}`;
+  return `${inboxOpNamespace}/${base}/next/${n}`;
 };
 
 /**
  * The ID of the op that closes an inbox.
  */
 const closeId = (base: string): string => {
-  return `${base}:close`;
+  return `${inboxOpNamespace}/${base}/close`;
 };
 
 /**
@@ -199,6 +209,14 @@ export interface InboxDeps {
    * step are read.
    */
   unread: (inbox: string, taken: number, upTo?: string) => string[];
+
+  /**
+   * Puts a message read from the run's state through the step middleware. The
+   * answer the executor gives a waiting read is a step's value and goes through
+   * it already, so a read answered from state does the same: the same read
+   * hands back the same shape whether or not the run was waiting.
+   */
+  transform: (op: string, id: string, message: unknown) => Promise<unknown>;
 
   /**
    * Reports the batch read `op`. The executor answers it with a cut: the last
@@ -552,9 +570,28 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
 
     this._deps.report(`${op}:read`, inbox, ids, true, op);
 
-    return ids.map((id) => {
-      return addEventIs(this._deps.message(id) as object) as TMessage;
-    });
+    return this._messages(op, ids);
+  }
+
+  /**
+   * The messages of `ids`, each put through the step middleware.
+   */
+  private async _messages(op: string, ids: string[]): Promise<TMessage[]> {
+    const messages: TMessage[] = [];
+
+    for (const id of ids) {
+      messages.push(
+        addEventIs(
+          (await this._deps.transform(
+            op,
+            id,
+            this._deps.message(id),
+          )) as object,
+        ) as TMessage,
+      );
+    }
+
+    return messages;
   }
 
   private async _readOne(
@@ -583,7 +620,9 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
 
       await this._deps.place(found.id);
 
-      return addEventIs(found.message as object) as TMessage;
+      return addEventIs(
+        (await this._deps.transform(op, found.id, found.message)) as object,
+      ) as TMessage;
     }
 
     // The inbox was closed while this read had nothing to read, or its close
@@ -649,10 +688,10 @@ export class Inbox<TMessage = UntypedInboxMessage> implements AsyncDisposable {
     this._closeCalled = true;
     this._closing ??= this._close();
 
-    return this._closing.then((ids) => {
-      return ids.map((id) => {
-        return addEventIs(this._deps.message(id) as object) as TMessage;
-      });
+    return this._closing.then(async (ids) => {
+      const { id } = await this._opened;
+
+      return this._messages(closeId(id), ids);
     });
   }
 

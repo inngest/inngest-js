@@ -361,6 +361,9 @@ class InngestExecutionEngine
                 place: (id: string) => {
                   return this.reachStackPlace(id);
                 },
+                transform: (op: string, id: string, message: unknown) => {
+                  return this.transformInboxMessage(op, id, message);
+                },
               },
               skipStep: async (id: string) => {
                 this.state.remainingStepsToBeSeen.delete(hashId(id));
@@ -2308,6 +2311,34 @@ class InngestExecutionEngine
 
   get ops(): Record<string, MemoizedOp> {
     return Object.fromEntries(this.state.steps);
+  }
+
+  /**
+   * Runs a message read from the run's state through `wrapStep`, as the step it
+   * is. With no middleware there is nothing to run, so the message is its own
+   * value.
+   */
+  private transformInboxMessage(
+    op: string,
+    id: string,
+    message: unknown,
+  ): Promise<unknown> {
+    if (!this.middlewareManager.hasMiddleware()) {
+      return Promise.resolve(message);
+    }
+
+    return this.middlewareManager.buildWrapStepChain(
+      () => {
+        return Promise.resolve(message);
+      },
+      {
+        hashedId: id,
+        input: undefined,
+        memoized: true,
+        options: { id: op },
+        stepType: "subscribe.message",
+      },
+    )();
   }
 
   private createFnArg(): Context.Any {

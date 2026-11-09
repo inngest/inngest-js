@@ -39,7 +39,7 @@ const sequential = () => {
 
 describe("step.subscribe with an ID the run already used", () => {
   test("the second inbox reads its own messages, not the first's", async () => {
-    const closeFirst = hashedStepId("inbox:close");
+    const closeFirst = hashedStepId("inngest/inbox/inbox/close");
     const result = await runFnWithStack(sequential(), {
       [firstOpen]: { id: firstOpen, data: { pauses: [] } },
       m1: { id: "m1", data: message(firstOpen, "msg", 1) },
@@ -62,7 +62,7 @@ describe("step.subscribe with an ID the run already used", () => {
   });
 
   test("the second inbox's wait and close name its own opening step", async () => {
-    const closeFirst = hashedStepId("inbox:close");
+    const closeFirst = hashedStepId("inngest/inbox/inbox/close");
     const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
       { id: "repeated-ops", triggers: [{ event: "repeated/ops" }] },
       async ({ step }) => {
@@ -87,7 +87,7 @@ describe("step.subscribe with an ID the run already used", () => {
       type: "steps-found",
       steps: [
         {
-          id: hashedStepId("inbox:1:next"),
+          id: hashedStepId("inngest/inbox/inbox:1/next/0"),
           op: "SubscribeWait",
           opts: { inbox: secondOpen },
         },
@@ -96,7 +96,7 @@ describe("step.subscribe with an ID the run already used", () => {
   });
 
   test("the second inbox's close names its own opening step", async () => {
-    const closeFirst = hashedStepId("inbox:close");
+    const closeFirst = hashedStepId("inngest/inbox/inbox/close");
     const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
       { id: "repeated-close", triggers: [{ event: "repeated/close" }] },
       async ({ step }) => {
@@ -119,7 +119,7 @@ describe("step.subscribe with an ID the run already used", () => {
       type: "steps-found",
       steps: [
         {
-          id: hashedStepId("inbox:1:close"),
+          id: hashedStepId("inngest/inbox/inbox:1/close"),
           op: "SubscribeClose",
           opts: { inbox: secondOpen },
         },
@@ -146,7 +146,7 @@ describe("step.subscribe with an ID the run already used", () => {
       type: "steps-found",
       steps: [
         {
-          id: hashedStepId("a:inbox:next"),
+          id: hashedStepId("a:inngest/inbox/inbox/next/0"),
           op: "SubscribeWait",
           opts: { inbox: prefixed },
         },

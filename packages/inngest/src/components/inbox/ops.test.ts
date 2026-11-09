@@ -97,7 +97,13 @@ describe("ops of an inbox", () => {
         {
           op: "SubscribeWait",
           opts: {
-            span: [{ id: "inbox:next", name: "next", kind: "\u2709\uFE0F" }],
+            span: [
+              {
+                id: "inngest/inbox/inbox/next/0",
+                name: "next",
+                kind: "\u2709\uFE0F",
+              },
+            ],
             origin: expect.stringMatching(/^inngest@/),
           },
         },
@@ -111,7 +117,13 @@ describe("ops of an inbox", () => {
     });
 
     expect(batch).toMatchObject({
-      steps: [{ opts: { span: [{ id: "inbox:next", name: "nextBatch" }] } }],
+      steps: [
+        {
+          opts: {
+            span: [{ id: "inngest/inbox/inbox/next/0", name: "nextBatch" }],
+          },
+        },
+      ],
     });
   });
 
@@ -125,7 +137,13 @@ describe("ops of an inbox", () => {
         {
           op: "SubscribeClose",
           opts: {
-            span: [{ id: "inbox:close", name: "close", kind: "\u2709\uFE0F" }],
+            span: [
+              {
+                id: "inngest/inbox/inbox/close",
+                name: "close",
+                kind: "\u2709\uFE0F",
+              },
+            ],
             origin: expect.stringMatching(/^inngest@/),
           },
         },

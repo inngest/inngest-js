@@ -716,6 +716,13 @@ export const createStepTools = <
         message: (messageId) => {
           return getAsyncCtxSync()?.execution?.inbox?.message(messageId);
         },
+        transform: async (op, messageId, message) => {
+          const transform = getAsyncCtxSync()?.execution?.inbox?.transform;
+
+          return transform
+            ? transform(`${prefix}${op}`, messageId, message)
+            : message;
+        },
         report: (op, inbox, messages, draw, row) => {
           const runId = getAsyncCtxSync()?.execution?.ctx.runId;
 
