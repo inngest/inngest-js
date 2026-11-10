@@ -13,6 +13,15 @@ export const eventsKeys = defineKeys([
     inField: ["Alt+Shift+V"],
     outside: ["7", "g v"],
   },
+  {
+    id: "sendEvent",
+    rank: 17,
+    panels: ["events"],
+    label: "Send an event",
+    group: "Panes",
+    inField: ["Alt+Shift+9"],
+    outside: ["9"],
+  },
 ]);
 
 declare module "../keys.ts" {

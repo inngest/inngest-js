@@ -39,6 +39,7 @@ import { startSound, swapTrack } from "./sound/index.ts";
 import { momentsOf } from "./sound/moments.ts";
 import { justPosted } from "./sound/own.ts";
 import { routeStreamEvent } from "./stream.ts";
+import { ChatPanel, type ChatTarget } from "./chat.tsx";
 import { type RunPressed, TracePanel } from "./trace.tsx";
 
 type Overlay = "concepts" | "deeper" | "search" | null;
@@ -91,8 +92,12 @@ export const App = () => {
   const [rightRow, setRightRow] = useState(
     Number(store.get("tour:right")) || 56,
   );
-  const [play, setPlay] = useState<string>("message");
+  const [play, setPlay] = useState<string>("");
   const [edits, setEdits] = useState(0);
+  // True while the editor holds edits the running app has not been given, so
+  // the reader is told before they talk to code that is not there yet.
+  const [dirty, setDirty] = useState(false);
+  const [below, setBelow] = useState<"chat" | "trace">("chat");
   const [progress, setProgress] = useState<ProgressSnapshot>(noProgress);
   const [rail, setRail] = useState(store.get("tour:rail") === "1");
   const [moduleDone, setModuleDone] = useState<string | null>(null);
@@ -448,6 +453,8 @@ export const App = () => {
       return;
     }
 
+    setDirty(false);
+
     void api.run(page.id, values).catch((error: unknown) => {
       setFailure({ headline: `The Run did not start: ${String(error)}` });
     });
@@ -605,12 +612,30 @@ export const App = () => {
     }
   };
 
-  const messageTarget = page?.manifest.message;
-  const tabs = (
-    page?.manifest.panels ?? (messageTarget ? ["message"] : [])
-  ).flatMap((id) => {
+  const tabs = (page?.manifest.panels ?? []).flatMap((id) => {
     return panelOf(id) ?? [];
   });
+  // Where the chat sends. The page says, or the newest run does: its
+  // function is the agent's id and its trigger names the thread. So a page
+  // that says nothing still has a working chat.
+  const chatTarget: ChatTarget | null = useMemo(() => {
+    const said = page?.manifest.chat;
+
+    if (said) {
+      return said;
+    }
+
+    for (const run of [...runs].reverse()) {
+      const thread = run.trigger?.data.thread;
+
+      if (typeof thread === "string" && run.fn) {
+        return { agent: run.fn, thread };
+      }
+    }
+
+    return null;
+  }, [page?.manifest.chat, runs]);
+
   const tabsKey = tabs
     .map((tab) => {
       return tab.id;
@@ -1172,6 +1197,7 @@ export const App = () => {
                     }}
                     onChange={(name, content) => {
                       saveEdits(page, { [name]: content }, store);
+                      setDirty(true);
                       setEdits((count) => {
                         return count + 1;
                       });

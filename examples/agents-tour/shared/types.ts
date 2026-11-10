@@ -66,9 +66,15 @@ export interface Manifest {
   panels?: string[];
   // What Run sends, after `run.ts` if the page has one.
   start?: Start[];
-  // The message box sends to this agent and thread.
-  // `threads` adds one button per thread; the first is the default.
-  message?: { agent: string; thread: string; threads?: string[] };
+  // The chat sends what the reader types to this agent and thread.
+  // `threads` adds a thread switcher; the first is the default. `prompts`
+  // are things the page suggests asking, shown as buttons under the box.
+  chat?: {
+    agent: string;
+    thread: string;
+    threads?: string[];
+    prompts?: string[];
+  };
   // The concepts and APIs this page introduces.
   concepts?: string[];
   apis?: string[];

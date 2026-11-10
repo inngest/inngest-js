@@ -38,13 +38,13 @@ const isHousekeeping = (step: TraceStep) => {
   );
 };
 
-const isFinalization = (step: TraceStep) => {
+export const isFinalization = (step: TraceStep) => {
   return step.name === "executor.nonstep";
 };
 
 // The group span an `inbox.next()` call leaves (its child, `inbox:start`, is
 // plumbing). The reader's own call, so it is the one inbox span shown by default.
-const isNextCall = (step: TraceStep) => {
+export const isNextCall = (step: TraceStep) => {
   return step.id === 'span:["inbox:start"]';
 };
 
@@ -66,7 +66,7 @@ const isLedger = (step: TraceStep) => {
 // What the SDK does on its own. Only "Show everything" lists it. Spans are
 // decided by what the run recorded: an agent whose body never calls
 // `inbox.next()` has no `next` span, so nothing here guesses from the code.
-const isPlumbing = (step: TraceStep) => {
+export const isPlumbing = (step: TraceStep) => {
   if (isNextCall(step)) {
     return false;
   }
@@ -83,7 +83,7 @@ const isPlumbing = (step: TraceStep) => {
 // queued or started, before its real spans exist. They say nothing about the
 // run, so they are never rows; while one is there the Trace is not sure what
 // the run will show.
-const isPlaceholder = (step: TraceStep) => {
+export const isPlaceholder = (step: TraceStep) => {
   return /^(Execution|Attempt \d+)$/.test(step.name);
 };
 
@@ -217,7 +217,7 @@ const finishOf = (run: TraceRun): number | null => {
   return finalEnd ?? time(run.endedAt);
 };
 
-const rounded = (ms: number) => {
+export const rounded = (ms: number) => {
   if (ms < 100) {
     return "<100 ms";
   }
@@ -322,7 +322,7 @@ const uniqueKeys = (rows: Row[]): Row[] => {
 };
 
 // Text that is JSON is parsed, even when it is JSON inside a string.
-const parse = (text: string | null): unknown => {
+export const parse = (text: string | null): unknown => {
   if (text === null) {
     return undefined;
   }
@@ -380,7 +380,7 @@ export const Json = ({ value }: { value: unknown }) => {
   );
 };
 
-const Detail = ({ outputID }: { outputID: string | null }) => {
+export const Detail = ({ outputID }: { outputID: string | null }) => {
   const [out, setOut] = useState<
     | { error: { name: string | null; message: string; stack?: string } }
     | { value: unknown }
@@ -564,7 +564,7 @@ const Ticked = ({ text }: { text: string }) => {
 
 // The card for a Run that did not make a run: what is wrong, and where. It
 // takes the place of the placeholder, and a click jumps to the line.
-const FailedRun = ({
+export const FailedRun = ({
   failure,
   onJump,
 }: {
