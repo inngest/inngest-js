@@ -32,8 +32,8 @@ const refusal = (fn: () => void) => {
 };
 
 describe("narrowLimits", () => {
-  test("depth defaults to 1 and an inherited cap wins when lower", () => {
-    expect(narrowLimits(undefined, undefined).depth).toBe(1);
+  test("depth defaults to 3 and an inherited cap wins when lower", () => {
+    expect(narrowLimits(undefined, undefined).depth).toBe(3);
     expect(narrowLimits({ depth: 3 }, { depth: 1 }).depth).toBe(1);
     expect(narrowLimits({ depth: 1 }, { depth: 5 }).depth).toBe(1);
     expect(narrowLimits(undefined, { depth: 0 }).depth).toBe(0);
@@ -127,5 +127,5 @@ describe("hardening", () => {
 test("Infinity in a config limit means no cap", () => {
   expect(
     narrowLimits({ depth: Number.POSITIVE_INFINITY }, undefined).depth,
-  ).toBe(1);
+  ).toBe(3);
 });

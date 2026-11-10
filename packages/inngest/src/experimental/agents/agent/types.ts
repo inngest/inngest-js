@@ -427,9 +427,9 @@ export interface AgentFunctionConfig<
   >;
 
   /**
-   * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 1,
-   * so it may start sub-agents and they may not). The lowest `depth` in the
-   * chain wins. What the model may start is set by `discovery.agents`.
+   * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 3).
+   * The lowest `depth` in the chain wins. What the model may start is set by
+   * `discovery.agents`.
    *
    * Keep `depth` low unless sub-agents need to start their own; a deep chain
    * multiplies cost and is hard to follow.

@@ -17,14 +17,18 @@ import { normalizeDiscoveryList } from "../discovery/match.ts";
 import type { AgentUsage } from "../loop/loop.ts";
 
 /**
+ * How deep chains of started agents go when nothing says otherwise.
+ */
+export const defaultDepth = 3;
+
+/**
  * What an agent may start and spend. Every field is optional.
  */
 export interface AgentLimits {
   /**
    * EXPERIMENTAL: how many levels of sub-agents may start below this agent.
-   * Default 1: the agent may start sub-agents and they may not start any. The
-   * tightest cap wins: a sub-agent gets this or one less than its parent's
-   * remaining depth, whichever is lower.
+   * Default 3, to encourage discovery. The tightest cap wins: a sub-agent gets
+   * this or one less than its parent's remaining depth, whichever is lower.
    */
   depth?: number;
 }
@@ -172,7 +176,7 @@ export const narrowLimits = (
   ];
 
   return {
-    depth: lower(own?.depth, inherited?.depth) ?? 1,
+    depth: lower(own?.depth, inherited?.depth) ?? defaultDepth,
     ...((agents.length > 0 || tools.length > 0) && {
       discovery: {
         ...(agents.length > 0 && { agents }),
