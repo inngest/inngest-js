@@ -822,7 +822,11 @@ export const isLedgerKvStore = (store: KvStore): store is LedgerKvStore => {
  * Names a script's writes: they are numbered together, so the ledger applies
  * them in the order the script made them.
  */
-const outsideWriter = `ext-${globalThis.crypto.randomUUID()}`;
+let outsideWriter: string | undefined;
+const outsideWriterId = () => {
+  outsideWriter ??= `ext-${globalThis.crypto.randomUUID()}`;
+  return outsideWriter;
+};
 const outsideSeq = new Map<string, number>();
 
 /**
@@ -898,7 +902,7 @@ export const ledgerKvAdapter = (
         signLedgerData(client, threadWrite.name, {
           thread: hash,
           app: client.id,
-          runId: outsideWriter,
+          runId: outsideWriterId(),
           seq,
           change,
         }),

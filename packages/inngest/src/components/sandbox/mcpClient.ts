@@ -14,9 +14,11 @@
  *   (timeout, dropped connection, 5xx). The server may have acted.
  * - `McpAuthError`: 401 or 403. A retry can't fix it.
  * - `McpProtocolError`: the server answered with a JSON-RPC error or a 4xx.
+ * - `McpRedirectError`: the server answered with a redirect, which is refused.
  */
 import hashjs from "hash.js";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { refuseRedirect } from "./mcpGuard.ts";
 import { redact } from "./secret.ts";
 
 export const mcpProtocolVersion = "2025-06-18";
@@ -544,10 +546,9 @@ export class McpClient {
     let response: Response;
 
     try {
-      // A redirect would carry the credentials to another origin.
       response = await (this.#options.fetch ?? fetch)(this.#options.url, {
         method: "POST",
-        redirect: "error",
+        redirect: "manual",
         signal: timeout.signal,
         headers: {
           ...auth.headers,
@@ -577,6 +578,8 @@ export class McpClient {
         { cause: error },
       );
     }
+
+    await refuseRedirect(response, this.#options.url);
 
     if (response.ok || response.status === 404) {
       return response;
