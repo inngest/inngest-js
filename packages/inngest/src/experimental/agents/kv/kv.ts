@@ -27,13 +27,6 @@ import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { nextCount } from "../agent/executionCounter.ts";
 import { currentSessions } from "../agent/sessions.ts";
 import type { Json } from "../json.ts";
-import {
-  conditionalOnLedger,
-  isLedgerKvStore,
-  type LedgerKvStore,
-  type LedgerSender,
-  ledgerKvAdapter,
-} from "../threads/ledgerClient.ts";
 
 /**
  * How long a value lives and who sees it: `env` (the whole environment),
@@ -623,10 +616,6 @@ async function tryDecode<K extends KvKeyInput>(
  * Reads and writes one scope instance directly, with values as JSON.
  */
 interface RawKv {
-  /**
-   * Set on the ledger's handle, which has no conditional writes.
-   */
-  readonly ledger?: true;
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown, options?: KvSetOptions): Promise<void>;
   setIfAbsent(
@@ -925,7 +914,6 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
   const hash = kvHash(scope, ids);
 
   return {
-    ...(isLedgerKvStore(adapter) && { ledger: true as const }),
     async get(key) {
       const raw = await adapter.get(hash, key);
 
@@ -940,10 +928,6 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
       );
     },
     async setIfAbsent(key, value, options) {
-      if (isLedgerKvStore(adapter)) {
-        throw conditionalOnLedger("setIfAbsent");
-      }
-
       return adapter.setIfAbsent(
         hash,
         key,
@@ -952,10 +936,6 @@ function handleFor(adapter: KvStore, scope: KvScope, ids: KvScopeIds): RawKv {
       );
     },
     async update(key, compute) {
-      if (isLedgerKvStore(adapter)) {
-        throw conditionalOnLedger("update");
-      }
-
       for (let attempt = 0; attempt < updateAttempts; attempt++) {
         const raw = await adapter.get(hash, key);
         const outcome = await compute(
@@ -1077,13 +1057,30 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
 }
 
 const appStores = new Map<string, KvStore>();
-let ledgerStoreCache: KvStore | undefined;
+/**
+ * The store of an app with none configured: in this process and nowhere else.
+ *
+ * Thread state does not come from here. A thread's state is held by its thread
+ * run, and every function that touches it obtains the thread's own handle
+ * first (see `threads/threadClient.ts`), so `kv.thread` inside a run never
+ * reaches a store at all. What is left of the other scopes is internal and
+ * used by tests.
+ */
+const processStores = new Map<string, KvStore>();
 
-// Lazy: building it at module load reads `ledgerKvAdapter` before an import
-// cycle through `experimental.ts` has initialized it.
-const ledgerStore = (): KvStore => {
-  ledgerStoreCache ??= ledgerKvAdapter();
-  return ledgerStoreCache;
+const processStore = (app?: string): KvStore => {
+  const key = app ?? "";
+  const held = processStores.get(key);
+
+  if (held) {
+    return held;
+  }
+
+  const made = memoryKvAdapter();
+
+  processStores.set(key, made);
+
+  return made;
 };
 
 /**
@@ -1102,27 +1099,8 @@ export function setAppKvStore(app: string, store: KvStore): void {
  * @param app The app ID of the client, if known.
  */
 export function kvAdapterFor(app?: string): KvStore {
-  return (app ? appStores.get(app) : undefined) ?? ledgerStore();
+  return (app ? appStores.get(app) : undefined) ?? processStore(app);
 }
-
-/**
- * Whether an app's KV is the ledger: no store was set for the app.
- * @param app The app ID of the client, if known.
- */
-export function usesLedger(app?: string): boolean {
-  return isLedgerKvStore(kvAdapterFor(app));
-}
-
-/**
- * One run's own keys when the KV is the ledger: held in the run, rebuilt on a
- * replay from the memoized write steps, gone when the run ends.
- */
-interface RunLocal {
-  keys: Map<string, { v: string; exp?: number }>;
-  indexes: Map<string, Map<string, number>>;
-}
-
-const runLocals = new WeakMap<object, RunLocal>();
 
 /**
  * EXPERIMENTAL: the shape of a scope's handle, so the thread run's own handle
@@ -1180,199 +1158,12 @@ type RunOp =
   | { kind: "remove"; index: string; member: string };
 
 /**
- * The handle of the current run's own keys with the ledger KV. A read is the
- * run's copy and costs no step. A write is one memoized step that returns the
- * write, which the run applies to its copy, so a replay rebuilds the copy.
- */
-function localRunHandle(): RawKv {
-  const execution = getAsyncCtxSync()?.execution;
-
-  if (!execution) {
-    throw new Error("kv.run needs a function run");
-  }
-
-  let local = runLocals.get(execution.instance);
-
-  if (!local) {
-    local = { keys: new Map(), indexes: new Map() };
-    runLocals.set(execution.instance, local);
-  }
-
-  const mine = local;
-  const live = (key: string): string | undefined => {
-    const field = mine.keys.get(key);
-
-    return field && (field.exp === undefined || field.exp > Date.now())
-      ? field.v
-      : undefined;
-  };
-  const apply = (op: RunOp) => {
-    switch (op.kind) {
-      case "set":
-        mine.keys.set(op.key, {
-          v: op.value,
-          ...(op.exp !== undefined && { exp: op.exp }),
-        });
-        return;
-      case "delete":
-        mine.keys.delete(op.key);
-        return;
-      case "clear":
-        mine.keys.clear();
-        mine.indexes.clear();
-        return;
-      case "add": {
-        const members = mine.indexes.get(op.index) ?? new Map();
-
-        members.set(op.member, op.score);
-        mine.indexes.set(op.index, members);
-        return;
-      }
-      case "remove":
-        mine.indexes.get(op.index)?.delete(op.member);
-    }
-  };
-  const commit = async (
-    name: string,
-    key: string | undefined,
-    build: () => RunOp,
-  ) => {
-    if (execution.executingStep) {
-      throw new Error(
-        "With the ledger KV store, kv.run cannot be written inside a step's callback: write between steps. Configure a store adapter with createAgents(client, { store }) to do this.",
-      );
-    }
-
-    const base = `kv.${name}:run${key === undefined ? "" : `:${key}`}`;
-    const repeat = nextCount(execution.instance, base);
-    const done = (await step.run(
-      repeat === 0
-        ? base
-        : { id: `${base}${STEP_INDEXING_SUFFIX}${repeat}`, name: base },
-      async () => {
-        return build();
-      },
-    )) as RunOp;
-
-    apply(done);
-  };
-  const expires = (options?: KvSetOptions) => {
-    const ttl = checkedTtl(options);
-
-    return ttl === undefined ? {} : { exp: Date.now() + ttl * 1000 };
-  };
-
-  return {
-    async get(key) {
-      const raw = live(key);
-
-      return raw === undefined ? undefined : JSON.parse(raw);
-    },
-    async set(key, value, options) {
-      const text = JSON.stringify(checkedValue(value));
-
-      await commit("set", key, () => {
-        return { kind: "set", key, value: text, ...expires(options) };
-      });
-    },
-    async setIfAbsent(key, value, options) {
-      const text = JSON.stringify(checkedValue(value));
-      const held = live(key);
-
-      if (held !== undefined) {
-        return held === text;
-      }
-
-      await commit("setIfAbsent", key, () => {
-        return { kind: "set", key, value: text, ...expires(options) };
-      });
-
-      return true;
-    },
-    async update(key, compute) {
-      const held = live(key);
-      const outcome = await compute(
-        held === undefined ? undefined : JSON.parse(held),
-      );
-
-      if ("stop" in outcome) {
-        return { stopped: outcome.stop };
-      }
-
-      const text = JSON.stringify(checkedValue(outcome.write));
-
-      await commit("update", key, () => {
-        return { kind: "set", key, value: text };
-      });
-
-      return { written: outcome.write };
-    },
-    async delete(key) {
-      await commit("delete", key, () => {
-        return { kind: "delete", key };
-      });
-    },
-    async all() {
-      return Object.fromEntries(
-        [...mine.keys.keys()].flatMap((key) => {
-          const raw = live(key);
-
-          return raw === undefined ? [] : [[key, JSON.parse(raw)]];
-        }),
-      );
-    },
-    async clear() {
-      await commit("clear", undefined, () => {
-        return { kind: "clear" };
-      });
-    },
-    async indexAdd(index, member, score) {
-      checkedScore(score);
-      await commit("index.add", `${index}:${member}`, () => {
-        return { kind: "add", index, member, score };
-      });
-    },
-    async indexRange(index, options) {
-      checkedRange(options);
-
-      const entries = [...(mine.indexes.get(index) ?? [])]
-        .map(([member, score]) => {
-          return { member, score };
-        })
-        .filter((entry) => {
-          return (
-            entry.score >= (options.min ?? -Infinity) &&
-            entry.score <= (options.max ?? Infinity)
-          );
-        })
-        .sort((a, b) => {
-          return a.score - b.score || (a.member < b.member ? -1 : 1);
-        });
-
-      if (options.order === "desc") {
-        entries.reverse();
-      }
-
-      return entries.slice(0, options.limit ?? entries.length);
-    },
-    async indexRemove(index, member) {
-      await commit("index.remove", `${index}:${member}`, () => {
-        return { kind: "remove", index, member };
-      });
-    },
-  };
-}
-
-/**
  * Builds a store.
  * @param options.adapter Where values live. Default: the app's store.
  * @param options.bound Environment and app to use outside a function.
  */
 export function createKv(
-  options: {
-    adapter?: KvStore;
-    bound?: { env: string; app: string; client?: LedgerSender };
-  } = {},
+  options: { adapter?: KvStore; bound?: { env: string; app: string } } = {},
 ): Kv {
   // The store of an app: the one this KV was built with, else the app's.
   function store(app?: string): KvStore {
@@ -1407,39 +1198,6 @@ export function createKv(
         if (held) {
           return { handle: held, inFunction: false };
         }
-      }
-
-      // The ledger keeps its own steps, so its calls are not wrapped in
-      // another. Outside a function it writes through the bound client.
-      if (isLedgerKvStore(adapter)) {
-        // A run's own keys live in the run, not in a ledger that would outlive
-        // it.
-        if (scope === "run") {
-          if (
-            !current ||
-            (explicitId !== undefined && explicitId !== ids.run)
-          ) {
-            throw new Error(
-              "With the ledger KV store, kv.run is the current run's own and works only inside its function. Configure a store adapter with createAgents(client, { store }) to name another run.",
-            );
-          }
-
-          return {
-            handle: localRunHandle(),
-            inFunction: false,
-          };
-        }
-
-        const bound = options.bound?.client;
-
-        return {
-          handle: handleFor(
-            current || !bound ? adapter : ledgerKvAdapter({ client: bound }),
-            scope,
-            scoped,
-          ),
-          inFunction: false,
-        };
       }
 
       return {
@@ -1565,10 +1323,6 @@ export function createKv(
         // Checked before the key is removed, so a value that fails its schema
         // stays readable.
         const read = await run("take", name, async (h) => {
-          if (h.ledger) {
-            throw conditionalOnLedger("take");
-          }
-
           const raw = await h.get(name);
           const checked = await tryDecode(key, raw);
           if (!checked.ok) {
@@ -1626,7 +1380,6 @@ export function createKv(
         bound: {
           env: client.env ?? "default",
           app: client.id,
-          client: client as unknown as LedgerSender,
         },
       });
     },
@@ -1634,6 +1387,7 @@ export function createKv(
 }
 
 /**
- * The default KV. Its store is the app's, the ledger unless one was set.
+ * The default KV. Thread state comes from the thread run; the rest is this
+ * process's own.
  */
 export const kv: Kv = createKv();

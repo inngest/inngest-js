@@ -86,7 +86,7 @@ import {
   threadInbox,
 } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
-import { kv, usesLedger } from "../kv/kv.ts";
+import { kv } from "../kv/kv.ts";
 import {
   type AgentHandlerLoop,
   type AgentLoop,
@@ -118,7 +118,6 @@ import {
   type SkillSources,
   skillsPrompt,
 } from "../skills/skills.ts";
-import { closeThreadCopies } from "../threads/ledgerClient.ts";
 import {
   agentFinishedEvent,
   agentMessageEvent,
@@ -469,23 +468,12 @@ export function createAgentFunction(
   const triggers = compileTriggers(config.id, config);
   const threadExpression = singletonKey(triggers);
 
-  // The KV is a configured store, else the ledger. The ledger keeps its own
-  // steps and cannot be written inside a step's callback, so a run on it does
-  // its thread bookkeeping between steps.
+  // Thread state comes from the thread's holder: every function that touches
+  // it obtains the thread's own handle first, and then `kv.thread` reads what
+  // the run already has and writes by sending the thread an event.
   const store = kv;
-  const onLedger = () => {
-    return usesLedger(client.id);
-  };
-
-  const cleanup = createCleanupFunction(client, config, ref, store, onLedger);
-  const finished = createFinishedFunction(
-    client,
-    config,
-    ref,
-    store,
-    triggers,
-    onLedger,
-  );
+  const cleanup = createCleanupFunction(client, config, ref, store);
+  const finished = createFinishedFunction(client, config, ref, store, triggers);
 
   const fn = client.createFunction(
     {
@@ -655,7 +643,9 @@ export function createAgentFunction(
         }
 
         // Writes what `thread.state()` shows. One step per change.
-        const recorder = threadRecorder(store, ref, runId, onLedger());
+        // One writer per thread, so a plain read and write where the newest
+        // run wins is enough: there is nothing to compare against.
+        const recorder = threadRecorder(store, ref, runId, true);
 
         // The grant a start carries, checked: a start that claims a starter
         // but has no valid grant fails for good, so limits, report routes and
@@ -684,39 +674,28 @@ export function createAgentFunction(
           };
         };
 
-        // How the run before this one ended is a key of its own, read apart
-        // from the record. Both are KV calls inside one step, so the start
-        // costs one step; the write is safe to repeat if the step is retried.
-        // The ledger cannot be written inside a step, so a run on it makes the
-        // same two KV calls between steps, and reads the ledger once, here.
-        const begun = onLedger()
-          ? await startWith()
-          : await step.run(
-              { id: "thread:start", name: "Thread state" },
-              async () => {
-                // The warning rides on this step's metadata, so it is written
-                // once and costs no step.
-                if (data.fresh) {
-                  traceWarning(
-                    logger,
-                    "thread.fresh",
-                    `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
-                  );
-                }
+        // The record and how the run before this one ended, in one step: both
+        // are reads of what this run already holds and writes that the thread
+        // applies, so the start costs one step and the write is safe to
+        // repeat if the step is retried.
+        const begun = await step.run(
+          { id: "thread:start", name: "Thread state" },
+          async () => {
+            // The warning rides on this step's metadata, so it is written
+            // once and costs no step.
+            if (data.fresh) {
+              traceWarning(
+                logger,
+                "thread.fresh",
+                `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+              );
+            }
 
-                return startWith(thread.key);
-              },
-            );
+            return startWith(thread.key);
+          },
+        );
         const started = begun.started as ThreadRecord;
         const previousRun = begun.previousRun ?? undefined;
-
-        if (onLedger() && data.fresh) {
-          traceWarning(
-            logger,
-            "thread.fresh",
-            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
-          );
-        }
 
         recorder.observe({
           usage: started.usage,
@@ -1223,7 +1202,7 @@ export function createAgentFunction(
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
           agent: ref,
-          recordInStep: !onLedger(),
+          recordInStep: true,
         });
 
         // Who started the thread and who opened this run, for the briefing. A
@@ -1460,15 +1439,12 @@ export function createAgentFunction(
           // A score the handler did not await is still written.
           await agentScore.flush();
         } catch (error) {
-          await closeThreadCopies(instance).catch(() => undefined);
           await closeAll();
 
           throw error;
         }
 
         const rejected = await closeAll();
-
-        await closeThreadCopies(instance);
 
         // The body succeeded, so an eager sandbox nothing used that failed to
         // create is a warning, not a failed run.

@@ -9,7 +9,6 @@ import type { QuestionBook } from "../inbox/questionBook.ts";
 import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
-import { closesCopies } from "../threads/ledgerClient.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
 import type { LimitState } from "./limits.ts";
@@ -64,7 +63,6 @@ export const createLoopWiring = (options: {
   const instance = getAsyncCtxSync()?.execution?.instance;
 
   if (instance) {
-    closesCopies(instance);
   }
 
   const {

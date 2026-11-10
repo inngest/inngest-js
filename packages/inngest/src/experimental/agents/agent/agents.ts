@@ -23,10 +23,8 @@ import {
   announceOnSync,
   rememberCard,
 } from "../discovery/discovery.ts";
-import { usesLedger } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
-import { createLedgerFunctions } from "../threads/ledger.ts";
 import type {
   ThreadCronEvent,
   ThreadCronTrigger,
@@ -288,11 +286,6 @@ const finishedFunctions = new WeakMap<object, InngestFunction.Any>();
 const askTimeoutFunctions = new WeakMap<object, InngestFunction.Any>();
 
 /**
- * The thread ledger functions of each client, made once.
- */
-const ledgers = new WeakMap<object, InngestFunction.Any[]>();
-
-/**
  * Options of `createAgents`.
  */
 export interface CreateAgentsOptions {
@@ -402,26 +395,14 @@ export const createAgents = <TClient extends Inngest.Any>(
       const relay = finishedFunctions.get(client);
       const timeout = askTimeoutFunctions.get(client);
 
-      const stored = !usesLedger(client.id);
-
-      // With the ledger KV store each agent's finished function sends
-      // `agent/finished`, so the relay that sends it is served only with
-      // another store.
-      const ledger = stored
-        ? []
-        : (ledgers.get(client) ??
-          (ledgers.set(client, createLedgerFunctions(client)),
-          ledgers.get(client) ?? []));
-
       if (made.length > 0 && announcer && relay && timeout) {
         return [
           ...hosted,
           ...functions,
           announcer,
-          ...(stored ? [relay] : []),
+          relay,
           timeout,
           parentEndedFunction(client),
-          ...ledger,
         ];
       }
 

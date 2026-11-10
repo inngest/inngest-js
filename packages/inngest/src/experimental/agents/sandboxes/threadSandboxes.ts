@@ -56,7 +56,7 @@ import {
 } from "../../../components/sandbox/snapshotCache.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { DeferHandle } from "../../../types.ts";
-import { type KvScopeInstance, typedKey, usesLedger } from "../kv/kv.ts";
+import { type KvScopeInstance, typedKey } from "../kv/kv.ts";
 import {
   generationScore,
   newestSandboxGeneration,
@@ -530,22 +530,17 @@ export const threadSandboxOwner = (
     takePaused: async (name) => {
       const key = typedKey<PausedSandbox>(sandboxPausedKey(ref, name));
 
-      // The ledger has no atomic take. Only one run per agent per thread is
-      // live and the record is per agent, so a plain read and delete is enough:
-      // the newest run's claim stands.
-      if (usesLedger((client as { id?: string }).id)) {
-        const held = await scope.get(key);
+      // A thread's state has one writer and this record is per agent, with one
+      // live run per agent per thread, so a plain read and delete is enough:
+      // the newest run's claim stands. There is no atomic take to use, and
+      // nothing here needs one.
+      const held = await scope.get(key);
 
-        if (held) {
-          await scope.delete(key);
-        }
-
-        return held?.id;
+      if (held) {
+        await scope.delete(key);
       }
 
-      const found = await scope.take(key);
-
-      return found?.id;
+      return held?.id;
     },
 
     pause: async (name, sandbox, epoch = 0) => {
