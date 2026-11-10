@@ -103,9 +103,52 @@ jobs:
       - run: pnpm run test
         if: matrix.package == 'otel'
 
+      - name: Determine prerelease tag
+        id: prerelease-tag
+        working-directory: .
+        run: |
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          FALLBACK_TAG="pr-${{ github.event.pull_request.number }}"
+
+          # Collect every "prerelease-tag/<tag>" label (stripping the prefix),
+          # sorted so that if more than one is present we pick deterministically
+          # (the alphabetically-first one) rather than relying on label ordering.
+          TAG_CANDIDATES=$(jq -n --arg labels "$LABELS" '
+            ($labels | fromjson)
+            | map(select(startswith("prerelease-tag/")) | sub("^prerelease-tag/"; ""))
+            | sort
+          ')
+
+          CANDIDATE_COUNT=$(jq 'length' <<< "$TAG_CANDIDATES")
+          CHOSEN_RAW=$(jq -r '.[0] // ""' <<< "$TAG_CANDIDATES")
+
+          if [[ -z "$CHOSEN_RAW" ]]; then
+            TAG="$FALLBACK_TAG"
+          else
+            if [[ "$CANDIDATE_COUNT" -gt 1 ]]; then
+              echo "::notice::Multiple prerelease-tag/* labels found ($(jq -c . <<< "$TAG_CANDIDATES")); using '$CHOSEN_RAW' (alphabetically first)."
+            fi
+
+            # Sanitise into something npm will accept as a dist-tag: lowercase
+            # alphanumerics and hyphens only, collapsing anything else, and
+            # trimming leading/trailing hyphens.
+            SANITISED=$(echo "$CHOSEN_RAW" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//')
+
+            # Reject empty results, and anything that could be read as a
+            # version number (npm forbids a dist-tag that is a valid semver).
+            if [[ -z "$SANITISED" ]] || [[ "$SANITISED" =~ ^[0-9]+(-[0-9]+){0,2}$ ]]; then
+              echo "::warning::prerelease-tag label 'prerelease-tag/${CHOSEN_RAW}' sanitised to an invalid dist-tag ('${SANITISED}'); falling back to ${FALLBACK_TAG}"
+              TAG="$FALLBACK_TAG"
+            else
+              TAG="$SANITISED"
+            fi
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Prerelease PR
         run: |
-          export TAG=pr-${{ github.event.pull_request.number }}
+          export TAG=${{ steps.prerelease-tag.outputs.tag }}
           export NODE_ENV=test
           [[ -n "${{ matrix.dist_dir }}" ]] && export DIST_DIR=${{ matrix.dist_dir }}
           node ../../scripts/release/prerelease.js
@@ -120,12 +163,12 @@ jobs:
           edit-mode: "replace"
           body: |
             <!-- pr-prerelease-comment-${{ matrix.package }} -->
-            A user has added the <kbd>[prerelease/${{ matrix.package }}](https://github.com/inngest/inngest-js/labels/prerelease%2F${{ matrix.package }})</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+            A user has added the <kbd>[prerelease/${{ matrix.package }}](https://github.com/inngest/inngest-js/labels/prerelease%2F${{ matrix.package }})</kbd> label, so this PR will be published to npm with the tag `${{ steps.prerelease-tag.outputs.tag }}`. It will be updated with the latest changes as you push commits to this PR.
 
             You can install this prerelease version with:
 
             ```sh
-            npm install ${{ matrix.package == 'inngest' && 'inngest' || format('@inngest/{0}', matrix.package) }}@pr-${{ github.event.pull_request.number }}
+            npm install ${{ matrix.package == 'inngest' && 'inngest' || format('@inngest/{0}', matrix.package) }}@${{ steps.prerelease-tag.outputs.tag }}
             ```
 
             The last release was built and published from ${{ github.event.pull_request.head.sha }}.
