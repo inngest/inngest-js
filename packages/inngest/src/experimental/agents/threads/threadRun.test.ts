@@ -324,3 +324,218 @@ describe("kv.thread, which is sugar", () => {
     expect(write).toBeDefined();
   });
 });
+
+describe("the thread run", () => {
+  const made = () => {
+    freshKv();
+
+    return createAgentFunction(client(), { id: "bot" });
+  };
+
+  /**
+   * What the supervisor invokes the holder with, as the holder sees it.
+   */
+  const holding = (over: Record<string, unknown>) => {
+    return {
+      name: "inngest/function.invoked",
+      data: { agent: ref, thread: "t1", generation: 1, ...over },
+    };
+  };
+
+  test("the supervisor triggers on the agent layer's events and the protocol's, keyed on the thread alone", () => {
+    const opts = made().threadRun["opts"] as unknown as {
+      singleton: { key: string; mode: string };
+      triggers: { event?: string }[];
+    };
+    const triggers = opts.triggers.map((trigger) => {
+      return trigger.event;
+    });
+
+    expect(triggers).toContain("agent/message");
+    expect(triggers).toContain("agent/thread-run.read");
+    expect(triggers).toContain("agent/thread-run.write");
+
+    // Nothing a thread run sends to another thread run is a trigger.
+    for (const name of threadRunSubscribedOnly) {
+      expect(triggers).not.toContain(name);
+    }
+
+    expect(opts.singleton.mode).toBe("skip");
+
+    // Keyed on the thread alone, and on the same expression the agent's own
+    // singleton uses: a generation in the key would make an arrival, which
+    // carries none, start a second holder.
+    const agentOpts = made().fn["opts"] as unknown as {
+      singleton: { key: string };
+    };
+
+    expect(opts.singleton.key).toBe(agentOpts.singleton.key);
+  });
+
+  test("the holder has no event triggers and no singleton, so nothing can skip a successor", () => {
+    const opts = made().threadHolder["opts"] as unknown as {
+      singleton?: unknown;
+      triggers: { event?: string; cron?: string }[];
+    };
+
+    expect(opts.singleton).toBeUndefined();
+    expect(opts.triggers).toHaveLength(1);
+    expect(opts.triggers[0]?.event).toBe("inngest/function.invoked");
+  });
+
+  test("an arrival with no live thread starts one, which logs it and forwards it", async () => {
+    const { threadHolder } = made();
+    const { sent } = await run(threadHolder, {
+      event: holding({ start: message("hello") }),
+      incoming: [
+        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+    const forwards = sent.filter((event) => {
+      return event.name === threadForward.name;
+    });
+    const first = forwards[0]?.data as {
+      events?: { seq: number; name: string }[];
+      state?: ThreadSnapshot;
+    };
+
+    expect(first?.events?.[0]).toMatchObject({ seq: 1, name: "agent/message" });
+
+    // The state travels with it, so the run it starts needs no read.
+    expect(first?.state?.entries).toHaveLength(1);
+    expect(first?.state?.fresh).toBe(true);
+  });
+
+  test("it answers a read with what it holds, and a write is in that answer", async () => {
+    const { threadHolder } = made();
+    const steps: string[] = [];
+    const { signals } = await run(threadHolder, {
+      onStep: (op) => {
+        steps.push(op.userland?.id ?? op.id);
+      },
+      event: holding({
+        start: {
+          name: "agent/thread-run.write",
+          data: {
+            agent: ref,
+            thread: "t1",
+            id: "run-a:0",
+            ops: [{ kind: "set", key: "stage", value: '"triage"' }],
+          },
+        },
+      }),
+      incoming: [
+        {
+          name: "agent/thread-run.read",
+          data: {
+            agent: ref,
+            thread: "t1",
+            signal: readSignal(ref, "t1", "reader"),
+            run: "reader",
+          },
+        },
+        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+
+    // The answer is computed when the read arrives and sent as a signal, so
+    // it reaches the run that asked and no other.
+    // The answer is computed when the read arrives and sent as a signal, so it
+    // reaches the run that asked and no other.
+    const answer = signals.find((sent) => {
+      return sent.signal === readSignal(ref, "t1", "reader");
+    });
+    const held = answer?.data as ThreadSnapshot | undefined;
+
+    expect(held?.keys.stage?.v).toBe('"triage"');
+    expect(steps).toContain("read:0");
+  });
+});
+
+describe("listening, which the model asks for at runtime", () => {
+  test("the handler's thread.listen() asks the thread and returns once it has it", async () => {
+    freshKv();
+
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox, thread }) => {
+        await inbox.next();
+
+        return thread.listen("github/pull_request.review", {
+          "data.number": 412,
+        });
+      },
+    );
+    const { output, sent } = await run(made.fn, {
+      event: message("watch 412"),
+    });
+    const asked = sent.find((event) => {
+      return event.name === "agent/thread-run.listen";
+    });
+
+    expect(output).toBe(true);
+    expect(
+      (asked?.data as { listen?: { event?: string; if?: string } }).listen,
+    ).toEqual({
+      event: "github/pull_request.review",
+      if: "async.data.number == 412",
+    });
+  });
+
+  test("the thread records it, acknowledges it, and re-establishes it", async () => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { signals, output } = await run(threadHolder, {
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 1,
+          start: {
+            name: "agent/thread-run.listen",
+            data: {
+              agent: ref,
+              thread: "t1",
+              listen: { event: "github/pull_request.review" },
+              signal: listenSignal(ref, "t1", "reader", 0),
+              run: "reader",
+            },
+          },
+        },
+      },
+      incoming: [
+        {
+          name: "agent/thread-run.read",
+          data: {
+            agent: ref,
+            thread: "t1",
+            signal: readSignal(ref, "t1", "reader"),
+            run: "reader",
+          },
+        },
+        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+
+    expect(
+      signals.find((one) => {
+        return one.signal === listenSignal(ref, "t1", "reader", 0);
+      })?.data,
+    ).toMatchObject({ listening: true });
+
+    // A new listen only takes effect in a new subscription, so recording one
+    // hands the thread over - and the listen travels with the state, which is
+    // how it outlives the run that asked for it.
+    const handed = output as
+      | { ended?: string; handover?: ThreadSnapshot }
+      | undefined;
+
+    expect(handed?.ended).toBe("handover");
+    expect(handed?.handover?.listens).toEqual([
+      { event: "github/pull_request.review" },
+    ]);
+  });
+});

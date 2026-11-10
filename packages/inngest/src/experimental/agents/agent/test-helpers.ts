@@ -320,6 +320,28 @@ export const run = async (
     }
   };
 
+  // A signal has nowhere to go in a test either: the signals a run sends are
+  // taken here and handed back, so a test can assert that a read was answered.
+  const signals: { signal: string; data?: unknown }[] = [];
+  const heldSignal = Object.getOwnPropertyDescriptor(client, "_sendSignal");
+
+  if (!heldSignal) {
+    try {
+      Object.defineProperty(client, "_sendSignal", {
+        value: async (sent: { signal: string; data?: unknown }) => {
+          signals.push(sent);
+
+          return { conflict: false };
+        },
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    } catch {
+      // A test that holds `_sendSignal` itself keeps it.
+    }
+  }
+
   let taken = false;
 
   // A test that installed its own `_send` keeps it: that is how the tests
@@ -378,6 +400,7 @@ export const run = async (
         reads,
         saved,
         sent,
+        signals,
         output: result.data,
         error: undefined as unknown,
         waiting: false,
@@ -392,6 +415,7 @@ export const run = async (
         reads,
         saved,
         sent,
+        signals,
         output: result.error,
         error: result.error as unknown,
         waiting: false,
@@ -407,6 +431,7 @@ export const run = async (
           reads,
           saved,
           sent,
+          signals,
           output: op.data,
           error: op.error as unknown,
           waiting: false,
@@ -649,6 +674,7 @@ export const run = async (
           reads,
           saved,
           sent,
+          signals,
           output: undefined,
           error: undefined as unknown,
           waiting: true,

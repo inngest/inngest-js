@@ -839,10 +839,12 @@ describe("createAgents", () => {
     ).toEqual([
       `${testClientId}-a`,
       `${testClientId}-a-thread`,
+      `${testClientId}-a-thread-run`,
       `${testClientId}-a-cleanup`,
       `${testClientId}-a-finished`,
       `${testClientId}-b`,
       `${testClientId}-b-thread`,
+      `${testClientId}-b-thread-run`,
       `${testClientId}-b-cleanup`,
       `${testClientId}-b-finished`,
       `${testClientId}-agents-announce`,

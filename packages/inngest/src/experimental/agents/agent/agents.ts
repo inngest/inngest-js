@@ -393,6 +393,7 @@ export const createAgents = <TClient extends Inngest.Any>(
         return [
           created.fn,
           created.threadRun,
+          created.threadHolder,
           created.cleanup,
           created.finished,
         ];

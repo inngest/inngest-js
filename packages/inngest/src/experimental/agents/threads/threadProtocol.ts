@@ -334,44 +334,6 @@ export type ThreadForwardData = AgentRouting & {
 export const forwardStateLimit = 256 * 1024;
 
 /**
- * What a rollover hands over. `gen` is the singleton key of the successor, so
- * a live predecessor does not block it.
- */
-export type ThreadResumeData = AgentRouting & {
-  /**
-   * The successor's singleton key: `"<thread>#<generation>"`.
-   */
-  gen: string;
-
-  /**
-   * The successor's generation number.
-   */
-  generation: number;
-
-  /**
-   * The state as the predecessor held it when it decided to roll over. The
-   * predecessor keeps reading after this, and what arrives meanwhile is
-   * applied and sent on as the final state.
-   */
-  state: ThreadSnapshot;
-
-  /**
-   * The signal the successor sends its announcement on, and the one the
-   * predecessor answers with the final state. Both are derived from `gen`.
-   */
-  signal: string;
-};
-
-/**
- * The successor announcing that it is subscribed. It subscribes **early** and
- * holds **late**: holding from the off gives two holders.
- */
-export type ThreadReadyData = AgentRouting & {
-  gen: string;
-  generation: number;
-};
-
-/**
  * A thread ending on purpose. The state is meant to be gone.
  */
 export type ThreadDoneData = AgentRouting & {
@@ -385,24 +347,6 @@ export type ThreadDoneData = AgentRouting & {
 export type ThreadLostData = AgentRouting & {
   generation: number;
   why: string;
-};
-
-/**
- * A thread run that has just started, asking whether another already holds
- * this thread. It holds from the off rather than waiting for the answer, so a
- * cold thread pays no latency for the question.
- */
-export type ThreadHelloData = AgentRouting & {
-  generation: number;
-  gen: string;
-};
-
-/**
- * A live holder answering a hello. The younger holder stands down on hearing
- * it: it hands what it recorded to the live one as ordinary writes, then ends.
- */
-export type ThreadLiveData = AgentRouting & {
-  generation: number;
 };
 
 /*
@@ -450,20 +394,6 @@ export const threadForward = eventType("agent/thread-run.forward", {
 });
 
 /**
- * EXPERIMENTAL: a thread run handing over to its successor.
- */
-export const threadResume = eventType("agent/thread-run.resume", {
-  schema: staticSchema<ThreadResumeData>(),
-});
-
-/**
- * EXPERIMENTAL: a successor announcing that it is subscribed.
- */
-export const threadReady = eventType("agent/thread-run.ready", {
-  schema: staticSchema<ThreadReadyData>(),
-});
-
-/**
  * EXPERIMENTAL: a thread ending on purpose.
  */
 export const threadDone = eventType("agent/thread-run.done", {
@@ -478,20 +408,6 @@ export const threadLost = eventType("agent/thread-run.lost", {
 });
 
 /**
- * EXPERIMENTAL: a new thread run asking whether another holds this thread.
- */
-export const threadHello = eventType("agent/thread-run.hello", {
-  schema: staticSchema<ThreadHelloData>(),
-});
-
-/**
- * EXPERIMENTAL: a live thread run answering a hello.
- */
-export const threadLive = eventType("agent/thread-run.live", {
-  schema: staticSchema<ThreadLiveData>(),
-});
-
-/**
  * The events of the protocol that are addressed to a thread run.
  */
 export const threadControlEvents: string[] = [
@@ -499,9 +415,6 @@ export const threadControlEvents: string[] = [
   threadWrite.name,
   threadListen.name,
   threadDone.name,
-  threadReady.name,
-  threadHello.name,
-  threadLive.name,
 ];
 
 /**
@@ -510,7 +423,6 @@ export const threadControlEvents: string[] = [
 export const isThreadControl = (name: string): boolean => {
   return (
     threadControlEvents.includes(name) ||
-    name === threadResume.name ||
     name === threadForward.name ||
     name === threadLost.name
   );
@@ -566,16 +478,6 @@ export const listenSignal = (
 };
 
 /**
- * The signal a predecessor sends its final state on, and the generation key it
- * belongs to.
- * @param ref The agent, as `"appId/functionId"`.
- * @param gen The successor's generation key.
- */
-export const handoverSignal = (ref: string, gen: string): string => {
-  return `agents/handover:${ref}:${gen}`;
-};
-
-/**
  * The generation key of one generation of a thread run: what its singleton is
  * keyed on, so a live predecessor does not block its successor.
  * @param thread The thread key.
@@ -605,7 +507,6 @@ export const threadRunTriggers: readonly string[] = [
   threadWrite.name,
   threadListen.name,
   threadDone.name,
-  threadResume.name,
 ];
 
 /**
@@ -613,9 +514,6 @@ export const threadRunTriggers: readonly string[] = [
  * by. See `threadRunTriggers` for why the distinction is load-bearing.
  */
 export const threadRunSubscribedOnly: readonly string[] = [
-  threadReady.name,
-  threadHello.name,
-  threadLive.name,
   threadForward.name,
   threadLost.name,
 ];
@@ -630,10 +528,6 @@ export const threadRunEventNames = {
   write: threadWrite.name,
   listen: threadListen.name,
   forward: threadForward.name,
-  resume: threadResume.name,
-  ready: threadReady.name,
   done: threadDone.name,
   lost: threadLost.name,
-  hello: threadHello.name,
-  live: threadLive.name,
 } as const;

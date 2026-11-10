@@ -935,11 +935,19 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
   finished: InngestFunction.Any;
 
   /**
-   * The agent's thread run: long-lived, one per thread, the only writer to the
-   * thread's state, and the holder of every subscription. Runs of `fn` are
-   * short-lived and many; this is the one long-lived thing in a conversation.
+   * The supervisor of the agent's threads: one live run per thread, keyed on
+   * the thread alone, which does nothing but keep that key and invoke the
+   * holder. It never ends between two holders, so an arrival cannot start a
+   * second, empty thread while state moves from one to the next.
    */
   threadRun: InngestFunction.Any;
+
+  /**
+   * The holder of a thread: long-lived, invoked by the supervisor, the only
+   * writer to the thread's state and the holder of every subscription and the
+   * log. Runs of `fn` are short-lived and many; this is the long-lived one.
+   */
+  threadHolder: InngestFunction.Any;
 
   /**
    * The agent's address, `"<appId>/<functionId>"`.

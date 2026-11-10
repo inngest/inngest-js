@@ -138,7 +138,7 @@ import {
   threadFilter,
   threadForward,
 } from "../threads/threadProtocol.ts";
-import { createThreadFunction } from "../threads/threadRun.ts";
+import { createThreadFunctions } from "../threads/threadRun.ts";
 import {
   markThreadIdle,
   readLastRun,
@@ -1484,13 +1484,19 @@ export function createAgentFunction(
     fn,
     cleanup,
     finished,
-    threadRun: createThreadFunction({
-      client,
-      config,
-      ref,
-      triggers,
-      inboxSources,
-    }),
+    ...(() => {
+      // Two functions hold a thread: the supervisor keeps its key and the
+      // holder holds its state. See `threadRun.ts` for why it cannot be one.
+      const thread = createThreadFunctions({
+        client,
+        config,
+        ref,
+        triggers,
+        inboxSources,
+      });
+
+      return { threadRun: thread.supervisor, threadHolder: thread.holder };
+    })(),
     ref,
     card: cardOf(client.id, config.id, fn, {
       card: config.card,
