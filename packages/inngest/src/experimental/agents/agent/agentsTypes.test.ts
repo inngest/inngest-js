@@ -129,14 +129,14 @@ test("agents: a trigger with no schema has data of Record<string, any>", () => {
   });
 });
 
-test("agents: the handler argument is event, inbox, me, sandboxes and score", () => {
+test("agents: the handler argument is event, inbox, thread, sandboxes and score", () => {
   typesOnly(() => {
     agents.agent(
       { id: "arg-1", triggers: [created] },
-      async ({ event, inbox, me, sandboxes, score }) => {
+      async ({ event, inbox, thread, sandboxes, score }) => {
         expectTypeOf(event).toHaveProperty("name");
         expectTypeOf(inbox).toHaveProperty("next");
-        expectTypeOf(me).toHaveProperty("key");
+        expectTypeOf(thread).toHaveProperty("key");
         expectTypeOf(sandboxes).toBeObject();
         expectTypeOf(score).toBeFunction();
       },
@@ -150,23 +150,23 @@ test("agents: the old handler fields are gone", () => {
       // @ts-expect-error trigger is the event
       void context.trigger;
 
-      // @ts-expect-error thread is me
-      void context.thread;
-
       // @ts-expect-error scores is score
       void context.scores;
     });
   });
 });
 
-test("agents: me has message and key, and no post", () => {
+test("agents: thread has message and key, and no post", () => {
   typesOnly(() => {
-    agents.agent({ id: "me-1", triggers: [created] }, async ({ me }) => {
-      expectTypeOf(me.key).toBeString();
-      expectTypeOf(me.message).parameter(0).toExtend<Json>();
-      expectTypeOf(me.message("x")).toEqualTypeOf<Promise<void>>();
-      expectTypeOf(me).not.toHaveProperty("post");
-    });
+    agents.agent(
+      { id: "thread-1", triggers: [created] },
+      async ({ thread }) => {
+        expectTypeOf(thread.key).toBeString();
+        expectTypeOf(thread.message).parameter(0).toExtend<Json>();
+        expectTypeOf(thread.message("x")).toEqualTypeOf<Promise<void>>();
+        expectTypeOf(thread).not.toHaveProperty("post");
+      },
+    );
   });
 });
 

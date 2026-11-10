@@ -7,7 +7,7 @@
 
 /**
  * The key a thread handle carries its agent's address under, so a report can
- * be routed to it. Present on `agent.thread(key)`, `me`, the handle `start()`
+ * be routed to it. Present on `agent.thread(key)`, the body's `thread`, the handle `start()`
  * returns and `msg.from`.
  */
 export const handleAddressKey: unique symbol = Symbol.for(

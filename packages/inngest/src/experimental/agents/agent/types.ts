@@ -493,7 +493,7 @@ export interface StartOptions extends LendOptions {
    * EXPERIMENTAL: what the started agent owes back, as typed reports. A line
    * is an ordinary `eventType()` (the report goes back to the thread that
    * started the agent) or `{ event, to, if, required }`: `to` is the thread or
-   * threads it goes to (`me`, `agent.thread(key)`), `if` a CEL condition over
+   * threads it goes to (`thread`, `agent.thread(key)`), `if` a CEL condition over
    * the report (`async.data`) and `required` that the report is owed: the
    * agent's loop reminds its model before it may finish. The lines of one
    * type merge. The routing travels in the signed grant of the start, so the
@@ -526,7 +526,7 @@ export interface StartOptions extends LendOptions {
 /**
  * The handle to a run's own thread.
  */
-export interface Me {
+export interface AgentThread {
   /**
    * The thread's key.
    */
@@ -586,7 +586,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
   /**
    * The handle to this run's own thread.
    */
-  me: Me;
+  thread: AgentThread;
 
   /**
    * How many agents deep this run is when another agent started it: 1 for
@@ -890,7 +890,7 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * @param options `thread`: the key of the thread to start the run on.
    * `reports`: the typed reports the agent may send back, as event types or
    * `{ event, to, if, required }` lines: where each goes and which it owes.
-   * The agent's model gets a `report` tool, and its handler `me.report()`.
+   * The agent's model gets a `report` tool, and its handler `thread.report()`.
    * `tools` and `sandboxes` lend the parent's sandbox tools and sandboxes to
    * the child, which runs them as steps of its own run (same app only), and
    * `attach` ties the child to this run: it is cancelled when this run ends

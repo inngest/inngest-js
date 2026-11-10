@@ -98,7 +98,7 @@ describe("optimizeParallelism", () => {
   });
 });
 
-describe("the handler's event, me and inbox", () => {
+describe("the handler's event, thread and inbox", () => {
   const order = eventType("shop/order", {
     schema: z.object({ id: z.string(), total: z.number() }),
   });
@@ -114,9 +114,9 @@ describe("the handler's event, me and inbox", () => {
     thread: "event.data.id",
   } as const;
 
-  test("event is exactly the event sent, is() narrows it, the inbox opens with it and me.key is the thread key", async () => {
+  test("event is exactly the event sent, is() narrows it, the inbox opens with it and thread.key is the thread key", async () => {
     let seen: Record<string, unknown> = {};
-    const { fn } = agents.agent(config, async ({ event, inbox, me }) => {
+    const { fn } = agents.agent(config, async ({ event, inbox, thread }) => {
       const first = await inbox.next();
 
       seen = {
@@ -124,7 +124,7 @@ describe("the handler's event, me and inbox", () => {
         isOrder: event.is(order),
         isRefund: event.is(refund),
         first: { name: first?.name, data: first?.data },
-        key: me.key,
+        key: thread.key,
       };
     });
 
@@ -141,7 +141,7 @@ describe("the handler's event, me and inbox", () => {
     });
   });
 
-  test("the handler gets no trigger, no thread handle and no wrapper around the event", async () => {
+  test("the handler gets no trigger and no wrapper around the event", async () => {
     let seen: Record<string, unknown> = {};
     const { fn } = agents.agent(
       { ...config, id: "shop-plain" },
@@ -155,11 +155,10 @@ describe("the handler's event, me and inbox", () => {
     });
 
     expect(seen).not.toHaveProperty("trigger");
-    expect(seen).not.toHaveProperty("thread");
     expect(
       (seen.event as { data: Record<string, unknown> }).data,
     ).not.toHaveProperty("agent");
-    expect(Object.keys(seen.me as object)).toEqual([
+    expect(Object.keys(seen.thread as object)).toEqual([
       "key",
       "report",
       "message",
@@ -182,8 +181,8 @@ describe("a trigger with nothing at its thread path", () => {
         id: "fresh",
         triggers: [{ event: "shop/order", thread: "event.data.pr" }],
       },
-      async ({ me }) => {
-        key = me.key;
+      async ({ thread }) => {
+        key = thread.key;
       },
     );
     const steps: { name?: string; metadata?: unknown }[] = [];
@@ -220,8 +219,8 @@ describe("a trigger with nothing at its thread path", () => {
         id: "joined",
         triggers: [{ event: "shop/order", thread: "event.data.pr" }],
       },
-      async ({ me }) => {
-        key = me.key;
+      async ({ thread }) => {
+        key = thread.key;
       },
     );
 
@@ -247,10 +246,10 @@ describe("a message after the run ended", () => {
         id: "keeper",
         triggers: { event: "shop/order", thread: "event.data.id" },
       },
-      async ({ me }) => {
+      async ({ thread }) => {
         const before = (await store.thread.get("note")) ?? null;
 
-        await store.thread.set("note", `written by a run on ${me.key}`);
+        await store.thread.set("note", `written by a run on ${thread.key}`);
 
         return before;
       },

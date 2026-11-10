@@ -1158,8 +1158,8 @@ export function createAgentFunction(
               event as unknown as { data?: Record<string, unknown> },
             ),
 
-            // Slot: me. The handle to the run's own thread.
-            me: {
+            // Slot: thread. The handle to the run's own thread.
+            thread: {
               key: data.thread,
               ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
               report: async (
@@ -1192,11 +1192,13 @@ export function createAgentFunction(
                 const execution = getAsyncCtxSync()?.execution;
 
                 if (!execution) {
-                  throw new Error("me.message() must be called inside the run");
+                  throw new Error(
+                    "thread.message() must be called inside the run",
+                  );
                 }
 
                 await step.sendEvent(
-                  `me:${data.thread}:message:${nextCount(execution.instance, "me.message")}`,
+                  `thread:${data.thread}:message:${nextCount(execution.instance, "thread.message")}`,
                   agentMessage.create(
                     {
                       agent: ref,

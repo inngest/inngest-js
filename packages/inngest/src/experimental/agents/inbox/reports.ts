@@ -3,7 +3,8 @@
  * EXPERIMENTAL: typed reports. A report is a message a started agent sends
  * back. Its type is an ordinary `eventType()`, shared across the repo like any
  * other event type: the starter says what the child owes and to whom with the
- * `reports` start option, and the child sends one with `me.report(type, data)`
+ * `reports` start option, and the child sends one with
+ * `thread.report(type, data)`
  * or its model's `report` tool. The routing travels in the start event: the
  * JSON Schema of each type, and the destinations inside the signed grant, so a
  * child found by discovery needs no prior knowledge of the types.
@@ -175,7 +176,7 @@ export const reportSenderProblem = (
 export { handleAddressKey };
 
 /**
- * What can receive a report: a thread handle (`me`, `agent.thread(key)`, a
+ * What can receive a report: a thread handle (`thread`, `agent.thread(key)`, a
  * started thread, an agent's `msg.from`).
  */
 export type ReportTarget = {
@@ -319,7 +320,7 @@ export interface AgentReportRoute<
   event: TEvent;
 
   /**
-   * The threads the report goes to (`me`, `agent.thread(key)`). Default: the
+   * The threads the report goes to (`thread`, `agent.thread(key)`). Default: the
    * thread that started the agent.
    */
   to?: ReportTarget | readonly ReportTarget[];
@@ -505,7 +506,7 @@ export const resolveReports = (
         throw new Error(
           targets.length === 0
             ? `The report "${type}" has no thread to go to: it was started by a function that is not an agent, so name a thread with \`to\`.`
-            : `The report "${type}" is sent to a handle that is not an agent's thread. Use \`me\` or \`agent.thread(key)\`.`,
+            : `The report "${type}" is sent to a handle that is not an agent's thread. Use \`thread\` or \`agent.thread(key)\`.`,
         );
       }
 

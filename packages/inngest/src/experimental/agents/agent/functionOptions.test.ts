@@ -148,7 +148,7 @@ describe("function context in the body", () => {
       "runId",
       "logger",
       "attempt",
-      "me",
+      "thread",
       "inbox",
       "loop",
       "sandboxes",
@@ -157,7 +157,6 @@ describe("function context in the body", () => {
       expect(seen).toHaveProperty(name);
     }
 
-    expect(seen).not.toHaveProperty("thread");
     expect(seen).not.toHaveProperty("trigger");
 
     expect(typeof seen.runId).toBe("string");

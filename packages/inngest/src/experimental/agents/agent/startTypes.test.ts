@@ -56,26 +56,29 @@ describe("start types", () => {
     const milestone = eventType("milestone", {
       schema: z.object({ reached: z.string() }),
     });
-    const worker = agents.agent({ id: "reports-worker" }, async ({ me }) => {
-      typesOnly(async () => {
-        await me.report(milestone, { reached: "half" });
-        // @ts-expect-error the data must fit the event type's schema
-        await me.report(milestone, { reached: 1 });
-      });
-    });
+    const worker = agents.agent(
+      { id: "reports-worker" },
+      async ({ thread }) => {
+        typesOnly(async () => {
+          await thread.report(milestone, { reached: "half" });
+          // @ts-expect-error the data must fit the event type's schema
+          await thread.report(milestone, { reached: 1 });
+        });
+      },
+    );
 
-    agents.agent({ id: "reports-boss" }, async ({ me, inbox }) => {
+    agents.agent({ id: "reports-boss" }, async ({ thread, inbox }) => {
       typesOnly(async () => {
         // An event type alone, or a line with where it goes.
         await worker.start("x", {
           reports: [
             milestone,
-            { event: milestone, to: me, if: "async.data.reached == 'x'" },
+            { event: milestone, to: thread, if: "async.data.reached == 'x'" },
             { event: milestone, required: true },
           ],
         });
         // @ts-expect-error a line names an event type
-        await worker.start("x", { reports: [{ to: me }] });
+        await worker.start("x", { reports: [{ to: thread }] });
 
         await inbox.next();
 

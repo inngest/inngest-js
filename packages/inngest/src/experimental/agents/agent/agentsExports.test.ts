@@ -40,7 +40,7 @@ test("every field of an AgentTypes bag can be named from the entry", () => {
 
   const helper = (context: AgentBodyContext<Bag>) => {
     expectTypeOf(context.inbox).toExtend<Inbox<AgentMessage>>();
-    expectTypeOf(context.me).toHaveProperty("key");
+    expectTypeOf(context.thread).toHaveProperty("key");
   };
 
   expectTypeOf(helper).toBeFunction();

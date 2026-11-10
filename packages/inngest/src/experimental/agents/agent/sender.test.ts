@@ -98,8 +98,8 @@ describe("me.message()", () => {
     });
     setAppKvStore(client.id, memoryKvAdapter());
     const agents = createAgents(client);
-    const bot = agents.agent({ id: "bot" }, async ({ me }) => {
-      return await me.message({ note: "remember" });
+    const bot = agents.agent({ id: "bot" }, async ({ thread }) => {
+      return await thread.message({ note: "remember" });
     });
     const { output } = await run(bot.fn, { event: event() });
 

@@ -106,10 +106,10 @@ describe("thread key from a trigger", () => {
           thread: chatThread,
         },
       },
-      async ({ inbox, me }) => {
+      async ({ inbox, thread }) => {
         message = await inbox.next();
 
-        return me.key;
+        return thread.key;
       },
     );
 
