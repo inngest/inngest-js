@@ -671,7 +671,6 @@ export function threadInbox(
             undefined,
             inflight,
             undefined,
-            undefined,
             senderIds(batch as unknown as { name: string }[], started),
           );
         }
@@ -727,7 +726,6 @@ export function threadInbox(
             await recorder.running(
               undefined,
               inflightOf(message as unknown as AgentMessage),
-              undefined,
               undefined,
               senderIds([message as unknown as { name: string }], started),
             );
@@ -794,7 +792,6 @@ export function threadInbox(
               await recorder.running(
                 undefined,
                 inflight,
-                undefined,
                 undefined,
                 senderIds(batch as unknown as { name: string }[], started),
               );

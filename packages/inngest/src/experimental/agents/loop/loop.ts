@@ -43,7 +43,7 @@ import {
   compactionFor,
   withCompaction,
 } from "./context.ts";
-import { type AgentPrice, priceOf } from "./cost.ts";
+
 import { isTurnEnder } from "./endsTurn.ts";
 import { sortModelError } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
@@ -318,7 +318,7 @@ export interface AgentUsage {
   output: number;
 
   /**
-   * Cost in US dollars, when the loop was given a `price`.
+   * Cost in US dollars, when the model reported its own.
    */
   usd?: number;
 
@@ -416,14 +416,13 @@ export interface AgentModelResponse {
 
   /**
    * The model that answered, such as `claude-sonnet-5-5`. It is given to
-   * `price` to work out what the call cost.
+   * the cost of the call.
    */
   model?: string;
 
   /**
    * What this call cost in US dollars, when the model knows its prices
-   * (`anthropic()` does). A `price` on the loop overrides it. Default: not
-   * known, and a dollar budget then needs a `price`.
+   * (`anthropic()` does). Default: not known.
    */
   usd?: number;
 
@@ -785,17 +784,6 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
 
   /**
-   * Overrides what a model call costs. The model reports its own cost when it
-   * knows its prices (`anthropic()` does), so a dollar budget needs no price.
-   * Give one for a model function that reports none, or to replace the
-   * model's: a function of that call's tokens and model that returns US
-   * dollars, or rates per million tokens by model name (`"*"` for any other).
-   * The cost is worked out once, inside the model call's step, and a replay
-   * reuses it.
-   */
-  price?: AgentPrice;
-
-  /**
    * @internal The agent's briefing, made from the loop's tools at the start
    * of each call of the loop. Only the loops the agent builds have it.
    */
@@ -941,16 +929,6 @@ export interface AgentLoopWiring {
    * The inboxes the model opened, with the source each was opened on.
    */
   inboxes?: () => { as: string; source: { event: string; if: string } }[];
-
-  /**
-   * The reason the thread's budget is spent, if it is.
-   */
-  budget?: () => string | undefined;
-
-  /**
-   * The agent's the agent's `price`.
-   */
-  price?: AgentPrice;
 
   /**
    * Records the turn inside the model call's step, so it costs no step of its
@@ -1281,7 +1259,6 @@ const runLoop = async <TTools extends SandboxTools>(
   } = options;
   const forcesTool = toolChoice !== "auto" && toolChoice !== "none";
   const wiring = bridgedWiring();
-  const price = options.price ?? wiring?.price;
   const id = uniqueLoopId(options.id ?? "agent");
   // The key of an MCP server in `tools` names its tools; its list is a step.
   let tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
@@ -1421,7 +1398,7 @@ const runLoop = async <TTools extends SandboxTools>(
       return finish("stop", turn - 1);
     }
 
-    const spent = (await options.budget?.(turn)) ?? wiring?.budget?.();
+    const spent = await options.budget?.(turn);
 
     if (spent !== undefined) {
       return finish("budget", turn - 1, spent);
@@ -1550,23 +1527,13 @@ const runLoop = async <TTools extends SandboxTools>(
           }
         }
 
-        // Priced here and stored with the reply, so a replay uses the number
-        // the call was priced at. A `price` overrides the model's own cost; a
-        // reply that reported no tokens costs nothing.
+        // The model reports its own cost when it knows its prices; a reply
+        // that reported no tokens costs nothing.
         if (summaryUsage) {
           answer = { ...answer, usage: addUsage(answer.usage, summaryUsage) };
         }
 
-        const priced: AgentModelResponse = price
-          ? {
-              ...answer,
-              usd: priceOf(
-                price,
-                answer.usage ?? { input: 0, output: 0 },
-                answer.model,
-              ),
-            }
-          : answer;
+        const priced: AgentModelResponse = answer;
 
         const recorded = await wiring?.recordTurn?.({
           turn,
@@ -1601,11 +1568,7 @@ const runLoop = async <TTools extends SandboxTools>(
     }
 
     const callUsage = reply.usage ?? { input: 0, output: 0 };
-    // A step memoized before the cost was stored with it has no `usd`: price
-    // it now.
-    const cost = price
-      ? (storedCost(reply.usd) ?? priceOf(price, callUsage, reply.model))
-      : storedCost(reply.usd);
+    const cost = storedCost(reply.usd);
 
     usage.input += callUsage.input;
     usage.output += callUsage.output;

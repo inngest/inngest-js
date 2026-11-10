@@ -33,7 +33,7 @@ export type {
   BriefingSections,
 } from "./agent/briefing.ts";
 export { briefingFacts, renderBriefing } from "./agent/briefing.ts";
-export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
+export type { AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
 export type { ResultOptions } from "./agent/runResults.ts";
@@ -57,11 +57,6 @@ export type {
   AgentCompaction,
   AgentCompactionOptions,
 } from "./loop/context.ts";
-export type {
-  AgentPrice,
-  AgentPriceFunction,
-  AgentPriceTable,
-} from "./loop/cost.ts";
 export type {
   AgentContentBlock,
   AgentEvent,

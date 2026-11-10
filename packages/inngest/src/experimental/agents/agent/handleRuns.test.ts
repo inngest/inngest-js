@@ -82,7 +82,6 @@ describe("a run opened through a handle", () => {
       expect(waited(ops)).toEqual([]);
     },
   );
-
 });
 
 describe("a model agent opened through a handle (L58)", () => {

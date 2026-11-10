@@ -173,19 +173,6 @@ describe("the briefing text", () => {
       }).text,
     ).toContain("You can't start agents (depth limit).");
   });
-
-  test("a budget and a group are stated when the run has them", () => {
-    const text = renderBriefing({
-      ...(examples["a person-started bare agent"] as BriefingFacts),
-      budget: { tokens: 200_000, usd: 5 },
-      group: true,
-    }).text;
-
-    expect(text).toContain(
-      "This thread has a budget of 200000 tokens, $5.00. Once it is spent, the run ends.",
-    );
-    expect(text).toContain("This thread is in a group");
-  });
 });
 
 describe("the briefing option", () => {
@@ -568,7 +555,7 @@ describe("the defaults", () => {
     const { requests, scripted } = recording();
     const { fn } = createAgentFunction(
       new Inngest({ id: testClientId }),
-      { id: "bot", model: scripted, idle: 0 },
+      { id: "bot", model: scripted },
       async ({ inbox, loop }) => {
         await inbox.next();
         await loop("go");
@@ -658,7 +645,7 @@ describe("a started child", () => {
 
     // A handler of its own, so the run ends without waiting for the child.
     const leadAgent = agents.agent(
-      { id: leadId, model: lead.scripted, discovery: true, idle: 0 },
+      { id: leadId, model: lead.scripted, discovery: true },
       async ({ inbox, loop }) => {
         await inbox.next();
         await loop("start it");

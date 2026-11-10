@@ -42,7 +42,6 @@ import type {
 import type { AgentReportLine } from "../inbox/reports.ts";
 import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
-import type { AgentPrice } from "../loop/cost.ts";
 import type {
   AgentHandlerLoop,
   AgentLoop,
@@ -68,7 +67,7 @@ import type {
 import type { AgentToolSet } from "./agentTools.ts";
 import type { BriefingOption } from "./briefing.ts";
 import type { LendOptions } from "./lending.ts";
-import type { AgentBudget, AgentLimits } from "./limits.ts";
+import type { AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
@@ -442,34 +441,10 @@ export interface AgentFunctionConfig<
    * so it may start sub-agents and they may not). The lowest `depth` in the
    * chain wins. What the model may start is set by `discovery.agents`.
    *
-   * Keep `depth` at the default 1 unless sub-agents need to start their own;
-   * a deep chain multiplies cost and is hard to follow. To cap what a thread
-   * may spend, use `budget`, not `limits`.
+   * Keep `depth` low unless sub-agents need to start their own; a deep chain
+   * multiplies cost and is hard to follow.
    */
   limits?: AgentLimits;
-
-  /**
-   * What a thread of this agent may spend: `usd`, `tokens`, `input` or
-   * `output`. A value, or a function of `{ event, thread }` run once, when
-   * the thread's first run starts. The loop always enforces it, ending with
-   * `end: "budget"` before its next model call once it is spent. The budget
-   * is kept on the thread and belongs to this agent's own definition: it is
-   * never handed down by the agent that started the thread. The spend is
-   * kept in this agent's record on the thread, written once per model turn: on
-   * the ledger KV store that is one step for the run and two for the ledger
-   * per write.
-   */
-  budget?: RunField<
-    AgentBudget,
-    RunFieldContext<AgentTypesOf<TTypes>["event"]>
-  >;
-
-  /**
-   * What a model call costs, for `budget.usd`, in place of the model's own
-   * prices: rates per million tokens by model name, or a function of the
-   * call's tokens and model that returns US dollars. A value only.
-   */
-  price?: AgentPrice;
 
   /**
    * What the agent does about a run that fails for good. Off by default.

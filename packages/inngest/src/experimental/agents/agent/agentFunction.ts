@@ -179,13 +179,7 @@ import {
   lentToolNames,
   parentEndedCancel,
 } from "./lending.ts";
-import {
-  type AgentBudget,
-  budgetReason,
-  narrowInherited,
-  narrowLimits,
-  registerLimits,
-} from "./limits.ts";
+import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
@@ -619,15 +613,6 @@ export function createAgentFunction(
         // the same limits.
         const startGrant = startGrantOf(client, event, data.thread);
         const passed = startGrant?.limits;
-        // The thread's budget as this agent defines it, read before the start
-        // so the first run can keep it on the thread.
-        const ownBudget =
-          config.budget === undefined
-            ? undefined
-            : await resolveRunField(config.budget as RunField<AgentBudget>, {
-                event: event as unknown as AgentBodyContext["event"],
-                thread: { key: data.thread },
-              });
         // What the start event lends, with its signature checked before the
         // thread records anything. Whether the thread may use it is decided
         // once the record is written.
@@ -638,7 +623,6 @@ export function createAgentFunction(
               passed,
               startInflight(found, event) ?? null,
               inStep,
-              ownBudget,
               undefined,
               claim && {
                 parentRun: claim.parentRun,
@@ -688,8 +672,8 @@ export function createAgentFunction(
           restarts: started.restarts ?? 0,
         });
 
-        // Limits apply to the agents this run starts and to the loop's budget.
-        // The usage is the thread's so far, and each turn adds to it.
+        // Limits apply to the agents this run starts. The usage is the
+        // thread's so far, and each turn adds to it.
         const instance = getAsyncCtxSync()?.execution?.instance;
 
         if (!instance) {
@@ -715,7 +699,6 @@ export function createAgentFunction(
             },
           ),
           { ...started.usage },
-          started.budget,
         );
 
         // What each inbox source's events are checked against, by the name of
@@ -1186,7 +1169,6 @@ export function createAgentFunction(
           ...(limits.limits.depth !== undefined && {
             depth: limits.limits.depth,
           }),
-          ...(limits.budget && { budget: limits.budget }),
         };
 
         registerBriefingFacts(instance, runBriefing);

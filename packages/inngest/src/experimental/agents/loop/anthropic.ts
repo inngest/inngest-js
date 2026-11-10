@@ -19,7 +19,7 @@ import {
   toJsonSchema,
 } from "../../../components/sandbox/tools.ts";
 import type { BriefingParts } from "../agent/briefing.ts";
-import { type AgentPriceTable, priceOf } from "./cost.ts";
+import { type PriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
@@ -94,7 +94,7 @@ export interface AnthropicClient {
 export interface AnthropicOptions {
   /**
    * The model, such as `"claude-sonnet-5-5"`. It is also the name the call is
-   * priced under, so use an ID that `anthropicPrices` (or your own `price`)
+   * priced under, so use an ID that `anthropicPrices`
    * names.
    */
   model: string;
@@ -335,9 +335,8 @@ type Param = { role: "user" | "assistant"; content: Block[] };
 
 /**
  * USD per million tokens for the current Claude models, in the shape
- * the agent's `price` and `agent.loop({ price })` take. The SDK keeps this list
- * for convenience and Anthropic can change a price; spread it and add or
- * replace an entry to override. Haiku 5.5 is priced at its rate for prompts up
+ * the SDK prices Anthropic calls with. It keeps this list for convenience and
+ * Anthropic can change a price. Haiku 5.5 is priced at its rate for prompts up
  * to 100,000 tokens.
  *
  * @example
@@ -345,7 +344,7 @@ type Param = { role: "user" | "assistant"; content: Block[] };
  * limits: { price: { ...anthropicPrices, "claude-x": { input: 1, output: 5 } } }
  * ```
  */
-export const anthropicPrices: AgentPriceTable = (() => {
+export const anthropicPrices: PriceTable = (() => {
   // Cache writes cost 1.25x the input rate for five minutes and 2x for an
   // hour. Cache reads cost 0.1x, except where the model's page says otherwise.
   const rate = (input: number, output: number, cacheRead = input / 10) => {
@@ -818,8 +817,7 @@ const importClient = async (
  *    with other options for one loop or one call. `client`, `apiKey` and
  *    `baseURL` cannot change.
  *
- * It reports each call's cost from a built-in price table, so a dollar budget
- * works with no price.
+ * It reports each call's cost from a built-in price table.
  *
  * - Prompt caching is on: breakpoints on the system prompt (with the tools)
  *   and on the end of the conversation. `usage` reports `cacheRead` and

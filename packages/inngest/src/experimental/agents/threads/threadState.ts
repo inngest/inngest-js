@@ -12,11 +12,7 @@
  */
 
 import type { LentRecord } from "../agent/lending.ts";
-import {
-  type AgentBudget,
-  type EffectiveLimits,
-  narrowInherited,
-} from "../agent/limits.ts";
+import { type EffectiveLimits, narrowInherited } from "../agent/limits.ts";
 import {
   decide,
   type Finished,
@@ -175,8 +171,7 @@ export const threadRecorder = (
     /**
      * A turn is running. A sub-agent's inherited limits are kept on the
      * record, narrowed over every start, so a later run that a plain message
-     * starts has the same limits. The thread's budget, from its own agent's
-     * definition, is kept the first time and never replaced.
+     * starts has the same limits.
      */
     running: (
       /**
@@ -194,11 +189,6 @@ export const threadRecorder = (
        * The thread's key, when called inside a step's callback.
        */
       thread?: string,
-
-      /**
-       * The thread's budget as this run's agent defines it.
-       */
-      budget?: AgentBudget,
 
       /**
        * The IDs of the messages this turn takes in, noted for their senders.
@@ -224,7 +214,6 @@ export const threadRecorder = (
               lent: { ...lend, takenBy: runId },
             }),
           ...(inherited && { inherited }),
-          ...(current.budget === undefined && budget && { budget }),
           ...(folded &&
             folded.length > 0 && { folded: foldedOf(current, runId, folded) }),
           // `null` clears it: a run that does not begin with a message must

@@ -211,35 +211,6 @@ test("agents: loop is in the handler argument only for an agent with a model", (
   });
 });
 
-test("agents: budget, price and limits fields take their types", () => {
-  typesOnly(() => {
-    agents.agent({
-      id: "fields-1",
-      triggers: [created],
-      budget: { usd: 1, tokens: 100 },
-      price: { "*": { input: 1, output: 2 } },
-      limits: { depth: 2 },
-    });
-
-    agents.agent({
-      id: "fields-2",
-      triggers: [created],
-      budget: ({ event, thread }) => {
-        expectTypeOf(event).toHaveProperty("name");
-        expectTypeOf(thread.key).toBeString();
-
-        return { usd: 1 };
-      },
-      price: (usage, model) => {
-        expectTypeOf(usage.input).toBeNumber();
-        expectTypeOf(model).toEqualTypeOf<string | undefined>();
-
-        return 0.01;
-      },
-    });
-  });
-});
-
 test("agents: discovery.agents takes imported agents, addresses and filters", () => {
   typesOnly(() => {
     const other = agents.agent({ id: "other", triggers: [created] });
@@ -285,7 +256,7 @@ test("agents: limits.mayCall is gone", () => {
   });
 });
 
-test("agents: limits.spawn, limits.budget and limits.price are errors, and price is never a function of the event", () => {
+test("agents: limits.spawn is an error", () => {
   typesOnly(() => {
     agents.agent({
       id: "limits-gone-1",
@@ -297,26 +268,15 @@ test("agents: limits.spawn, limits.budget and limits.price are errors, and price
     agents.agent({
       id: "limits-gone-2",
       triggers: [created],
-      // @ts-expect-error budget is a field of the agent
-      limits: { budget: { usd: 1 } },
+      // @ts-expect-error budget is gone
+      budget: { usd: 1 },
     });
 
     agents.agent({
       id: "limits-gone-3",
       triggers: [created],
-      // @ts-expect-error price is a field of the agent
-      limits: { price: { "*": { input: 1, output: 1 } } },
-    });
-
-    agents.agent({
-      id: "price-1",
-      triggers: [created],
-      // @ts-expect-error price is a value, never a function of the event
-      price: ({ event }: { event: unknown }) => {
-        void event;
-
-        return 1;
-      },
+      // @ts-expect-error price is gone
+      price: { "*": { input: 1, output: 1 } },
     });
   });
 });

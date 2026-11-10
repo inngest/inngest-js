@@ -1,12 +1,11 @@
 /**
  * @module
- * Tests for agent limits: narrowing, the allow-list, refusals and the budget.
+ * Tests for agent limits: narrowing, the allow-list and refusals.
  */
 
 import type { AgentUsage } from "../loop/loop.ts";
 import {
   AgentLimitError,
-  budgetReason,
   checkInvoke,
   childLimits,
   type LimitState,
@@ -18,9 +17,8 @@ import {
 const state = (
   limits: LimitState["limits"],
   used: AgentUsage = { input: 0, output: 0 },
-  budget?: LimitState["budget"],
 ): LimitState => {
-  return { limits, used, ...(budget && { budget }) };
+  return { limits, used };
 };
 
 const refusal = (fn: () => void) => {
@@ -41,7 +39,7 @@ describe("narrowLimits", () => {
     expect(narrowLimits(undefined, { depth: 0 }).depth).toBe(0);
   });
 
-  test("a budget in an inherited payload is ignored", () => {
+  test("an unknown field in an inherited payload is ignored", () => {
     expect(
       narrowLimits(undefined, { depth: 2, budget: { tokens: 1 } } as never),
     ).toEqual({ depth: 2 });
@@ -102,63 +100,6 @@ describe("checkInvoke", () => {
     expect(error).toBeInstanceOf(AgentLimitError);
     expect(error.limit).toBe("depth");
     expect(error.message).toContain("app/leaf was not started");
-  });
-
-  test("refuses once the budget is spent", () => {
-    const error = refusal(() => {
-      checkInvoke(state({}, { input: 6, output: 4 }, { tokens: 10 }), "app/a");
-    });
-
-    expect(error.limit).toBe("budget");
-  });
-});
-
-describe("usd budget", () => {
-  test("is spent when the dollars reach it, and says so in dollars", () => {
-    const budget = { usd: 0.02 };
-
-    expect(
-      budgetReason(state({}, { input: 9, output: 9, usd: 0.0199 }, budget)),
-    ).toBe(undefined);
-    expect(
-      budgetReason(state({}, { input: 0, output: 0, usd: 0.02 }, budget)),
-    ).toBe("Budget spent: $0.02 of $0.02 used.");
-    expect(
-      budgetReason(
-        state({}, { input: 1, output: 1, usd: 0.00003 }, { usd: 0.00002 }),
-      ),
-    ).toBe("Budget spent: $0.000030 of $0.000020 used.");
-  });
-
-  test("a budget with dollars but no priced usage is never spent", () => {
-    expect(
-      budgetReason(state({}, { input: 1e9, output: 1e9 }, { usd: 1 })),
-    ).toBeUndefined();
-  });
-});
-
-describe("budget", () => {
-  test("reports the field that is spent", () => {
-    const budget = { output: 5 };
-
-    expect(budgetReason(state({}, { input: 100, output: 4 }, budget))).toBe(
-      undefined,
-    );
-    expect(budgetReason(state({}, { input: 0, output: 5 }, budget))).toContain(
-      "5 of 5 output tokens",
-    );
-  });
-
-  test("a child gets one less depth and no budget", () => {
-    const child = childLimits(
-      state(
-        { depth: 2, discovery: { agents: [["a/x"]] } },
-        { input: 30, output: 20 },
-        { tokens: 100 },
-      ),
-    );
-
-    expect(child).toEqual({ depth: 1, discovery: { agents: [["a/x"]] } });
   });
 });
 

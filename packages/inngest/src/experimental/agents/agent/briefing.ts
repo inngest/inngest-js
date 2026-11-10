@@ -26,7 +26,6 @@ import {
 import type { SandboxTools } from "../../../components/sandbox/tools.ts";
 import type { JsonSchema } from "../json.ts";
 import { isTurnEnder } from "../loop/endsTurn.ts";
-import type { AgentBudget } from "./limits.ts";
 
 /**
  * The version of the briefing's wording, shown on its runtime tag so a trace
@@ -108,11 +107,6 @@ export interface BriefingFacts {
   depth?: number;
 
   /**
-   * The thread's budget, when it has one.
-   */
-  budget?: AgentBudget;
-
-  /**
    * The model's tools: their names, whether `wait` ends the turn, and the
    * `context` of each that has one.
    */
@@ -178,36 +172,6 @@ const party = (who: BriefingParty): string => {
   return who.thread === undefined
     ? who.address
     : `${who.address} (thread ${who.thread})`;
-};
-
-const duration = (ms: number): string => {
-  const units: [number, string][] = [
-    [86_400_000, "day"],
-    [3_600_000, "hour"],
-    [60_000, "minute"],
-    [1000, "second"],
-  ];
-
-  for (const [size, name] of units) {
-    if (ms >= size && ms % size === 0) {
-      const n = ms / size;
-
-      return `${n} ${name}${n === 1 ? "" : "s"}`;
-    }
-  }
-
-  return `${Math.round(ms / 1000)} seconds`;
-};
-
-const budgetText = (budget: AgentBudget): string | undefined => {
-  const parts = [
-    budget.tokens !== undefined && `${budget.tokens} tokens`,
-    budget.input !== undefined && `${budget.input} input tokens`,
-    budget.output !== undefined && `${budget.output} output tokens`,
-    budget.usd !== undefined && `$${budget.usd.toFixed(2)}`,
-  ].filter(Boolean);
-
-  return parts.length > 0 ? parts.join(", ") : undefined;
 };
 
 /**
@@ -327,14 +291,6 @@ const situationLines = (facts: BriefingFacts): string[] => {
         `Agents you start can start agents of their own, ${more} more level${more === 1 ? "" : "s"} deep.`,
       );
     }
-  }
-
-  const budget = facts.budget && budgetText(facts.budget);
-
-  if (budget) {
-    lines.push(
-      `This thread has a budget of ${budget}. Once it is spent, the run ends.`,
-    );
   }
 
   if (facts.tools.contexts.length > 0) {

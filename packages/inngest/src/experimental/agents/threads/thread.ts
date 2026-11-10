@@ -23,7 +23,7 @@ import {
   unattachedGrantSeconds,
 } from "../agent/grant.ts";
 import type { LentRecord } from "../agent/lending.ts";
-import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
+import type { EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
 import { relationOf } from "../agent/relations.ts";
 import {
@@ -106,7 +106,7 @@ export interface ThreadState {
 
   /**
    * Tokens used by every model call of the thread, across runs, and what they
-   * cost in US dollars when the agent has a the agent's `price`.
+   * cost in US dollars when the model reports its own cost.
    */
   usage: { input: number; output: number; usd?: number };
 
@@ -141,13 +141,6 @@ export interface ThreadRecord {
    * woken by a plain message stays inside them.
    */
   inherited?: EffectiveLimits;
-
-  /**
-   * What the thread may spend, from the definition of the agent that owns it.
-   * Set by the first run and kept, so every later run enforces the same
-   * budget and it is never handed down to another agent's thread.
-   */
-  budget?: AgentBudget;
 
   /**
    * The run that wrote the record last, so a finished run never overwrites

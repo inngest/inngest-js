@@ -1,7 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: what an agent gives the loops that run inside it: the inboxes
- * they fold from, the thread's budget and the record of each turn.
+ * they fold from and the record of each turn.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
@@ -13,12 +13,12 @@ import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
 import { closesCopies } from "../threads/ledgerClient.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
-import { budgetReason, type LimitState } from "./limits.ts";
+import type { LimitState } from "./limits.ts";
 import type { AgentFunctionConfig, OpenedInbox } from "./types.ts";
 
 /**
  * The wiring of one run: a loop in it folds the handler's inbox and every inbox
- * the model opened, keeps to the thread's budget and records each turn.
+ * the model opened and records each turn.
  */
 export const createLoopWiring = (options: {
   config: AgentFunctionConfig;
@@ -74,7 +74,6 @@ export const createLoopWiring = (options: {
   }
 
   const {
-    config,
     inbox,
     view,
     named,
@@ -127,10 +126,6 @@ export const createLoopWiring = (options: {
         return { as: open.as, source: open.source };
       });
     },
-    budget() {
-      return budgetReason(limits);
-    },
-    ...(config.price && { price: config.price }),
     ...(recordInStep && {
       async recordTurn(turn: AgentTurn) {
         const next = await recorder.turn(turn, threadKey);
