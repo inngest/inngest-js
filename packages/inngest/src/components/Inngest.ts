@@ -237,6 +237,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   private _env: Env = {};
 
+  /**
+   * The instance ID that `connect()` sends to the gateway.  It takes
+   * precedence over `INNGEST_CONNECT_INSTANCE_ID` in checkpoint requests.
+   */
+  private _connectInstanceId: string | undefined;
+
   private _appVersion: string | undefined;
 
   /**
@@ -459,6 +465,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       signingKeyFallback: () => this.signingKeyFallback,
       environment: () => this.env,
       fetch: () => this.fetch,
+      instanceId: () =>
+        this._connectInstanceId ||
+        this._env[envKeys.InngestConnectInstanceId] ||
+        undefined,
     });
 
     this._logger = logger ?? new ConsoleLogger();

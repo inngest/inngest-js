@@ -17,6 +17,9 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    * This can be a hostname or other identifier that remains stable across restarts.
    *
    * If nil, this defaults to the current machine's hostname.
+   *
+   * Can also be set via the `INNGEST_CONNECT_INSTANCE_ID` environment variable.
+   * This option takes precedence over the env var.
    */
   instanceId?: string;
 
