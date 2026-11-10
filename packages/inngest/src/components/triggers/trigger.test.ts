@@ -5,7 +5,18 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { EventMeta } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
-import { cron, eventType, invoke, staticSchema } from "./triggers.ts";
+import {
+  cron,
+  EventType,
+  eventType,
+  invoke,
+  staticSchema,
+} from "./triggers.ts";
+
+// Unlike type aliases, interfaces have no implicit index signature
+interface InterfacePayload {
+  userId: string;
+}
 
 describe("cron", () => {
   test("return", () => {
@@ -104,6 +115,9 @@ describe("eventType without options", () => {
         v: "1.0.0",
       },
     );
+
+    const data: InterfacePayload = { userId: "1" };
+    et.create(data);
   });
 
   test("schema transform", async () => {
@@ -452,6 +466,41 @@ describe("eventType with schema", () => {
       // @ts-expect-error - Schema must be an object
       schema: z.array(z.object({ a: z.string() })),
     });
+
+    // @ts-expect-error - Schema must be an object
+    staticSchema<string[]>();
+  });
+
+  test("interface payload", () => {
+    type Payload = { id: string } & InterfacePayload;
+    new EventType({ name: "event-2", schema: staticSchema<Payload>() });
+
+    const et = eventType("event-2", { schema: staticSchema<Payload>() });
+    et.create({ id: "1", userId: "2" });
+
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [et] },
+      async ({ event, step }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<Payload>();
+
+        const matched = await step.waitForEvent("id", {
+          event: et,
+          timeout: 1000,
+        });
+        expectTypeOf(matched?.data).toEqualTypeOf<Payload | undefined>();
+
+        const matchedByName = await step.waitForEvent("id", {
+          event: "event-2",
+          schema: staticSchema<InterfacePayload>(),
+          timeout: 1000,
+        });
+        expectTypeOf(matchedByName?.data).toEqualTypeOf<
+          InterfacePayload | undefined
+        >();
+      },
+    );
   });
 
   test("schema is union", () => {
@@ -525,6 +574,17 @@ describe("invoke", () => {
 
         expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ msg: string }>();
+      },
+    );
+  });
+
+  test("interface payload", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [invoke(staticSchema<InterfacePayload>())] },
+      ({ event }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<InterfacePayload>();
       },
     );
   });
@@ -686,6 +746,22 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
+      },
+    );
+  });
+
+  test("object literal with interface payload", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          { event: "event-1", schema: staticSchema<InterfacePayload>() },
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<InterfacePayload>();
       },
     );
   });

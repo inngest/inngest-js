@@ -63,7 +63,7 @@ import {
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
-import type { EventType } from "./triggers/triggers.ts";
+import type { EventData, EventType } from "./triggers/triggers.ts";
 
 /**
  * Middleware context for a step, created during step registration.
@@ -1499,7 +1499,7 @@ type WaitForEventResult<TOpts> =
   TOpts extends {
     event: EventType<
       infer TName extends string,
-      StandardSchemaV1<infer TData extends Record<string, unknown>>
+      StandardSchemaV1<infer TData extends EventData>
     >;
   }
     ? {
@@ -1526,9 +1526,7 @@ type WaitForEventResult<TOpts> =
       : // Case 3: event is a string with schema (spread EventType)
         TOpts extends {
             event: infer TName extends string;
-            schema: StandardSchemaV1<
-              infer TData extends Record<string, unknown>
-            >;
+            schema: StandardSchemaV1<infer TData extends EventData>;
           }
         ? {
             name: TName;
