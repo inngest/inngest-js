@@ -971,13 +971,6 @@ export interface AgentLoopWiring {
   agent?: string;
 
   /**
-   * Whether the loop saves the model's history in thread KV after each batch
-   * and picks it up when the thread's next run starts. The agent's `remember`
-   * field, `true` unless it says `false`.
-   */
-  remember?: boolean;
-
-  /**
    * The report types the run still owes. A model that tries to finish while
    * this is not empty is reminded and the loop continues.
    */
@@ -1354,8 +1347,9 @@ const runLoop = async <TTools extends SandboxTools>(
         .join("\n\n")
     : contentOf(batch as AgentInput);
   // A loop in an agent picks up what the thread's earlier runs left, unless it
-  // was given a history of its own.
-  const remembering = wiring?.remember === true;
+  // was given a history of its own. A loop outside an agent has no thread to
+  // keep it on.
+  const remembering = wiring?.agent !== undefined;
   const stored =
     remembering && options.history === undefined
       ? ((await kv.thread.get(historyKeyOf(wiring?.agent))) as

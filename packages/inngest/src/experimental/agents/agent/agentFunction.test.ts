@@ -1748,7 +1748,7 @@ describe("the loop in an agent", () => {
     );
   });
 
-  test("a second run of the same thread starts with the first run's history; another thread does not; remember: false stops it", async () => {
+  test("a second run of the same thread starts with the first run's history; another thread does not", async () => {
     const remembered = recording([say("one"), say("two")]);
     const { fn } = createAgentFunction(
       makeClient(),
@@ -1780,21 +1780,5 @@ describe("the loop in an agent", () => {
     await run(otherFn, { event: message("user", "go", "t9") });
 
     expect(other.requests[0]?.messages).toHaveLength(1);
-
-    const clean = recording([say("a"), say("b")]);
-    const { fn: cleanFn } = createAgentFunction(
-      makeClient(),
-      { id: "bot3", model: clean.scripted, remember: false },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-
-        return (await loop(first ? [first] : "")).text;
-      },
-    );
-
-    await run(cleanFn, { event: trigger("first") });
-    await run(cleanFn, { event: trigger("second") });
-
-    expect(clean.requests[1]?.messages).toHaveLength(1);
   });
 });

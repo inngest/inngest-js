@@ -1114,12 +1114,6 @@ export function createAgentFunction(
           threadKey: thread.key,
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
-          // History is remembered unless `remember` is off.
-          remember:
-            (await fields.get(
-              "remember",
-              config.remember as RunField<boolean | undefined>,
-            )) !== false,
           agent: ref,
           recordInStep: !onLedger(),
         });
@@ -1170,11 +1164,6 @@ export function createAgentFunction(
                   : { kind: "function" as const, run: opening.id }),
                 start: opening.thread !== undefined,
               };
-        const remembered =
-          (await fields.get(
-            "remember",
-            config.remember as RunField<boolean | undefined>,
-          )) !== false;
         const runBriefing: RunBriefingFacts = {
           agent: ref,
           thread: data.thread,
@@ -1184,7 +1173,6 @@ export function createAgentFunction(
           run: {
             endsWhenRead: idle === 0,
             idleMs: idle,
-            remember: remembered,
           },
           reports: Object.entries(reportSpec ?? {}).map(([type, entry]) => {
             return {

@@ -43,11 +43,6 @@ export const createLoopWiring = (options: {
   questions: QuestionBook;
 
   /**
-   * Whether the loops of this run remember the thread's history.
-   */
-  remember: boolean;
-
-  /**
    * The ID of the event that started the run. The loop never folds it in by
    * itself: the handler passes it, or passes its own input instead.
    */
@@ -87,7 +82,6 @@ export const createLoopWiring = (options: {
     recorder,
     threadKey,
     questions,
-    remember,
     triggerId,
     reports,
     agent,
@@ -95,7 +89,6 @@ export const createLoopWiring = (options: {
   } = options;
 
   return {
-    remember,
     agent,
     async drain({ turn }) {
       // The handler's inbox first, then each inbox the model opened, in the

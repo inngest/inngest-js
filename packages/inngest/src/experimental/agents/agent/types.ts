@@ -402,17 +402,6 @@ export interface AgentFunctionConfig<
     | AgentLoop;
 
   /**
-   * Whether the loop remembers the model's history across runs of a thread.
-   * Default `true`; `false` starts each run clean. A value, or a function of
-   * `{ event, thread }` read once at the start of each run. The history is
-   * kept under this agent's own key on the thread, so two agents sharing a
-   * thread key each remember their own. On the ledger KV store it counts
-   * against the 128 KB the thread holds: a history past it is not kept (a
-   * warning is logged and the run goes on).
-   */
-  remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
-
-  /**
    * Event sources that reach a live run of the thread they map to and never
    * start one, and read through the one `inbox`.
    * `triggers` still starts and wakes runs. Each source maps its own events to the

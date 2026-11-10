@@ -95,9 +95,9 @@ export interface BriefingFacts {
   /**
    * How the run ends. `endsWhenRead`: it ends once a turn ends with nothing
    * unread (a run opened through a handle). Otherwise it ends after `idleMs`
-   * of quiet. `remember`: the next run of the thread has this history.
+   * of quiet.
    */
-  run: { endsWhenRead: boolean; idleMs: number; remember: boolean };
+  run: { endsWhenRead: boolean; idleMs: number };
 
   /**
    * The reports the run owes.
@@ -317,7 +317,7 @@ const situationLines = (facts: BriefingFacts): string[] => {
       );
     } else if (facts.run.idleMs > 0) {
       lines.push(
-        `This run ends after ${duration(facts.run.idleMs)} with no new message. A message after that starts a new run of this thread${facts.run.remember ? ", with your history" : ""}.`,
+        `This run ends after ${duration(facts.run.idleMs)} with no new message. A message after that starts a new run of this thread, with your history.`,
       );
     }
   }

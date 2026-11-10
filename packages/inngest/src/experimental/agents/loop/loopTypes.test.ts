@@ -276,7 +276,7 @@ test("loop: the loop's types are assignable to the plain ones", () => {
   expectTypeOf(plain).not.toBeNever();
 });
 
-test("agents: the model, system, tools, loop and remember fields take a value or a function", () => {
+test("agents: the model, system, tools and loop fields take a value or a function", () => {
   const check = () => {
     const config: AgentFunctionConfig = {
       id: "a",
@@ -285,14 +285,12 @@ test("agents: the model, system, tools, loop and remember fields take a value or
       tools: async () => {
         return { lookup };
       },
-      remember: false,
     };
 
     const second: AgentFunctionConfig = {
       id: "b",
       system: "plain",
       tools: { lookup },
-      remember: () => true,
     };
 
     void config;
