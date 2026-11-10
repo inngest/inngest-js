@@ -2358,6 +2358,7 @@ export class InngestCommHandler<
           timer,
           handlerKind: fn.handlerKind,
           disableImmediateExecution: ctx?.disable_immediate_execution,
+          executorCapabilities: ctx ? (ctx.capabilities ?? []) : undefined,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,
           headers,

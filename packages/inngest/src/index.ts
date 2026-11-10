@@ -76,7 +76,12 @@ export {
   invoke,
   staticSchema,
 } from "./components/triggers/triggers.ts";
-export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
+export type {
+  EventIs,
+  EventShape,
+  EventTypeToShape,
+  HandlerWithTriggers,
+} from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,

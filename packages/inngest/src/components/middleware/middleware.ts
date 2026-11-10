@@ -254,6 +254,11 @@ export namespace Middleware {
     | "run"
     | "sendEvent"
     | "sleep"
+    | "subscribe"
+    | "subscribe.close"
+    | "subscribe.message"
+    | "subscribe.read"
+    | "subscribe.wait"
     | "waitForEvent"
     | "waitForSignal"
   >;

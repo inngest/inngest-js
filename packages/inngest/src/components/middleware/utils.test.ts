@@ -53,6 +53,24 @@ describe("stepTypeFromOpCode", () => {
     ).toBe("realtime.publish");
   });
 
+  test.each([
+    [StepOpCode.Subscribe, "subscribe"],
+    [StepOpCode.SubscribeWait, "subscribe.wait"],
+    [StepOpCode.SubscribeClose, "subscribe.close"],
+    [StepOpCode.SubscribeRead, "subscribe.read"],
+  ])("the inbox op %s is %s and is not warned about", (op, type) => {
+    const warnings: unknown[] = [];
+    const quiet = {
+      ...logger,
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+    };
+
+    expect(stepTypeFromOpCode(op, undefined, quiet as never)).toBe(type);
+    expect(warnings).toEqual([]);
+  });
+
   test("StepPlanned with unknown type returns 'unknown'", () => {
     expect(
       stepTypeFromOpCode(
