@@ -89,8 +89,9 @@ export const run = async (
      * Whether an event sent to a live run is wrapped in the forward its thread
      * would have sent it in, which is the only way a real agent run receives
      * one: an agent run holds one subscription and the thread holds the rest.
-     * Default: it is NOT, because the tests written before the thread run
-     * drive the events they wrote. `true` wraps them.
+     * Default: it is, because that is the only way a real agent run receives
+     * one. `false` sends the event as it is, which is what a test of the
+     * thread holder or of the protocol itself wants.
      */
     forward?: boolean;
   } = {},
@@ -117,7 +118,20 @@ export const run = async (
     agent?: unknown;
     thread?: unknown;
   };
-  const forwarding = options.forward === true;
+  const forwarding = options.forward !== false;
+
+  // Whether this event is one a subscription of the run already wants by its
+  // own name - an answer to a `result()`, say, which the thread neither
+  // subscribes to nor forwards. Those are delivered as they are; everything
+  // else an agent run receives comes wrapped in a forward.
+  const wanted = (name: unknown) => {
+    return (
+      typeof name === "string" &&
+      pauses.some((pause) => {
+        return pause.event === name;
+      })
+    );
+  };
   let forwarded = 0;
   const asForward = (event: { id?: string; name: string; data?: unknown }) => {
     forwarded += 1;
@@ -157,9 +171,9 @@ export const run = async (
     const given = isEvent
       ? { id: `evt-${n}`, ts: 0, user: {}, ...(value as object) }
       : { id: `evt-${n}`, name: "msg", data: value, ts: 0, user: {} };
+    const name0 = String((given as { name: string }).name);
     const event =
-      forwarding &&
-      !String((given as { name: string }).name).startsWith("agent/thread-run.")
+      forwarding && !name0.startsWith("agent/thread-run.") && !wanted(name0)
         ? asForward(given as { id?: string; name: string; data?: unknown })
         : given;
     const name = (event as { name: string }).name;
@@ -230,7 +244,17 @@ export const run = async (
   // answered with it. An event that arrives before any inbox of the run
   // listens for it matches no pause, so the executor saves nothing.
   const arriveNow = (value: unknown) => {
-    const name = (value as { name?: unknown } | null)?.name;
+    const given = (value as { name?: unknown } | null)?.name;
+    // The name the message is saved under, which is the forward's when the
+    // event is wrapped: an agent run subscribes to forwards and nothing else,
+    // so checking the event's own name here would drop it before it is wrapped.
+    const name =
+      typeof given === "string" &&
+      forwarding &&
+      !given.startsWith("agent/thread-run.") &&
+      !wanted(given)
+        ? threadForward.name
+        : given;
 
     if (
       typeof name === "string" &&

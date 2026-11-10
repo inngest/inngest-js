@@ -386,6 +386,7 @@ describe("the thread run", () => {
   test("an arrival with no live thread starts one, which logs it and forwards it", async () => {
     const { threadHolder } = made();
     const { sent } = await run(threadHolder, {
+      forward: false,
       event: holding({ start: message("hello") }),
       incoming: [
         { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
@@ -410,6 +411,7 @@ describe("the thread run", () => {
     const { threadHolder } = made();
     const steps: string[] = [];
     const { signals } = await run(threadHolder, {
+      forward: false,
       onStep: (op) => {
         steps.push(op.userland?.id ?? op.id);
       },
@@ -488,6 +490,7 @@ describe("listening, which the model asks for at runtime", () => {
 
     const { threadHolder } = createAgentFunction(client(), { id: "bot" });
     const { signals, output } = await run(threadHolder, {
+      forward: false,
       event: {
         name: "inngest/function.invoked",
         data: {
@@ -546,6 +549,7 @@ describe("the holder's reads", () => {
 
     const { threadHolder } = createAgentFunction(client(), { id: "bot" });
     const { ops } = await run(threadHolder, {
+      forward: false,
       event: {
         name: "inngest/function.invoked",
         data: {

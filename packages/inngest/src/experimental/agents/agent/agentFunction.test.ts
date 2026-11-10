@@ -482,8 +482,8 @@ describe("inbox sources", () => {
     });
   });
 
-  test("every source is one subscribe of the handler's inbox: the run's own messages and the definition's sources, and no listen op", async () => {
-    const { fn } = createAgentFunction(
+  test("the agent subscribes to forwards and nothing else; its thread subscribes to the sources", async () => {
+    const { fn, threadHolder } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
@@ -501,17 +501,47 @@ describe("inbox sources", () => {
       incoming: [ci("red")],
     });
 
+    // The event reaches the run because its thread forwarded it, which is the
+    // only way anything reaches an agent run.
     expect(output).toBe("ci/status");
 
+    const sourcesOf = (opened: { opts: unknown }[]) => {
+      return (
+        opened[0]?.opts as { sources: { event: string }[] } | undefined
+      )?.sources.map((source) => {
+        return source.event;
+      });
+    };
     const opens = ops.filter((op) => {
       return (op.opts as { sources?: unknown } | undefined)?.sources;
     });
 
+    // One subscription, one source. A second one in an agent run is the bug
+    // that loses messages with an arbitrary survivor and no error.
     expect(opens).toHaveLength(1);
+    expect(sourcesOf(opens)).toEqual(["agent/thread-run.forward"]);
+
+    // The thread holds the rest: the agent layer's own events and every
+    // configured source, with the extra filter for a source whose thread path
+    // is missing.
+    const held = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: `${testClientId}/bot`,
+          thread: "t1",
+          generation: 1,
+        },
+      },
+    });
+
     expect(
-      (opens[0]?.opts as { sources: { event: string }[] }).sources.map((s) => {
-        return s.event;
-      }),
+      sourcesOf(
+        held.ops.filter((op) => {
+          return (op.opts as { sources?: unknown } | undefined)?.sources;
+        }),
+      ),
     ).toEqual([
       "agent/message",
       "agent/question",
@@ -520,7 +550,10 @@ describe("inbox sources", () => {
       "agent/report",
       "ci/status",
       "ci/status",
-      "agent/thread-run.forward",
+      "agent/thread-run.read",
+      "agent/thread-run.write",
+      "agent/thread-run.listen",
+      "agent/thread-run.done",
     ]);
   });
 
@@ -795,7 +828,7 @@ describe("agent cleanup", () => {
     expect(output).toEqual([["a", "b"], undefined]);
   });
 
-  test("the agent opens one inbox for its own events, with a source per event", async () => {
+  test("the agent opens one inbox, whose one source is its thread's forwards", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -811,14 +844,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual([
-      "agent/message",
-      "agent/question",
-      "agent/answer",
-      "agent/finished",
-      "agent/report",
-      "agent/thread-run.forward",
-    ]);
+    ).toEqual(["agent/thread-run.forward"]);
   });
 });
 
