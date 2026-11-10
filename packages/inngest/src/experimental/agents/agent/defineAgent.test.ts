@@ -299,7 +299,7 @@ describe("a trigger with nothing at its thread path", () => {
     ]);
   });
 
-  test("a trigger whose path is there joins the thread it names, with no warning", async () => {
+  test("a trigger whose path is there joins the thread it names, with no thread warning", async () => {
     const warn = vi.fn();
     const client = new Inngest({
       id: testClientId,
@@ -320,7 +320,13 @@ describe("a trigger with nothing at its thread path", () => {
     await run(fn, { event: { name: "shop/order", data: { pr: "p7" } } });
 
     expect(key).toBe("p7");
-    expect(warn).not.toHaveBeenCalled();
+    // No card was given, so defining the agent warns about capabilities
+    // (expected: see discovery.test.ts); it never warns about the thread
+    // path, which the fresh-thread warning (a single string, not
+    // object-first) would mention by name.
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("thread path"),
+    );
   });
 });
 

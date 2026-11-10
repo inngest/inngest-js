@@ -49,7 +49,7 @@ Nothing in the agent team started this thread; its messages come from outside. W
 This run ends after 2 minutes with no new message. A message after that starts a new run of this thread, with your history.
 Agents you start can start agents of their own, 1 more level deep.
 From your tools:
-- list_agents: Agents can be added or removed while you run. \`list_agents\` reads the current list (at most 30 seconds old).
+- list_agents: Agents can be added or removed while you run. The answer is good for 30000ms (its ttlMs) and is specific to you (cacheScope: "private").
 - start_agent: Agents you start run on their own. Their reports, questions and final results reach you as messages, so you never need to ask them for status: to wait for them, end your turn. A report needs no answer.
 - message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you, threads you started and members of your group, by their thread keys. No other thread can be reached.
 - chat: Only messages sent with \`chat\` reach the person; anything else you write is private.

@@ -378,7 +378,7 @@ test("agents: agents.agent returns an Agent with an id, an address and a card", 
 
     expectTypeOf(found.id).toBeString();
     expectTypeOf(found.address).toBeString();
-    expectTypeOf(found.card).toEqualTypeOf<entry.AgentCard>();
+    expectTypeOf(found.card).toEqualTypeOf<entry.AnnouncedCard>();
     expectTypeOf(found).toHaveProperty("start");
     expectTypeOf(found).toHaveProperty("thread");
   });

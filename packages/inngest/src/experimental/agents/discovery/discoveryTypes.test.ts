@@ -5,7 +5,14 @@
  */
 
 import { agents, created, typesOnly } from "../agent/typeFixtures.ts";
-import type { AgentCard, AgentSummary, Json, JsonSchema } from "../index.ts";
+import type {
+  AgentCard,
+  AgentRoster,
+  AgentSummary,
+  AnnouncedCard,
+  Json,
+  JsonSchema,
+} from "../index.ts";
 import { type AgentModelResponse, agentModel } from "../loop/loop.ts";
 
 const model = agentModel(async (): Promise<AgentModelResponse> => {
@@ -13,13 +20,14 @@ const model = agentModel(async (): Promise<AgentModelResponse> => {
 });
 
 describe("discovery types", () => {
-  test("discovery: a card has the documented fields and no others", () => {
+  test("discovery: a card has the documented fields and no others; share and explicit are not among them", () => {
     expectTypeOf<AgentCard>().toEqualTypeOf<{
       kind?: "tool";
       address: string;
       description?: string;
       input?: JsonSchema;
       skills?: { name: string; description: string }[];
+      capabilities: string[];
       tags?: string[];
       source?: { file: string; line: number; column?: number };
       tools?: {
@@ -27,10 +35,9 @@ describe("discovery types", () => {
         description?: string;
         source?: { file: string; line: number; column?: number };
       }[];
-      explicit?: boolean;
-      share: "private" | "team";
+      instructions?: string;
       owner?: string;
-      effects: "read" | "write";
+      effects: "read" | "write" | "destructive";
       speed?: "seconds" | "minutes";
       paused?: boolean;
     }>();
@@ -47,6 +54,17 @@ describe("discovery types", () => {
     expectTypeOf<AgentCard>().not.toHaveProperty("message");
     expectTypeOf<AgentCard>().not.toHaveProperty("does");
     expectTypeOf<AgentCard>().not.toHaveProperty("call");
+    // share and explicit are roster inputs, not card fields.
+    expectTypeOf<AgentCard>().not.toHaveProperty("share");
+    expectTypeOf<AgentCard>().not.toHaveProperty("explicit");
+  });
+
+  test("discovery: AnnouncedCard is the card plus the roster inputs", () => {
+    expectTypeOf<AnnouncedCard>().toExtend<AgentCard>();
+    expectTypeOf<AnnouncedCard["share"]>().toEqualTypeOf<"private" | "team">();
+    expectTypeOf<AnnouncedCard["explicit"]>().toEqualTypeOf<
+      boolean | undefined
+    >();
   });
 
   test("discovery: the card field on the definition is optional and its share is private or team", () => {
@@ -90,7 +108,7 @@ describe("discovery types", () => {
     expectTypeOf<JsonSchema>().toExtend<{ [key: string]: Json }>();
   });
 
-  test("discovery: list_agents takes a query and refresh and gives summaries", () => {
+  test("discovery: list_agents takes no input and gives a roster of summaries", () => {
     typesOnly(() => {
       agents.agent(
         { id: "list-1", triggers: [created], model },
@@ -99,10 +117,13 @@ describe("discovery types", () => {
 
           for (const call of result.toolCalls) {
             if (!call.isError && call.name === "list_agents") {
-              expectTypeOf(call.call.input).toEqualTypeOf<{
-                query?: string;
-              }>();
+              expectTypeOf(call.call.input).toEqualTypeOf<
+                Record<string, never>
+              >();
+              expectTypeOf(call.output).toEqualTypeOf<AgentRoster>();
               expectTypeOf(call.output).toEqualTypeOf<{
+                ttlMs: number;
+                cacheScope: "private";
                 agents: AgentSummary[];
               }>();
             }
@@ -136,13 +157,20 @@ describe("discovery types", () => {
     });
   });
 
-  test("discovery: a summary is a part of a card", () => {
+  test("discovery: a summary is a part of a card, with capabilities instead of tags", () => {
     expectTypeOf<AgentSummary>().toEqualTypeOf<
       Pick<
         AgentCard,
-        "address" | "description" | "skills" | "tags" | "effects" | "paused"
+        | "address"
+        | "description"
+        | "capabilities"
+        | "skills"
+        | "effects"
+        | "paused"
       >
     >();
+    expectTypeOf<AgentSummary>().not.toHaveProperty("tags");
+    expectTypeOf<AgentSummary>().not.toHaveProperty("instructions");
   });
 
   test("discovery: discovery is false or an object with prepare", () => {
