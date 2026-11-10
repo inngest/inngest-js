@@ -43,6 +43,15 @@ function parseEnvelope(body: string | Uint8Array): CapturedItem[] {
   return items;
 }
 
+export interface InitSentryCaptureOptions {
+  /**
+   * Passed through to the Sentry client. Defaults to 1.0 so span-related
+   * tests capture transactions; pass 0 to verify the middleware defers the
+   * sampling decision to the app's config.
+   */
+  tracesSampleRate?: number;
+}
+
 /**
  * Initializes Sentry via @sentry/core's low-level API.
  *
@@ -50,7 +59,10 @@ function parseEnvelope(body: string | Uint8Array): CapturedItem[] {
  * imports from @sentry/core. pnpm isolates them as separate module instances
  * so only @sentry/core's global state is visible to the middleware.
  */
-export function initSentryCapture(): Captured {
+export function initSentryCapture(
+  options: InitSentryCaptureOptions = {},
+): Captured {
+  const { tracesSampleRate = 1.0 } = options;
   const captured: Captured = { items: [] };
 
   const makeTransport = (opts: InternalBaseTransportOptions): Transport =>
@@ -61,7 +73,7 @@ export function initSentryCapture(): Captured {
 
   const client = new ServerRuntimeClient({
     dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
-    tracesSampleRate: 1.0,
+    tracesSampleRate,
     integrations: [],
     stackParser: () => [],
     transport: makeTransport,
