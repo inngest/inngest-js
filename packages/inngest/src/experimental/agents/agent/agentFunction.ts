@@ -56,11 +56,7 @@ import {
 } from "../discovery/discovery.ts";
 import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
-import {
-  agentGroupJoined,
-  agentMessage,
-  type SenderData,
-} from "../inbox/events.ts";
+import { agentMessage, type SenderData } from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
   codeReportTool,
@@ -181,7 +177,7 @@ import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf } from "./recovery.ts";
-import { groupOf, starterOfKey, taggedKeyAddress } from "./relations.ts";
+import { starterOfKey, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
   type RunField,
@@ -263,7 +259,7 @@ const createHandlerLoop = async (options: {
 
   /**
    * Whether the thread has relatives its model can reach without discovery:
-   * an agent started it, or it is in a group.
+   * an agent started it.
    */
   related: boolean;
 }): Promise<AgentHandlerLoop> => {
@@ -573,16 +569,6 @@ export function createAgentFunction(
                 if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
               };
             }),
-          // A thread in a group hears of each new member. It is an inbox
-          // source of its own: the event never starts a run.
-          ...(groupOf(data.thread) === undefined
-            ? []
-            : [
-                {
-                  event: agentGroupJoined.name,
-                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
-                },
-              ]),
           ...inboxSources.flatMap((source) => {
             const missing = missingThreadFilter(source, config.thread);
 
@@ -1137,7 +1123,6 @@ export function createAgentFunction(
               ],
             };
           }),
-          group: groupOf(data.thread) !== undefined,
           ...(limits.limits.depth !== undefined && {
             depth: limits.limits.depth,
           }),
@@ -1153,7 +1138,7 @@ export function createAgentFunction(
           skills: runSkills,
           lentEnded,
           briefing: runBriefing,
-          related: starter !== undefined || runBriefing.group,
+          related: starter !== undefined,
           addedTools: {
             ...sandboxTools(opened),
             ...(reportBook && { report: reportTool(reportBook) }),
@@ -1337,7 +1322,6 @@ export function createAgentFunction(
             return trigger.event === internalEvents.FunctionInvoked;
           }),
           ...(options?.thread !== undefined && { thread: options.thread }),
-          ...(options?.group !== undefined && { group: options.group }),
           ...(options?.reports && { reports: options.reports }),
         },
         input,

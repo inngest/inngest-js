@@ -97,11 +97,6 @@ export interface BriefingFacts {
   reports: BriefingReport[];
 
   /**
-   * Whether the thread is in a group.
-   */
-  group: boolean;
-
-  /**
    * Levels of agents still allowed below this one, when limited.
    */
   depth?: number;
@@ -270,12 +265,6 @@ const situationLines = (facts: BriefingFacts): string[] => {
       children
         ? "This run ends when you finish a turn with nothing unread, unless agents you started are still working: then it stays open for their results. A message after that starts a new run of this thread, with your history."
         : "This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.",
-    );
-  }
-
-  if (facts.group) {
-    lines.push(
-      "This thread is in a group: you hear when another member joins, and you can reach the members by their thread keys.",
     );
   }
 

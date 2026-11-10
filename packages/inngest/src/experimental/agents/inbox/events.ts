@@ -270,39 +270,3 @@ export type AgentAskTimeoutData = AgentRouting & {
 export const agentAskTimeout = eventType("agent/ask.timeout", {
   schema: staticSchema<AgentAskTimeoutData>(),
 });
-
-/**
- * The data of `agent/group.joined`: a thread joined a group.
- */
-export type AgentGroupJoinedData = {
-  /**
-   * The group's id, which every member's thread key carries. A live member
-   * hears of a join through an inbox source filtered by it.
-   */
-  group: string;
-
-  /**
-   * The name the starter gave the group.
-   */
-  name: string;
-
-  /**
-   * The new member's agent, `"appId/functionId"`.
-   */
-  agent: string;
-
-  /**
-   * The new member's thread key, which the other members use to reach it.
-   */
-  thread: string;
-};
-
-/**
- * EXPERIMENTAL: tells the members of a group that a thread joined it. It is
- * sent once when `start()` or `start_agent` is given a `group`, not once per
- * member, and live members receive it through an inbox source that filters on
- * the group's id. It never starts a run.
- */
-export const agentGroupJoined = eventType("agent/group.joined", {
-  schema: staticSchema<AgentGroupJoinedData>(),
-});

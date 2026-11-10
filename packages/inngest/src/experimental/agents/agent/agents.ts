@@ -481,7 +481,6 @@ export {
 export type {
   AgentAnswerData,
   AgentFinishedData,
-  AgentGroupJoinedData,
   AgentMessageData,
   AgentQuestionData,
   AgentRouting,
@@ -489,7 +488,6 @@ export type {
 export {
   agentAnswer,
   agentFinished,
-  agentGroupJoined,
   agentMessage,
   agentQuestion,
 } from "../inbox/events.ts";

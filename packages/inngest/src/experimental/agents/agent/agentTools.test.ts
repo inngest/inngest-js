@@ -298,13 +298,11 @@ describe("reply", () => {
 /**
  * The key of a thread the caller (thread "c1") started.
  */
-const childOf = (name: string, group?: string) => {
-  return relatedKey(
-    client,
-    `${plain.card.address}:${name}.0`,
-    { key: "c1", address: `${testClientId}/caller` },
-    group,
-  );
+const childOf = (name: string) => {
+  return relatedKey(client, `${plain.card.address}:${name}.0`, {
+    key: "c1",
+    address: `${testClientId}/caller`,
+  });
 };
 
 describe("message_agent", () => {
@@ -357,32 +355,18 @@ describe("message_agent", () => {
     expect(sent).toEqual([]);
   });
 
-  test("reaches the parent that started the caller, and a member of its group", async () => {
+  test("reaches the parent that started the caller", async () => {
     const boss = `${plain.card.address}:boss.0`;
-    const callerKey = relatedKey(
-      client,
-      `${testClientId}/caller:c-run.0`,
-      { key: boss, address: plain.card.address },
-      "crew",
-    );
-    const peer = relatedKey(
-      client,
-      `${plain.card.address}:p-run.0`,
-      { key: boss, address: plain.card.address },
-      "crew",
-    );
-    const otherGroup = relatedKey(
-      client,
-      `${plain.card.address}:o-run.0`,
-      { key: boss, address: plain.card.address },
-      "ops",
-    );
+    const callerKey = relatedKey(client, `${testClientId}/caller:c-run.0`, {
+      key: boss,
+      address: plain.card.address,
+    });
+    const stranger = `${plain.card.address}:s-run.0.deadbeefdeadbeef.x`;
 
-    // The caller runs on `callerKey`, started by "boss" in group "crew".
     const results: unknown[] = [];
     const tools = agentToolSet({ functions: live });
     const caller = agents.agent({ id: "caller" }, async () => {
-      for (const thread of [boss, peer, otherGroup]) {
+      for (const thread of [boss, stranger]) {
         const resolved = await resolveToolCall(
           tools,
           {
@@ -421,10 +405,10 @@ describe("message_agent", () => {
       },
     });
 
-    // The boss started the caller, so the caller reaches it; another group is
+    // The boss started the caller, so the caller reaches it; a stranger is
     // refused.
-    // The body replays after each send, so the last three are the final pass.
-    expect(results.slice(-3, -1)).toEqual([{ ok: true }, { ok: true }]);
+    // The body replays after each send, so the last two are the final pass.
+    expect(results[results.length - 2]).toEqual({ ok: true });
     expect(JSON.stringify(results[results.length - 1])).toMatch(/can't reach/);
   });
 });

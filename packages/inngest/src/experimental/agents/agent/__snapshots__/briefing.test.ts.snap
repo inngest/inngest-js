@@ -12,7 +12,7 @@ You owe agent-playground/lead reports of type "demo/progress" (required), with d
 Messages from agent-playground/lead say so. A message marked "from outside the agent team" is from someone else, such as a person steering you.
 This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.
 From your tools:
-- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you, threads you started and members of your group, by their thread keys. No other thread can be reached.
+- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you and threads you started, by their thread keys. No other thread can be reached.
 - report: You must send each report marked required before you finish; you are reminded if you don't.
 </inngest-situation>"
 `;
@@ -51,7 +51,7 @@ Agents you start can start agents of their own, 1 more level deep.
 From your tools:
 - list_agents: Agents can be added or removed while you run. The answer is good for 30000ms (its ttlMs) and is specific to you (cacheScope: "private").
 - start_agent: Agents you start run on their own. Their reports, questions and final results reach you as messages, so you never need to ask them for status: to wait for them, end your turn. A report needs no answer.
-- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you, threads you started and members of your group, by their thread keys. No other thread can be reached.
+- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you and threads you started, by their thread keys. No other thread can be reached.
 - chat: Only messages sent with \`chat\` reach the person; anything else you write is private.
 </inngest-situation>"
 `;

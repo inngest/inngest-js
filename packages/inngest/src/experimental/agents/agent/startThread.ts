@@ -14,7 +14,6 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import type { Context } from "../../../types.ts";
 import type { SenderData } from "../inbox/events.ts";
-import { agentGroupJoined } from "../inbox/events.ts";
 import {
   type AgentReportLine,
   type ReportSpec,
@@ -43,7 +42,7 @@ import {
 } from "./grant.ts";
 import { type LendOptions, parentEndedFunction, planLend } from "./lending.ts";
 import { checkInvoke, childLimits, limitStateOf } from "./limits.ts";
-import { groupId, relatedKey } from "./relations.ts";
+import { relatedKey } from "./relations.ts";
 import type { ResultOptions } from "./runResults.ts";
 import { senderOf } from "./sender.ts";
 import { currentSessions } from "./sessions.ts";
@@ -100,13 +99,6 @@ export interface StartTarget {
    * The thread to start the run on. Default: a new thread with a generated key.
    */
   thread?: string;
-
-  /**
-   * The name of the group the new thread joins, together with every thread the
-   * same starter put in a group of that name. Needs a generated key, so it
-   * cannot be set with `thread`.
-   */
-  group?: string;
 
   /**
    * The typed reports the agent is started to owe: event types, or
@@ -216,16 +208,11 @@ export function startThread<TOutput>(
   const attached = lending.attach ?? plan !== undefined;
 
   const n = nextCount(instance, "start");
-  if (target.group !== undefined && target.thread !== undefined) {
-    throw new Error(
-      "A start can join a group or use its own thread key, not both: a group is carried by the generated key.",
-    );
-  }
 
   // The address leads a generated key, so a tool that is given only the key
   // can tell which agent the thread belongs to. The key also carries a tag of
-  // the thread that starts it (and of the group), which is how a model's
-  // `message_agent` tells a parent, a child and a peer from a stranger.
+  // the thread that starts it, which is how a model's `message_agent` tells a
+  // parent and a child from a stranger.
   const sender = senderOf(execution);
   const starter = {
     key: sender.key,
@@ -233,12 +220,7 @@ export function startThread<TOutput>(
   };
   const key =
     target.thread ??
-    relatedKey(
-      target.client,
-      `${target.address}:${ctx.runId}.${n}`,
-      starter,
-      target.group,
-    );
+    relatedKey(target.client, `${target.address}:${ctx.runId}.${n}`, starter);
   const reports =
     target.resolved ??
     (target.reports && target.reports.length > 0
@@ -286,11 +268,6 @@ export function startThread<TOutput>(
         ...(attached ? [`run=${ctx.runId as string}`] : []),
         ...(reports ? routesOf(reports).map(routeLine) : []),
         ...(lent ? [`lend=${lendDigest(lent)}`] : []),
-        ...(target.group !== undefined
-          ? [
-              `grp=${groupId(target.client, starter.key, target.group, starter.address)}`,
-            ]
-          : []),
       ],
     });
 
@@ -335,24 +312,6 @@ export function startThread<TOutput>(
         );
       })()
     : send();
-  // One event tells every live member of the group about the new one.
-  const joined =
-    target.group === undefined
-      ? undefined
-      : step.sendEvent(
-          `group:${ctx.runId}.${nextCount(instance, "group")}:joined`,
-          agentGroupJoined.create({
-            group: groupId(
-              target.client,
-              starter.key,
-              target.group,
-              starter.address,
-            ),
-            name: target.group,
-            agent: target.address,
-            thread: key,
-          }),
-        );
   const thread = threadHandle<TOutput>(target.client, target.address, key);
   const handle: StartedThread<TOutput> = {
     ...thread,
@@ -360,7 +319,7 @@ export function startThread<TOutput>(
       return call.result(options);
     },
   };
-  const started = Promise.all([call, joined]).then(() => {
+  const started = Promise.all([call]).then(() => {
     return handle;
   });
 

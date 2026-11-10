@@ -7,7 +7,6 @@
  * binding it to the thread that started it:
  *
  *     <address>:<runId>.<n>.<tag>.<starter>
- *     <address>:<runId>.<n>.<tag>.<group>.<groupTag>.<starter>   (with a `group`)
  *
  * - `starter` is the starting agent's address, escaped, so a child can message
  *   its parent: a parent's own thread key (a trigger's `thread` expression,
@@ -17,9 +16,6 @@
  *   its own key and a candidate key, a thread can tell whether the candidate
  *   started it (the parent) or it started the candidate (a child), in any run
  *   of the thread, because the tag does not depend on which run asks.
- * - `group` is an HMAC of the starter's thread key and the group's name, and
- *   `groupTag` binds it to this key. Two keys with the same valid `group` were
- *   started by the same thread under the same group name: peers.
  *
  * The HMAC key is the client's signing key, which a model never sees, so a
  * model cannot make a key that passes: a forged key is refused, which also
@@ -94,7 +90,6 @@ interface ParsedKey {
   body: string;
   tag: string;
   starter: string;
-  group?: { id: string; tag: string };
 }
 
 const parseKey = (key: string): ParsedKey | undefined => {
@@ -106,7 +101,7 @@ const parseKey = (key: string): ParsedKey | undefined => {
 
   const parts = key.slice(colon + 1).split(".");
 
-  if (parts.length !== 4 && parts.length !== 6) {
+  if (parts.length !== 4) {
     return undefined;
   }
 
@@ -114,14 +109,7 @@ const parseKey = (key: string): ParsedKey | undefined => {
   const body = `${key.slice(0, colon)}:${runId}.${n}`;
   const starter = decodeURIComponent(rest[rest.length - 1] as string);
 
-  return {
-    body,
-    tag: tag as string,
-    starter,
-    ...(rest.length === 3 && {
-      group: { id: rest[0] as string, tag: rest[1] as string },
-    }),
-  };
+  return { body, tag: tag as string, starter };
 };
 
 /**
@@ -160,40 +148,18 @@ export const starterOfKey = (key: string): string | undefined => {
  * @param base `<address>:<runId>.<n>`.
  * @param starter The thread that starts it: its key, and its agent's address
  * (empty when a plain function starts it).
- * @param group The name of the group it joins.
  */
 export const relatedKey = (
   client: Inngest.Any,
   base: string,
   starter: { key: string; address: string },
-  group?: string,
 ): string => {
   const [secret] = secretsOf(client) as [string];
   const app = client.id;
   const tag = mac(secret, "tag", app, starter.key, starter.address, base);
   const escaped = encodeURIComponent(starter.address).replace(/\./g, "%2E");
 
-  if (group === undefined) {
-    return `${base}.${tag}.${escaped}`;
-  }
-
-  const id = groupIdOf(secret, starter.key, starter.address, group);
-
-  return `${base}.${tag}.${id}.${mac(secret, "member", app, id, base)}.${escaped}`;
-};
-
-/**
- * The id of a group: bound to the starter's app (taken from its address, so
- * peers started by one thread in different apps still share it), the
- * starter's key and the group's name.
- */
-const groupIdOf = (
-  secret: string,
-  starterKey: string,
-  starterAddress: string,
-  group: string,
-): string => {
-  return mac(secret, "group", appOfBody(starterAddress), starterKey, group);
+  return `${base}.${tag}.${escaped}`;
 };
 
 /**
@@ -209,37 +175,10 @@ export const agentOfKey = (key: string): string | undefined => {
 };
 
 /**
- * The id of the group `group` of the thread `starter`, which is also what the
- * members' keys carry. It is `undefined` for a key that is not a group member's.
- * @param key A thread key.
- */
-export const groupOf = (key: string): string | undefined => {
-  return parseKey(key)?.group?.id;
-};
-
-/**
- * The id of the group a start by `starter` with the name `group` joins.
- * @param client The client.
- * @param starter The key of the thread that starts.
- * @param group The group's name.
- * @param starterAddress The starting agent's address (empty for a function).
- */
-export const groupId = (
-  client: Inngest.Any,
-  starter: string,
-  group: string,
-  starterAddress = "",
-): string => {
-  const [secret] = secretsOf(client) as [string];
-
-  return groupIdOf(secret, starter, starterAddress, group);
-};
-
-/**
  * How `target` relates to `self`: the thread that started it (`parent`, with
- * the parent's agent address), a thread it started (`child`), a member of the
- * group it is in (`peer`), or `undefined` for anything else, including a key
- * that was not made by a start, and a parent that is not an agent.
+ * the parent's agent address), a thread it started (`child`), or `undefined`
+ * for anything else, including a key that was not made by a start, and a
+ * parent that is not an agent.
  * @param client The client.
  * @param self The key of the thread asking.
  * @param target The key it wants to reach.
@@ -248,7 +187,7 @@ export const relationOf = (
   client: Inngest.Any,
   self: string,
   target: string,
-): { relation: "parent" | "child" | "peer"; address?: string } | undefined => {
+): { relation: "parent" | "child"; address?: string } | undefined => {
   if (self === target) {
     return undefined;
   }
@@ -290,28 +229,6 @@ export const relationOf = (
     )
   ) {
     return { relation: "child" };
-  }
-
-  if (
-    mine?.group &&
-    theirs?.group &&
-    mine.group.id === theirs.group.id &&
-    valid(
-      mine.group.tag,
-      "member",
-      appOfBody(mine.body),
-      mine.group.id,
-      mine.body,
-    ) &&
-    valid(
-      theirs.group.tag,
-      "member",
-      appOfBody(theirs.body),
-      theirs.group.id,
-      theirs.body,
-    )
-  ) {
-    return { relation: "peer" };
   }
 
   return undefined;

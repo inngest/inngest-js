@@ -76,7 +76,7 @@ export interface AgentToolSetOptions extends DiscoveryToolSetOptions {}
  */
 type AgentActionToolSet = {
   start_agent: AgentTool<
-    { address: string; input?: Json; group?: string; attach?: boolean },
+    { address: string; input?: Json; attach?: boolean },
     { thread: string }
   >;
   message_agent: AgentTool<{ thread: string; content: Json }, { ok: true }>;
@@ -152,12 +152,6 @@ const startInput = z.object({
     .describe(
       "What to give the agent: the input its card describes, or the text or JSON to send it as a message.",
     ),
-  group: z
-    .string()
-    .optional()
-    .describe(
-      "A group name. Agents you start with the same group name can message and ask each other, and each hears when another joins.",
-    ),
   reports: reportsInput,
   attach: z
     .boolean()
@@ -175,13 +169,11 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
   return async ({
     address,
     input,
-    group,
     reports,
     attach,
   }: {
     address: string;
     input?: Json;
-    group?: string;
     reports?: { type: string; schema?: JsonSchema; required?: boolean }[];
     attach?: boolean;
   }) => {
@@ -253,7 +245,6 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
         address,
         typed: card.input !== undefined,
         via,
-        ...(group !== undefined && { group }),
         ...(resolved && { resolved }),
       },
       card.input ? prepared : (prepared ?? ""),
@@ -293,8 +284,8 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
 
 /**
  * Refuses a thread the calling agent may not reach: only its parent (the
- * thread that started it), its children (threads it started, in any run) and
- * the members of its group. The relation is read from the thread keys alone.
+ * thread that started it) and its children (threads it started, in any run).
+ * The relation is read from the thread keys alone.
  */
 const checkReach = (
   tool: string,
@@ -322,7 +313,7 @@ const checkReach = (
   }
 
   throw new Error(
-    `You can't reach thread "${thread}" with ${tool}. You can reach the thread that started you, threads you started with start_agent, and members of your group, by the thread key start_agent or a group message gave you.`,
+    `You can't reach thread "${thread}" with ${tool}. You can reach the thread that started you and threads you started with start_agent, by the thread key start_agent gave you.`,
   );
 };
 
@@ -500,7 +491,7 @@ const codeStartDescription: ToolDescriptionParts = {
 };
 
 const stopDescription: ToolDescriptionParts = {
-  does: "Stops the run of an agent you started, the agent that started you, or a member of your group, by its thread key. You get the agent's outcome as a message.",
+  does: "Stops the run of an agent you started, or the agent that started you, by its thread key. You get the agent's outcome as a message.",
   use: "when its work is no longer needed",
   avoid:
     "to end your own turn or to wait: for that, end your turn or call `wait`",
@@ -512,16 +503,16 @@ const codeStopDescription: ToolDescriptionParts = {
 };
 
 const messageDescription: ToolDescriptionParts = {
-  does: "Sends a message to an agent you started, the agent that started you, or a member of your group, by its thread key. It returns at once; any answer comes later as a message.",
+  does: "Sends a message to an agent you started, or the agent that started you, by its thread key. It returns at once; any answer comes later as a message.",
   use: "to give new information or change what you asked for",
   avoid:
     "to ask for status, to acknowledge a report, or to send your own final result: results and reports arrive on their own, and your final result goes to whoever started you when you finish",
   context:
-    "With `ask_agent` and `stop_agent`, it reaches only the thread that started you, threads you started and members of your group, by their thread keys. No other thread can be reached.",
+    "With `ask_agent` and `stop_agent`, it reaches only the thread that started you and threads you started, by their thread keys. No other thread can be reached.",
 };
 
 const askDescription: ToolDescriptionParts = {
-  does: "Asks an agent you started, the agent that started you, or a member of your group a question that needs an answer. It returns the question's ID at once. The answer arrives later as a message that names the ID, or a message saying there was none within an hour.",
+  does: "Asks an agent you started, or the agent that started you, a question that needs an answer. It returns the question's ID at once. The answer arrives later as a message that names the ID, or a message saying there was none within an hour.",
   use: "when you can't go on without the answer",
   avoid: "when no answer is needed: use `message_agent` for that",
 };
@@ -570,7 +561,7 @@ export const agentToolSet = (
 
 /**
  * `message_agent`, `ask_agent` and `stop_agent`: the tools that reach the
- * threads related to the caller's (its starter, its children, its group).
+ * threads related to the caller's (its starter and its children).
  */
 const relativeTools = {
   message_agent: tool({
@@ -677,12 +668,12 @@ export const handlerWaitTool = makeWait(handlerWaitDescription, "Turn ended.");
  * The agent tools a model agent starts a run with. Discovery is opt-in: a
  * `discovery` of `true` or options gives `list_agents`, `describe_agent`,
  * `start_agent`, `message_agent`, `ask_agent` and `stop_agent`. Without it,
- * a run another agent started, or of a thread in a group, still gets
+ * a run another agent started still gets
  * `message_agent`, `ask_agent` and `stop_agent`, which reach only its
  * relatives. `reply` is not here: the loop adds it once a question arrives.
  * @param discovery The definition's `discovery`.
  * @param related Whether the thread has relatives to reach (a starting
- * agent, or a group).
+ * agent).
  */
 export const agentToolsFor = (
   discovery: AgentDiscovery | undefined,

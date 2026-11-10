@@ -11,7 +11,6 @@
  *     run=01JRUN                        attached child: ends with this run
  *     rep=["milestone","billing/triage","billing/triage:01J.0"]   report route
  *     lend=3f9a...                      digest of what is lent
- *     grp=ab12...                       the group it joins
  *     depth=1                           levels of sub-agents still allowed
  *     start=[{"effects":"read"}]        an inherited discovery list (agents)
  *     tool=[{"app":"billing"}]          an inherited discovery list (tools)
@@ -19,7 +18,7 @@
  *
  * A grant is one or more blocks. A block begins at its `sub=` line (the
  * thread that holds it; it is left out on the wire and read from the event)
- * and holds `iss`, `iat`, `until`, `par`, `run`, `rep`, `lend` and `grp`:
+ * and holds `iss`, `iat`, `until`, `par`, `run`, `rep` and `lend`:
  * what the holder may do. Only the last block counts for those. The
  * restriction lines (`depth`, `start`, `tool`, `exp`) count wherever they
  * are: the lowest depth wins, every list must match and the earliest `exp`
@@ -134,7 +133,6 @@ export interface Grant {
   run?: string;
   rep: GrantRoute[];
   lend?: string;
-  grp?: string;
 }
 
 const link = (key: string, data: string): string => {
@@ -197,7 +195,7 @@ const parse = (lines: string[], sig: string): Grant | undefined => {
   const tools: unknown[] = [];
   let block: Pick<
     Grant,
-    "sub" | "iss" | "iat" | "until" | "par" | "run" | "rep" | "lend" | "grp"
+    "sub" | "iss" | "iat" | "until" | "par" | "run" | "rep" | "lend"
   > | null = null;
 
   for (const line of lines) {
@@ -252,8 +250,6 @@ const parse = (lines: string[], sig: string): Grant | undefined => {
         }
       } else if (name === "lend") {
         block.lend = value;
-      } else if (name === "grp") {
-        block.grp = value;
       }
     }
   }

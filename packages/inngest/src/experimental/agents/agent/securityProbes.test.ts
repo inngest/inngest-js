@@ -35,7 +35,6 @@ import {
 import { lendOf, parentEndedCancel } from "./lending.ts";
 import {
   fullMac,
-  groupId,
   relatedKey,
   relationOf,
   taggedKeyAddress,
@@ -213,18 +212,6 @@ describe("reach: thread-key tags", () => {
       relation: "parent",
       address: "a/boss",
     });
-  });
-
-  test("group peers are still peers", () => {
-    const appA = new Inngest({ id: "a", signingKey: envSigningKey });
-    const boss = { key: "a/boss:run1.0", address: "a/boss" };
-    const one = relatedKey(appA, "a/w:r1.0", boss, "crew");
-    const two = relatedKey(appA, "a/w:r2.1", boss, "crew");
-    const other = relatedKey(appA, "a/w:r3.2", boss, "other");
-
-    expect(relationOf(appA, one, two)).toEqual({ relation: "peer" });
-    expect(relationOf(appA, one, other)).toBeUndefined();
-    expect(groupId(appA, boss.key, "crew", boss.address)).toHaveLength(16);
   });
 
   test("a starter holding a newline cannot shift the MAC input", () => {

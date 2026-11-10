@@ -233,9 +233,9 @@ export interface AgentFunctionConfig<
    * Discovery for the agent's model. Off unless set: `true` gives the model
    * `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
    * `ask_agent` and `stop_agent`, and the shared tools `discovery.tools`
-   * allows. Without it, a run another agent started (or of a thread in a
-   * group) still gets `message_agent`, `ask_agent` and `stop_agent` for the
-   * threads related to it. The agent's own card is published either way.
+   * allows. Without it, a run another agent started still gets
+   * `message_agent`, `ask_agent` and `stop_agent` for the threads related to
+   * it. The agent's own card is published either way.
    * `{ prepare }` fills part of the input of a call to another agent from the
    * host, in the run. `{ agents, tools }` filter what the model can see and
    * may start; agents it starts never see more than it was allowed. Both
@@ -488,13 +488,6 @@ export interface StartOptions extends LendOptions {
    * generated key.
    */
   thread?: string;
-
-  /**
-   * The name of the group the new thread joins, together with every thread the
-   * same starter put in a group of that name. Needs a generated key, so it
-   * cannot be set with `thread`.
-   */
-  group?: string;
 
   /**
    * EXPERIMENTAL: what the started agent owes back, as typed reports. A line
@@ -895,10 +888,6 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * an op nothing awaited), so `await` it there.
    * @param input What the agent is asked to do.
    * @param options `thread`: the key of the thread to start the run on.
-   * `group`: the name of a group the new thread joins. Threads that the same
-   * thread started with the same group name can `message_agent` and
-   * `ask_agent` each other, and the live ones hear of each join. A group needs
-   * a generated key, so it cannot be set with `thread`.
    * `reports`: the typed reports the agent may send back, as event types or
    * `{ event, to, if, required }` lines: where each goes and which it owes.
    * The agent's model gets a `report` tool, and its handler `me.report()`.

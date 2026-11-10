@@ -73,7 +73,6 @@ const examples: Record<string, BriefingFacts> = {
     thread: "8d1e2f",
     loop: "default",
     reports: [],
-    group: false,
     tools: toolFacts({ wait: waitTool }),
   },
   "the lead, with discovery and a chat tool": {
@@ -81,7 +80,6 @@ const examples: Record<string, BriefingFacts> = {
     thread: "s-7f2c",
     loop: "default",
     reports: [],
-    group: false,
     depth: 2,
     tools: toolFacts({ ...agentToolsFor(true), wait: waitTool, chat }),
   },
@@ -109,7 +107,6 @@ const examples: Record<string, BriefingFacts> = {
         to: ["agent-playground/lead"],
       },
     ],
-    group: false,
     tools: toolFacts({
       ...agentToolsFor(undefined, true),
       report: reportTool({
@@ -131,7 +128,6 @@ const examples: Record<string, BriefingFacts> = {
     loop: "handler",
     opener: { kind: "function", run: "01M7", start: true },
     reports: [],
-    group: false,
     tools: toolFacts({ wait: handlerWaitTool }),
   },
 };
