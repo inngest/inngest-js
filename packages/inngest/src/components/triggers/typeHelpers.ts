@@ -287,14 +287,18 @@ type ReceivedEventTupleToUnion<T extends readonly any[]> = T[number];
  * This uses ToReceivedEvent to derive event types directly from triggers
  * rather than looking up from the client's event registry.
  *
+ * This is an `interface` rather than a type alias so that declaration emit
+ * can refer to the handler context by name; as an alias, the whole context
+ * was copied into the declaration of every exported function (#1859).
+ *
  * @template TStepTools - The step tools type for this context
  * @template TTriggers - Array of trigger definitions
  * @internal
  */
-export type BaseContextWithTriggers<
+export interface BaseContextWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
-> = {
+> {
   defer: DeferFn;
 
   /**
@@ -347,7 +351,7 @@ export type BaseContextWithTriggers<
    * The maximum number of attempts allowed for this function.
    */
   maxAttempts?: number;
-};
+}
 
 /**
  * Context object for handlers using trigger-based event typing with middleware overrides.
