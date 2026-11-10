@@ -41,6 +41,16 @@ describe("stepTypeFromOpCode", () => {
     ).toBe("sendEvent");
   });
 
+  test("StepPlanned with type 'step.sendSignal' returns 'sendSignal'", () => {
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        { type: "step.sendSignal" },
+        logger,
+      ),
+    ).toBe("sendSignal");
+  });
+
   test("StepPlanned with type 'step.realtime.publish' returns 'realtime.publish'", () => {
     expect(
       stepTypeFromOpCode(
