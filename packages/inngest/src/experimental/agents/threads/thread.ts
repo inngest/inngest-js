@@ -23,7 +23,7 @@ import {
   unattachedGrantSeconds,
 } from "../agent/grant.ts";
 import type { LentRecord } from "../agent/lending.ts";
-import type { AgentBudget, EffectiveLimits } from "../agent/limits.ts";
+import type { EffectiveLimits } from "../agent/limits.ts";
 import type { LastRun } from "../agent/recovery.ts";
 import { relationOf } from "../agent/relations.ts";
 import {
@@ -33,6 +33,7 @@ import {
   type ResultOptions,
 } from "../agent/runResults.ts";
 import { senderOf } from "../agent/sender.ts";
+import type { StepWithSubscribe } from "../agent/types.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
   type AgentAnswerData,
@@ -45,7 +46,7 @@ import {
   agentQuestion,
   agentRecover,
 } from "../inbox/events.ts";
-import { handleAddressKey } from "../inbox/reports.ts";
+import { handleAddressKey } from "../inbox/handleAddressKey.ts";
 import type { Json } from "../json.ts";
 import { type KvScopeInstance, kv } from "../kv/kv.ts";
 
@@ -105,7 +106,7 @@ export interface ThreadState {
 
   /**
    * Tokens used by every model call of the thread, across runs, and what they
-   * cost in US dollars when the agent has a the agent's `price`.
+   * cost in US dollars when the model reports its own cost.
    */
   usage: { input: number; output: number; usd?: number };
 
@@ -140,13 +141,6 @@ export interface ThreadRecord {
    * woken by a plain message stays inside them.
    */
   inherited?: EffectiveLimits;
-
-  /**
-   * What the thread may spend, from the definition of the agent that owns it.
-   * Set by the first run and kept, so every later run enforces the same
-   * budget and it is never handed down to another agent's thread.
-   */
-  budget?: AgentBudget;
 
   /**
    * The run that wrote the record last, so a finished run never overwrites
@@ -435,7 +429,10 @@ export function sendMessage<TOutput = unknown>(
 
   // Opened before the message is sent, so a result that comes quickly is
   // not missed. It ends with the sender's run.
-  const answers = step.subscribe(id, {
+  // `subscribe` only types once `inboxMiddleware()` is registered - true at
+  // runtime (`createAgents` always adds it), but invisible to the ambient
+  // `step` singleton's generic type. See `StepWithSubscribe`.
+  const answers = (step as StepWithSubscribe).subscribe(id, {
     event: agentMessageResultEvent,
     if: `async.data.id == ${JSON.stringify(id)}`,
   });
@@ -513,7 +510,8 @@ export function threadHandle<TOutput = unknown>(
 
       // Opened before the question is sent, so an answer that comes quickly is
       // not missed. It ends with this call, whichever way it ends.
-      await using answers = step.subscribe(id, {
+      // See the comment on the other `step.subscribe` call in this file.
+      await using answers = (step as StepWithSubscribe).subscribe(id, {
         event: agentAnswerEvent,
         if: `async.data.re == ${JSON.stringify(id)}`,
       });

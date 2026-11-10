@@ -35,23 +35,36 @@ import {
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
   hostOfSharedTool,
   isSharedTool,
+  type SandboxTool,
   type SandboxTools,
 } from "../../../components/sandbox/tools.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import type { Logger } from "../../../middleware/logger.ts";
 import { compileKey, toAsync } from "../cel.ts";
-import { cardOf, validateDiscoveryList } from "../discovery/discovery.ts";
+import { cardToolsOf } from "../discovery/cardTools.ts";
+import {
+  cardOf,
+  discoveryOptionsOf,
+  validateDiscoveryList,
+} from "../discovery/discovery.ts";
 import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
 import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
-import { agentGroupJoined, agentMessage } from "../inbox/events.ts";
+import {
+  agentGroupJoined,
+  agentMessage,
+  type SenderData,
+} from "../inbox/events.ts";
 import { QuestionBook } from "../inbox/questionBook.ts";
 import {
+  codeReportTool,
   flushOwes,
   handleAddressKey,
   isReportMessage,
@@ -133,8 +146,21 @@ import {
   schemaProblem,
   singletonKey,
 } from "../threads/threadTrigger.ts";
-import { agentToolsFor } from "./agentTools.ts";
+import {
+  agentToolsFor,
+  codeAgentTools,
+  handlerWaitTool,
+  replyTool,
+  waitTool,
+} from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import {
+  type BriefingParty,
+  briefingParts,
+  type RunBriefingFacts,
+  registerBriefingFacts,
+  toolFacts,
+} from "./briefing.ts";
 import { childWait, openChildren, settleChild } from "./children.ts";
 import { nextCount } from "./executionCounter.ts";
 import {
@@ -153,20 +179,13 @@ import {
   lentToolNames,
   parentEndedCancel,
 } from "./lending.ts";
-import {
-  type AgentBudget,
-  budgetReason,
-  narrowInherited,
-  narrowLimits,
-  registerLimits,
-} from "./limits.ts";
+import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf, turnInFlight } from "./recovery.ts";
-import { groupOf, taggedKeyAddress } from "./relations.ts";
+import { groupOf, starterOfKey, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
-  idleMs,
   type RunField,
   type RunFieldContext,
   type RunFields,
@@ -238,9 +257,30 @@ const createHandlerLoop = async (options: {
    * is told not to call them.
    */
   lentEnded?: string[];
+
+  /**
+   * The facts of this run that the briefing is made from, apart from the
+   * loop's tools.
+   */
+  briefing: RunBriefingFacts;
+
+  /**
+   * Whether the thread has relatives its model can reach without discovery:
+   * an agent started it, or it is in a group.
+   */
+  related: boolean;
 }): Promise<AgentHandlerLoop> => {
-  const { client, logger, config, fields, listenTools, skills, lentEnded } =
-    options;
+  const {
+    client,
+    logger,
+    config,
+    fields,
+    listenTools,
+    skills,
+    lentEnded,
+    briefing,
+    related,
+  } = options;
 
   if (typeof config.loop === "function") {
     const swapped = config.loop as AgentLoop;
@@ -306,9 +346,13 @@ const createHandlerLoop = async (options: {
   }
 
   const own = {
-    ...agentToolsFor(config.discovery),
+    ...agentToolsFor(config.discovery, related),
     ...listenTools,
     ...(skills.length > 0 && createSkillTools(skills)),
+    // Ends the turn on purpose. A tool of the agent's own named `wait` wins.
+    ...(!(tools && Object.hasOwn(tools, "wait")) && {
+      wait: briefing.loop === "default" ? waitTool : handlerWaitTool,
+    }),
   } as SandboxTools;
   // Shared tools the definition lists are called through their hosted
   // function; the others `discovery.tools` allows are added beside them.
@@ -332,6 +376,17 @@ const createHandlerLoop = async (options: {
     model,
     ...(system !== undefined && { system }),
     tools: addTools(addTools(own, shared), tools),
+    // `reply` comes with the run's first question, unless the agent has a
+    // tool of that name.
+    ...(!(tools && Object.hasOwn(tools, "reply")) && {
+      "~afterQuestion": { reply: replyTool },
+    }),
+    "~briefing": (loopTools: SandboxTools) => {
+      return briefingParts(
+        { ...briefing, tools: toolFacts(loopTools) },
+        config.briefing,
+      );
+    },
   }) as unknown as AgentHandlerLoop;
 };
 
@@ -358,6 +413,11 @@ export function createAgentFunction(
    * output; an agent without a `model` ends with output `undefined`.
    */
   bodyOrDefault?: AgentBody<{ model: AgentModel }>,
+
+  /**
+   * Where the agent was defined.
+   */
+  source?: SourceLocation,
 ): AgentFunction {
   // Skills given as a value are known now: a clash is an error here, and
   // the card lists them.
@@ -365,9 +425,11 @@ export function createAgentFunction(
     typeof config.skills === "function" || config.skills === undefined
       ? []
       : collectSkills(config.skills);
-  if (config.discovery) {
-    validateDiscoveryList(config.id, "agents", config.discovery.agents);
-    validateDiscoveryList(config.id, "tools", config.discovery.tools);
+  const discovery = discoveryOptionsOf(config.discovery);
+
+  if (discovery) {
+    validateDiscoveryList(config.id, "agents", discovery.agents);
+    validateDiscoveryList(config.id, "tools", discovery.tools);
   }
 
   // A source written as just an event is placed by the agent's `thread`.
@@ -412,6 +474,14 @@ export function createAgentFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // `step.subscribe()` below only types once `inboxMiddleware()` is in
+      // this function's `middleware`. `createAgents` also registers it on
+      // the client itself (for every function's runtime, including ones
+      // the caller added later), but that mutation happens after this call
+      // is type-checked, so it has to be named here too for `step` to type
+      // `subscribe` in this handler.
+      middleware: [InboxMiddleware, ...(config.middleware ?? [])],
 
       // A child started attached ends with its parent's run.
       cancelOn: [...(config.cancelOn ?? []), parentEndedCancel],
@@ -460,7 +530,10 @@ export function createAgentFunction(
       }
       // Read by `agent.loop()` once the body's inbox exists.
       const questions = new QuestionBook();
-      const bridge: AgentBridge = { questions };
+      const bridge: AgentBridge = {
+        questions,
+        codeTools: codeAgentTools(config.discovery),
+      };
 
       // Run-scoped KV keys end with the run, whichever way it ends, and the
       // thread is marked idle.
@@ -475,6 +548,61 @@ export function createAgentFunction(
       // for an event of `triggers` does not carry them: the whole run reads them
       // from here.
       async function main() {
+        // Opened before anything else the run does, the thread start included
+        // (on the ledger that is a subscription, a read and a write, which can
+        // take a second or more). A message that arrives before this op matches
+        // no inbox, and the thread's singleton skips it as a trigger, so it is
+        // lost: the gap is kept to the run's first request. Everything the
+        // sources need is known from the trigger. The open is awaited here so
+        // the thread start does not share a request with it.
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the inbox.
+        await using subscription = step.subscribe("inbox", [
+          ...ownEvents.map((name) => {
+            return {
+              event: name,
+              if: ownInboxFilter(name, ref, data.thread),
+            };
+          }),
+          ...triggers
+            .filter((trigger) => {
+              return trigger.listen;
+            })
+            .map((trigger) => {
+              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
+
+              return {
+                event: trigger.event,
+                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
+              };
+            }),
+          // A thread in a group hears of each new member. It is an inbox
+          // source of its own: the event never starts a run.
+          ...(groupOf(data.thread) === undefined
+            ? []
+            : [
+                {
+                  event: agentGroupJoined.name,
+                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
+                },
+              ]),
+          ...inboxSources.flatMap((source) => {
+            const missing = missingThreadFilter(source, config.thread);
+
+            return [
+              {
+                event: eventNameOf(source.event),
+                if: inboxFilter(source, data.thread, config.thread),
+              },
+              ...(missing === undefined
+                ? []
+                : [{ event: eventNameOf(source.event), if: missing }]),
+            ];
+          }),
+        ]);
+
+        await inboxOpenedPromise(subscription);
+
         // Writes what `thread.state()` shows. One step per change.
         const recorder = threadRecorder(store, ref, runId, onLedger());
 
@@ -485,15 +613,6 @@ export function createAgentFunction(
         // the same limits.
         const startGrant = startGrantOf(client, event, data.thread);
         const passed = startGrant?.limits;
-        // The thread's budget as this agent defines it, read before the start
-        // so the first run can keep it on the thread.
-        const ownBudget =
-          config.budget === undefined
-            ? undefined
-            : await resolveRunField(config.budget as RunField<AgentBudget>, {
-                event: event as unknown as AgentBodyContext["event"],
-                thread: { key: data.thread },
-              });
         // What the start event lends, with its signature checked before the
         // thread records anything. Whether the thread may use it is decided
         // once the record is written.
@@ -504,7 +623,6 @@ export function createAgentFunction(
               passed,
               startInflight(found, event) ?? null,
               inStep,
-              ownBudget,
               undefined,
               claim && {
                 parentRun: claim.parentRun,
@@ -554,8 +672,8 @@ export function createAgentFunction(
           restarts: started.restarts ?? 0,
         });
 
-        // Limits apply to the agents this run starts and to the loop's budget.
-        // The usage is the thread's so far, and each turn adds to it.
+        // Limits apply to the agents this run starts. The usage is the
+        // thread's so far, and each turn adds to it.
         const instance = getAsyncCtxSync()?.execution?.instance;
 
         if (!instance) {
@@ -574,14 +692,13 @@ export function createAgentFunction(
             narrowInherited(started.inherited, passed),
             {
               appId: client.id,
-              ...(config.discovery && {
-                agents: config.discovery.agents,
-                tools: config.discovery.tools,
+              ...(discovery && {
+                agents: discovery.agents,
+                tools: discovery.tools,
               }),
             },
           ),
           { ...started.usage },
-          started.budget,
         );
 
         // What each inbox source's events are checked against, by the name of
@@ -618,56 +735,6 @@ export function createAgentFunction(
         for (const source of inboxSources) {
           noteSource(source);
         }
-
-        // Opened first, so the gap in which a message could be missed is the few
-        // milliseconds between the run starting and this op.
-        // Closed when the run's work is done, whichever way it ends. That only
-        // ends the inbox.
-        await using subscription = step.subscribe("inbox", [
-          ...ownEvents.map((name) => {
-            return {
-              event: name,
-              if: ownInboxFilter(name, ref, data.thread),
-            };
-          }),
-          ...triggers
-            .filter((trigger) => {
-              return trigger.listen;
-            })
-            .map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
-
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
-          // A thread in a group hears of each new member. It is an inbox
-          // source of its own: the event never starts a run.
-          ...(groupOf(data.thread) === undefined
-            ? []
-            : [
-                {
-                  event: agentGroupJoined.name,
-                  if: `async.data.group == ${quote(groupOf(data.thread) as string)} && async.data.thread != ${quote(data.thread)}`,
-                },
-              ]),
-          ...inboxSources.flatMap((source) => {
-            const missing = missingThreadFilter(source, config.thread);
-
-            return [
-              {
-                event: eventNameOf(source.event),
-                if: inboxFilter(source, data.thread, config.thread),
-              },
-              ...(missing === undefined
-                ? []
-                : [{ event: eventNameOf(source.event), if: missing }]),
-            ];
-          }),
-        ]);
-
-        await inboxOpenedPromise(subscription);
 
         // The inboxes the model opened, by the name it gave them. They end with
         // the run, whichever way it ends, before the thread's own inbox.
@@ -781,17 +848,22 @@ export function createAgentFunction(
         bridge.score = agentScore.score;
 
         // A run opened through a handle (`start()`, `message()`, `ask()`, or a
-        // model's agent tools) has a sender, and ends once it has answered and
-        // nothing is unread, unless the agent sets `idle`: then, like a run a
-        // trigger started, it waits `idle` for more, keeping its sandboxes.
-        const openedByHandle =
-          (runEvent.name === agentMessageEvent ||
-            runEvent.name === agentQuestionEvent) &&
-          (runEvent.data as { from?: unknown } | undefined)?.from !== undefined;
-        const idle =
-          openedByHandle && config.idle === undefined
-            ? 0
-            : await idleMs(fields, config.idle);
+        // model's agent tools) has a sender. Every run is short-lived: it ends
+        // once it has answered and nothing is unread, and the thread starts a
+        // new one when it next has input.
+        // The start message is checked as well as the run's event: a typed
+        // start (an `invoke()` trigger) is handed to the handler as the typed
+        // input, which has no sender, but the message that carried it did.
+        const openedByHandle = [runEvent, startMessage].some((candidate) => {
+          return (
+            (candidate.name === agentMessageEvent ||
+              candidate.name === agentQuestionEvent) &&
+            (candidate.data as { from?: unknown } | undefined)?.from !==
+              undefined
+          );
+        });
+        // A run never waits in quiet: it reads its inbox and ends.
+        const idle = 0;
 
         bridge.handleOpened = openedByHandle;
 
@@ -966,6 +1038,15 @@ export function createAgentFunction(
           (data) => {
             questions.receive(data);
           },
+          // Only the default body reads in the background: a handler of the
+          // agent's own does exactly what it says with the inbox.
+          bodyOrDefault === undefined && config.model
+            ? {
+                sleep: (id, ms) => {
+                  return step.sleep(id, ms);
+                },
+              }
+            : undefined,
         );
 
         // What the run owes: the reports its start event carries, and which of
@@ -992,6 +1073,14 @@ export function createAgentFunction(
 
         bridge.reports = reportBook;
 
+        // Code in a `runCode` can send the run's reports too.
+        if (reportBook) {
+          bridge.codeTools = {
+            ...bridge.codeTools,
+            report: codeReportTool(reportBook) as unknown as SandboxTool,
+          };
+        }
+
         // The loop reads this when it runs, inside the agent, whichever way
         // the app made it.
         bridge.wiring = createLoopWiring({
@@ -1005,12 +1094,6 @@ export function createAgentFunction(
           threadKey: thread.key,
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
-          // History is remembered unless `remember` is off.
-          remember:
-            (await fields.get(
-              "remember",
-              config.remember as RunField<boolean | undefined>,
-            )) !== false,
           agent: ref,
           recordInStep: !onLedger(),
         });
@@ -1024,6 +1107,72 @@ export function createAgentFunction(
           thread: data.thread,
         });
 
+        // Who started the thread and who opened this run, for the briefing. A
+        // starting agent is read from the signed grant, else from the key a
+        // start made (the tools that reach it check the key's tag).
+        const opening = [runEvent, startMessage]
+          .map((candidate) => {
+            return (candidate.data as { from?: SenderData } | undefined)?.from;
+          })
+          .find((from) => {
+            return from !== undefined;
+          });
+        const starterAddress =
+          startGrant?.par?.address || starterOfKey(data.thread);
+        const starter: BriefingParty | undefined = starterAddress
+          ? {
+              kind: "agent",
+              address: starterAddress,
+              ...((startGrant?.par?.key ??
+                (opening?.kind === "agent" && opening.address === starterAddress
+                  ? opening.key
+                  : undefined)) !== undefined && {
+                thread: (startGrant?.par?.key ?? opening?.key) as string,
+              }),
+            }
+          : undefined;
+        const opener =
+          opening === undefined
+            ? undefined
+            : {
+                ...(opening.kind === "agent"
+                  ? {
+                      kind: "agent" as const,
+                      address: opening.address,
+                      thread: opening.key,
+                    }
+                  : { kind: "function" as const, run: opening.id }),
+                start: opening.thread !== undefined,
+              };
+        const runBriefing: RunBriefingFacts = {
+          agent: ref,
+          thread: data.thread,
+          loop: bodyOrDefault === undefined ? "default" : "handler",
+          ...(starter && { starter }),
+          ...(opener && { opener }),
+
+          reports: Object.entries(reportSpec ?? {}).map(([type, entry]) => {
+            return {
+              type,
+              required: entry.required === true,
+              ...(entry.schema !== undefined && { schema: entry.schema }),
+              to: [
+                ...new Set(
+                  entry.to.map((destination) => {
+                    return destination.agent;
+                  }),
+                ),
+              ],
+            };
+          }),
+          group: groupOf(data.thread) !== undefined,
+          ...(limits.limits.depth !== undefined && {
+            depth: limits.limits.depth,
+          }),
+        };
+
+        registerBriefingFacts(instance, runBriefing);
+
         const handlerLoop = await createHandlerLoop({
           client,
           logger,
@@ -1031,6 +1180,8 @@ export function createAgentFunction(
           fields,
           skills: runSkills,
           lentEnded,
+          briefing: runBriefing,
+          related: starter !== undefined || runBriefing.group,
           listenTools: {
             ...sandboxTools(opened),
             ...listenTools,
@@ -1131,11 +1282,12 @@ export function createAgentFunction(
             loop: handlerLoop,
           });
 
-          // The last thread work is done: end the subscription before the
-          // sandboxes close. A second close, from the scope exit, does nothing.
+          // The last thread work is done: end the inbox. The thread-state
+          // copies stay until the sandboxes have closed, since closing them
+          // touches thread state (a second close, from the scope exit, does
+          // nothing).
           await flushOwes(instance, owes).catch(() => undefined);
           await inbox.close();
-          await closeThreadCopies(instance);
 
           // A score the handler did not await is still written.
           await agentScore.flush();
@@ -1147,6 +1299,8 @@ export function createAgentFunction(
         }
 
         const rejected = await closeAll();
+
+        await closeThreadCopies(instance);
 
         // The body succeeded, so an eager sandbox nothing used that failed to
         // create is a warning, not a failed run.
@@ -1190,6 +1344,9 @@ export function createAgentFunction(
     card: cardOf(client.id, config.id, fn, {
       card: config.card,
       description: config.description,
+      ...(source && { source }),
+      tools: cardToolsOf(config),
+      logger: client[internalLoggerSymbol],
       skills: definedSkills.map((skill) => {
         return { name: skill.name, description: skill.description };
       }),

@@ -26,6 +26,13 @@ export class QuestionBook {
   }
 
   /**
+   * Whether any question has reached the inbox in this run.
+   */
+  hasReceived(): boolean {
+    return this.received.size > 0;
+  }
+
+  /**
    * A question that reached the inbox, by its ID.
    */
   question(id: string): QuestionRef | undefined {

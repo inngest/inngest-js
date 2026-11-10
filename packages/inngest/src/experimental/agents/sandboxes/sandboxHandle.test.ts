@@ -80,3 +80,30 @@ describe("the handler's handle", () => {
     expect(env.runs).toEqual(["echo,1", "echo,2"]);
   });
 });
+
+describe("the default cwd", () => {
+  const start = (definition: Record<string, unknown>) => {
+    const env = fakeEnvironment();
+    const made = sandbox(definition as { id: string; repo: { url: string } });
+
+    return openSandboxes({ s: made }, env.sandboxes).s;
+  };
+
+  test("a sandbox with no repo and no cwd starts in /tmp, which every image has", () => {
+    expect(start({ id: "s" })?.cwd).toBe("/tmp");
+  });
+
+  test("a sandbox with a repo starts in /work", () => {
+    expect(start({ id: "s", repo: { url: "acme/app" } })?.cwd).toBe("/work");
+  });
+
+  test("a repo's own path is where the sandbox starts", () => {
+    expect(
+      start({ id: "s", repo: { url: "acme/app", path: "/src/app" } })?.cwd,
+    ).toBe("/src/app");
+  });
+
+  test("an explicit cwd wins without a repo", () => {
+    expect(start({ id: "s", cwd: "/srv" })?.cwd).toBe("/srv");
+  });
+});

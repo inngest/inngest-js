@@ -14,6 +14,7 @@ import { createAgents } from "./agents.ts";
 import {
   agentToolSet,
   agentToolsFor,
+  codeAgentTools,
   sandboxAgentTools,
 } from "./agentTools.ts";
 import {
@@ -287,9 +288,10 @@ describe("reply", () => {
     expect(sent).toEqual([]);
   });
 
-  test("is there with discovery false, alone", () => {
-    expect(Object.keys(agentToolsFor(false))).toEqual(["reply"]);
-    expect(Object.keys(agentToolsFor(undefined))).toContain("reply");
+  test("is not in the starting set: the loop adds it with the first question", () => {
+    expect(Object.keys(agentToolsFor(false))).toEqual([]);
+    expect(Object.keys(agentToolsFor(true))).not.toContain("reply");
+    expect(Object.keys(agentToolsFor(undefined, true))).not.toContain("reply");
   });
 });
 
@@ -610,6 +612,22 @@ describe("stop_agent", () => {
 });
 
 describe("the tools sandbox code gets", () => {
+  test("runCode gets discovery and the agent tools with discovery on, none without", () => {
+    expect(Object.keys(codeAgentTools(true)).sort()).toEqual([
+      "agent_result",
+      "describe_agent",
+      "list_agents",
+      "message_agent",
+      "start_agent",
+      "stop_agent",
+    ]);
+    expect(codeAgentTools({}).agent_result).toMatchObject({
+      waits: true,
+    });
+    expect(codeAgentTools(false)).toEqual({});
+    expect(codeAgentTools(undefined)).toEqual({});
+  });
+
   test("hold start_agent and stop_agent plus the waiting agent_result", () => {
     const tools = sandboxAgentTools();
 

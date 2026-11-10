@@ -22,7 +22,18 @@ export type {
 } from "../../components/sandbox/gitPush.ts";
 export type { SandboxHandle } from "../../components/sandbox/types.ts";
 export * from "./agent/agents.ts";
-export type { AgentBudget, AgentLimits } from "./agent/limits.ts";
+export type {
+  Briefing,
+  BriefingContext,
+  BriefingFacts,
+  BriefingOption,
+  BriefingParts,
+  BriefingParty,
+  BriefingReport,
+  BriefingSections,
+} from "./agent/briefing.ts";
+export { briefingFacts, renderBriefing } from "./agent/briefing.ts";
+export type { AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
 export type { ResultOptions } from "./agent/runResults.ts";
@@ -46,11 +57,6 @@ export type {
   AgentCompaction,
   AgentCompactionOptions,
 } from "./loop/context.ts";
-export type {
-  AgentPrice,
-  AgentPriceFunction,
-  AgentPriceTable,
-} from "./loop/cost.ts";
 export type {
   AgentContentBlock,
   AgentEvent,

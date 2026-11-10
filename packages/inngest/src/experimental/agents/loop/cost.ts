@@ -1,9 +1,8 @@
 /**
  * @module
- * EXPERIMENTAL: what a model call costs, from prices you supply. The SDK knows
- * no prices: a `price` function, or a table of rates per model, turns the
- * tokens of each model call into US dollars, the loop adds them up, and a
- * `budget.usd` stops the thread like a token budget does.
+ * EXPERIMENTAL: what a model call costs. Internal: a model that knows its own
+ * prices (`anthropic()` does) turns the tokens of a call into US dollars with
+ * a table of rates per model, and the loop adds them up.
  */
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { AgentUsage } from "./loop.ts";
@@ -17,7 +16,7 @@ import type { AgentUsage } from "./loop.ts";
  * stops the run with a `NonRetriableError`, since a retry would price it the
  * same.
  */
-export type AgentPriceFunction = (
+export type PriceFunction = (
   usage: AgentUsage,
   model: string | undefined,
 ) => number;
@@ -26,7 +25,7 @@ export type AgentPriceFunction = (
  * Rates in USD per million tokens, by model name. `"*"` is the rate for any
  * model not named.
  */
-export type AgentPriceTable = Record<
+export type PriceTable = Record<
   string,
   {
     /**
@@ -62,7 +61,7 @@ export type AgentPriceTable = Record<
 /**
  * How to price a model call: a function, or a table of rates per model.
  */
-export type AgentPrice = AgentPriceFunction | AgentPriceTable;
+export type Price = PriceFunction | PriceTable;
 
 const checked = (cost: number): number => {
   if (!Number.isFinite(cost) || cost < 0) {
@@ -81,7 +80,7 @@ const checked = (cost: number): number => {
  * `NonRetriableError`.
  */
 export const priceOf = (
-  price: AgentPrice,
+  price: Price,
   usage: AgentUsage,
   model: string | undefined,
 ): number => {

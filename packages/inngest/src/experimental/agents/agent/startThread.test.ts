@@ -333,29 +333,6 @@ describe("start() limits", () => {
     expect(carried.grant.lines).toContain("depth=3");
     expect(carried.grant.lines).toContain("depth=2");
   });
-
-  test("nothing of the starter's budget is handed to the thread it starts", async () => {
-    const { agents, sent } = setup();
-    const callee = agents.agent({ id: "callee", budget: { tokens: 100000 } });
-    const caller = agents.agent(
-      { id: "caller", budget: { tokens: 5 } },
-      async () => {
-        await callee.start("x");
-      },
-    );
-
-    await run(caller.fn, { event: startedWith(2, 1) });
-
-    const message = sent.find((e) => e.name === "agent/message");
-    const grant = verifyGrant(
-      new Inngest({ id: testClientId }),
-      (message?.data["::agents"] as { grant: unknown }).grant,
-      message?.data.thread as string,
-    );
-
-    expect(grant?.limits).toEqual({ depth: 1 });
-    expect(message?.data.from).not.toHaveProperty("limits");
-  });
 });
 
 describe("start() without await", () => {

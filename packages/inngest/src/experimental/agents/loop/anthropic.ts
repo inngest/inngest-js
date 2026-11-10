@@ -12,12 +12,14 @@
  */
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { renderToolDescription } from "../../../components/sandbox/toolDescription.ts";
 import {
   issuesMessage,
   type ToolJsonDefinition,
   toJsonSchema,
 } from "../../../components/sandbox/tools.ts";
-import { type AgentPriceTable, priceOf } from "./cost.ts";
+import type { BriefingParts } from "../agent/briefing.ts";
+import { type PriceTable, priceOf } from "./cost.ts";
 import type {
   AgentModel,
   AgentModelRequest,
@@ -92,7 +94,7 @@ export interface AnthropicClient {
 export interface AnthropicOptions {
   /**
    * The model, such as `"claude-sonnet-5-5"`. It is also the name the call is
-   * priced under, so use an ID that `anthropicPrices` (or your own `price`)
+   * priced under, so use an ID that `anthropicPrices`
    * names.
    */
   model: string;
@@ -230,6 +232,14 @@ export interface AnthropicCall {
   system?: string;
 
   /**
+   * EXPERIMENTAL: The agent's briefing, which the loop passes. It goes after
+   * `system` in two blocks with a cache breakpoint on each: `runtime`, stable
+   * for an agent with the same tools, so it caches with the tools across
+   * runs, then `situation`, stable for the run.
+   */
+  briefing?: BriefingParts;
+
+  /**
    * The conversation. Default: one user message with `prompt`.
    */
   messages?: ModelMessage[];
@@ -311,6 +321,11 @@ export interface AnthropicModel extends ModelValue {
    * The model's context size in tokens.
    */
   readonly contextWindow: number;
+
+  /**
+   * Always true: the adapter places the agent's briefing itself.
+   */
+  readonly placesBriefing: true;
 }
 
 const defaultContextWindow = 200_000;
@@ -320,9 +335,8 @@ type Param = { role: "user" | "assistant"; content: Block[] };
 
 /**
  * USD per million tokens for the current Claude models, in the shape
- * the agent's `price` and `agent.loop({ price })` take. The SDK keeps this list
- * for convenience and Anthropic can change a price; spread it and add or
- * replace an entry to override. Haiku 5.5 is priced at its rate for prompts up
+ * the SDK prices Anthropic calls with. It keeps this list for convenience and
+ * Anthropic can change a price. Haiku 5.5 is priced at its rate for prompts up
  * to 100,000 tokens.
  *
  * @example
@@ -330,7 +344,7 @@ type Param = { role: "user" | "assistant"; content: Block[] };
  * limits: { price: { ...anthropicPrices, "claude-x": { input: 1, output: 5 } } }
  * ```
  */
-export const anthropicPrices: AgentPriceTable = (() => {
+export const anthropicPrices: PriceTable = (() => {
   // Cache writes cost 1.25x the input rate for five minutes and 2x for an
   // hour. Cache reads cost 0.1x, except where the model's page says otherwise.
   const rate = (input: number, output: number, cacheRead = input / 10) => {
@@ -537,8 +551,10 @@ const outputToolName = "respond";
 const outputTool = (schema: StandardSchemaV1): ToolJsonDefinition => {
   return {
     name: outputToolName,
-    description:
-      "Give your reply by calling this tool once. Its input is the reply.",
+    description: renderToolDescription({
+      does: "Gives your reply: its input is the reply.",
+      use: "once, as your whole reply",
+    }),
     input_schema: toJsonSchema(outputToolName, schema),
   };
 };
@@ -605,6 +621,7 @@ const buildBody = (
   ];
   const request: AgentModelRequest = {
     system: call.system,
+    ...(call.briefing && { briefing: call.briefing }),
     messages,
     tools: call.tools ?? [],
     turn: call.turn ?? 1,
@@ -634,12 +651,25 @@ const buildBody = (
   const listed = call.output
     ? [...request.tools, outputTool(call.output)]
     : request.tools;
+  // The system prompt is the app's `system` with the briefing's runtime
+  // section, then the situation: a breakpoint on each, so the first caches
+  // across runs of an agent and only the second is written again for a new
+  // run. With the two in the conversation that is four breakpoints, the
+  // API's limit. A briefing the agent replaced has no runtime section.
+  const head = [request.system, request.briefing?.runtime]
+    .filter(Boolean)
+    .join("\n\n");
+  const system = [head, request.briefing?.situation ?? ""]
+    .filter(Boolean)
+    .map((text) => {
+      return { ...textBlock(text), ...(control && { cache_control: control }) };
+    });
   const tools =
     listed.length > 0
       ? listed.map((tool, index) => {
           // With no system prompt to carry it, the last tool carries the
           // breakpoint that caches the tools.
-          return control && !request.system && index === listed.length - 1
+          return control && system.length === 0 && index === listed.length - 1
             ? withCacheControl(tool, control)
             : tool;
         })
@@ -648,14 +678,7 @@ const buildBody = (
   return {
     model: options.model,
     max_tokens: options.maxTokens ?? defaultMaxTokens,
-    ...(request.system && {
-      system: [
-        {
-          ...textBlock(request.system),
-          ...(control && { cache_control: control }),
-        },
-      ],
-    }),
+    ...(system.length > 0 && { system }),
     ...(tools && { tools }),
     ...(tools &&
       request.toolChoice !== undefined && {
@@ -794,8 +817,7 @@ const importClient = async (
  *    with other options for one loop or one call. `client`, `apiKey` and
  *    `baseURL` cannot change.
  *
- * It reports each call's cost from a built-in price table, so a dollar budget
- * works with no price.
+ * It reports each call's cost from a built-in price table.
  *
  * - Prompt caching is on: breakpoints on the system prompt (with the tools)
  *   and on the end of the conversation. `usage` reports `cacheRead` and
@@ -932,6 +954,7 @@ export const anthropic = (options: AnthropicOptions): AnthropicModel => {
 
     return Object.assign(agentModel(call as unknown as AgentModel), {
       contextWindow: current.contextWindow ?? defaultContextWindow,
+      placesBriefing: true as const,
       with: (overrides: AnthropicOverrides) => {
         return make({
           ...current,

@@ -10,13 +10,19 @@
 
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
+import { callSite } from "../../../components/sandbox/callSite.ts";
 import {
   hostSharedTool,
   type SharedTool,
 } from "../../../components/sandbox/tools.ts";
 import type { EventTypeWithAnySchema } from "../../../components/triggers/triggers.ts";
-import { announceFunction, rememberCard } from "../discovery/discovery.ts";
+import {
+  announceFunction,
+  announceOnSync,
+  rememberCard,
+} from "../discovery/discovery.ts";
 import { type KvStore, setAppKvStore, usesLedger } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
@@ -326,6 +332,11 @@ export interface CreateAgentsOptions {
  * });
  * ```
  *
+ * The app announces its agents' cards (see `agents/registered`) each time it
+ * is synced with Inngest, if they changed since the last announcement of this
+ * process, and every 6 hours from a cron as a fallback. Announcing on sync
+ * needs an event key (none in dev) and happens in the serve handler's `PUT`.
+ *
  * @param client Inngest client.
  * @param options Where the agents keep their state.
  */
@@ -333,6 +344,15 @@ export const createAgents = <TClient extends Inngest.Any>(
   client: TClient,
   options: CreateAgentsOptions = {},
 ): Agents<TClient> => {
+  // Agents read and write with `step.subscribe()`, which only exists on
+  // `step` once `inboxMiddleware()` is registered. The user should not have
+  // to know that and add it themselves, so it is added here instead - once,
+  // whether or not they already added it, since a client's `middleware` is
+  // read fresh per request rather than snapshotted at construction.
+  if (!client.middleware.includes(InboxMiddleware)) {
+    client.middleware.push(InboxMiddleware);
+  }
+
   if (options.store) {
     setAppKvStore(client.id, options.store);
   }
@@ -351,6 +371,8 @@ export const createAgents = <TClient extends Inngest.Any>(
     announceFunctions.set(client, announceFunction(client));
   }
 
+  announceOnSync(client);
+
   return {
     // One implementation backs every overload of `Agents["agent"]`. The
     // overloads differ only in how they type `config` and `body`, which the
@@ -364,6 +386,7 @@ export const createAgents = <TClient extends Inngest.Any>(
         client,
         config as AgentFunctionConfig,
         body,
+        callSite(),
       );
 
       made.push(created);
@@ -435,17 +458,26 @@ export type {
 export type {
   AgentCard,
   AgentCardConfig,
+  AgentCardDescription,
   AgentCardSkill,
   AgentDiscovery,
+  AgentDiscoveryOptions,
   AgentEffects,
+  AgentRoster,
   AgentShare,
   AgentSummary,
   AgentsRegisteredData,
+  AnnouncedCard,
+  CacheScope,
   DiscoveryEntry,
   DiscoveryFilter,
   DiscoveryToolSet,
 } from "../discovery/discovery.ts";
-export { addressOf, matchesDiscovery } from "../discovery/discovery.ts";
+export {
+  addressOf,
+  matchesDiscovery,
+  publicCardOf,
+} from "../discovery/discovery.ts";
 export type {
   AgentAnswerData,
   AgentFinishedData,

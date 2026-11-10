@@ -4,7 +4,8 @@
  * it, how the current cards are read back and the two discovery tools.
  */
 import { z } from "zod/v4";
-import { Inngest } from "../../../components/Inngest.ts";
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import { Inngest, internalLoggerSymbol } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { createFnRunner, testClientId } from "../../../test/helpers.ts";
@@ -14,18 +15,19 @@ import { agentToolSet } from "../agent/agentTools.ts";
 import { signCards } from "../agent/relations.ts";
 import { memoryKvAdapter } from "../kv/kv.ts";
 import {
-  type AgentCard,
+  type AnnouncedCard,
   addressOf,
   agentsRegisteredEvent,
   announceCron,
   announcement,
+  cardsFreshMs,
   currentCards,
   discoveryToolSet,
   discoveryToolsFor,
-  matchCards,
   matchesDiscovery,
   mayUse,
   prepareInput,
+  publicCardOf,
   readCards,
   validateDiscoveryList,
 } from "./discovery.ts";
@@ -34,7 +36,7 @@ const client = new Inngest({ id: testClientId });
 
 // What an app's announcement carries: its cards and the signature over them.
 // The fake clients below have no signing key, like the real one in this file.
-const signedData = (app: string, cards: AgentCard[]) => {
+const signedData = (app: string, cards: AnnouncedCard[]) => {
   return { app, cards, sig: signCards({ id: app } as Inngest.Any, cards) };
 };
 const agents = createAgents(client, { store: memoryKvAdapter() });
@@ -68,17 +70,98 @@ const described = agents.agent(
   },
 );
 
-const card = (over: Partial<AgentCard> & { address: string }) => {
-  return { share: "private", effects: "write", ...over } as AgentCard;
+// A card whose description is in parts.
+const triage = agents.agent(
+  {
+    id: "triage",
+    card: {
+      description: {
+        does: "Routes a support request to the right team",
+        use: "when you do not know who should handle a request",
+        avoid: "for requests you can answer yourself",
+      },
+      share: "team",
+      effects: "read",
+    },
+    triggers: invoke(z.object({ request: z.string() })),
+  },
+  async () => {
+    return { team: "billing" };
+  },
+);
+
+const triageText =
+  "Routes a support request to the right team. Use it when you do not know who should handle a request. Don't use it for requests you can answer yourself.";
+
+const card = (over: Partial<AnnouncedCard> & { address: string }) => {
+  return {
+    share: "private",
+    effects: "write",
+    capabilities: [],
+    ...over,
+  } as AnnouncedCard;
 };
 
 describe("an agent's card", () => {
+  test("a string description is kept as written", () => {
+    expect(docs.card.description).toBe("Answers questions about the docs");
+  });
+
+  test("a description in parts is announced as the rendered string", () => {
+    expect(triage.card.description).toBe(triageText);
+
+    const announced = announcement(client).data.cards.find((c) => {
+      return c.address === `${testClientId}/triage`;
+    });
+
+    expect(announced?.description).toBe(triageText);
+    expect(announced).not.toHaveProperty("context");
+  });
+
+  test("parts render like a tool's: clauses get their lead, whole sentences stay", () => {
+    const made = agents.agent(
+      {
+        id: "phrased",
+        card: {
+          description: {
+            does: "Does a thing",
+            use: "Only for things",
+            avoid: "Never for other things",
+          },
+        },
+      },
+      async () => {
+        return {};
+      },
+    );
+
+    expect(made.card.description).toBe(
+      "Does a thing. Only for things. Never for other things.",
+    );
+  });
+
+  test("a description with only `does` is one sentence", () => {
+    const made = agents.agent(
+      { id: "plain-parts", card: { description: { does: "Does it" } } },
+      async () => {
+        return {};
+      },
+    );
+
+    expect(made.card.description).toBe("Does it.");
+  });
+
   test("is made from the card field and the invoke() trigger", () => {
     expect(docs.card).toEqual({
+      source: expect.objectContaining({
+        file: expect.stringMatching(/discovery\.test\.ts$/),
+      }),
       address: `${testClientId}/docs`,
       description: "Answers questions about the docs",
       input: expect.objectContaining({ required: ["question"] }),
       tags: ["docs", "support"],
+      // No card.capabilities was given, so it is derived from tags.
+      capabilities: ["docs", "support"],
       share: "team",
       owner: "docs-team",
       effects: "read",
@@ -88,10 +171,49 @@ describe("an agent's card", () => {
 
   test("without a card field it is private, write and has only its address", () => {
     expect(secret.card).toEqual({
+      source: expect.objectContaining({ line: expect.any(Number) }),
       address: `${testClientId}/secret`,
       share: "private",
       effects: "write",
+      // No capabilities and no tags to derive them from.
+      capabilities: [],
     });
+  });
+
+  test("a card without capabilities derives them from tags, and warns", () => {
+    const warn = vi.spyOn(client[internalLoggerSymbol], "warn");
+
+    const derived = agents.agent(
+      { id: "derives-caps", card: { tags: ["billing", "refunds"] } },
+      async () => {
+        return null;
+      },
+    );
+
+    expect(derived.card.capabilities).toEqual(["billing", "refunds"]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: `${testClientId}/derives-caps` }),
+      expect.stringContaining("capabilities"),
+    );
+    warn.mockRestore();
+  });
+
+  test("a card with its own capabilities uses them, not the tags", () => {
+    const made = agents.agent(
+      {
+        id: "has-caps",
+        card: {
+          capabilities: ["billing questions"],
+          tags: ["billing"],
+        },
+      },
+      async () => {
+        return null;
+      },
+    );
+
+    expect(made.card.capabilities).toEqual(["billing questions"]);
+    expect(made.card.tags).toEqual(["billing"]);
   });
 
   test("the description falls back to the function's own description", () => {
@@ -168,34 +290,8 @@ describe("sharing and matching", () => {
     expect(mayUse(b, "a")).toBe(true);
   });
 
-  test("a query matches address, description and skills, best first", () => {
-    const cards = [
-      card({
-        address: "a/one",
-        description: "Writes code",
-        skills: [{ name: "refactor", description: "Rename things safely" }],
-      }),
-      card({ address: "a/two", description: "Answers questions" }),
-    ];
-
-    const ids = (query?: string) => {
-      return matchCards(cards, query).map(addressOf);
-    };
-
-    expect(ids("questions")).toEqual(["a/two"]);
-    expect(ids("rename")).toEqual(["a/one"]);
-    expect(ids("one")).toEqual(["a/one"]);
-    expect(ids()).toHaveLength(2);
-    expect(ids("zebra")).toEqual([]);
-  });
-
-  test("a query matches a card's tags", () => {
-    const cards = [
-      card({ address: "a/one", description: "Writes code", tags: ["sdk"] }),
-      card({ address: "a/two", description: "Answers questions" }),
-    ];
-
-    expect(matchCards(cards, "sdk").map(addressOf)).toEqual(["a/one"]);
+  test("addressOf reads a card's address", () => {
+    expect(addressOf(a)).toBe("a/x");
   });
 
   test("a card without tags publishes none, and empty tags are dropped", () => {
@@ -212,7 +308,12 @@ describe("sharing and matching", () => {
 });
 
 describe("reading the current cards", () => {
-  const event = (id: string, app: string, cards: AgentCard[], ts?: number) => {
+  const event = (
+    id: string,
+    app: string,
+    cards: AnnouncedCard[],
+    ts?: number,
+  ) => {
     return {
       id,
       internalId: id,
@@ -347,7 +448,7 @@ describe("reading the current cards", () => {
 });
 
 describe("paused and gone agents", () => {
-  const reader = (cards: AgentCard[], app = "other") => {
+  const reader = (cards: AnnouncedCard[], app = "other") => {
     return {
       id: testClientId,
       listEvents: vi.fn(async () => {
@@ -438,12 +539,18 @@ describe("the tools", () => {
   const runTools = async (
     calls: { name: string; input: Record<string, unknown> }[],
     options: Parameters<typeof discoveryToolSet>[0] = {},
+    self?: string, // the address of the agent that calls, if it is one
   ) => {
     const tools = discoveryToolSet(options);
     const fn = client.createFunction(
       { id: "caller", triggers: [{ event: "foo" }] },
       async () => {
         const out: unknown[] = [];
+        const execution = getAsyncCtxSync()?.execution;
+
+        if (self && execution) {
+          execution.agent = { thread: "t1", ref: self };
+        }
 
         for (const { name, input } of calls) {
           const resolved = await resolveToolCall(
@@ -516,6 +623,82 @@ describe("the tools", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  test("list_agents never lists the agent that calls, which can still describe itself", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        { name: "describe_agent", input: { address: `${testClientId}/docs` } },
+      ],
+      {
+        functions: async () => {
+          return new Map([["docs", { paused: false, archived: false }]]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+
+    expect(listed(result)).not.toContain(`${testClientId}/docs`);
+    expect(listed(result)).toContain("other-app/docs");
+    expect((result as { data: unknown[] }).data[1]).toMatchObject({
+      address: `${testClientId}/docs`,
+    });
+  });
+
+  test("list_agents returns everyone visible, with no query to narrow it, and says so", async () => {
+    const tools = discoveryToolSet();
+
+    expect(JSON.stringify(tools.list_agents.description)).toMatch(
+      /whole list/i,
+    );
+    expect(JSON.stringify(tools.list_agents.input)).not.toMatch(/query/);
+  });
+
+  test("list_agents' answer carries ttlMs and cacheScope: private", async () => {
+    const result = await runTools([{ name: "list_agents", input: {} }], {
+      functions: async () => {
+        return new Map([["docs", { paused: false, archived: false }]]);
+      },
+    });
+    const [roster] = (result as { data: unknown[] }).data as [
+      { ttlMs: number; cacheScope: string },
+    ];
+
+    expect(roster.ttlMs).toBe(cardsFreshMs);
+    expect(roster.cacheScope).toBe("private");
+  });
+
+  test("list_agents and describe_agent show a description in parts as one paragraph", async () => {
+    const result = await runTools(
+      [
+        { name: "list_agents", input: {} },
+        {
+          name: "describe_agent",
+          input: { address: `${testClientId}/triage` },
+        },
+      ],
+      {
+        functions: async () => {
+          return new Map([["triage", { paused: false, archived: false }]]);
+        },
+      },
+      `${testClientId}/docs`,
+    );
+    const data = (result as { data: unknown[] }).data;
+    const listedAgents = (
+      data[0] as { agents: { address: string; description?: string }[] }
+    ).agents;
+
+    expect(
+      listedAgents.find((a) => {
+        return a.address === `${testClientId}/triage`;
+      })?.description,
+    ).toBe(triageText);
+    expect(data[1]).toMatchObject({
+      address: `${testClientId}/triage`,
+      description: triageText,
+    });
   });
 
   test("list_agents lists same-app agents and shared ones of other apps", async () => {
@@ -599,34 +782,52 @@ describe("the tools", () => {
     expect(JSON.stringify(whole)).toMatch(/"input"/);
     expect(JSON.stringify(hidden)).toMatch(/is shared with you/);
     expect(JSON.stringify(unknown)).toMatch(/is shared with you/);
+    // The card the model sees carries no roster inputs: a reader can never
+    // learn `share`/`explicit` from the card itself, only from being let
+    // through or not.
+    expect(whole).not.toHaveProperty("share");
+    expect(whole).not.toHaveProperty("explicit");
   });
 
-  test("a second call in a run reads nothing; refresh reads again", async () => {
+  test("a read is reused for 30 seconds, then read again; refresh is ignored", async () => {
+    let clock = 1_000_000;
+    let advance = 0;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => {
+      return clock;
+    });
     const options = {
       functions: async () => {
+        // Each read takes `advance` of the clock with it.
+        clock += advance;
+
         return new Map([["docs", { paused: false, archived: false }]]);
       },
     };
 
-    await runTools(
-      [
-        { name: "list_agents", input: {} },
-        { name: "list_agents", input: {} },
-        { name: "describe_agent", input: { address: "other-app/docs" } },
-      ],
-      options,
-    );
-    expect(reads).toBe(1);
+    try {
+      await runTools(
+        [
+          { name: "list_agents", input: {} },
+          { name: "list_agents", input: { refresh: true } },
+          { name: "describe_agent", input: { address: "other-app/docs" } },
+        ],
+        options,
+      );
+      expect(reads).toBe(1);
 
-    reads = 0;
-    await runTools(
-      [
-        { name: "list_agents", input: {} },
-        { name: "list_agents", input: { refresh: true } },
-      ],
-      options,
-    );
-    expect(reads).toBe(2);
+      reads = 0;
+      advance = cardsFreshMs;
+      await runTools(
+        [
+          { name: "list_agents", input: {} },
+          { name: "list_agents", input: {} },
+        ],
+        options,
+      );
+      expect(reads).toBe(2);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 
@@ -647,9 +848,10 @@ describe("the tools run as groups", () => {
 });
 
 describe("discovery on the definition", () => {
-  test("false removes both tools; anything else keeps them", () => {
+  test("discovery is opt-in: true or options give both tools, nothing else does", () => {
     expect(Object.keys(discoveryToolsFor(false))).toEqual([]);
-    expect(Object.keys(discoveryToolsFor(undefined)).sort()).toEqual([
+    expect(Object.keys(discoveryToolsFor(undefined))).toEqual([]);
+    expect(Object.keys(discoveryToolsFor(true)).sort()).toEqual([
       "describe_agent",
       "list_agents",
     ]);
@@ -697,6 +899,24 @@ describe("discovery on the definition", () => {
     expect(
       await prepareInput({}, { card: card({ address: "a/b" }), input }),
     ).toBe(input);
+  });
+});
+
+describe("publicCardOf", () => {
+  test("strips the roster inputs, keeping the rest of the card", () => {
+    const announced = card({
+      address: "a/b",
+      share: "team",
+      explicit: true,
+      description: "Does a thing",
+    });
+
+    expect(publicCardOf(announced)).toEqual({
+      address: "a/b",
+      capabilities: [],
+      effects: "write",
+      description: "Does a thing",
+    });
   });
 });
 

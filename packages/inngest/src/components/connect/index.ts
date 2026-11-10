@@ -2,6 +2,7 @@ import { envKeys } from "../../helpers/consts.ts";
 import { getProcessEnv } from "../../helpers/env.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
+import { getHostname } from "./os.ts";
 import { type ConnectionStrategy, createStrategy } from "./strategies/index.ts";
 import {
   type ConnectApp,
@@ -81,6 +82,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
     }
 
+    if (options.instanceId === undefined) {
+      const envValue = env[envKeys.InngestConnectInstanceId];
+      if (envValue) {
+        options.instanceId = envValue;
+      }
+    }
+
     return options;
   }
 
@@ -134,6 +142,17 @@ class WebSocketWorkerConnection implements WorkerConnection {
       { attempt },
       "Establishing connection",
     );
+
+    if (!this.options.instanceId) {
+      this.options.instanceId = await getHostname();
+    }
+
+    // checkpoint requests from each connected app send this instance ID in
+    // the x-inngest-instance-id header.
+    for (const app of this.options.apps) {
+      (app.client as Inngest.Any)["_connectInstanceId"] =
+        this.options.instanceId;
+    }
 
     const {
       hashedSigningKey,

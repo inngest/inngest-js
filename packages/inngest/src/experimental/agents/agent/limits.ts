@@ -1,13 +1,10 @@
 /**
  * @module
- * EXPERIMENTAL: what an agent may start and spend. An agent declares `limits`
- * (`depth`) and a `budget` in its config. Calls to other agents enforce
- * `depth`, and an agent it starts inherits it narrowed, along with the
- * `discovery` lists the chain set, so a sub-agent is never allowed more than
- * its parent. The `discovery` lists are enforced where a model finds and
- * starts agents, not here. The budget
- * is the agent's own: each thread has the budget of its own agent's
- * definition, which the loop always enforces, and it is never handed down.
+ * EXPERIMENTAL: what an agent may start. An agent declares `limits` (`depth`)
+ * in its config. Calls to other agents enforce `depth`, and an agent it starts
+ * inherits it narrowed, along with the `discovery` lists the chain set, so a
+ * sub-agent is never allowed more than its parent. The `discovery` lists are
+ * enforced where a model finds and starts agents, not here.
  *
  * Limits gate calls made through the SDK only. A raw `step.invoke` or
  * `sendEvent` to another agent is not checked.
@@ -18,35 +15,6 @@ import type {
 } from "../discovery/match.ts";
 import { normalizeDiscoveryList } from "../discovery/match.ts";
 import type { AgentUsage } from "../loop/loop.ts";
-
-/**
- * How much a thread may spend. A field left out is not limited. The thread's
- * usage counts every model call of the thread, across runs.
- */
-export interface AgentBudget {
-  /**
-   * Input plus output tokens.
-   */
-  tokens?: number;
-
-  /**
-   * Input tokens.
-   */
-  input?: number;
-
-  /**
-   * Output tokens.
-   */
-  output?: number;
-
-  /**
-   * Cost in US dollars, summed from what each model call cost. The model
-   * reports its own cost when it knows its prices (`anthropic()` does);
-   * the agent's `price` overrides it, and a model that reports no cost counts
-   * nothing toward the budget until it has one.
-   */
-  usd?: number;
-}
 
 /**
  * What an agent may start and spend. Every field is optional.
@@ -64,7 +32,6 @@ export interface AgentLimits {
 /**
  * What an agent runs with after its own `limits` are narrowed by the limits
  * of the agent that started it. This is what travels in the invoke payload.
- * The budget is not part of it.
  */
 export interface EffectiveLimits {
   /**
@@ -88,7 +55,7 @@ export interface EffectiveLimits {
  * which limit and why, so a model reading it as a tool error can react.
  */
 export class AgentLimitError extends Error {
-  public readonly limit: "depth" | "budget";
+  public readonly limit: "depth";
 
   constructor(
     /**
@@ -112,37 +79,8 @@ export class AgentLimitError extends Error {
  */
 export interface LimitState {
   limits: EffectiveLimits;
-
-  /**
-   * The thread's budget, from its own agent's definition.
-   */
-  budget?: AgentBudget;
   used: AgentUsage;
 }
-
-const budgetFields = ["tokens", "input", "output", "usd"] as const;
-
-/**
- * Dollars for a message: cents when it is a cent or more, else two significant
- * digits, so $0.000030 does not show as $0.00.
- */
-const dollars = (amount: number): string => {
-  return amount >= 0.01 || amount === 0
-    ? amount.toFixed(2)
-    : amount.toPrecision(2);
-};
-
-/**
- * What the thread has spent, field by field.
- */
-const spentOf = (used: AgentUsage) => {
-  return {
-    tokens: used.input + used.output,
-    input: used.input,
-    output: used.output,
-    usd: used.usd ?? 0,
-  };
-};
 
 const isNormalizedEntry = (
   value: unknown,
@@ -366,36 +304,6 @@ export const readInheritedLimits = (
 };
 
 /**
- * Why the budget is spent, or `undefined` while there is some left.
- */
-export const budgetReason = (
-  /**
-   * The execution's limit state.
-   */
-  state: LimitState,
-): string | undefined => {
-  const budget = state.budget;
-
-  if (!budget) {
-    return undefined;
-  }
-
-  const spent = spentOf(state.used);
-
-  for (const field of budgetFields) {
-    const limit = budget[field];
-
-    if (limit !== undefined && spent[field] >= limit) {
-      return field === "usd"
-        ? `Budget spent: $${dollars(spent.usd)} of $${dollars(limit)} used.`
-        : `Budget spent: ${spent[field]} of ${limit} ${field === "tokens" ? "tokens" : `${field} tokens`} used.`;
-    }
-  }
-
-  return undefined;
-};
-
-/**
  * Refuses a call to another agent that the limits do not allow, by throwing an
  * `AgentLimitError`.
  */
@@ -417,20 +325,10 @@ export const checkInvoke = (
       `Refused: ${target} was not started. This agent is too deep in a chain of agents to start another (limits.depth).`,
     );
   }
-
-  const reason = budgetReason(state);
-
-  if (reason) {
-    throw new AgentLimitError(
-      "budget",
-      `Refused: ${target} was not started. ${reason}`,
-    );
-  }
 };
 
 /**
  * The limits to pass to an agent this execution starts: one level less depth.
- * The budget stays with this agent's thread.
  */
 export const childLimits = (
   /**
@@ -470,13 +368,8 @@ export const registerLimits = (
    * What the thread has spent so far.
    */
   used: AgentUsage,
-
-  /**
-   * The thread's budget.
-   */
-  budget?: AgentBudget,
 ): LimitState => {
-  const state = { limits, used, ...(budget && { budget }) };
+  const state = { limits, used };
 
   states.set(instance, state);
 

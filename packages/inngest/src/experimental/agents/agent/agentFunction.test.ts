@@ -159,6 +159,63 @@ describe("agent function", () => {
     ]);
   });
 
+  test.each(["during", "after"] as const)(
+    "a message that arrives %s a one-turn loop is taken by the handler's next drain",
+    async (when) => {
+      const { fn } = createAgentFunction(
+        makeClient(),
+        {
+          id: "bot",
+          model: model(async () => {
+            return say("done");
+          }),
+        },
+        async ({ inbox, loop }) => {
+          const first = await inbox.drain();
+
+          await loop(first);
+
+          const second = await inbox.drain();
+
+          return { first: first.map(textOf), second: second.map(textOf) };
+        },
+      );
+
+      const { output } = await run(fn, {
+        event: trigger("go"),
+        arrive: [{ event: message("user", "late"), at: "agent:model:1", when }],
+      });
+
+      expect(output).toEqual({ first: ["go"], second: ["late"] });
+    },
+  );
+
+  test("a message that arrives while the thread starts is read by the first drain", async () => {
+    const { fn } = createAgentFunction(
+      makeClient(),
+      { id: "bot" },
+      async ({ inbox }) => {
+        return (await inbox.drain()).map(textOf);
+      },
+    );
+
+    const { output, ops } = await run(fn, {
+      event: trigger("go"),
+      arrive: [{ event: message("user", "early"), at: "thread:start" }],
+    });
+
+    expect(output).toEqual(["go", "early"]);
+
+    // The inbox opens first, once, and every replay finds it in the same
+    // place: no second open.
+    expect(ops[0]).toMatchObject({ id: "inbox", op: "open" });
+    expect(
+      ops.filter((op) => {
+        return op.op === "open";
+      }),
+    ).toHaveLength(1);
+  });
+
   test("an inbox message is the event as it came", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
@@ -566,25 +623,16 @@ describe("inbox sources", () => {
         },
       ],
     ]);
-    expect(asked[0]).toEqual([
-      "list_agents",
-      "describe_agent",
-      "start_agent",
-      "message_agent",
-      "ask_agent",
-      "stop_agent",
-      "reply",
-      "inbox_listen",
-      "inbox_close",
-    ]);
+    expect(asked[0]).toEqual(["inbox_listen", "inbox_close", "wait"]);
   });
 
-  test("an agent with no listen gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
+  test("an agent with no listen and discovery: true gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
     const asked: string[][] = [];
     const { fn } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
+        discovery: true,
         model: model(async (request) => {
           asked.push((request.tools ?? []).map((tool) => tool.name));
 
@@ -609,7 +657,7 @@ describe("inbox sources", () => {
         "message_agent",
         "ask_agent",
         "stop_agent",
-        "reply",
+        "wait",
       ],
     ]);
   });
@@ -637,7 +685,7 @@ describe("inbox sources", () => {
 
     await run(fn, { event: trigger("go") });
 
-    expect(asked).toEqual([["reply"]]);
+    expect(asked).toEqual([["wait"]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
@@ -1260,170 +1308,6 @@ describe("event", () => {
 });
 
 describe("agent limits", () => {
-  const spend = (input: number, output: number): AgentModelResponse => {
-    return {
-      message: { role: "assistant", content: [] },
-      toolCalls: [{ id: "c1", name: "missing", input: {} }],
-      usage: { input, output },
-    };
-  };
-
-  test("the loop stops before the next model call once the budget is spent", async () => {
-    let calls = 0;
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        budget: { tokens: 20 },
-        model: model(async () => {
-          calls += 1;
-
-          return spend(8, 4);
-        }),
-      },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-        const result = await loop(first ? [first] : "");
-
-        return [result.end, result.turns, result.reason];
-      },
-    );
-
-    const { output } = await run(fn, { event: trigger("go") });
-
-    expect(calls).toBe(2);
-    expect(output).toEqual([
-      "budget",
-      2,
-      "Budget spent: 24 of 20 tokens used.",
-    ]);
-  });
-
-  test("a budget handed down by the starter is not inherited: the agent's own definition decides", async () => {
-    let models = 0;
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        model: model(async () => {
-          models += 1;
-
-          return {
-            message: { role: "assistant", content: [] },
-            text: "ok",
-            toolCalls: [],
-            usage: { input: 50, output: 50 },
-          };
-        }),
-      },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-        const result = await loop(first ? [first] : "");
-
-        return result.end;
-      },
-    );
-    const { output } = await run(fn, { event: granted("go", ["depth=1"]) });
-
-    expect(models).toBe(1);
-    expect(output).not.toBe("budget");
-  });
-
-  test("a budget function gets the event and the thread, and the first result is kept for the thread's later runs", async () => {
-    freshKv();
-    let later = false;
-    const seen: unknown[] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        budget: ({ event, thread }) => {
-          seen.push([event.name, thread.key]);
-
-          // The thread's first run gets 20 tokens; once `later` is set the
-          // function would give far more.
-          return { tokens: later ? 10_000 : 20 };
-        },
-        model: model(async () => {
-          return spend(8, 4);
-        }),
-      },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-        const result = await loop(first ? [first] : "");
-
-        return result.end;
-      },
-    );
-
-    const first = await run(fn, { event: trigger("go") });
-
-    expect(first.output).toBe("budget");
-    expect(seen[0]).toEqual(["agent/message", "t1"]);
-
-    later = true;
-
-    // The same thread's next run enforces the budget kept on the thread, not
-    // the larger one the function would give now.
-    const again = await run(fn, { event: trigger("more") });
-
-    expect(again.output).toBe("budget");
-  });
-
-  test("price is the agent's own: a table overrides the model's cost and the usd budget spends it", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        budget: { usd: 0.5 },
-        price: { "*": { input: 1_000_000, output: 1_000_000 } },
-        model: model(async () => {
-          return { ...spend(0.2, 0.1), usd: 0 };
-        }),
-      },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-        const result = await loop(first ? [first] : "");
-
-        return [result.end, result.turns];
-      },
-    );
-
-    const { output } = await run(fn, { event: trigger("go") });
-
-    expect(output).toEqual(["budget", 2]);
-  });
-
-  test("a price function is called with the call's tokens and model, and its result is what the budget spends", async () => {
-    const calls: unknown[] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        budget: { usd: 1 },
-        price: (usage, name) => {
-          calls.push([usage.input, usage.output, name]);
-
-          return 0.6;
-        },
-        model: model(async () => {
-          return { ...spend(3, 4), model: "m-1" };
-        }),
-      },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-        const result = await loop(first ? [first] : "");
-
-        return [result.end, result.turns];
-      },
-    );
-
-    const { output } = await run(fn, { event: trigger("go") });
-
-    expect(output).toEqual(["budget", 2]);
-    expect(calls[0]).toEqual([3, 4, "m-1"]);
-  });
-
   test("an agent refuses to start a sub-agent past its inherited depth", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
@@ -1640,14 +1524,15 @@ describe("the loop in an agent", () => {
       id: "bot",
       model: scripted,
       system: "Be brief.",
-      idle: 0,
     });
 
     const { output } = await run(fn, { event: trigger("go") });
 
     expect(output).toBe("all done");
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.system).toBe("Be brief.");
+    expect(requests[0]?.system).toMatch(
+      /^Be brief\.\n\n<inngest-runtime v="1">/,
+    );
   });
 
   test("the definition's loop options apply to the loop the agent builds", async () => {
@@ -1693,10 +1578,12 @@ describe("the loop in an agent", () => {
 
     expect(output).toBe("other");
     expect(own.requests).toHaveLength(0);
-    expect(other.requests[0]?.system).toBe("Agent system.");
+    expect(other.requests[0]?.system).toMatch(
+      /^Agent system\.\n\n<inngest-runtime/,
+    );
   });
 
-  test("a second run of the same thread starts with the first run's history; another thread does not; remember: false stops it", async () => {
+  test("a second run of the same thread starts with the first run's history; another thread does not", async () => {
     const remembered = recording([say("one"), say("two")]);
     const { fn } = createAgentFunction(
       makeClient(),
@@ -1728,21 +1615,5 @@ describe("the loop in an agent", () => {
     await run(otherFn, { event: message("user", "go", "t9") });
 
     expect(other.requests[0]?.messages).toHaveLength(1);
-
-    const clean = recording([say("a"), say("b")]);
-    const { fn: cleanFn } = createAgentFunction(
-      makeClient(),
-      { id: "bot3", model: clean.scripted, remember: false },
-      async ({ inbox, loop }) => {
-        const first = await inbox.next();
-
-        return (await loop(first ? [first] : "")).text;
-      },
-    );
-
-    await run(cleanFn, { event: trigger("first") });
-    await run(cleanFn, { event: trigger("second") });
-
-    expect(clean.requests[1]?.messages).toHaveLength(1);
   });
 });

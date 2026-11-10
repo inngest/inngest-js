@@ -42,6 +42,7 @@ export enum envKeys {
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
   InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
+  InngestConnectInstanceId = "INNGEST_CONNECT_INSTANCE_ID",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -196,6 +197,7 @@ export enum headerKeys {
   InngestStepId = "x-inngest-step-id",
   InngestForceStepPlan = "x-inngest-force-step-plan",
   SdkHandled = "x-inngest-sdk-handled",
+  InstanceId = "x-inngest-instance-id",
 }
 
 /**

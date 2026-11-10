@@ -3,7 +3,6 @@
  * EXPERIMENTAL: the model's inbox tools as the agent run gets them.
  */
 
-import type { step } from "../../../components/InngestStepTools.ts";
 import {
   type Inbox,
   inboxOpenedPromise,
@@ -13,6 +12,7 @@ import type {
   AgentFunctionConfig,
   InboxSource,
   OpenedInbox,
+  StepWithSubscribe,
 } from "../agent/types.ts";
 import { createListenTools } from "./inboxTools.ts";
 import type { Reader } from "./threadInbox.ts";
@@ -28,7 +28,12 @@ export const createBodyInboxTools = (options: {
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
   named: Map<string, OpenedInbox>;
   noteSource: (source: InboxSource) => void;
-  step: typeof step;
+  // `step.subscribe()` is called below. `subscribe` only types once
+  // `inboxMiddleware()` is registered (see `StepWithSubscribe`), which
+  // `createAgents` always does - but this parameter's real type comes from
+  // the caller's `ctx.step`, not from the ambient ready-made singleton, so
+  // the widened type is what names the shape here.
+  step: StepWithSubscribe;
   thread: string;
 }) => {
   const { config, view, named, noteSource, step, thread } = options;

@@ -25,11 +25,19 @@ import { getAsyncCtxSync } from "../execution/als.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { InngestFunctionReference } from "../InngestFunctionReference.ts";
 import { step } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { EventType } from "../triggers/triggers.ts";
+import { callSite, rememberToolSource } from "./callSite.ts";
 import { isInternalTool } from "./internalTool.ts";
 import { McpServer, mcp } from "./mcp.ts";
 import { type SandboxShim, shim } from "./shims.ts";
 import type { ToolBinary } from "./toolBinary.ts";
+import {
+  renderToolDescription,
+  type ToolDescription,
+  toolDescriptionText,
+  withNote,
+} from "./toolDescription.ts";
 import { isToolError, type ToolErrorResult } from "./toolError.ts";
 import {
   type Sandbox,
@@ -183,7 +191,7 @@ export type ToolCallContext = Omit<SandboxToolContext, "runId" | "score"> & {
 };
 
 export interface SandboxTool<TInput = unknown, TOutput = unknown> {
-  readonly description?: string;
+  readonly description?: ToolDescription;
   readonly displayName?: string | ((input: never) => string);
   readonly group?: boolean;
   /**
@@ -193,6 +201,13 @@ export interface SandboxTool<TInput = unknown, TOutput = unknown> {
   readonly memo?: "none";
   readonly input?: ToolInput;
   readonly output?: StandardSchemaV1;
+
+  /**
+   * @internal The schema of what the tool returns, for its description only:
+   * a tool that calls a hosted function gets a result that the host already
+   * checked.
+   */
+  readonly "~returns"?: StandardSchemaV1;
   readonly run: (...args: never[]) => unknown;
 
   /**
@@ -330,9 +345,18 @@ export interface ToolDefinition<
   TSandbox = Sandbox,
 > {
   /**
-   * What the tool does, for the people reading the code.
+   * What the model reads about the tool: a string, used as it is, or its
+   * parts, `{ does, use?, avoid?, context? }`, which render in that order as
+   * one paragraph. `context` is a fact about what having the tool means for
+   * the agent: it goes in the agent's briefing, not in the description. A
+   * tool with `output` also gets a `Returns:` line made from that schema.
+   *
+   * Write `use` for the situation that should make the model reach for the
+   * tool, and `avoid` for the tempting wrong use (often a neighbouring
+   * tool), instead of repeating `does`. Don't describe the result's shape in
+   * the text; give `output` a schema and the `Returns:` line says it.
    */
-  description?: string;
+  description?: ToolDescription;
 
   /**
    * Marks the tool's results as text from outside: when the model reads one,
@@ -357,7 +381,11 @@ export interface ToolDefinition<
   input?: TInput;
 
   /**
-   * Any Standard Schema. A result that doesn't match fails the tool step.
+   * Any Standard Schema of what `run` returns. It types `run`'s return, it
+   * tells the model the shape (a `Returns:` line in the description), and it
+   * checks each result: one that doesn't match is not retried, since the
+   * tool already ran. A model gets it as an error result; sandbox code gets
+   * a `ToolError`.
    */
   output?: TOutput;
 
@@ -418,10 +446,11 @@ export interface SharedToolDefinition<
   id: string;
 
   /**
-   * What the tool does. It is the card's description unless `card` sets one,
+   * What the tool does: a string, or `{ does, use?, avoid?, context? }` as
+   * for `tool()`. Its text is the card's description unless `card` sets one,
    * and the description the model reads.
    */
-  description?: string;
+  description?: ToolDescription;
 
   /**
    * Any Standard Schema that describes an object. It becomes the schema of
@@ -431,7 +460,8 @@ export interface SharedToolDefinition<
   input: TInput;
 
   /**
-   * Any Standard Schema. A result that doesn't match fails the call.
+   * Any Standard Schema of what `run` returns. It types `run`'s return, the
+   * model reads its shape, and a result that doesn't match fails the call.
    */
   output?: TOutput;
 
@@ -519,8 +549,9 @@ export const hostOfSharedTool = (shared: SharedTool): string | undefined => {
 export const invokeHostedTool = (options: {
   appId: string;
   functionId: string;
-  description?: string;
+  description?: ToolDescription;
   input?: ToolInput;
+  output?: StandardSchemaV1;
   untrusted?: SandboxTool["untrusted"];
   displayName?: SandboxTool["displayName"];
 }): SandboxTool => {
@@ -535,6 +566,7 @@ export const invokeHostedTool = (options: {
       description: options.description,
     }),
     input: options.input ?? z4.record(z4.string(), z4.unknown()),
+    ...(options.output && { "~returns": options.output }),
     ...(options.untrusted && { untrusted: options.untrusted }),
     ...(options.displayName && { displayName: options.displayName }),
     run: (data: Record<string, unknown>) => {
@@ -572,7 +604,7 @@ const toolMethods = {
   >(
     definition: ToolDefinition<TInput, TOutput, TReturn>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
-    return definition;
+    return rememberToolSource(definition, callSite());
   },
 
   /**
@@ -587,6 +619,17 @@ const toolMethods = {
    * Listed in an agent's `tools`, it is called like any tool: the call
    * invokes the hosted function as a durable step and returns the result in
    * the same turn. Other apps' agents get it through `discovery.tools`.
+   *
+   * Share a tool when one app owns a capability that others should reuse and
+   * the capability needs something only the owner has (a secret, an API
+   * client). Don't share a tool every app can write for itself, and don't
+   * share one only agents of the same app use: list it in their `tools`
+   * directly. Give it a card like an agent's: a `description` in parts, a few
+   * `tags` and an honest `effects`. To be found from another app it needs
+   * `share: "team"`, and since it is usually a write (`effects: "write"`), the
+   * calling agent must list it: an address in `discovery.tools`, or a filter
+   * such as `[{ tags: ["social"], effects: "write" }]`, because the default
+   * `discovery.tools` only shows read tools of other apps.
    *
    * @example
    * ```ts
@@ -616,6 +659,7 @@ const toolMethods = {
     }
 
     const made = { ...definition, kind: "inngest/shared-tool" as const };
+    const source = callSite();
 
     // Like an agent's `address`: it names the tool in `discovery.tools`.
     // It exists once an app hosts the tool.
@@ -634,10 +678,13 @@ const toolMethods = {
       },
     });
 
-    return Object.freeze(made) as unknown as SharedTool<
-      ToolCallInput<TInput>,
-      ToolCallResult<TOutput, TReturn>
-    >;
+    return rememberToolSource(
+      Object.freeze(made) as unknown as SharedTool<
+        ToolCallInput<TInput>,
+        ToolCallResult<TOutput, TReturn>
+      >,
+      source,
+    );
   },
 
   /**
@@ -719,7 +766,7 @@ const toolMethods = {
   >(
     definition: WaitingToolDefinition<TInput, TOutput, TReturn, SandboxHandle>,
   ): SandboxTool<ToolCallInput<TInput>, ToolCallResult<TOutput, TReturn>> => {
-    return { ...definition, group: true };
+    return rememberToolSource({ ...definition, group: true }, callSite());
   },
 };
 
@@ -774,7 +821,10 @@ const defineTool = <
     );
   }
 
-  return Object.freeze({ ...definition, kind: "inngest/tool" as const });
+  return rememberToolSource(
+    Object.freeze({ ...definition, kind: "inngest/tool" as const }),
+    callSite(),
+  );
 };
 
 /**
@@ -881,6 +931,7 @@ const toTool = (entry: SandboxToolEntry): SandboxTool => {
       functionId: entry.id,
       description: entry.description ?? entry.card?.description,
       input: entry.input,
+      ...(entry.output && { output: entry.output }),
       untrusted: entry.untrusted,
       displayName: entry.displayName,
     });
@@ -931,9 +982,8 @@ export const bindSandbox = (
   const bound = entry as SandboxTool;
   const run = bound.run as (...args: unknown[]) => unknown;
   const note = name === undefined ? "" : `Works on the \`${name}\` sandbox.`;
-  const description = [bound.description, note].filter(Boolean).join(" ");
-
-  return {
+  const description = withNote(bound.description, note);
+  const result = {
     ...bound,
     ...(description && { description }),
     ...(bound.group === true && {
@@ -945,6 +995,93 @@ export const bindSandbox = (
       },
     }),
   } as SandboxTool;
+  const live = liveDescriptions.get(bound);
+
+  if (live) {
+    liveDescriptions.set(result, () => {
+      return [live(), note].filter(Boolean).join(" ");
+    });
+  }
+
+  return result;
+};
+
+/**
+ * Tools whose description is made when the model's tool list is, inside the
+ * run, because it names what that run gives them (`runCode` lists the tools
+ * its code can call). Internal.
+ */
+export const liveDescriptions = new WeakMap<object, () => string>();
+
+/**
+ * A JSON Schema type as a short TypeScript-like type.
+ */
+const shortType = (schema: unknown): string => {
+  const node = (schema ?? {}) as {
+    type?: unknown;
+    enum?: unknown[];
+    items?: unknown;
+    anyOf?: unknown[];
+  };
+
+  if (Array.isArray(node.enum)) {
+    return node.enum
+      .map((value) => {
+        return JSON.stringify(value);
+      })
+      .join(" | ");
+  }
+
+  if (Array.isArray(node.anyOf)) {
+    return node.anyOf.map(shortType).join(" | ");
+  }
+
+  if (node.type === "array") {
+    return `${shortType(node.items)}[]`;
+  }
+
+  if (node.type === "integer") {
+    return "number";
+  }
+
+  return typeof node.type === "string" ? node.type : "any";
+};
+
+/**
+ * One line that says how code calls a tool: `tools.name({ a: string, b?:
+ * number })` and the first sentence of its description. Internal.
+ * @param name The name the tool is listed under.
+ * @param entry The tool.
+ */
+export const toolSignature = (
+  name: string,
+  entry: SandboxToolEntry,
+): string => {
+  let args = "";
+  let about = "";
+
+  try {
+    const { description, input } = toTool(entry);
+    const schema = (
+      !input
+        ? { type: "object" }
+        : isStandardSchema(input)
+          ? toJsonSchema(name, input)
+          : input
+    ) as { properties?: Record<string, unknown>; required?: string[] };
+    const required = new Set(schema.required ?? []);
+
+    args = Object.entries(schema.properties ?? {})
+      .map(([key, value]) => {
+        return `${key}${required.has(key) ? "" : "?"}: ${shortType(value)}`;
+      })
+      .join(", ");
+    about = toolDescriptionText(description)?.split(/(?<=\.)\s/)[0] ?? "";
+  } catch {
+    // A tool whose schema can't be shown is still listed by name.
+  }
+
+  return `tools.${name}(${args ? `{ ${args} }` : ""})${about ? `: ${about}` : ""}`;
 };
 
 /**
@@ -1128,8 +1265,10 @@ export const resolveToolCall = async (
 
       const result = await definition.output["~standard"].validate(value);
       if (result.issues) {
-        throw new SandboxValidationError(
-          `${name} returned an invalid result: ${issuesMessage(result.issues)}`,
+        // The tool ran: a retry would do its work again and most likely
+        // return the same shape, so this fails for good.
+        throw new NonRetriableError(
+          `${name} returned an invalid result: ${issuesMessage(result.issues)}. Its output schema refused it, so this is a fault in the tool, not in the call.`,
         );
       }
 
@@ -1214,7 +1353,13 @@ export const toolDefinitions = (tools: SandboxTools): ToolJsonDefinition[] => {
   validateTools(tools);
 
   return Object.entries(tools).map(([name, entry]) => {
-    const { description, input } = toTool(entry);
+    const made = toTool(entry);
+    const { input } = made;
+    const description =
+      (typeof entry === "object" && entry !== null
+        ? liveDescriptions.get(entry)?.()
+        : undefined) ??
+      renderToolDescription(made.description, made.output ?? made["~returns"]);
 
     return {
       name,

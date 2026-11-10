@@ -8,7 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
 import { typesOnly } from "../agent/typeFixtures.ts";
-import type { AgentModel, AgentPriceTable } from "../index.ts";
+import type { AgentModel } from "../index.ts";
 import { agent } from "../index.ts";
 import {
   type AnthropicClient,
@@ -30,10 +30,10 @@ test("the SDK's client and the result fit", () => {
     expectTypeOf(model).toExtend<AgentModel>();
     expectTypeOf(model).toEqualTypeOf<AnthropicModel>();
     expectTypeOf(model.with({ effort: "low" })).toEqualTypeOf<AnthropicModel>();
-    expectTypeOf(anthropicPrices).toEqualTypeOf<AgentPriceTable>();
+    expect(anthropicPrices).toBeTypeOf("object");
 
     // A loop with a model needs nothing else.
-    void agent.loop({ model, price: anthropicPrices })("hi");
+    void agent.loop({ model })("hi");
 
     // A direct call with a schema types its output.
     void (async () => {

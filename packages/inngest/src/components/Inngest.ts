@@ -143,6 +143,13 @@ export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
 export const replacedFnIdsSymbol = Symbol.for("inngest.replacedFnIds");
 
 /**
+ * Symbol for accessing the hooks that run after this client's app is synced
+ * with Inngest. Not part of the public API.
+ * @internal
+ */
+export const syncHooksSymbol = Symbol.for("inngest.syncHooks");
+
+/**
  * Symbol for accessing whether session propagation is enabled on this client.
  * @internal
  */
@@ -223,6 +230,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   readonly [replacedFnIdsSymbol] = new Set<string>();
 
+  /**
+   * Functions run after the app is synced with Inngest (a `PUT` to the serve
+   * handler that succeeded). A hook that throws is logged and ignored.
+   *
+   * @internal
+   */
+  readonly [syncHooksSymbol] = new Set<() => void | Promise<void>>();
+
   private localFns: InngestFunction.Any[] = [];
 
   /**
@@ -236,6 +251,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   readonly middleware: Middleware.Class[];
 
   private _env: Env = {};
+
+  /**
+   * The instance ID that `connect()` sends to the gateway.  It takes
+   * precedence over `INNGEST_CONNECT_INSTANCE_ID` in checkpoint requests.
+   */
+  private _connectInstanceId: string | undefined;
 
   private _appVersion: string | undefined;
 
@@ -459,6 +480,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       signingKeyFallback: () => this.signingKeyFallback,
       environment: () => this.env,
       fetch: () => this.fetch,
+      instanceId: () =>
+        this._connectInstanceId ||
+        this._env[envKeys.InngestConnectInstanceId] ||
+        undefined,
     });
 
     this._logger = logger ?? new ConsoleLogger();

@@ -7,6 +7,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { secret } from "../../../components/sandbox/secret.ts";
+import {
+  type SandboxToolEntry,
+  toolDefinitions,
+} from "../../../components/sandbox/tools.ts";
 import type {
   DurableSandbox,
   DurableSandboxTools,
@@ -16,6 +20,7 @@ vi.mock("./gitPush.ts", () => {
   return { pushBranch: vi.fn() };
 });
 
+import { toolFacts } from "../agent/briefing.ts";
 import {
   openSandboxes,
   resolveSandboxes,
@@ -109,6 +114,31 @@ describe("the model's push tool", () => {
     expect(opened.plain?.repo).toBeUndefined();
     expect(opened.withRepo?.repo?.path).toBe("/work");
     expect(opened.noPush?.repo).toBeDefined();
+  });
+
+  test("work_push shows its result shape and carries a context line", () => {
+    const env = fakeEnvironment();
+    const work = sandbox({
+      id: "work",
+      tools: sandbox.tools.defaults,
+      repo: { url: "acme/app", auth },
+    });
+    const opened = openSandboxes({ work }, env.sandboxes, env.runtime);
+    const tools = opened.work?.tools ?? {};
+    const shown = toolDefinitions({
+      work_push: tools.work_push as SandboxToolEntry,
+    });
+
+    expect(shown[0]?.description).toMatch(
+      /Returns: \{ branch: string, sha: string, notes: string\[\] \}$/,
+    );
+    expect(toolFacts(tools).contexts).toEqual([
+      {
+        tool: "work_push",
+        context:
+          "The `work` sandbox has no git credentials: commits reach its remote only through `work_push`.",
+      },
+    ]);
   });
 });
 

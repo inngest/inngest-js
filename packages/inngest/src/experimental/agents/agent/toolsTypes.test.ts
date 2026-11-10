@@ -8,6 +8,7 @@ import { z } from "zod/v4";
 import { disconnect } from "../../../components/sandbox/mcp.ts";
 import { secret } from "../../../components/sandbox/secret.ts";
 import {
+  type AgentTool,
   type SandboxTool,
   type SandboxToolContext,
   type SandboxTools,
@@ -349,4 +350,78 @@ test("tools: the removed names are not exported", () => {
   ]) {
     expect(Object.keys(entry)).not.toContain(name);
   }
+});
+
+describe("tool descriptions and output types", () => {
+  test("every kind of tool takes a string or the parts of a description", () => {
+    typesOnly(() => {
+      const parts = {
+        does: "Looks up an order.",
+        use: "when the user names one",
+        avoid: "for refunds",
+        context: "Orders are read-only here.",
+      };
+
+      tool({ description: parts, run: async () => 1 });
+      tool({ description: "Looks up an order.", run: async () => 1 });
+      tool.step({ description: parts, run: async () => 1 });
+      tool.group({ description: parts, run: async () => 1 });
+      tool.shared({
+        id: "lookup",
+        description: parts,
+        input: z.object({ id: z.string() }),
+        run: async () => 1,
+      });
+
+      tool({
+        // @ts-expect-error `does` is required
+        description: { use: "always" },
+        run: async () => 1,
+      });
+      tool({
+        // @ts-expect-error there is no hand-written return text
+        description: { does: "Counts.", returns: "a number" },
+        run: async () => 1,
+      });
+    });
+  });
+
+  test("output types run's return for tool() and tool.shared(), and the result", () => {
+    typesOnly(() => {
+      const count = tool({
+        output: z.object({ n: z.number() }),
+        run: async () => {
+          return { n: 1 };
+        },
+      });
+
+      expectTypeOf(count).toEqualTypeOf<
+        AgentTool<Record<string, never>, { n: number }>
+      >();
+
+      tool({
+        output: z.object({ n: z.number() }),
+        // @ts-expect-error the return breaks the output schema
+        run: async () => {
+          return { n: "one" };
+        },
+      });
+      tool.shared({
+        id: "count",
+        input: z.object({ by: z.number() }),
+        output: z.object({ n: z.number() }),
+        // @ts-expect-error the return breaks the output schema
+        run: async () => {
+          return { m: 1 };
+        },
+      });
+      tool.group({
+        output: z.object({ ok: z.literal(true) }),
+        // @ts-expect-error `ok` must be true
+        run: async () => {
+          return { ok: false };
+        },
+      });
+    });
+  });
 });

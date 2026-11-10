@@ -7,10 +7,11 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { GetFunctionInput, Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { step } from "../../../components/InngestStepTools.ts";
+import type { step } from "../../../components/InngestStepTools.ts";
 import type {
   Inbox,
   InboxMessageOf,
+  InboxSources,
   UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
@@ -25,11 +26,12 @@ import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareGroupExtensions,
   ApplyAllMiddlewareStepExtensions,
+  StepOptionsOrId,
 } from "../../../types.ts";
 import type {
-  AgentCard,
   AgentCardConfig,
   AgentDiscovery,
+  AnnouncedCard,
 } from "../discovery/discovery.ts";
 import type {
   AgentAnswerData,
@@ -40,7 +42,6 @@ import type {
 import type { AgentReportLine } from "../inbox/reports.ts";
 import type { Sender } from "../inbox/sender.ts";
 import type { Json } from "../json.ts";
-import type { AgentPrice } from "../loop/cost.ts";
 import type {
   AgentHandlerLoop,
   AgentLoop,
@@ -64,8 +65,9 @@ import type {
   ThreadTriggers,
 } from "../threads/threadTrigger.ts";
 import type { AgentToolSet } from "./agentTools.ts";
+import type { BriefingOption } from "./briefing.ts";
 import type { LendOptions } from "./lending.ts";
-import type { AgentBudget, AgentLimits } from "./limits.ts";
+import type { AgentLimits } from "./limits.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
@@ -221,34 +223,36 @@ export interface AgentFunctionConfig<
    * `tags`, `share` (`"private"` by default, only agents of its own app; `"team"`, the
    * whole environment), `owner`, `effects` (`"read"` or `"write"`, default
    * `"write"`) and `speed`. An agent without a `card` still publishes its
-   * address, private.
+   * address, private. See `AgentCardConfig` for how to choose each field;
+   * the ones that matter most are `description` (written for a model that
+   * is choosing an agent), `tags` and `effects`.
    */
   card?: AgentCardConfig;
 
   /**
-   * Discovery for the agent's model: on by default (`list_agents`,
-   * `describe_agent` and the tools that start or reach other agents).
-   * `false` removes them, and the agent's own card is still published.
+   * Discovery for the agent's model. Off unless set: `true` gives the model
+   * `list_agents`, `describe_agent`, `start_agent`, `message_agent`,
+   * `ask_agent` and `stop_agent`, and the shared tools `discovery.tools`
+   * allows. Without it, a run another agent started (or of a thread in a
+   * group) still gets `message_agent`, `ask_agent` and `stop_agent` for the
+   * threads related to it. The agent's own card is published either way.
    * `{ prepare }` fills part of the input of a call to another agent from the
    * host, in the run. `{ agents, tools }` filter what the model can see and
-   * may start; agents it starts never see more than it was allowed.
+   * may start; agents it starts never see more than it was allowed. Both
+   * turn discovery on.
+   *
+   * Turn it on only for an agent whose job needs other agents, and scope it:
+   * `true` gives the defaults (its own app and read-only agents of other
+   * apps), and filters such as `{ agents: [{ tags: ["research"] }] }` give
+   * less. Each discovery tool is another tool for the model to weigh, so an
+   * agent that does one thing is better without it. See `DiscoveryFilter`.
+   *
+   * @example
+   * ```ts
+   * discovery: { agents: [{ tags: ["research"] }], tools: [] }
+   * ```
    */
   discovery?: AgentDiscovery;
-
-  /**
-   * How long a run waits in quiet before it ends: a number of milliseconds, a
-   * string such as `"7d"` or a Temporal duration, or a function of
-   * `{ event, thread }` returning one. Default: 10 minutes. It ends the run of
-   * a handler that loops over its inbox, with `for await (const batch of
-   * inbox.batches())` or `for await (const m of inbox)`: the loop returns after
-   * that much quiet. A later message starts a new run on the same thread. A
-   * long `idle` keeps a run live across deploys, and every step it takes counts
-   * toward the step limit.
-   */
-  idle?: RunField<
-    DurationInput,
-    RunFieldContext<AgentTypesOf<TTypes>["event"]>
-  >;
 
   /**
    * The model the agent's loop calls: an adapter such as
@@ -265,15 +269,81 @@ export interface AgentFunctionConfig<
 
   /**
    * The model's system prompt: a value, or a function of `{ event, thread }`
-   * read once at the start of each run.
+   * read once at the start of each run. The SDK adds its briefing after it
+   * (see `briefing`).
+   *
+   * Write policy: what this agent is for, how it should behave, and how to
+   * judge the cases where tools and instructions don't decide. Don't explain
+   * the protocol. The briefing already tells the model how turns work, how
+   * to wait, how messages and reports work, who started the thread and what
+   * it owes, so repeating it risks the two disagreeing. Don't list tools
+   * either: each tool describes itself, and a tool's `context` is the place
+   * for a fact about having it.
+   *
+   * @example
+   * ```ts
+   * system:
+   *   "You triage support tickets for Acme. Be brief. Escalate anything that mentions a refund over $500 to a person instead of deciding it yourself.",
+   * ```
    */
   system?: RunField<string, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
+
+  /**
+   * EXPERIMENTAL: Changes the briefing, the facts the SDK adds after `system`
+   * in the loops it builds: how turns work (`<inngest-runtime>`, the same for
+   * every run of the agent with the same tools) and this run's situation
+   * (`<inngest-situation>`: who started the thread, where the final text
+   * goes, the reports owed, how long the run stays open, limits, and the
+   * `context` of the model's tools). Gets the default `text`, its `sections`
+   * by name and the `facts` they were made from. Return a string to use in
+   * place of the whole briefing, or anything falsy to send none. Default:
+   * the SDK's briefing. A `loop` that is a whole loop of its own gets no
+   * briefing; it can make one with `briefingFacts()` and `renderBriefing()`.
+   *
+   * Leave the default unless you have a reason. The briefing is how the model
+   * learns the runtime, so dropping a section it relies on (for example the
+   * reports it owes) leaves it guessing. To add to it, return the default `text`
+   * with your own appended; returning one section alone drops the other. Put policy in `system`.
+   *
+   * @example
+   * ```ts
+   * // Keep the whole briefing and add a line.
+   * briefing: ({ text }) => `${text}\n\nThe team is offline until Monday.`,
+   * // Or drop the runtime part and keep only this run's situation.
+   * // briefing: ({ sections }) => sections.situation,
+   * ```
+   */
+  briefing?: BriefingOption;
 
   /**
    * The tools the model can call, beside the ones the SDK adds (the inbox
    * tools, and the sandboxes', discovery and agent tools as they arrive): a
    * value, or a function of `{ event, thread }` read once at the start of each
    * run.
+   *
+   * Prefer small tools that each do one thing, with a `description` in parts
+   * (`does`, `use`, `avoid`) and, where the result has a shape, an `output`
+   * schema, so the model is told what it gets back. Several focused tools are
+   * easier for a model to choose between than one that takes a `mode` field.
+   * A fixed operation belongs here, as a tool that runs in your app with your
+   * secrets; code the model writes and runs belongs in a sandbox (see
+   * `sandbox()`). A tool shared across apps is made with `tool.shared()`.
+   *
+   * @example
+   * ```ts
+   * tools: {
+   *   getOrder: tool({
+   *     description: {
+   *       does: "Looks up an order by ID.",
+   *       use: "when the customer names an order",
+   *       avoid: "to search orders by customer",
+   *     },
+   *     input: z.object({ id: z.string() }),
+   *     output: z.object({ status: z.string(), total: z.number() }),
+   *     run: async ({ id }) => db.orders.find(id),
+   *   }),
+   * },
+   * ```
    */
   tools?: RunField<
     SandboxTools,
@@ -307,17 +377,6 @@ export interface AgentFunctionConfig<
     | AgentLoop;
 
   /**
-   * Whether the loop remembers the model's history across runs of a thread.
-   * Default `true`; `false` starts each run clean. A value, or a function of
-   * `{ event, thread }` read once at the start of each run. The history is
-   * kept under this agent's own key on the thread, so two agents sharing a
-   * thread key each remember their own. On the ledger KV store it counts
-   * against the 128 KB the thread holds: a history past it is not kept (a
-   * warning is logged and the run goes on).
-   */
-  remember?: RunField<boolean, RunFieldContext<AgentTypesOf<TTypes>["event"]>>;
-
-  /**
    * Event sources that reach a live run of the thread they map to and never
    * start one, and read through the one `inbox`.
    * `triggers` still starts and wakes runs. Each source maps its own events to the
@@ -345,6 +404,11 @@ export interface AgentFunctionConfig<
    * `{ event, thread }` read once at the start of each run. The model sees
    * each skill's name and description, and opens a body with `open_skill`.
    * The files go to the first sandbox the model can use. Skills add no tools.
+   *
+   * Use a skill for know-how that is long or needed only sometimes (a house
+   * style, a runbook, how to use a CLI), so it stays out of `system` until
+   * the model opens it. Write each skill's description as a "use when" line,
+   * since that is all the model sees before it decides to open the body.
    */
   skills?: RunField<
     SkillSources,
@@ -360,6 +424,12 @@ export interface AgentFunctionConfig<
    * belongs to the thread: it is restored from the thread's newest snapshot
    * when first used and snapshotted when the run ends, whichever way, then
    * destroyed. Only files survive between runs.
+   *
+   * A sandbox offers the model only the tools it lists in `sandbox({ tools })`,
+   * named `<key>_<tool>` here (`work_run`). Use `start: "eager"` when the first
+   * thing the run does needs it, so it exists, with its `setup` done, before the
+   * model's first call; leave it lazy otherwise. `.with({ model: false })` keeps a sandbox for your
+   * handler's code and gives the model no tools on it.
    */
   sandboxes?: SandboxesConfig<
     RunFieldContext<AgentTypesOf<TTypes>["event"]>,
@@ -370,31 +440,11 @@ export interface AgentFunctionConfig<
    * EXPERIMENTAL: how deep chains of started agents go: `depth` (default 1,
    * so it may start sub-agents and they may not). The lowest `depth` in the
    * chain wins. What the model may start is set by `discovery.agents`.
+   *
+   * Keep `depth` low unless sub-agents need to start their own; a deep chain
+   * multiplies cost and is hard to follow.
    */
   limits?: AgentLimits;
-
-  /**
-   * What a thread of this agent may spend: `usd`, `tokens`, `input` or
-   * `output`. A value, or a function of `{ event, thread }` run once, when
-   * the thread's first run starts. The loop always enforces it, ending with
-   * `end: "budget"` before its next model call once it is spent. The budget
-   * is kept on the thread and belongs to this agent's own definition: it is
-   * never handed down by the agent that started the thread. The spend is
-   * kept in this agent's record on the thread, written once per model turn: on
-   * the ledger KV store that is one step for the run and two for the ledger
-   * per write.
-   */
-  budget?: RunField<
-    AgentBudget,
-    RunFieldContext<AgentTypesOf<TTypes>["event"]>
-  >;
-
-  /**
-   * What a model call costs, for `budget.usd`, in place of the model's own
-   * prices: rates per million tokens by model name, or a function of the
-   * call's tokens and model that returns US dollars. A value only.
-   */
-  price?: AgentPrice;
 
   /**
    * What the agent does about a run that fails for good. Off by default.
@@ -483,6 +533,26 @@ export interface StartOptions extends LendOptions {
    * type merge. The routing travels in the signed grant of the start, so the
    * agent needs no prior knowledge of the types. `msg.is(milestone)` narrows
    * the report in the receiver's inbox, typed as the event type's data.
+   *
+   * Ask for typed reports when you want the agent to hand back results you
+   * will act on in code or in a CEL condition, or progress while it works,
+   * and not only a final text answer. Name each type for the fact it
+   * reports, in the past tense or as a noun (`milestone`, `ticket-triaged`),
+   * give it a schema with only the fields the receiver reads, and use one
+   * type per kind of fact. Mark a report `required` when the work is not done
+   * without it (a verdict, an artifact link) and leave it optional for
+   * progress notes. Don't make everything `required`: the loop keeps
+   * reminding the agent until each owed type is sent. A type name does not
+   * start with `agent/` or `inngest/`.
+   *
+   * @example
+   * ```ts
+   * const verdict = eventType("review-verdict", {
+   *   schema: z.object({ approve: z.boolean(), reason: z.string() }),
+   * });
+   *
+   * agent.start(input, { reports: [{ event: verdict, required: true }] });
+   * ```
    */
   reports?: readonly AgentReportLine[];
 }
@@ -509,7 +579,8 @@ export interface Me {
    * ordinary `eventType()`. The data is checked against its schema first and a
    * bad report throws, sending nothing. It throws when the run was not started
    * with this report type. Counts toward a required report. Sent from a step,
-   * so a replay sends it once.
+   * so a replay sends it once. See `StartOptions.reports` for when to ask for
+   * reports and how to name them.
    */
   report<TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined>(
     type: { readonly name: string; readonly schema: TSchema },
@@ -728,6 +799,25 @@ export interface OpenedInbox {
 }
 
 /**
+ * `step`, widened with `subscribe`. `subscribe` only types on `step` once
+ * `inboxMiddleware()` is in a client's `middleware`, because it is added by
+ * that middleware's `transformFunctionInput`, not by a core step tool - see
+ * `InngestStepTools.ts`. The ambient `step` singleton this module imports
+ * (the one `inngest.globals()` hands out) is typed generically as
+ * `GetStepTools<Inngest.Any>`, which cannot see that `createAgents` always
+ * registers `inboxMiddleware()` on the client at runtime (it mutates
+ * `client.middleware`, which the ambient type does not re-read). Call sites
+ * that reach `step.subscribe()` through that ambient singleton, rather than
+ * a function's own typed `ctx.step`, need this instead of `typeof step`.
+ */
+export type StepWithSubscribe = typeof step & {
+  subscribe: <const S extends InboxSources>(
+    idOrOptions: StepOptionsOrId,
+    sources: S,
+  ) => Inbox<InboxMessageOf<S>>;
+};
+
+/**
  * The function context an agent's body shares with a plain function, typed
  * from the client's middleware: `step`, `group`, `defer`, `runId`, `logger`,
  * `attempt` and the rest, without `event` and `events`, which the agent
@@ -826,9 +916,10 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
   ref: string;
 
   /**
-   * What the agent publishes for discovery.
+   * What the agent publishes for discovery, plus the roster inputs
+   * (`share`, `explicit`) `rememberCard` and the announcement need.
    */
-  card: AgentCard;
+  card: AnnouncedCard;
 
   /**
    * The agent's function ID.

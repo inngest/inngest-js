@@ -832,3 +832,82 @@ describe("anthropic call checks", () => {
     expect(fake.bodies).toHaveLength(0);
   });
 });
+
+describe("anthropic briefing", () => {
+  const briefing = {
+    runtime: '<inngest-runtime v="1">\nTurns.\n</inngest-runtime>',
+    situation: "<inngest-situation>\nThis run.\n</inngest-situation>",
+  };
+
+  test("says it places the briefing itself", () => {
+    expect(make(fakeClient()).placesBriefing).toBe(true);
+  });
+
+  test("the system prompt with the runtime section, then the situation, a breakpoint on each", async () => {
+    const fake = fakeClient();
+
+    await make(fake)(request({ briefing }));
+
+    expect(sent(fake, 0).system).toEqual([
+      {
+        type: "text",
+        text: `Be brief.\n\n${briefing.runtime}`,
+        cache_control: { type: "ephemeral" },
+      },
+      {
+        type: "text",
+        text: briefing.situation,
+        cache_control: { type: "ephemeral" },
+      },
+    ]);
+    expect(sent(fake, 0).tools[0].cache_control).toBeUndefined();
+  });
+
+  test("with no system prompt the runtime section starts it", async () => {
+    const fake = fakeClient();
+
+    await make(fake)(request({ system: undefined, briefing }));
+
+    expect(
+      sent(fake, 0).system.map((block: Body) => {
+        return block.text;
+      }),
+    ).toEqual([briefing.runtime, briefing.situation]);
+    expect(sent(fake, 0).tools[0].cache_control).toBeUndefined();
+  });
+
+  test("a replaced briefing has no runtime section: the system prompt, then the replacement", async () => {
+    const fake = fakeClient();
+
+    await make(fake)(request({ briefing: { runtime: "", situation: "mine" } }));
+
+    expect(
+      sent(fake, 0).system.map((block: Body) => {
+        return block.text;
+      }),
+    ).toEqual(["Be brief.", "mine"]);
+  });
+
+  test("a long conversation stays within the API's four breakpoints", async () => {
+    const fake = fakeClient();
+    const messages: AgentModelRequest["messages"] = [];
+
+    for (let turn = 0; turn < 6; turn++) {
+      messages.push(
+        { role: "user", content: `ask ${turn}` },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: `answer ${turn}` }],
+        },
+      );
+    }
+
+    messages.push({ role: "user", content: "last" });
+
+    await make(fake)(request({ briefing, messages }));
+
+    const marks = JSON.stringify(sent(fake, 0)).match(/"cache_control"/g);
+
+    expect(marks).toHaveLength(4);
+  });
+});

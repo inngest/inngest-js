@@ -4,6 +4,10 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v4";
+import {
+  getAsyncLocalStorage,
+  runWithAsyncCtx,
+} from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { step } from "../../../components/InngestStepTools.ts";
@@ -303,189 +307,6 @@ describe("agent.loop", () => {
     };
 
     expect(check).toBeTypeOf("function");
-  });
-
-  test("prices each model call with the price given, and reports it per turn and in the usage", async () => {
-    const turns: unknown[] = [];
-    const prices: unknown[] = [];
-    const { result } = await run(
-      [
-        { ...call("add", { a: 1, b: 2 }), model: "claude-x" },
-        { ...say("done"), model: "claude-y" },
-      ],
-      {
-        price: (usage, model) => {
-          prices.push([usage, model]);
-
-          return 0.25;
-        },
-        onTurn: (turn) => {
-          turns.push(turn.usage);
-        },
-      },
-    );
-
-    // The price runs in the model step (the harness may run a step twice).
-    const distinct = (items: unknown[]) => {
-      return [...new Set(items.map((item) => JSON.stringify(item)))];
-    };
-
-    expect(distinct(prices)).toEqual([
-      JSON.stringify([{ input: 10, output: 5 }, "claude-x"]),
-      JSON.stringify([{ input: 10, output: 5 }, "claude-y"]),
-    ]);
-    expect(distinct(turns)).toEqual([
-      JSON.stringify({ input: 10, output: 5, usd: 0.25 }),
-    ]);
-    expect(result?.usage).toEqual({ input: 20, output: 10, usd: 0.5 });
-  });
-
-  test("the cost is stored on the model step, and a replay uses it without pricing again", async () => {
-    let calls = 0;
-    const price = () => {
-      calls += 1;
-
-      return calls;
-    };
-    const { steps, result } = await run([say("done")], { price });
-    const modelStep = steps.find((done) => {
-      return done.userland?.id === "agent:model:1";
-    });
-
-    expect(modelStep?.data).toMatchObject({ usd: 1 });
-    expect(result?.usage.usd).toBe(1);
-    expect(calls).toBe(1);
-
-    // The step is memoized with its cost, and the price gives something else now.
-    const client = new Inngest({ id: testClientId });
-    const fn = client.createFunction(
-      { id: "agent", triggers: [{ event: "agent/run" }] },
-      async () => {
-        result2 = await runLoop({
-          model: model(async () => {
-            throw new Error("the model must not be called on a replay");
-          }),
-          prompt: "go",
-          tools: {},
-          price,
-        });
-      },
-    );
-    let result2: AgentLoopResult | undefined;
-    const state = Object.fromEntries(
-      steps.map((done) => {
-        return [done.id, { id: done.id, data: done.data }];
-      }),
-    );
-    const replayed = await runFnWithStack(fn, state);
-
-    expect(replayed.type).toBe("function-resolved");
-    expect(result2?.usage.usd).toBe(1);
-    expect(calls).toBe(1);
-  });
-
-  test("a model step memoized before costs were stored is priced when it replays", async () => {
-    const { steps } = await run([say("done")], { price: () => 7 });
-    const client = new Inngest({ id: testClientId });
-    let replayed: AgentLoopResult | undefined;
-    const fn = client.createFunction(
-      { id: "agent", triggers: [{ event: "agent/run" }] },
-      async () => {
-        replayed = await runLoop({
-          model: model(async () => {
-            throw new Error("the model must not be called on a replay");
-          }),
-          prompt: "go",
-          tools: {},
-          price: () => 0.5,
-        });
-      },
-    );
-    const state = Object.fromEntries(
-      steps.map((done) => {
-        const { usd: _usd, ...old } = done.data as Record<string, unknown>;
-
-        return [done.id, { id: done.id, data: old }];
-      }),
-    );
-    const outcome = await runFnWithStack(fn, state);
-
-    expect(outcome.type).toBe("function-resolved");
-    expect(replayed?.usage.usd).toBe(0.5);
-  });
-
-  test("a stored cost that is not dollars is ignored and priced again", async () => {
-    const { steps } = await run([say("done")], { price: () => 7 });
-    const client = new Inngest({ id: testClientId });
-    const seen: { replayed?: AgentLoopResult } = {};
-    const usdOf = () => {
-      return seen.replayed?.usage.usd;
-    };
-    const fn = client.createFunction(
-      { id: "agent", triggers: [{ event: "agent/run" }] },
-      async () => {
-        seen.replayed = await runLoop({
-          model: model(async () => {
-            throw new Error("the model must not be called on a replay");
-          }),
-          prompt: "go",
-          tools: {},
-          price: () => 0.5,
-        });
-      },
-    );
-
-    for (const bad of [-1, Number.NaN, "7", null]) {
-      const state = Object.fromEntries(
-        steps.map((done) => {
-          return [
-            done.id,
-            {
-              id: done.id,
-              data: { ...(done.data as Record<string, unknown>), usd: bad },
-            },
-          ];
-        }),
-      );
-
-      seen.replayed = undefined;
-      await runFnWithStack(fn, state);
-
-      expect(usdOf()).toBe(0.5);
-    }
-  });
-
-  test("a price that gives no dollars ends the run without a retry", async () => {
-    const { steps } = await run([say("done")], { price: () => Number.NaN });
-
-    expect(steps[0]).toMatchObject({
-      op: "StepFailed",
-      userland: { id: "agent:model:1" },
-    });
-  });
-
-  test("prices from a table of rates per million tokens", async () => {
-    const { result } = await run(
-      [
-        { ...call("add", { a: 1, b: 2 }), model: "claude-x" },
-        { ...say("done"), model: "unlisted" },
-      ],
-      {
-        price: {
-          "claude-x": { input: 3_000_000, output: 15_000_000 },
-          "*": { input: 1_000_000, output: 1_000_000 },
-        },
-      },
-    );
-
-    // 10 in and 5 out at $3 and $15 per token, then at $1 and $1.
-    expect(result?.usage.usd).toBeCloseTo(10 * 3 + 5 * 15 + 10 + 5);
-  });
-
-  test("without a price the usage has no dollars", async () => {
-    const { result } = await run([say("done")]);
-
-    expect(result?.usage).toEqual({ input: 10, output: 5 });
   });
 
   test("keeps the model's message exactly as returned", async () => {
@@ -1819,18 +1640,10 @@ describe("onTurn", () => {
 });
 
 describe("cost", () => {
-  test("a model that reports its own cost needs no price", async () => {
+  test("a model reports its own cost", async () => {
     const { result } = await run([{ ...say("done"), usd: 0.5 }]);
 
     expect(result?.usage.usd).toBe(0.5);
-  });
-
-  test("a price overrides the model's own cost", async () => {
-    const { result } = await run([{ ...say("done"), usd: 0.5 }], {
-      price: () => 2,
-    });
-
-    expect(result?.usage.usd).toBe(2);
   });
 });
 
@@ -1850,6 +1663,39 @@ describe("formatEvent", () => {
         },
       }),
     ).toBe("Message from function cron (thread k): hi");
+  });
+
+  test("a message with no sender says it is from outside the agent team, in a thread another agent started", async () => {
+    await getAsyncLocalStorage();
+
+    const inThread = (thread: string) => {
+      return runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: { agent: { thread, ref: "app/optimizer" } } as never,
+        },
+        () => {
+          return formatEvent({
+            name: "agent/message",
+            data: { content: "try the cache first" },
+          });
+        },
+      );
+    };
+
+    // A key a start made: the child's address, then the run, a count, the
+    // tag and the starter.
+    expect(inThread("app/optimizer:run1.0.0123456789abcdef.app%2Flead")).toBe(
+      "Message from outside the agent team (not from an agent): try the cache first",
+    );
+
+    // A thread nobody started, such as a person's chat: the text alone.
+    expect(inThread("chat-42")).toBe("try the cache first");
+
+    // Outside a run: the text alone.
+    expect(
+      formatEvent({ name: "agent/message", data: { content: "hi" } }),
+    ).toBe("hi");
   });
 
   test("words a question with its id, who asked and a pointer to the reply tool", () => {

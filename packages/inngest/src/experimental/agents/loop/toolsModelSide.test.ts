@@ -390,3 +390,43 @@ describe("a bare MCP server's tools for the model", () => {
     expect(shown[0]).toBe("<untrusted>\nremote text\n</untrusted>");
   });
 });
+
+describe("a tool's output schema", () => {
+  const count = (n: unknown) => {
+    return tool({
+      output: z.object({ n: z.number() }),
+      // @ts-expect-error the body may break its output schema on purpose
+      run: async () => {
+        return { n };
+      },
+    });
+  };
+
+  test("a result that matches reaches the model", async () => {
+    const { shown, isError } = await run([call("count", {}), say("done")], {
+      count: count(2),
+    });
+
+    expect(shown).toEqual(['{"n":2}']);
+    expect(isError).toEqual([undefined]);
+  });
+
+  test("a result that doesn't match is an error result for the model, and is not retried", async () => {
+    const { shown, isError, steps } = await run(
+      [call("count", {}), say("done")],
+      { count: count("two") },
+    );
+
+    expect(isError).toEqual([true]);
+    expect(shown[0]).toContain("count returned an invalid result");
+    expect(shown[0]).toContain("a fault in the tool, not in the call");
+
+    const failed = steps.find((step) => {
+      return step.error !== undefined;
+    });
+
+    expect((failed?.error as { name?: string } | undefined)?.name).toBe(
+      "NonRetriableError",
+    );
+  });
+});

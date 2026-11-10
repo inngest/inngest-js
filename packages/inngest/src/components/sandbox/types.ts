@@ -604,7 +604,7 @@ export type SandboxIO = Pick<DurableSandbox, "commands" | "files">;
 export interface SandboxHandle extends SandboxIO {
   /**
    * Where relative paths and commands start: the sandbox's `cwd`, or the
-   * repository's path when it has one. Default `/work`.
+   * repository's path when it has one. Default `/tmp` without a repo.
    */
   readonly cwd: string;
 

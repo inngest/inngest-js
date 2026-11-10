@@ -5,12 +5,22 @@
  *
  * A run that needs the state of a KV scope instance subscribes first (an inbox
  * filtered by the instance's hash that never starts a run), then asks the
- * ledger once, and keeps a local copy. The copy takes in every
- * `agent/thread.write` of the instance (its own included) and resolves them
- * with the same rule as the ledger, so copies converge. Every access after the
- * load reads the copy, after taking in the writes that arrived since the last
- * access. All of it is inbox reads and `sendEvent` steps, so a replay sees the
- * same copy at the same point.
+ * ledger once, and keeps a local copy. From then on one background reader
+ * holds a single pending read of the subscription for the life of the run,
+ * and applies each `agent/thread.write` of the instance (its own included) to
+ * the copy as it arrives, resolving them with the same rule as the ledger, so
+ * copies converge. Reads of the copy are plain memory: they never drain and
+ * cost no step.
+ *
+ * Only a run that closes its copies on every way out (an agent run) gets the
+ * reader; see `closesCopies`. Any other run drains its copy on the reads that
+ * might see a write.
+ *
+ * Replay: a waiting read is an unfinished op beside every other step, so
+ * steps are planned and the executor saves each message in the run's stack at
+ * the place it arrived. A replay hands the message back at that place (when
+ * the code is next quiet after the step that precedes it), so an arrival
+ * changes the same read of the code on every replay.
  *
  * What the adapter cannot do, and says so by throwing an error that points at
  * a store adapter (`createAgents(client, { store })`):
@@ -28,7 +38,11 @@
  * this module sends is signed, and every one it takes in must be.
  */
 
-import { getAsyncCtxSync } from "../../../components/execution/als.ts";
+import {
+  getAsyncCtxSync,
+  stepsIssued,
+  withoutStepCount,
+} from "../../../components/execution/als.ts";
 import { step } from "../../../components/InngestStepTools.ts";
 import {
   type Inbox,
@@ -37,6 +51,7 @@ import {
 } from "../../../components/inbox/Inbox.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
+import type { StepWithSubscribe } from "../agent/types.ts";
 import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";
 import {
   applyChange,
@@ -104,6 +119,12 @@ interface Copy {
   signer: LedgerSigner;
 
   /**
+   * The run's execution, which says whether the copy may have a background
+   * reader.
+   */
+  instance: object;
+
+  /**
    * The resolved state: set once the copy has loaded. A run that only writes
    * holds none.
    */
@@ -128,12 +149,34 @@ interface Copy {
   justLoaded: boolean;
 
   /**
+   * How many steps the run's code had called when it last drained, `undefined`
+   * before the first drain. Only a copy with no background reader drains on
+   * reads.
+   */
+  drainedAt?: number;
+
+  /**
+   * Whether the copy wrote since it last drained or closed.
+   */
+  dirty: boolean;
+
+  /**
    * How many reads and resends this copy sent, which number their steps.
    */
   reads: number;
   resends: number;
   seq: number;
   sub?: Inbox;
+
+  /**
+   * The background reader of `sub`: settles once the subscription closes.
+   */
+  reader?: Promise<void>;
+
+  /**
+   * What stopped the reader, if anything did.
+   */
+  failure?: unknown;
 
   /**
    * What a run that only writes listens on: its own writes, to learn when
@@ -210,11 +253,13 @@ const copyOf = (
       app: signer.id,
       runId: String(execution.ctx.runId),
       signer,
+      instance: execution.instance,
       clock: (execution.ctx.event as { ts?: number } | undefined)?.ts ?? 0,
       sent: [],
       ledgerLast: 0,
       resend: false,
       justLoaded: false,
+      dirty: false,
       reads: 0,
       resends: 0,
       seq: 0,
@@ -385,10 +430,58 @@ const takeMessages = (copy: Copy, messages: UntypedInboxMessage[]): void => {
  * Everything waiting in the copy's inboxes.
  */
 const drainAll = async (copy: Copy): Promise<UntypedInboxMessage[]> => {
-  return [
+  const taken = [
     ...(copy.sub ? await copy.sub.drain() : []),
     ...(copy.echo ? await copy.echo.drain() : []),
   ];
+
+  copy.dirty = false;
+  copy.drainedAt = stepsIssued();
+
+  return taken;
+};
+
+/**
+ * The runs that close their copies before they end. A background reader leaves
+ * a read waiting in the run, and the executor reports a waiting read when the
+ * code finishes, so the run would not end: only a run that closes its copies
+ * (`closeThreadCopies`) on every way out gets a reader. A copy of any other run
+ * drains on the reads that might see a write.
+ */
+const closing = new WeakSet<object>();
+
+/**
+ * Says that the run closes its copies with `closeThreadCopies` on every way
+ * out, so its copies may keep a background reader.
+ * @param instance The run's execution (`execution.instance`).
+ */
+export const closesCopies = (instance: object): void => {
+  closing.add(instance);
+};
+
+/**
+ * The background reader: one pending read of the subscription for the life of
+ * the run. Each arrival is applied to the copy where the executor saved it in
+ * the run's stack, then the next read is made. The read waits as a single op
+ * that costs nothing until a message arrives.
+ */
+const pump = async (copy: Copy): Promise<void> => {
+  const sub = copy.sub as Inbox;
+
+  try {
+    while (true) {
+      const message = await sub.next();
+
+      if (message === undefined) {
+        return;
+      }
+
+      takeMessages(copy, [message]);
+      prune(copy);
+    }
+  } catch (error) {
+    copy.failure = error;
+  }
 };
 
 /**
@@ -508,7 +601,10 @@ const fetchState = async (copy: Copy): Promise<void> => {
 const load = async (copy: Copy): Promise<void> => {
   const { thread, runId, app } = copy;
   const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
-  const sub = step.subscribe(`ledger-state:${thread}`, [
+  // `subscribe` only types once `inboxMiddleware()` is registered - true at
+  // runtime (`createAgents` always adds it), but invisible to the ambient
+  // `step` singleton's generic type. See `StepWithSubscribe`.
+  const sub = (step as StepWithSubscribe).subscribe(`ledger-state:${thread}`, [
     {
       event: threadWrite.name,
       if: mine,
@@ -526,8 +622,31 @@ const load = async (copy: Copy): Promise<void> => {
   copy.sub = sub;
   await inboxOpenedPromise(sub);
   await fetchState(copy);
+
+  // The read subscription hears every write the echo does.
+  if (copy.echo) {
+    await copy.echo.close();
+    copy.echo = undefined;
+  }
+
   copy.ready = true;
   copy.justLoaded = true;
+};
+
+/**
+ * Starts the background reader of a loaded copy of a run that closes its
+ * copies. It starts where the code is when the run says so, the same place on
+ * every replay. Its reads are not counted as steps of the run's code: how far
+ * it reads before a given point of the code depends on what the request
+ * loaded, and a count that differs between replays would make an inbox drain
+ * skip a read on one replay and not on another.
+ */
+const startReader = (copy: Copy): void => {
+  if (copy.ready && !copy.reader && copy.sub && closing.has(copy.instance)) {
+    copy.reader = withoutStepCount(() => {
+      return pump(copy);
+    });
+  }
 };
 
 /**
@@ -553,11 +672,25 @@ const settle = async (copy: Copy): Promise<void> => {
 };
 
 /**
- * Takes in the writes that arrived since the last access. Right after the load
- * there is nothing new to take in.
+ * Makes sure the copy is loaded. With a background reader what arrived is
+ * already in the copy, so a read takes nothing in: only a resend a ledger
+ * handover called for is done here. A copy with no reader takes in the writes
+ * that arrived since the last access, and right after the load there is
+ * nothing new to take in.
  */
 const sync = async (copy: Copy): Promise<void> => {
   await ensure(copy);
+  startReader(copy);
+
+  if (copy.failure) {
+    throw copy.failure;
+  }
+
+  if (copy.reader) {
+    await settle(copy);
+
+    return;
+  }
 
   if (copy.justLoaded) {
     copy.justLoaded = false;
@@ -566,8 +699,13 @@ const sync = async (copy: Copy): Promise<void> => {
     return;
   }
 
-  takeMessages(copy, await drainAll(copy));
-  prune(copy);
+  const last = stepsIssued();
+
+  if (last === undefined || last !== copy.drainedAt) {
+    takeMessages(copy, await drainAll(copy));
+    prune(copy);
+  }
+
   await settle(copy);
 };
 
@@ -600,7 +738,8 @@ const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
     const { thread, app, runId } = copy;
     const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
 
-    copy.echo = step.subscribe(`ledger-echo:${thread}`, [
+    // See the comment on the other `step.subscribe` call in this file.
+    copy.echo = (step as StepWithSubscribe).subscribe(`ledger-echo:${thread}`, [
       {
         event: threadWrite.name,
         if: `${mine} && async.data.runId == ${quoted(runId)}`,
@@ -609,12 +748,13 @@ const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
     ]) as unknown as Inbox;
     await inboxOpenedPromise(copy.echo);
   } else {
-    // A ledger run that took over since the last write says what it lacks.
-    takeMessages(copy, await drainAll(copy));
-    prune(copy);
+    // A write listens for nothing: a ledger run that took over since says what
+    // it lacks at the next read or when the run ends, which is when a drain
+    // pays.
     await settle(copy);
   }
 
+  copy.dirty = true;
   copy.seq += 1;
 
   const seq = copy.seq;
@@ -871,6 +1011,23 @@ export const ledgerKvAdapter = (
  */
 export const closeThreadCopies = async (instance: object): Promise<void> => {
   for (const copy of copies.get(instance)?.values() ?? []) {
+    if (copy.reader && copy.sub) {
+      // Closing ends the reader's pending read and hands back what the
+      // reader did not take. The last writes may have met a handover: hear it
+      // before leaving.
+      const unread = copy.sub.closed ? [] : await copy.sub.close();
+
+      await copy.reader;
+      takeMessages(copy, unread);
+      prune(copy);
+      await settle(copy);
+    } else if (copy.dirty && (copy.sub || copy.echo)) {
+      // A run that only writes holds no reader: hear what its echo holds.
+      takeMessages(copy, await drainAll(copy));
+      prune(copy);
+      await settle(copy);
+    }
+
     if (copy.sub && !copy.sub.closed) {
       await copy.sub.close();
     }

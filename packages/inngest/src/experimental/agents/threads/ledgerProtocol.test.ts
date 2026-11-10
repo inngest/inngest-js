@@ -144,6 +144,21 @@ describe("a failed turn's resend", () => {
   });
 });
 
+describe("ledger durability", () => {
+  test("a ledger request that fails is tried again, so an app restart does not lose the thread's state", () => {
+    const client = new Inngest({ id: "durable-app", isDev: true });
+    const fns = createLedgerFunctions(client);
+
+    expect(fns).toHaveLength(2);
+
+    for (const fn of fns) {
+      expect(
+        (fn as unknown as { opts: { retries?: number } }).opts.retries,
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("ledger handover", () => {
   const client = new Inngest({ id: "handover-app", isDev: true });
   const supervisor = createLedgerFunctions(client).find((fn) => {

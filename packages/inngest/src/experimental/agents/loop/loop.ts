@@ -31,7 +31,9 @@ import {
 } from "../../../components/sandbox/tools.ts";
 import type { DurableSandbox } from "../../../components/sandbox/types.ts";
 import type { IsAny } from "../../../helpers/types.ts";
+import { type BriefingParts, briefingText } from "../agent/briefing.ts";
 import { nextCount } from "../agent/executionCounter.ts";
+import { taggedKeyAddress } from "../agent/relations.ts";
 import type { Json } from "../json.ts";
 import { kv } from "../kv/kv.ts";
 import { historyRecordKey } from "../threads/thread.ts";
@@ -41,7 +43,8 @@ import {
   compactionFor,
   withCompaction,
 } from "./context.ts";
-import { type AgentPrice, priceOf } from "./cost.ts";
+
+import { isTurnEnder } from "./endsTurn.ts";
 import { sortModelError } from "./modelErrors.ts";
 import { scoreThisStep } from "./scores.ts";
 import { untrustedText } from "./untrustedText.ts";
@@ -106,7 +109,10 @@ const textOfJson = (value: unknown): string => {
  *
  * - `agent/message`: `Message from <address> (thread <key>): <content>` (from a
  *   plain function: `Message from function <id> (thread <key>): <content>`).
- *   A message with no sender is its text alone.
+ *   A message with no sender is its text alone, except in the thread of an
+ *   agent another agent started: there it reads `Message from outside the
+ *   agent team (not from an agent): <content>`, so the model does not take it
+ *   for its starter's.
  * - `agent/question`: the question, its id, who asked, and a pointer to the
  *   `reply` tool.
  * - `agent/finished`: which agent and thread finished, the outcome, then the
@@ -145,8 +151,16 @@ export const formatEvent = (
       return JSON.stringify({ event: event.name, data: event.data });
     }
 
-    return from
-      ? `Message from ${whoOf(from)}${where}: ${textOfJson(content)}`
+    if (from) {
+      return `Message from ${whoOf(from)}${where}: ${textOfJson(content)}`;
+    }
+
+    // An agent that another agent started works for it, so a message from
+    // anyone else says so. A thread a start made has a tagged key.
+    const thread = getAsyncCtxSync()?.execution?.agent?.thread;
+
+    return thread !== undefined && taggedKeyAddress(thread) !== undefined
+      ? `Message from outside the agent team (not from an agent): ${textOfJson(content)}`
       : textOfJson(content);
   }
 
@@ -304,7 +318,7 @@ export interface AgentUsage {
   output: number;
 
   /**
-   * Cost in US dollars, when the loop was given a `price`.
+   * Cost in US dollars, when the model reported its own.
    */
   usd?: number;
 
@@ -365,6 +379,14 @@ export interface AgentModelRequest {
    * The tools in the shape model APIs take. Pass them straight to your SDK.
    */
   tools: ToolJsonDefinition[];
+
+  /**
+   * EXPERIMENTAL: The agent's briefing (see `BriefingParts`), only for a model
+   * marked `placesBriefing`, which places it itself: `runtime` is stable for
+   * an agent with the same tools, `situation` for the run. Any other model
+   * gets the briefing at the end of `system` instead.
+   */
+  briefing?: BriefingParts;
 }
 
 /**
@@ -394,14 +416,13 @@ export interface AgentModelResponse {
 
   /**
    * The model that answered, such as `claude-sonnet-5-5`. It is given to
-   * `price` to work out what the call cost.
+   * the cost of the call.
    */
   model?: string;
 
   /**
    * What this call cost in US dollars, when the model knows its prices
-   * (`anthropic()` does). A `price` on the loop overrides it. Default: not
-   * known, and a dollar budget then needs a `price`.
+   * (`anthropic()` does). Default: not known.
    */
   usd?: number;
 
@@ -427,6 +448,14 @@ export interface AgentModel {
    * summarises the conversation once it fills 70% of it.
    */
   contextWindow?: number;
+
+  /**
+   * EXPERIMENTAL: Whether the model places the agent's briefing itself, from
+   * the request's `briefing` (`anthropic()` does, with a cache breakpoint
+   * between its sections). Otherwise the loop adds the briefing to the end of
+   * `system`.
+   */
+  placesBriefing?: boolean;
 }
 
 const modelBrand: unique symbol = Symbol.for("inngest.agents.model");
@@ -755,15 +784,16 @@ export interface AgentLoopOptions<TTools extends SandboxTools = SandboxTools> {
   onTurn?: (turn: AgentTurn) => void | Promise<void>;
 
   /**
-   * Overrides what a model call costs. The model reports its own cost when it
-   * knows its prices (`anthropic()` does), so a dollar budget needs no price.
-   * Give one for a model function that reports none, or to replace the
-   * model's: a function of that call's tokens and model that returns US
-   * dollars, or rates per million tokens by model name (`"*"` for any other).
-   * The cost is worked out once, inside the model call's step, and a replay
-   * reuses it.
+   * @internal The agent's briefing, made from the loop's tools at the start
+   * of each call of the loop. Only the loops the agent builds have it.
    */
-  price?: AgentPrice;
+  "~briefing"?: (tools: SandboxTools) => BriefingParts | undefined;
+
+  /**
+   * @internal Tools added once a question has reached the run, and kept for
+   * the rest of it (the agent's `reply`).
+   */
+  "~afterQuestion"?: SandboxTools;
 }
 
 /**
@@ -901,16 +931,6 @@ export interface AgentLoopWiring {
   inboxes?: () => { as: string; source: { event: string; if: string } }[];
 
   /**
-   * The reason the thread's budget is spent, if it is.
-   */
-  budget?: () => string | undefined;
-
-  /**
-   * The agent's the agent's `price`.
-   */
-  price?: AgentPrice;
-
-  /**
    * Records the turn inside the model call's step, so it costs no step of its
    * own. What it returns rides with the reply.
    */
@@ -929,13 +949,6 @@ export interface AgentLoopWiring {
   agent?: string;
 
   /**
-   * Whether the loop saves the model's history in thread KV after each batch
-   * and picks it up when the thread's next run starts. The agent's `remember`
-   * field, `true` unless it says `false`.
-   */
-  remember?: boolean;
-
-  /**
    * The report types the run still owes. A model that tries to finish while
    * this is not empty is reminded and the loop continues.
    */
@@ -952,6 +965,11 @@ export interface AgentLoopWiring {
    * to its question. Filled by the messaging work.
    */
   questions?: () => ReadonlyMap<string, string>;
+
+  /**
+   * Whether a question has reached this run, so the loop adds `reply`.
+   */
+  questionArrived?: () => boolean;
 
   /**
    * Called with the IDs of the messages folded into a model call.
@@ -1195,14 +1213,15 @@ const storedCost = (usd: unknown): number | undefined => {
 
 /**
  * Adds tools to a loop's own. The same name twice is an error, since the
- * model could only reach one of them.
+ * model could only reach one of them, except over a built-in that ends the
+ * turn (`wait`): yours replaces it.
  */
 export const addTools = <TTools extends SandboxTools>(
   own: SandboxTools | undefined,
   extra: TTools | undefined,
 ): SandboxTools => {
   for (const name of Object.keys(extra ?? {})) {
-    if (own && Object.hasOwn(own, name)) {
+    if (own && Object.hasOwn(own, name) && !isTurnEnder(own[name])) {
       throw new Error(
         `The tool "${name}" is added twice: the loop already has a tool of that name`,
       );
@@ -1240,11 +1259,37 @@ const runLoop = async <TTools extends SandboxTools>(
   } = options;
   const forcesTool = toolChoice !== "auto" && toolChoice !== "none";
   const wiring = bridgedWiring();
-  const price = options.price ?? wiring?.price;
   const id = uniqueLoopId(options.id ?? "agent");
   // The key of an MCP server in `tools` names its tools; its list is a step.
-  const tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
-  const definitions = toolDefinitions(tools);
+  let tools = (await expandMcpTools(options.tools ?? {}, id)) as TTools;
+  let definitions = toolDefinitions(tools);
+  // Tools that come with the first question (`reply`): once added they stay,
+  // so the cached tool list changes once at most.
+  const late = Object.fromEntries(
+    Object.entries(options["~afterQuestion"] ?? {}).filter(([name]) => {
+      return !Object.hasOwn(tools, name);
+    }),
+  );
+  const addLate = () => {
+    if (
+      Object.keys(late).length > 0 &&
+      !Object.hasOwn(tools, Object.keys(late)[0] as string) &&
+      wiring?.questionArrived?.()
+    ) {
+      tools = { ...tools, ...late } as TTools;
+      definitions = toolDefinitions(tools);
+    }
+  };
+
+  addLate();
+
+  // The briefing is made once, from the tools the call starts with.
+  const briefing = options["~briefing"]?.(tools);
+  const placed = model.placesBriefing === true;
+  const fullSystem =
+    briefing && !placed
+      ? [system, briefingText(briefing)].filter(Boolean).join("\n\n")
+      : system;
   const format =
     options.format ??
     ((event: AgentEvent) => {
@@ -1279,8 +1324,9 @@ const runLoop = async <TTools extends SandboxTools>(
         .join("\n\n")
     : contentOf(batch as AgentInput);
   // A loop in an agent picks up what the thread's earlier runs left, unless it
-  // was given a history of its own.
-  const remembering = wiring?.remember === true;
+  // was given a history of its own. A loop outside an agent has no thread to
+  // keep it on.
+  const remembering = wiring?.agent !== undefined;
   const stored =
     remembering && options.history === undefined
       ? ((await kv.thread.get(historyKeyOf(wiring?.agent))) as
@@ -1352,7 +1398,7 @@ const runLoop = async <TTools extends SandboxTools>(
       return finish("stop", turn - 1);
     }
 
-    const spent = (await options.budget?.(turn)) ?? wiring?.budget?.();
+    const spent = await options.budget?.(turn);
 
     if (spent !== undefined) {
       return finish("budget", turn - 1, spent);
@@ -1391,6 +1437,8 @@ const runLoop = async <TTools extends SandboxTools>(
       for (const event of chosen) {
         messages.push({ role: "user", content: contentOf(event) });
       }
+
+      addLate();
 
       steered = chosen.length;
       wiring?.folded?.({
@@ -1446,7 +1494,8 @@ const runLoop = async <TTools extends SandboxTools>(
           }
 
           answer = await model({
-            system,
+            ...(fullSystem !== undefined && { system: fullSystem }),
+            ...(briefing && placed && { briefing }),
             messages: last
               ? [...sent, { role: "user", content: options.wrapUp as string }]
               : sent,
@@ -1478,23 +1527,13 @@ const runLoop = async <TTools extends SandboxTools>(
           }
         }
 
-        // Priced here and stored with the reply, so a replay uses the number
-        // the call was priced at. A `price` overrides the model's own cost; a
-        // reply that reported no tokens costs nothing.
+        // The model reports its own cost when it knows its prices; a reply
+        // that reported no tokens costs nothing.
         if (summaryUsage) {
           answer = { ...answer, usage: addUsage(answer.usage, summaryUsage) };
         }
 
-        const priced: AgentModelResponse = price
-          ? {
-              ...answer,
-              usd: priceOf(
-                price,
-                answer.usage ?? { input: 0, output: 0 },
-                answer.model,
-              ),
-            }
-          : answer;
+        const priced: AgentModelResponse = answer;
 
         const recorded = await wiring?.recordTurn?.({
           turn,
@@ -1529,11 +1568,7 @@ const runLoop = async <TTools extends SandboxTools>(
     }
 
     const callUsage = reply.usage ?? { input: 0, output: 0 };
-    // A step memoized before the cost was stored with it has no `usd`: price
-    // it now.
-    const cost = price
-      ? (storedCost(reply.usd) ?? priceOf(price, callUsage, reply.model))
-      : storedCost(reply.usd);
+    const cost = storedCost(reply.usd);
 
     usage.input += callUsage.input;
     usage.output += callUsage.output;
@@ -1585,6 +1620,28 @@ const runLoop = async <TTools extends SandboxTools>(
       );
     };
 
+    // A model that stops while a report is owed is reminded, up to a few
+    // times, and the loop goes on within `maxTurns` and the budget.
+    const remindOwed = async (): Promise<boolean> => {
+      const owed = (await wiring?.owed?.()) ?? [];
+
+      if (
+        owed.length === 0 ||
+        owedReminders >= maxOwedReminders ||
+        turn >= maxTurns
+      ) {
+        return false;
+      }
+
+      owedReminders += 1;
+      messages.push({
+        role: "user",
+        content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
+      });
+
+      return true;
+    };
+
     if (reply.toolCalls.length === 0) {
       onTurn(options.onTurn);
 
@@ -1604,20 +1661,7 @@ const runLoop = async <TTools extends SandboxTools>(
         continue;
       }
 
-      // A model that stops while a report is owed is reminded, up to a few
-      // times, and the loop goes on within `maxTurns` and the budget.
-      const owed = (await wiring?.owed?.()) ?? [];
-
-      if (
-        owed.length > 0 &&
-        owedReminders < maxOwedReminders &&
-        turn < maxTurns
-      ) {
-        owedReminders += 1;
-        messages.push({
-          role: "user",
-          content: `You still owe a ${owed.join(" and a ")} report. Send it with the report tool before you finish.`,
-        });
+      if (await remindOwed()) {
         continue;
       }
 
@@ -1648,6 +1692,20 @@ const runLoop = async <TTools extends SandboxTools>(
     turnInfo.runs = done.map(({ run: finished }) => finished) as AgentToolRun[];
     messages.push({ role: "tool", results: done.map(({ result }) => result) });
     onTurn(options.onTurn);
+
+    // A built-in that ends the turn (`wait`) ran: once every call of the
+    // reply has run, the loop ends as it does on a reply with no tool call.
+    const endedTurn = done.some(({ run: finished }) => {
+      return !finished.isError && isTurnEnder(tools[finished.name]);
+    });
+
+    if (endedTurn) {
+      if (await remindOwed()) {
+        continue;
+      }
+
+      return finish("done", turn);
+    }
   }
 
   return finish("maxTurns", maxTurns);

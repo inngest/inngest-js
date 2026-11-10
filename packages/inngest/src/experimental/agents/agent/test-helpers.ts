@@ -37,6 +37,13 @@ export const run = async (
     incoming?: unknown[];
 
     /**
+     * Messages that arrive while a step runs (`during`, so before its
+     * result is saved) or just after it (`after`), by the ID the function
+     * gave the step.
+     */
+    arrive?: { event: unknown; at: string; when?: "during" | "after" }[];
+
+    /**
      * Steps the run already holds, by the ID the function gave them: the memos
      * of a run that started before the IDs changed.
      */
@@ -113,6 +120,88 @@ export const run = async (
     state = { ...state, [id]: { id, data } };
   };
 
+  // Reads and sleeps that wait beside the run's other work.
+  const pendingWaits = new Map<string, OutgoingOp>();
+  const loggedWaits = new Set<string>();
+  const arrivals = [...(options.arrive ?? [])];
+
+  // The message steps saved after the step a read last saw that it wants, as
+  // the executor finds them for a batch read.
+  const sinceOf = (op: OutgoingOp) => {
+    const opts = op.opts as Record<string, unknown> | undefined;
+    const batch = opts?.batch as { max?: number } | undefined;
+    const seen = String(opts?.seen ?? "");
+    const want = opts?.want as
+      | { events?: string[]; src?: string[] }
+      | undefined;
+    const after = stack.slice(seen === "" ? 0 : stack.indexOf(seen) + 1);
+    const ids = after.filter((id) => {
+      const value = state[id]?.data as
+        | { data?: { name?: string }; src?: string[] }
+        | undefined;
+
+      return (
+        isInboxMessage(value) &&
+        (want?.events === undefined ||
+          want.events.includes(value.data?.name ?? "")) &&
+        (want?.src === undefined ||
+          (value.src ?? []).some((pause) => {
+            return want.src?.includes(pause);
+          }))
+      );
+    });
+
+    return batch?.max === undefined ? ids : ids.slice(0, batch.max);
+  };
+
+  // A message arrives: it is saved, and the first read waiting for one is
+  // answered with it. An event that arrives before any inbox of the run
+  // listens for it matches no pause, so the executor saves nothing.
+  const arriveNow = (value: unknown) => {
+    const name = (value as { name?: unknown } | null)?.name;
+
+    if (
+      typeof name === "string" &&
+      !pauses.some((pause) => {
+        return pause.event === name;
+      })
+    ) {
+      return;
+    }
+
+    save(value);
+
+    for (const [id, op] of pendingWaits) {
+      const opts = op.opts as Record<string, unknown> | undefined;
+
+      if (opts?.batch === undefined) {
+        // The replay of a plain read finds the message in the stack.
+        pendingWaits.delete(id);
+
+        return;
+      }
+
+      const ids = sinceOf(op);
+
+      if (ids.length > 0) {
+        pendingWaits.delete(id);
+        answer(id, { cut: ids.at(-1) ?? null });
+
+        return;
+      }
+    }
+  };
+
+  // The messages that arrive at a step, while it runs or just after it.
+  const arriveAt = (stepName: string, when: "during" | "after") => {
+    for (const arrival of [...arrivals]) {
+      if (arrival.at === stepName && (arrival.when ?? "during") === when) {
+        arrivals.splice(arrivals.indexOf(arrival), 1);
+        arriveNow(arrival.event);
+      }
+    }
+  };
+
   for (const [stepId, data] of Object.entries(options.memos ?? {})) {
     answer(_internals.hashId(stepId), data);
   }
@@ -140,6 +229,8 @@ export const run = async (
         : result.type === "steps-found"
           ? result.steps
           : [];
+    const stackBefore = stack.length;
+    let retried = false;
 
     if (result.type === "function-resolved") {
       return {
@@ -176,6 +267,12 @@ export const run = async (
       }
 
       if (op.op === StepOpCode.StepPlanned) {
+        const stepName = op.userland?.id ?? op.id;
+
+        // A message that arrives while the step runs is saved before the
+        // step's result.
+        arriveAt(stepName, "during");
+
         // A planned step runs in a request of its own, as the executor does.
         const ran = await runFnWithStack(fn, state, {
           event: structuredClone(event),
@@ -185,18 +282,35 @@ export const run = async (
           runId: options.runId,
         });
 
-        if (ran.type === "step-ran") {
-          options.onStep?.(ran.step);
+        // A step's result comes back as a `steps-found` when lazy ops (a
+        // `defer`) ride along with it.
+        const result =
+          ran.type === "step-ran"
+            ? ran.step
+            : ran.type === "steps-found"
+              ? ran.steps.find((candidate) => {
+                  return candidate.id === op.id;
+                })
+              : undefined;
+
+        if (result?.op === StepOpCode.StepError) {
+          // A failed attempt that will be retried: nothing is saved, and the
+          // next request replays the run and tries the step again.
+          retried = true;
+        } else if (result) {
+          options.onStep?.(result);
           state = {
             ...state,
             [op.id]: {
               id: op.id,
-              data: ran.step.data,
-              error: ran.step.error,
+              data: result.data,
+              error: result.error,
             },
           };
           stack.push(op.id);
         }
+
+        arriveAt(stepName, "after");
 
         continue;
       }
@@ -234,45 +348,31 @@ export const run = async (
       }
 
       if (op.op === StepOpCode.SubscribeWait) {
-        ops.push({ id: op.userland?.id ?? op.id, op: "wait", opts });
-        options.onOp?.(op, saved);
+        if (!loggedWaits.has(op.id)) {
+          loggedWaits.add(op.id);
+          ops.push({ id: op.userland?.id ?? op.id, op: "wait", opts });
+          options.onOp?.(op, saved);
+        }
 
         const batch = opts?.batch as
-          | { drain?: boolean; unread?: boolean; room?: number }
+          | { drain?: boolean; unread?: boolean; max?: number }
           | undefined;
-        const seen = String(opts?.seen ?? "");
-        const want = opts?.want as
-          | { events?: string[]; src?: string[] }
-          | undefined;
-
-        // The message steps saved after the step the read last saw that it
-        // wants, as the executor finds them for a batch read.
-        const since = () => {
-          const after = stack.slice(seen === "" ? 0 : stack.indexOf(seen) + 1);
-          const ids = after.filter((id) => {
-            const value = state[id]?.data as
-              | { data?: { name?: string }; src?: string[] }
-              | undefined;
-
-            return (
-              isInboxMessage(value) &&
-              (want?.events === undefined ||
-                want.events.includes(value.data?.name ?? "")) &&
-              (want?.src === undefined ||
-                (value.src ?? []).some((pause) => {
-                  return want.src?.includes(pause);
-                }))
-            );
-          });
-
-          return batch?.room === undefined ? ids : ids.slice(0, batch.room);
-        };
 
         if (batch !== undefined) {
-          const found = since();
+          let found = sinceOf(op);
+
+          // The unread messages the SDK holds are before the step it saw, so
+          // with none since, the cut covers every message of the inbox.
+          if (found.length === 0 && batch.unread) {
+            found = sinceOf({
+              ...op,
+              opts: { ...opts, seen: "", batch: { ...batch, max: undefined } },
+            } as OutgoingOp);
+          }
 
           if (batch.drain || batch.unread || found.length > 0) {
-            answer(op.id, { seen, ids: found });
+            answer(op.id, { cut: found.at(-1) ?? null });
+            pendingWaits.delete(op.id);
             continue;
           }
         }
@@ -284,29 +384,23 @@ export const run = async (
           continue;
         }
 
-        // The run is blocked until a message arrives; the replay finds it.
-        if (incoming.length === 0) {
-          return {
-            ops,
-            reads,
-            saved,
-            output: undefined,
-            error: undefined as unknown,
-            waiting: true,
-          };
-        }
-
-        save(incoming.shift());
-
-        if (batch !== undefined) {
-          answer(op.id, { seen, ids: since() });
-        }
+        // The read waits beside the run's other work. A message arrives when
+        // nothing else can happen; the replay finds it.
+        pendingWaits.set(op.id, op);
 
         continue;
       }
 
+      // A step that ran in this request, with nothing beside it to plan. A
+      // message that arrives while it runs is saved before its result.
+      const ranHere = op.op === StepOpCode.StepRun && !(op.id in state);
+
       if (op.op === StepOpCode.StepRun) {
         options.onStep?.(op);
+      }
+
+      if (ranHere) {
+        arriveAt(op.userland?.id ?? op.id, "during");
       }
 
       // A wait for an event ends unanswered, as it does when its timeout runs
@@ -316,8 +410,30 @@ export const run = async (
         continue;
       }
 
-      // A sleep ends at once.
+      // The wait for `idle` of quiet is a sleep beside the read. It is a wait
+      // with a timeout, as the tests see it: it ends only when one of the
+      // `timeouts` is left, and otherwise the run waits for a message. Any
+      // other sleep ends at once.
       if (op.op === StepOpCode.Sleep) {
+        const idleSleep = (op.userland?.id ?? "").includes("inbox:idle:");
+
+        if (idleSleep && !loggedWaits.has(op.id)) {
+          loggedWaits.add(op.id);
+          ops.push({
+            id: op.userland?.id ?? op.id,
+            op: "wait",
+            opts: { ...(opts ?? {}), timeout: opts?.timeout ?? "idle" },
+          });
+        }
+
+        if (idleSleep && timeoutsLeft <= 0) {
+          continue;
+        }
+
+        if (idleSleep) {
+          timeoutsLeft -= 1;
+        }
+
         answer(op.id, null);
         continue;
       }
@@ -331,6 +447,34 @@ export const run = async (
         [op.id]: { id: op.id, data: op.data, error: op.error },
       };
       stack.push(op.id);
+
+      if (ranHere) {
+        arriveAt(op.userland?.id ?? op.id, "after");
+      }
+    }
+
+    // Nothing happened this request: the run waits on reads. A message
+    // arrives if there is one, else the run is blocked until something from
+    // outside arrives.
+    if (stack.length === stackBefore && !retried) {
+      for (const id of [...pendingWaits.keys()]) {
+        if (id in state) {
+          pendingWaits.delete(id);
+        }
+      }
+
+      if (pendingWaits.size > 0 && incoming.length > 0) {
+        arriveNow(incoming.shift());
+      } else {
+        return {
+          ops,
+          reads,
+          saved,
+          output: undefined,
+          error: undefined as unknown,
+          waiting: true,
+        };
+      }
     }
   }
 

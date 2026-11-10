@@ -96,6 +96,17 @@ export {
 } from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
+// Inboxes (step.subscribe)
+export type {
+  BatchOptions,
+  Inbox,
+  InboxMessage,
+  InboxMessageOf,
+  InboxSources,
+  ReadOptions,
+  UntypedInboxMessage,
+} from "./components/inbox/Inbox.ts";
+export { inboxMiddleware } from "./components/inbox/middleware.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";
@@ -153,6 +164,11 @@ export {
   snapshotName,
   snapshotSlot,
 } from "./components/sandbox/snapshotCache.ts";
+export type {
+  ToolDescription,
+  ToolDescriptionParts,
+} from "./components/sandbox/toolDescription.ts";
+export { renderToolDescription } from "./components/sandbox/toolDescription.ts";
 export type {
   AgentTool,
   AgentToolDefinition,

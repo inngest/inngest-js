@@ -1,22 +1,24 @@
 /**
  * @module
  * EXPERIMENTAL: what an agent gives the loops that run inside it: the inboxes
- * they fold from, the thread's budget and the record of each turn.
+ * they fold from and the record of each turn.
  */
 
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import type { QuestionBook } from "../inbox/questionBook.ts";
 import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
 import type { AgentEvent, AgentLoopWiring, AgentTurn } from "../loop/loop.ts";
+import { closesCopies } from "../threads/ledgerClient.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
-import { budgetReason, type LimitState } from "./limits.ts";
+import type { LimitState } from "./limits.ts";
 import type { AgentFunctionConfig, OpenedInbox } from "./types.ts";
 
 /**
  * The wiring of one run: a loop in it folds the handler's inbox and every inbox
- * the model opened, keeps to the thread's budget and records each turn.
+ * the model opened and records each turn.
  */
 export const createLoopWiring = (options: {
   config: AgentFunctionConfig;
@@ -24,7 +26,7 @@ export const createLoopWiring = (options: {
   /**
    * The handler's own inbox.
    */
-  inbox: Pick<Reader<AgentEvent>, "drain">;
+  inbox: Pick<Reader<AgentEvent>, "drain" | "~fold">;
 
   /**
    * Reads an inbox the model opened with the agent's rules.
@@ -39,11 +41,6 @@ export const createLoopWiring = (options: {
    * The questions of this run.
    */
   questions: QuestionBook;
-
-  /**
-   * Whether the loops of this run remember the thread's history.
-   */
-  remember: boolean;
 
   /**
    * The ID of the event that started the run. The loop never folds it in by
@@ -68,8 +65,15 @@ export const createLoopWiring = (options: {
    */
   recordInStep?: boolean;
 }): AgentLoopWiring => {
+  // The agent function closes the run's thread copies on every way out of the
+  // body, so they may keep a background reader from here on.
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  if (instance) {
+    closesCopies(instance);
+  }
+
   const {
-    config,
     inbox,
     view,
     named,
@@ -77,7 +81,6 @@ export const createLoopWiring = (options: {
     recorder,
     threadKey,
     questions,
-    remember,
     triggerId,
     reports,
     agent,
@@ -85,12 +88,13 @@ export const createLoopWiring = (options: {
   } = options;
 
   return {
-    remember,
     agent,
-    async drain() {
+    async drain({ turn }) {
       // The handler's inbox first, then each inbox the model opened, in the
       // order it opened them. The run's trigger is the handler's to give.
-      const taken: AgentEvent[] = (await inbox.drain()).filter((event) => {
+      const taken: AgentEvent[] = (
+        await (inbox["~fold"]?.(turn) ?? inbox.drain())
+      ).filter((event) => {
         return !triggerId || event.id !== triggerId;
       });
 
@@ -114,15 +118,14 @@ export const createLoopWiring = (options: {
     questions() {
       return questions.texts();
     },
+    questionArrived() {
+      return questions.hasReceived();
+    },
     inboxes() {
       return [...named.values()].map((open) => {
         return { as: open.as, source: open.source };
       });
     },
-    budget() {
-      return budgetReason(limits);
-    },
-    ...(config.price && { price: config.price }),
     ...(recordInStep && {
       async recordTurn(turn: AgentTurn) {
         const next = await recorder.turn(turn, threadKey);

@@ -90,26 +90,6 @@ test("agents: triggers take what createFunction triggers take", () => {
   });
 });
 
-test("agents: idle takes a duration or a function of the run's start, and nothing else", () => {
-  typesOnly(() => {
-    agents.agent({ id: "idle-1", triggers: [created], idle: 5000 });
-    agents.agent({ id: "idle-2", triggers: [created], idle: "7d" });
-    agents.agent({
-      id: "idle-3",
-      triggers: [created],
-      idle: async ({ event, thread }) => {
-        expectTypeOf(event.name).toEqualTypeOf<"order/created">();
-        expectTypeOf(thread).toEqualTypeOf<{ key: string }>();
-
-        return "2m";
-      },
-    });
-
-    // @ts-expect-error idle is a duration
-    agents.agent({ id: "idle-4", triggers: [created], idle: true });
-  });
-});
-
 test("agents: listen takes event types and inboxTools is gone", () => {
   typesOnly(() => {
     agents.agent({ id: "listen-1", triggers: [created], listen: [created] });
@@ -231,35 +211,6 @@ test("agents: loop is in the handler argument only for an agent with a model", (
   });
 });
 
-test("agents: budget, price and limits fields take their types", () => {
-  typesOnly(() => {
-    agents.agent({
-      id: "fields-1",
-      triggers: [created],
-      budget: { usd: 1, tokens: 100 },
-      price: { "*": { input: 1, output: 2 } },
-      limits: { depth: 2 },
-    });
-
-    agents.agent({
-      id: "fields-2",
-      triggers: [created],
-      budget: ({ event, thread }) => {
-        expectTypeOf(event).toHaveProperty("name");
-        expectTypeOf(thread.key).toBeString();
-
-        return { usd: 1 };
-      },
-      price: (usage, model) => {
-        expectTypeOf(usage.input).toBeNumber();
-        expectTypeOf(model).toEqualTypeOf<string | undefined>();
-
-        return 0.01;
-      },
-    });
-  });
-});
-
 test("agents: discovery.agents takes imported agents, addresses and filters", () => {
   typesOnly(() => {
     const other = agents.agent({ id: "other", triggers: [created] });
@@ -305,7 +256,7 @@ test("agents: limits.mayCall is gone", () => {
   });
 });
 
-test("agents: limits.spawn, limits.budget and limits.price are errors, and price is never a function of the event", () => {
+test("agents: limits.spawn is an error", () => {
   typesOnly(() => {
     agents.agent({
       id: "limits-gone-1",
@@ -317,26 +268,15 @@ test("agents: limits.spawn, limits.budget and limits.price are errors, and price
     agents.agent({
       id: "limits-gone-2",
       triggers: [created],
-      // @ts-expect-error budget is a field of the agent
-      limits: { budget: { usd: 1 } },
+      // @ts-expect-error budget is gone
+      budget: { usd: 1 },
     });
 
     agents.agent({
       id: "limits-gone-3",
       triggers: [created],
-      // @ts-expect-error price is a field of the agent
-      limits: { price: { "*": { input: 1, output: 1 } } },
-    });
-
-    agents.agent({
-      id: "price-1",
-      triggers: [created],
-      // @ts-expect-error price is a value, never a function of the event
-      price: ({ event }: { event: unknown }) => {
-        void event;
-
-        return 1;
-      },
+      // @ts-expect-error price is gone
+      price: { "*": { input: 1, output: 1 } },
     });
   });
 });
@@ -378,7 +318,7 @@ test("agents: agents.agent returns an Agent with an id, an address and a card", 
 
     expectTypeOf(found.id).toBeString();
     expectTypeOf(found.address).toBeString();
-    expectTypeOf(found.card).toEqualTypeOf<entry.AgentCard>();
+    expectTypeOf(found.card).toEqualTypeOf<entry.AnnouncedCard>();
     expectTypeOf(found).toHaveProperty("start");
     expectTypeOf(found).toHaveProperty("thread");
   });

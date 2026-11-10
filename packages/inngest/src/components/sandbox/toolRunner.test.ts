@@ -486,7 +486,7 @@ describe("commands.run with tools", () => {
         {
           id: 1,
           error:
-            "count returned an invalid result: n: Expected number, received string",
+            "count returned an invalid result: n: Expected number, received string. Its output schema refused it, so this is a fault in the tool, not in the call.",
         },
       ],
       steps: [],

@@ -17,10 +17,12 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import hashjs from "hash.js";
 import { z } from "zod/v4";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { Inngest } from "../../../components/Inngest.ts";
 import { step } from "../../../components/InngestStepTools.ts";
+import type { ToolDescriptionParts } from "../../../components/sandbox/toolDescription.ts";
 import { toolErrorOf } from "../../../components/sandbox/toolError.ts";
 import {
   type AgentTool,
@@ -46,6 +48,7 @@ import { checkAgainstSchema } from "../discovery/inputCheck.ts";
 import type { Json, JsonSchema } from "../json.ts";
 import { type Kv, typedKey } from "../kv/kv.ts";
 import type { SenderData } from "./events.ts";
+import { handleAddressKey } from "./handleAddressKey.ts";
 
 /**
  * The name a report travels under. Triggers and inbox subscriptions match an
@@ -169,14 +172,7 @@ export const reportSenderProblem = (
   return "its sender is not a thread this thread started, or one whose start granted it, so it is not a report this thread can take";
 };
 
-/**
- * The key a thread handle carries its agent's address under, so a report can
- * be routed to it. Present on `agent.thread(key)`, `me`, the handle `start()`
- * returns and `msg.from`.
- */
-export const handleAddressKey: unique symbol = Symbol.for(
-  "inngest.agents.handleAddress",
-);
+export { handleAddressKey };
 
 /**
  * What can receive a report: a thread handle (`me`, `agent.thread(key)`, a
@@ -337,7 +333,8 @@ export interface AgentReportRoute<
 
   /**
    * Whether the report is owed: the agent's loop reminds its model before it
-   * may finish.
+   * may finish. Default `false`. Set it for a report the work is not done
+   * without; leave progress notes optional.
    */
   required?: boolean;
 }
@@ -799,12 +796,17 @@ export const owedReminder = (types: string[]): string => {
  * @param type The report's type name.
  * @param data The report's data.
  * @param check Checks the data against the schema; gives the problem, if any.
+ * @param key Names this send for good, for a caller whose steps already sit
+ * under an ID of their own (a `runCode` call): the step is `report:<type>`
+ * under it and the events are named by the key, not by a count of the run's
+ * reports.
  */
 export const sendReport = async (
   book: ReportBook,
   type: string,
   data: unknown,
   check?: (data: unknown) => Promise<string | undefined> | string | undefined,
+  key?: string,
 ): Promise<void> => {
   const entry = book.spec[type];
 
@@ -854,13 +856,13 @@ export const sendReport = async (
     return;
   }
 
-  const n = nextCount(execution.instance, "report");
+  const n = key ?? nextCount(execution.instance, "report");
   const event = eventType(reportWireEvent, {
     schema: staticSchema<ReportEnvelope>(),
   });
 
   await step.sendEvent(
-    `report:${type}:${n}`,
+    key === undefined ? `report:${type}:${n}` : `report:${type}`,
     destinations.map((destination, index) => {
       // The ID is the event's own, so a proof can be made for it.
       const id = `report:${execution.ctx.runId}.${n}.${index}`;
@@ -892,15 +894,34 @@ export const sendReport = async (
 
 /**
  * What the model reads about the `report` tool: the types it may send and
- * the schema of each.
+ * the schema of each. The types are known when the run starts and don't
+ * change, so they stay in the description.
  */
-const reportDescription = (spec: ReportSpec): string => {
+const reportDescription = (spec: ReportSpec): ToolDescriptionParts => {
   const lines = Object.entries(spec).map(([type, entry]) => {
     return `- ${type}${entry.required ? " (owed: you must send it before you finish)" : ""}: data ${JSON.stringify(entry.schema ?? { type: "object" })}`;
   });
 
-  return `Sends a typed report to the agents that are waiting for it. Give the report's type and its data. A report whose data does not fit its schema is refused and you can send it again. The types you may send:\n${lines.join("\n")}`;
+  return {
+    does: `Sends a typed report to the agents that are waiting for it, with the report's type and its data. The types you may send:\n${lines.join("\n")}\nA report whose data does not fit its schema is refused, and you can send it again.`,
+    use: "as soon as you have something to report; don't save reports for the end",
+    avoid:
+      "to send your final result: it is not a report, and it goes to whoever started you when you finish",
+    context:
+      "You must send each report marked required before you finish; you are reminded if you don't.",
+  };
 };
+
+/**
+ * What sandbox code reads about its `report` tool.
+ */
+const codeReportDescription = (spec: ReportSpec): ToolDescriptionParts => {
+  const { context: _context, ...parts } = reportDescription(spec);
+
+  return parts;
+};
+
+const reportOutput = z.object({ ok: z.literal(true) });
 
 /**
  * The `report({ type, data })` tool a model gets when its run was started
@@ -911,6 +932,7 @@ export const reportTool = (book: ReportBook): AgentTool => {
   return tool({
     id: "report",
     description: reportDescription(book.spec),
+    output: reportOutput,
     group: true,
     input: z.object({
       type: z.string().describe("The report's type."),
@@ -919,6 +941,46 @@ export const reportTool = (book: ReportBook): AgentTool => {
     run: async ({ type, data }: { type: string; data: unknown }) => {
       try {
         await sendReport(book, type, data);
+      } catch (error) {
+        return toolErrorOf(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+
+      return { ok: true as const };
+    },
+  }) as unknown as AgentTool;
+};
+
+/**
+ * EXPERIMENTAL: the `report({ type, data })` tool sandbox code gets in a
+ * `runCode` when the run owes reports. It checks and sends a report exactly as
+ * the model's `report` tool does. Each call runs under the step ID of its own
+ * `runCode` call, and its events are named by that call, so a script that
+ * reports several times, in a loop or across waits, sends each report once.
+ */
+export const codeReportTool = (book: ReportBook): AgentTool => {
+  return tool({
+    id: "report",
+    description: codeReportDescription(book.spec),
+    output: reportOutput,
+    group: true,
+    input: z.object({
+      type: z.string().describe("The report's type."),
+      data: z.any().describe("The report's data, fitting its schema."),
+    }),
+    run: async (
+      { type, data }: { type: string; data: unknown },
+      context: { idempotencyKey: string },
+    ) => {
+      const key = hashjs
+        .sha256()
+        .update(context.idempotencyKey)
+        .digest("hex")
+        .slice(0, 16);
+
+      try {
+        await sendReport(book, type, data, undefined, key);
       } catch (error) {
         return toolErrorOf(
           error instanceof Error ? error.message : String(error),

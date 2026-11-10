@@ -110,12 +110,45 @@ export interface SandboxDefinitionOptions<
    * whether the model or sandbox code calls it, and the SDK adds "Works on the
    * `<key>` sandbox." to its description. Without `tools` the sandbox brings
    * `sandbox.tools.defaults` (`run`).
+   *
+   * A sandbox offers only the tools you list, so list what the job needs and
+   * nothing more:
+   * - `run` for shell commands (installing, building, running tests);
+   * - `read`, `edit`, `write` and `search` when the model edits or looks
+   *   through files;
+   * - `runCode` when the model should write a script that calls your host
+   *   tools and loops over the results, which you give it with
+   *   `runCode.with({ tools })`. Those tools are hidden from the model and
+   *   reachable only through the script.
+   *
+   * Reach for a sandbox when the model writes and runs code, or does
+   * untrusted work. When the operation is fixed (look up an order, post a
+   * message), make it a host tool in the agent's `tools` instead: it runs in
+   * your app, with your secrets, and needs no machine.
+   *
+   * @example
+   * ```ts
+   * const { run, read, edit, runCode } = sandbox.tools;
+   *
+   * const lookup = tool.step({
+   *   input: z.object({ id: z.string() }),
+   *   run: async ({ id }) => db.customers.find(id),
+   * });
+   *
+   * export const analysis = sandbox({
+   *   id: "analysis",
+   *   // The model sees analysis_run, analysis_read, analysis_edit and
+   *   // analysis_runCode when the agent names this sandbox `analysis`.
+   *   tools: { run, read, edit, runCode: runCode.with({ tools: { lookup } }) },
+   * });
+   * ```
    */
   tools?: TTools;
 
   /**
    * Where relative paths and commands start, and where the shell starts: the
-   * repository's path when the sandbox has a `repo`. Default `/work`.
+   * repository's path when the sandbox has a `repo`. Default `/work` with a
+   * `repo`, else `/tmp`.
    */
   cwd?: string;
 
@@ -361,6 +394,12 @@ const namePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const idPattern = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 /**
+ * Where a sandbox with no `repo` and no `cwd` starts. `/work` is made by the
+ * checkout, so it is missing without one; `/tmp` is in every image.
+ */
+const defaultCwdWithoutRepo = "/tmp";
+
+/**
  * What a `repo` adds to a definition's tools: a marker that the sandbox has a
  * repo (`"~repo"`, never a model tool), and `push` unless the repo is written
  * with `push: false`.
@@ -398,6 +437,12 @@ const defineSandbox = (
  * EXPERIMENTAL: Defines a sandbox for agents: its image and the tools it
  * brings. Define it at module scope and name it in an agent's `sandboxes`. It
  * is created lazily, on the first call that needs it.
+ *
+ * Use a sandbox when the model writes and runs code or does untrusted work;
+ * use a host tool for a fixed operation. The sandbox brings only the tools
+ * you list in `tools`, and the model sees them as `<sandbox key>_<tool key>`,
+ * so a sandbox named `work` with `run` gives it `work_run`. See
+ * `SandboxDefinitionOptions.tools` for which to list.
  *
  * @example
  * ```ts
@@ -1128,7 +1173,12 @@ const lazySandbox = (
     });
   };
 
-  const cwd = lent?.cwd ?? definition.cwd ?? "/work";
+  // `/work` exists only once a repo is checked out, so a sandbox without one
+  // starts in `/tmp`, which every image has.
+  const cwd =
+    lent?.cwd ??
+    definition.cwd ??
+    (resolvedRepo ? resolvedRepo.path : defaultCwdWithoutRepo);
   const shims = definition.shims?.length ? definition.shims : undefined;
   let shellMade: ReturnType<SandboxHandle["shell"]> | undefined;
 
@@ -1231,12 +1281,22 @@ const lazySandbox = (
   if (repo && resolvedRepo?.push !== false) {
     tools[`${name}${toolNamespaceSeparator}push`] = bindSandbox(
       tool.group({
-        description:
-          "Push a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+        description: {
+          does: "Pushes a local branch of the repository to the remote under the same name. The push is checked first and may be refused. It never forces and never deletes.",
+          use: "once your commits on the branch are ready to share",
+          avoid:
+            "with `git push` in a command: the sandbox has no credentials, and this tool pushes for you",
+          context: `The \`${name}\` sandbox has no git credentials: commits reach its remote only through \`${name}${toolNamespaceSeparator}push\`.`,
+        },
         input: z.object({
           branch: z
             .string()
             .describe("The local branch to push, such as agent/fix-typo"),
+        }),
+        output: z.object({
+          branch: z.string(),
+          sha: z.string(),
+          notes: z.array(z.string()),
         }),
         run: async ({ branch }) => {
           try {

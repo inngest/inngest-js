@@ -18,10 +18,11 @@ import {
 import type { Logger } from "../../../middleware/logger.ts";
 import { limitStateOf } from "../agent/limits.ts";
 import {
-  type AgentCard,
   type AgentDiscovery,
+  type AnnouncedCard,
   cardsOf,
   currentCards,
+  discoveryOptionsOf,
   mayUse,
 } from "./discovery.ts";
 import { defaultDiscovery, matchesDiscovery } from "./match.ts";
@@ -101,12 +102,14 @@ export const sharedToolsFor = async (
     logger?: Logger;
   },
 ): Promise<SandboxTools> => {
-  if (discovery === false) {
+  const on = discoveryOptionsOf(discovery);
+
+  if (!on) {
     return {};
   }
 
   const appId = client.id;
-  const own = discovery?.tools ?? defaultDiscovery;
+  const own = on.tools ?? defaultDiscovery;
   const instance = getAsyncCtxSync()?.execution?.instance;
   const chain =
     (instance ? limitStateOf(instance, undefined) : undefined)?.limits.discovery
@@ -115,7 +118,7 @@ export const sharedToolsFor = async (
   const mine = cardsOf(appId).filter((card) => {
     return card.kind === "tool";
   });
-  let others: AgentCard[] = [];
+  let others: AnnouncedCard[] = [];
 
   if (reachesOtherApps(own, appId)) {
     others = (await step.run("discover:tools", async () => {
@@ -131,7 +134,7 @@ export const sharedToolsFor = async (
 
         return [];
       }
-    })) as AgentCard[];
+    })) as AnnouncedCard[];
   }
 
   const allowed = [...mine, ...others].filter((card) => {
@@ -164,7 +167,9 @@ export const sharedToolsFor = async (
     tools[name] = invokeHostedTool({
       appId: hostApp,
       functionId,
-      description: `${card.description ?? functionId} (shared tool ${card.address})`,
+      description: {
+        does: `${card.description ?? functionId} (shared tool ${card.address})`,
+      },
       ...(card.input && { input: card.input as JsonSchemaObject }),
     });
   }

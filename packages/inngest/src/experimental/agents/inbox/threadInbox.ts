@@ -5,6 +5,7 @@
  * records), and the filters that tie a source to the thread.
  */
 
+import { stepsIssued } from "../../../components/execution/als.ts";
 import type {
   BatchOptions,
   Inbox,
@@ -217,6 +218,13 @@ export interface Reader<TMessage>
     options: BatchOptions & ReadOptions,
   ): Promise<TMessage[] | null | undefined>;
   drain(options?: BatchOptions): Promise<TMessage[]>;
+
+  /**
+   * Internal: what a loop's fold takes before a model call. The first call
+   * after `batches()` handed out a batch takes nothing, since the batch was
+   * just read; the next turn's fold picks up what arrived since.
+   */
+  "~fold"?: (turn: number) => Promise<TMessage[]>;
   batches(
     options?: BatchOptions & Partial<ReadOptions>,
   ): AsyncGenerator<TMessage[], void, undefined>;
@@ -270,6 +278,14 @@ export function threadInbox(
   // Told of each question that reaches the inbox, so the run can answer it
   // later by its ID.
   noteQuestion?: (data: AgentQuestionData) => void,
+
+  // Reads the thread's inbox in the background: one read waits for messages
+  // for the life of the run, beside the work, and what it brings goes to a
+  // queue. `batches()` and the fold take from the queue, so they cost no step
+  // of their own. `sleep` times the wait for `idle`.
+  background?: {
+    sleep: (id: string, ms: number) => Promise<unknown>;
+  },
 ): {
   inbox: Inbox<AgentMessage>;
   view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
@@ -444,6 +460,225 @@ export function threadInbox(
         : idle;
     };
 
+    // How many steps the run's code had called when this reader last read the
+    // source. A drain with no step since finds nothing new, so it is skipped.
+    // The count is the same on a replay, so the skip is too.
+    let readAt: number | undefined;
+    const noteRead = () => {
+      readAt = stepsIssued();
+    };
+    // Whether `batches()` handed out a batch the fold has not yet followed.
+    let batchGiven = false;
+    const drainSource = async (options?: BatchOptions) => {
+      const now = stepsIssued();
+
+      if (now !== undefined && now === readAt && options?.max === undefined) {
+        return [];
+      }
+
+      const raws = await source.drain(options);
+
+      batchGiven = false;
+      noteRead();
+
+      return raws;
+    };
+
+    // The background reader of the main view. One read of the source waits at
+    // a time and the batch it brings goes to a queue. Everything else the
+    // thread does with those messages (schema drops, the thread's status,
+    // children) happens where the queue is taken, in the order the run's code
+    // takes it, so a replay does it at the same places. A batch lands in the
+    // queue where its answer sits in the run's state.
+    //
+    // A read is issued only where the run's code is about to do work of its
+    // own (just before a model call) or to wait, never between: a read found
+    // while the code goes on to other asynchronous work would be reported
+    // alone, and the run would sit on it.
+    const bg =
+      main && background
+        ? {
+            queue: [] as UntypedInboxMessage[],
+            reading: false,
+            ended: false,
+            failure: undefined as { error: unknown } | undefined,
+            waiters: [] as (() => void)[],
+            idleWaits: 0,
+          }
+        : undefined;
+
+    const bgWake = () => {
+      for (const resolve of bg?.waiters.splice(0) ?? []) {
+        resolve();
+      }
+    };
+
+    // Makes sure a read is waiting for messages.
+    const bgArm = () => {
+      if (!bg || bg.reading || bg.ended) {
+        return;
+      }
+
+      bg.reading = true;
+
+      source.nextBatch().then(
+        (got) => {
+          bg.reading = false;
+
+          if (got === undefined) {
+            bg.ended = true;
+          } else {
+            bg.queue.push(...got);
+          }
+
+          bgWake();
+        },
+        (error) => {
+          bg.reading = false;
+          bg.failure = { error };
+          bg.ended = true;
+          bgWake();
+        },
+      );
+    };
+
+    // Settles once the queue has something or the source has ended.
+    const bgArrival = (): Promise<void> => {
+      if (!bg || bg.queue.length > 0 || bg.ended) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        bg.waiters.push(resolve);
+      });
+    };
+
+    // What the queue held, with the messages that break their schema dropped.
+    const bgTake = async (): Promise<UntypedInboxMessage[]> => {
+      return keep([...first.splice(0), ...(bg?.queue.splice(0) ?? [])]);
+    };
+
+    // Waits for something to take, or says the loop ends: a run with no quiet
+    // to wait ends the moment nothing is queued or saved unread, `idle` of
+    // quiet ends it, and the source closing ends it.
+    const bgWait = async (): Promise<boolean> => {
+      if (!bg || !background) {
+        return false;
+      }
+
+      if (bg.failure) {
+        throw bg.failure.error;
+      }
+
+      const quiet = quietNow();
+
+      if (quiet === 0) {
+        if (bg.ended) {
+          return false;
+        }
+
+        if (bg.reading) {
+          // A read armed by an earlier fold is already on its way; quiet of 0
+          // does not wait for it to land, so this turn ends without it - it
+          // is still in the queue for the next one.
+          return false;
+        }
+
+        // No budget to wait: take whatever is already unread without
+        // waiting for more to arrive. A drain is always answered at once,
+        // and taking it commits to nothing a wait would not already have -
+        // the read is a durable step either way, so there is no cost to
+        // draining over peeking first.
+        const drained = await source.drain();
+
+        if (drained.length === 0) {
+          return false;
+        }
+
+        bg.queue.push(...drained);
+        bgWake();
+
+        return true;
+      }
+
+      if (bg.ended) {
+        return false;
+      }
+
+      if (delivered > 0) {
+        await recorder.waiting();
+      }
+
+      bgArm();
+
+      if (quiet === undefined) {
+        await bgArrival();
+
+        return !bg.ended || bg.queue.length > 0;
+      }
+
+      bg.idleWaits += 1;
+
+      const timedOut = await Promise.race([
+        bgArrival().then(() => {
+          return false;
+        }),
+        background.sleep(`inbox:idle:${bg.idleWaits}`, quiet).then(() => {
+          return true;
+        }),
+      ]);
+
+      if (timedOut) {
+        // The wait expired: the agent goes on working, so it is not waiting.
+        if (delivered > 0) {
+          await recorder.resumed();
+        }
+
+        return false;
+      }
+
+      return true;
+    };
+
+    // The next batch for a loop: what is queued, else what the wait brings.
+    const bgBatch = async (): Promise<TOut[] | undefined> => {
+      for (;;) {
+        const kept = await bgTake();
+
+        if (kept.length === 0) {
+          if (bg?.queue.length === 0 && !(await bgWait())) {
+            return undefined;
+          }
+
+          continue;
+        }
+
+        const batch = kept.map(present);
+
+        delivered += batch.length;
+        settleChildren(batch);
+
+        // The thread resends one message when a failed run recovers: the last
+        // one of the batch that starts a turn.
+        let inflight: Inflight | undefined;
+
+        for (const message of batch) {
+          inflight = inflightOf(message as unknown as AgentMessage) ?? inflight;
+        }
+
+        if (delivered > 1) {
+          await recorder.running(
+            undefined,
+            inflight,
+            undefined,
+            senderIds(batch as unknown as { name: string }[], started),
+          );
+        }
+
+        return batch;
+      }
+    };
+
     const reader: Reader<TOut> = {
       next: (async (options?: ReadOptions) => {
         if (main && delivered > 0) {
@@ -453,14 +688,13 @@ export function threadInbox(
         for (;;) {
           const queued = first.shift();
 
-          // The trigger comes from the run's state: it still gets its row.
-          if (queued && main && queued === started) {
-            source.noteStart();
-          }
-
           const raw =
             queued ??
             (options ? await source.next(options) : await source.next());
+
+          if (!queued) {
+            noteRead();
+          }
 
           if (raw === undefined) {
             return undefined;
@@ -493,7 +727,6 @@ export function threadInbox(
               undefined,
               inflightOf(message as unknown as AgentMessage),
               undefined,
-              undefined,
               senderIds([message as unknown as { name: string }], started),
             );
           }
@@ -511,11 +744,13 @@ export function threadInbox(
           let raws: UntypedInboxMessage[];
 
           if (queued.length > 0) {
-            raws = [...queued, ...(await source.drain(options))];
+            raws = [...queued, ...(await drainSource(options))];
           } else {
             const got = await source.nextBatch(
               options as BatchOptions & ReadOptions,
             );
+
+            noteRead();
 
             if (got === undefined) {
               return got;
@@ -558,7 +793,6 @@ export function threadInbox(
                 undefined,
                 inflight,
                 undefined,
-                undefined,
                 senderIds(batch as unknown as { name: string }[], started),
               );
             }
@@ -568,6 +802,18 @@ export function threadInbox(
         }
       }) as Reader<TOut>["nextBatch"],
       async *batches(options?: BatchOptions & Partial<ReadOptions>) {
+        if (bg) {
+          for (;;) {
+            const batch = await bgBatch();
+
+            if (batch === undefined) {
+              return;
+            }
+
+            yield batch;
+          }
+        }
+
         for (;;) {
           const quiet = quietNow();
 
@@ -587,6 +833,7 @@ export function threadInbox(
               return;
             }
 
+            batchGiven = true;
             yield batch;
             continue;
           }
@@ -595,11 +842,33 @@ export function threadInbox(
             return;
           }
 
+          batchGiven = true;
           yield batch;
         }
       },
+      async "~fold"(turn: number) {
+        if (bg) {
+          const taken = (await bgTake()).map(present);
+
+          await noteFolded(taken, main);
+          settleChildren(taken);
+
+          // The model call follows at once: the read waits beside it.
+          bgArm();
+
+          return taken;
+        }
+
+        if (turn === 1 && batchGiven && first.length === 0) {
+          batchGiven = false;
+
+          return [];
+        }
+
+        return reader.drain();
+      },
       async drain(options?: BatchOptions) {
-        const raws = [...first.splice(0), ...(await source.drain(options))];
+        const raws = [...first.splice(0), ...(await drainSource(options))];
         const taken = (await keep(raws)).map(present);
 
         await noteFolded(taken, main);
@@ -611,7 +880,11 @@ export function threadInbox(
         return taken;
       },
       async close() {
-        const raws = [...first.splice(0), ...(await source.close())];
+        const raws = [
+          ...first.splice(0),
+          ...(bg?.queue.splice(0) ?? []),
+          ...(await source.close()),
+        ];
         const taken = (await keep(raws)).map(present);
 
         await noteFolded(taken, main);

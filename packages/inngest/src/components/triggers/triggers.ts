@@ -233,19 +233,23 @@ export function addEventIs<TEvent extends object>(event: TEvent): TEvent {
     return event;
   }
 
-  Object.defineProperty(event, "is", {
+  // Middleware may hand the function a frozen or sealed event, which cannot
+  // take a new property, so `is()` goes on a copy of it instead.
+  const target = Object.isExtensible(event) ? event : ({ ...event } as TEvent);
+
+  Object.defineProperty(target, "is", {
     value: (types: { name: string } | readonly { name: string }[]): boolean => {
       const list = Array.isArray(types) ? types : [types];
 
       return list.some((type) => {
-        return hasEventName(event, type.name);
+        return hasEventName(target, type.name);
       });
     },
     enumerable: false,
     configurable: true,
   });
 
-  return event;
+  return target;
 }
 
 /**

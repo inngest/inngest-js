@@ -140,6 +140,21 @@ export const taggedKeyAddress = (key: string): string | undefined => {
 };
 
 /**
+ * The address of the agent that started the thread `key`, as the key names
+ * it, or `undefined` for a key no agent's start made (a plain function's
+ * start, or a key of any other shape). The tag is not checked: this says what
+ * the key claims, and the tools that reach a thread check the tag themselves.
+ * @param key A thread key.
+ */
+export const starterOfKey = (key: string): string | undefined => {
+  const parsed = parseKey(key);
+
+  return parsed && /^[0-9a-f]{16}$/.test(parsed.tag) && parsed.starter !== ""
+    ? parsed.starter
+    : undefined;
+};
+
+/**
  * The key of a thread a start opens, tagged with the thread that started it.
  * @param client The client, whose signing key makes the tags.
  * @param base `<address>:<runId>.<n>`.

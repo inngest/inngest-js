@@ -8,13 +8,15 @@
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import { toolSourceOf } from "../../../components/sandbox/callSite.ts";
+import { toolDescriptionText } from "../../../components/sandbox/toolDescription.ts";
 import {
   isToolError,
   type SharedTool,
   type SharedToolContext,
 } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
-import { type AgentCard, cardOf } from "../discovery/discovery.ts";
+import { type AnnouncedCard, cardOf } from "../discovery/discovery.ts";
 
 /**
  * Makes the function that hosts `shared` in the app of `client`, and its card.
@@ -22,9 +24,11 @@ import { type AgentCard, cardOf } from "../discovery/discovery.ts";
 export const createSharedToolFunction = (
   client: Inngest.Any,
   shared: SharedTool,
-): { fn: InngestFunction.Any; card: AgentCard } => {
+): { fn: InngestFunction.Any; card: AnnouncedCard } => {
   const input = shared.input as Parameters<typeof invoke>[0];
-  const description = shared.description ?? shared.card?.description;
+  const description = toolDescriptionText(
+    shared.description ?? shared.card?.description,
+  );
   const run = shared.run as (
     input: unknown,
     ctx: SharedToolContext,
@@ -83,8 +87,9 @@ export const createSharedToolFunction = (
     fn,
     card: cardOf(client.id, shared.id, fn, {
       card: shared.card,
-      description: shared.description,
+      description: toolDescriptionText(shared.description),
       kind: "tool",
+      ...(toolSourceOf(shared) && { source: toolSourceOf(shared) }),
     }),
   };
 };

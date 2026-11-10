@@ -6,11 +6,18 @@
  * object of card fields that must all match.
  */
 
-import type { AgentCard } from "./discovery.ts";
+import type { AgentCard, AgentEffects } from "./discovery.ts";
 
 /**
  * A filter over card fields. Every field given must match; a list of filters
  * matches when any one does. It never matches a card with `explicit: true`.
+ * Give as many fields as you need to be sure of the match: a filter with
+ * `{ tags: ["research"], effects: "read" }` is narrower than either alone.
+ *
+ * @example
+ * ```ts
+ * discovery: { agents: [{ tags: ["research"] }, { app: "self", owner: "docs" }] }
+ * ```
  */
 export interface DiscoveryFilter {
   /**
@@ -20,7 +27,9 @@ export interface DiscoveryFilter {
   app?: string;
 
   /**
-   * EXPERIMENTAL: tags the card must all have.
+   * EXPERIMENTAL: tags the card must all have, spelled exactly as the card
+   * spells them. Agents choose their tags in `card.tags`, so agree on the
+   * words across agents.
    */
   tags?: string[];
 
@@ -32,8 +41,17 @@ export interface DiscoveryFilter {
   /**
    * EXPERIMENTAL: the card's `effects`. A card without `effects` counts as
    * `"write"`.
+   *
+   * Matched exactly, not as a ceiling: `effects: "write"` matches only a
+   * `"write"` card, never a `"destructive"` one. This is a deliberate choice
+   * — "write" is not a looser synonym for "anything that isn't read-only" —
+   * because the conservative reading is the safe one: a filter written before
+   * `"destructive"` existed, or one that just says `"write"` meaning
+   * "ordinary writes", should not quietly start matching an agent that can
+   * now delete something irreversibly. Ask for `"destructive"` by name to
+   * reach a destructive agent.
    */
-  effects?: "read" | "write";
+  effects?: AgentEffects;
 }
 
 /**
@@ -70,10 +88,14 @@ const appOf = (address: string): string => {
  */
 export const matchesDiscovery = (
   /**
-   * The card to test.
+   * The card to test, plus `explicit` — the one roster input the filter
+   * reads. `explicit` is not a field of the published `AgentCard` (see
+   * `AnnouncedCard`); a caller passes it in alongside the card's own fields.
    */
   card: Pick<AgentCard, "address"> &
-    Partial<Pick<AgentCard, "tags" | "owner" | "effects" | "explicit">>,
+    Partial<Pick<AgentCard, "tags" | "owner" | "effects">> & {
+      explicit?: boolean;
+    },
 
   /**
    * The entries: any one may match.
@@ -211,7 +233,8 @@ export const validateDiscoveryList = (
       (filter.owner !== undefined && typeof filter.owner !== "string") ||
       (filter.effects !== undefined &&
         filter.effects !== "read" &&
-        filter.effects !== "write") ||
+        filter.effects !== "write" &&
+        filter.effects !== "destructive") ||
       (filter.tags !== undefined &&
         (!Array.isArray(filter.tags) ||
           filter.tags.some((tag) => {
@@ -219,7 +242,7 @@ export const validateDiscoveryList = (
           })))
     ) {
       throw new Error(
-        `${where} has a filter with a bad value: app and owner are text, tags is a list of text, effects is "read" or "write"`,
+        `${where} has a filter with a bad value: app and owner are text, tags is a list of text, effects is "read", "write" or "destructive"`,
       );
     }
   }

@@ -1,6 +1,6 @@
 /**
  * @module
- * Tests for defining an agent: the optional handler, `idle`, the value or
+ * Tests for defining an agent: the optional handler, the value or
  * function fields and the run's end.
  */
 
@@ -49,104 +49,6 @@ describe("an agent with no handler", () => {
     expect(waiting).toBe(false);
     // The executor stores a missing output as null.
     expect(output ?? undefined).toBeUndefined();
-  });
-});
-
-describe("idle", () => {
-  const order = { name: "shop/order", data: { id: "o1" } };
-
-  const waitTimeouts = (ops: { op: string; opts: unknown }[]) => {
-    return ops
-      .filter((op) => {
-        return op.op === "wait";
-      })
-      .map((op) => {
-        return (op.opts as { timeout?: string }).timeout;
-      })
-      .filter((timeout) => {
-        return timeout !== undefined;
-      });
-  };
-
-  const defineLoop = (
-    form: "batches" | "messages",
-    idle?: number | string | ((context: { thread: { key: string } }) => string),
-  ) => {
-    return createAgentFunction(
-      makeClient(),
-      {
-        id: "waiter",
-        triggers: { event: "shop/order", thread: "event.data.id" },
-        ...(idle !== undefined && { idle }),
-      } as never,
-      async ({ inbox }) => {
-        let seen = 0;
-
-        if (form === "batches") {
-          for await (const batch of inbox.batches()) {
-            seen += batch.length;
-          }
-        } else {
-          for await (const _message of inbox) {
-            seen += 1;
-          }
-        }
-
-        return seen;
-      },
-    );
-  };
-
-  test.each([["batches" as const], ["messages" as const]])(
-    "with a short idle, for await over %s ends after that much quiet",
-    async (form) => {
-      const { fn } = defineLoop(form, "5m");
-
-      const { output, ops, waiting } = await run(fn, {
-        event: order,
-        timeouts: 1,
-      });
-
-      expect(waiting).toBe(false);
-      expect(output).toBe(1);
-      expect(waitTimeouts(ops)).toEqual(["5m"]);
-    },
-  );
-
-  test.each([["batches" as const], ["messages" as const]])(
-    "an idle of 0 ends the %s loop the moment it would wait, as a run opened through a handle does",
-    async (form) => {
-      const { fn } = defineLoop(form, 0);
-
-      const { output, waiting, ops } = await run(fn, { event: order });
-
-      expect(waiting).toBe(false);
-      expect(output).toBe(1);
-      expect(waitTimeouts(ops)).toEqual([]);
-    },
-  );
-
-  test("without idle the default is 10 minutes", async () => {
-    const { fn } = defineLoop("batches");
-
-    const { ops } = await run(fn, { event: order, timeouts: 1 });
-
-    expect(waitTimeouts(ops)).toEqual(["10m"]);
-  });
-
-  test("a function of the thread is read once and gives the idle", async () => {
-    let calls = 0;
-    const { fn } = defineLoop("messages", ({ thread }) => {
-      calls += 1;
-
-      return thread.key === "o1" ? "2m" : "1h";
-    });
-
-    const { ops } = await run(fn, { event: order, timeouts: 1 });
-
-    expect(waitTimeouts(ops)).toEqual(["2m"]);
-    // Once per request of the run, not once per read.
-    expect(calls).toBeGreaterThan(0);
   });
 });
 
@@ -299,7 +201,7 @@ describe("a trigger with nothing at its thread path", () => {
     ]);
   });
 
-  test("a trigger whose path is there joins the thread it names, with no warning", async () => {
+  test("a trigger whose path is there joins the thread it names, with no thread warning", async () => {
     const warn = vi.fn();
     const client = new Inngest({
       id: testClientId,
@@ -320,7 +222,13 @@ describe("a trigger with nothing at its thread path", () => {
     await run(fn, { event: { name: "shop/order", data: { pr: "p7" } } });
 
     expect(key).toBe("p7");
-    expect(warn).not.toHaveBeenCalled();
+    // No card was given, so defining the agent warns about capabilities
+    // (expected: see discovery.test.ts); it never warns about the thread
+    // path, which the fresh-thread warning (a single string, not
+    // object-first) would mention by name.
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("thread path"),
+    );
   });
 });
 

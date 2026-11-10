@@ -45,6 +45,9 @@ const fakeDeps = (): InboxDeps => {
     message: () => {
       return { name: "review", data: { state: "ok" } };
     },
+    transform: async (_op, _id, value) => {
+      return value;
+    },
     batch: async () => {
       return { cut: "m1" };
     },

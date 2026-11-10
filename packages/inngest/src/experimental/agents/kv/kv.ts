@@ -1362,7 +1362,14 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
 
 const appStores = new Map<string, KvStore>();
 const envStores = new Map<string, KvStore>();
-const ledgerStore = ledgerKvAdapter();
+let ledgerStoreCache: KvStore | undefined;
+
+// Lazy: building it at module load reads `ledgerKvAdapter` before an import
+// cycle through `experimental.ts` has initialized it.
+const ledgerStore = (): KvStore => {
+  ledgerStoreCache ??= ledgerKvAdapter();
+  return ledgerStoreCache;
+};
 
 /**
  * Sets the store the KV of an app uses, unless a KV was built with its own.
@@ -1393,7 +1400,7 @@ export function kvAdapterFor(app?: string): KvStore {
       ? undefined
       : process.env.INNGEST_EXPERIMENTAL_KV_URL;
   if (!url) {
-    return ledgerStore;
+    return ledgerStore();
   }
 
   // One connection per URL, however many KVs are built (`kv.with(client)`

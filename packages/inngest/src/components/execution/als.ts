@@ -5,6 +5,7 @@ import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 import type { InboxRead } from "./inboxState.ts";
 
@@ -39,6 +40,14 @@ export interface AgentBridge {
    * The typed reports the run was started with and the types it has sent.
    */
   reports?: ReportBook;
+
+  /**
+   * The agent tools sandbox code can call as `tools.<name>(...)` in a `runCode`
+   * the run lists: discovery, `start_agent`, `message_agent`, `stop_agent` and
+   * `agent_result`, which `discovery: false` leaves out, and `report` when the
+   * run owes reports.
+   */
+  codeTools?: SandboxTools;
 }
 
 export interface AsyncContext {
@@ -49,6 +58,12 @@ export interface AsyncContext {
    * or a possible one.
    */
   app: Inngest.Like;
+
+  /**
+   * Set inside a background reader (`withoutStepCount`): the step tools it
+   * calls are not counted by `stepsIssued`.
+   */
+  uncounted?: boolean;
 
   /**
    * Details of the current function execution context. If this doesn't exist,
@@ -160,6 +175,17 @@ export interface AsyncContext {
        * after every found step earlier in the stack has been handed back.
        */
       place: (id: string) => Promise<void>;
+
+      /**
+       * Puts a message read from the run's state through `wrapStep`, as every
+       * other step's value is: a message is a step of its own, and the answer
+       * the executor gives a waiting read already goes through it, so a read
+       * answered from state must too or the same read would hand back a
+       * different shape depending on whether the run was waiting.
+       * @param op The unhashed ID of the read's op.
+       * @param id The message's step ID.
+       */
+      transform: (op: string, id: string, message: unknown) => Promise<unknown>;
     };
 
     /**
@@ -183,6 +209,45 @@ export interface AsyncContext {
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
+
+const issuedSteps = new WeakMap<object, number>();
+
+/**
+ * Notes that the code of `instance` called a step tool. Replays run the same
+ * code, so the count at any point of the code is the same on every request.
+ * A call from a background reader is not counted: how far such a reader gets
+ * before a given point of the code depends on what the request loaded, so
+ * counting it would make the count differ between replays.
+ */
+export const countStepIssued = (instance: object): void => {
+  if (getAsyncCtxSync()?.uncounted) {
+    return;
+  }
+
+  issuedSteps.set(instance, (issuedSteps.get(instance) ?? 0) + 1);
+};
+
+/**
+ * Runs `fn`, and everything it starts, as a background reader: the step tools
+ * it calls are not counted by `stepsIssued`. Internal.
+ * @param fn What reads in the background.
+ */
+export const withoutStepCount = <R>(fn: () => R): R => {
+  const store = getAsyncCtxSync();
+
+  return store ? runWithAsyncCtx({ ...store, uncounted: true }, fn) : fn();
+};
+
+/**
+ * How many step tools the code of this execution has called so far, or
+ * `undefined` outside one. Unlike what the state holds, it is the same at a
+ * given point of the code on a first run and on a replay.
+ */
+export const stepsIssued = (): number | undefined => {
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  return instance ? (issuedSteps.get(instance) ?? 0) : undefined;
+};
 
 /**
  * A local-only symbol used as a key in global state to store the async local
