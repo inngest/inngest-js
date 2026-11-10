@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
 import type { Mode } from "../../helpers/env.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
-import { Inngest } from "../Inngest.ts";
+import { Inngest, syncHooksSymbol } from "../Inngest.ts";
+import { connect } from "./index.ts";
 import {
   createLogger,
   createMockStartResponse,
+  driveHandshake,
+  flushMicrotasks,
   MockWebSocket,
   setupCoreMocks,
   teardownCoreMocks,
@@ -213,5 +216,54 @@ describe("createStrategy", () => {
       createTestOptions({ isolateExecution: false }),
     );
     expect(strategy).toBeInstanceOf(SameThreadStrategy);
+  });
+});
+
+describe("sync hooks on connect", () => {
+  test("runs every app's sync hooks once the worker is ready, and a throwing hook does not fail the connection", async () => {
+    const fetchMock = vi.fn();
+
+    fetchMock.mockResolvedValue(
+      createMockStartResponse({ connectionId: "conn-1" }),
+    );
+    global.fetch = fetchMock;
+
+    const one = new Inngest({ id: "app-one", isDev: true });
+    const two = new Inngest({ id: "app-two", isDev: true });
+    const ran: string[] = [];
+
+    one[syncHooksSymbol].add(() => {
+      ran.push("one");
+
+      throw new Error("hook failed");
+    });
+    two[syncHooksSymbol].add(async () => {
+      ran.push("two");
+    });
+
+    const connecting = connect({
+      apps: [
+        { client: one, functions: [] },
+        { client: two, functions: [] },
+      ],
+      isolateExecution: false,
+      handleShutdownSignals: [],
+    });
+
+    await flushMicrotasks();
+
+    const ws = MockWebSocket.instances[0];
+
+    if (!ws) {
+      throw new Error("no connection was opened");
+    }
+
+    await driveHandshake(ws);
+
+    const conn = await connecting;
+
+    expect(ran).toEqual(["one", "two"]);
+
+    await conn.close();
   });
 });

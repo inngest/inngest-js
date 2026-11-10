@@ -201,7 +201,8 @@ import type {
 /**
  * The handler of an agent with a `model` and no handler of its own: each batch
  * goes to the model through the loop, and the final answer is the run's
- * output.
+ * output. The run is short-lived: it ends once the inbox is empty, and the
+ * thread starts a new one when it next sees input.
  */
 const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
   inbox,

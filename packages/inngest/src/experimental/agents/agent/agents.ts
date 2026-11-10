@@ -84,9 +84,11 @@ type OutputOf<TOutput, TModel extends ModelField | undefined> = [
 export interface Agents<TClient extends Inngest.Any = Inngest.Any> {
   /**
    * Defines an agent: a function whose body owns its loop and reads a
-   * durable inbox.
-   * @param config Function ID and KV store.
-   * @param body Your loop; optional. Without one the run ends with output `undefined`.
+   * durable inbox. A run is short-lived: it ends once its inbox is empty, and
+   * the thread starts a new one when it next sees input.
+   * @param config The agent's definition; `id` is all it needs.
+   * @param body Your loop; optional. With a `model` and no body the SDK writes
+   * the loop; with neither, the run ends with output `undefined`.
    */
   agent<
     TType extends EventTypeWithAnySchema<string>,

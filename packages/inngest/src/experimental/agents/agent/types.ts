@@ -261,7 +261,9 @@ export interface AgentFunctionConfig<
    * (`(request) => response`) is a model, not a run field, only when wrapped
    * with `agentModel()`. With a `model` and no handler, the agent runs one the
    * SDK writes: each batch of messages goes to the model, the model's history
-   * carries on across batches and the final answer is the run's output.
+   * carries on across batches and the final answer is the run's output. That
+   * run is short-lived - it ends once its inbox is empty - and the thread
+   * starts a new one when it next sees input, with the history it kept.
    */
   model?: AgentTypesOf<TTypes>["model"] extends ModelField
     ? AgentTypesOf<TTypes>["model"]
