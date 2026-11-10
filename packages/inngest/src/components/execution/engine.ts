@@ -288,10 +288,20 @@ class InngestExecutionEngine
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
 
-    // Setup middleware
+    // Setup middleware. A function's own middleware applies wherever the
+    // function executes: the comm handler appends it to the instances it
+    // builds, and an execution created any other way (a test, an internal
+    // call) builds it here, or a function whose body needs what its middleware
+    // adds would run without it. Listed once, however many levels name it.
+    const mwClasses = [
+      ...(this.options.client.middleware || []),
+      ...((this.options.fn.opts.middleware ?? []) as Middleware.Class[]),
+    ].filter((Cls, at, all) => {
+      return all.indexOf(Cls) === at;
+    });
     const mwInstances =
       this.options.middlewareInstances ??
-      (this.options.client.middleware || []).map((Cls) => {
+      mwClasses.map((Cls) => {
         return new Cls({ client: this.options.client });
       });
     this.middlewareManager = new MiddlewareManager(
