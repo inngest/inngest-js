@@ -1,4 +1,4 @@
-import { DEV_SERVER_URL, sleep, waitFor } from "@inngest/test-harness";
+import { DEV_SERVER_URL, waitFor } from "@inngest/test-harness";
 import { z } from "zod/v3";
 import { Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";

@@ -1,13 +1,139 @@
+import http from "node:http";
 import {
+  type AddressInfo,
   createServer as createNetServer,
   type Server as NetServer,
   type Socket,
   connect as tcpConnect,
 } from "node:net";
-import { DEV_SERVER_PORT } from "@inngest/test-harness";
+import { DEV_SERVER_PORT, DEV_SERVER_URL } from "@inngest/test-harness";
 
 // The dev server's Connect WebSocket gateway runs on the port after the API.
 const GATEWAY_WS_PORT = DEV_SERVER_PORT + 1;
+
+export type RecordedRequest = {
+  body: unknown;
+  bodyText: string;
+  method: string;
+  path: string;
+};
+
+function parseBody(bodyText: string): unknown {
+  if (!bodyText) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    return bodyText;
+  }
+}
+
+/**
+ * HTTP proxy for SDK -> Dev Server traffic. Records parsed request bodies
+ * before forwarding each request unchanged to the real Dev Server.
+ */
+export function createRecordingDevServerProxy() {
+  const requests: RecordedRequest[] = [];
+  const sockets = new Set<Socket>();
+  let url: string | undefined;
+
+  const server = http.createServer((clientReq, clientRes) => {
+    const chunks: Buffer[] = [];
+
+    clientReq.on("data", (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    });
+
+    clientReq.on("end", () => {
+      const bodyBuffer = Buffer.concat(chunks);
+      const bodyText = bodyBuffer.toString("utf8");
+      const path = clientReq.url ?? "/";
+      requests.push({
+        body: parseBody(bodyText),
+        bodyText,
+        method: clientReq.method ?? "GET",
+        path,
+      });
+
+      const upstreamUrl = new URL(path, DEV_SERVER_URL);
+      const proxyReq = http.request(
+        upstreamUrl,
+        {
+          method: clientReq.method,
+          headers: {
+            ...clientReq.headers,
+            host: upstreamUrl.host,
+          },
+        },
+        (upstreamRes) => {
+          clientRes.writeHead(
+            upstreamRes.statusCode ?? 500,
+            upstreamRes.headers,
+          );
+          upstreamRes.pipe(clientRes);
+        },
+      );
+
+      proxyReq.on("error", (err) => {
+        if (!clientRes.headersSent) {
+          clientRes.writeHead(502, { "Content-Type": "text/plain" });
+        }
+        clientRes.end(err.message);
+      });
+
+      if (bodyBuffer.length) {
+        proxyReq.write(bodyBuffer);
+      }
+      proxyReq.end();
+    });
+  });
+
+  // Track open sockets so tests can stop the proxy even with keep-alive
+  // connections.
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+
+  return {
+    requests,
+    get url() {
+      if (!url) {
+        throw new Error("Proxy has not started");
+      }
+      return url;
+    },
+    async start() {
+      await new Promise<void>((resolve, reject) => {
+        server.on("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.removeListener("error", reject);
+          const address = server.address() as AddressInfo;
+          url = `http://127.0.0.1:${address.port}`;
+          resolve();
+        });
+      });
+    },
+    async stop() {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      sockets.clear();
+
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
 
 /**
  * Parse WebSocket frames from a raw byte stream and extract binary payloads.
