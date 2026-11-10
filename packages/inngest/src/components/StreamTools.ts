@@ -55,12 +55,15 @@ export interface StreamTools {
  * @internal
  */
 export class Stream implements StreamTools {
-  private transform: TransformStream<Uint8Array, Uint8Array>;
-  private writer: WritableStreamDefaultWriter<Uint8Array>;
+  private stream?: {
+    transform: TransformStream<Uint8Array, Uint8Array>;
+    writer: WritableStreamDefaultWriter<Uint8Array>;
+  };
   private encoder = new TextEncoder();
   private _activated = false;
   private _errored = false;
   private writeChain: Promise<void> = Promise.resolve();
+  private pendingClose: string | null | undefined;
 
   /**
    * Optional callback invoked the first time `push` or `pipe` is called.
@@ -82,6 +85,15 @@ export class Stream implements StreamTools {
   }) {
     this.onActivated = opts?.onActivated;
     this.onWriteError = opts?.onWriteError;
+  }
+
+  private ensureStream(): {
+    transform: TransformStream<Uint8Array, Uint8Array>;
+    writer: WritableStreamDefaultWriter<Uint8Array>;
+  } {
+    if (this.stream) {
+      return this.stream;
+    }
 
     let readableStrategy: QueuingStrategy<Uint8Array> | undefined;
 
@@ -98,12 +110,23 @@ export class Stream implements StreamTools {
       // Leave `readableStrategy` undefined
     }
 
-    this.transform = new TransformStream<Uint8Array, Uint8Array>(
+    const transform = new TransformStream<Uint8Array, Uint8Array>(
       undefined,
       undefined,
       readableStrategy,
     );
-    this.writer = this.transform.writable.getWriter();
+    this.stream = {
+      transform,
+      writer: transform.writable.getWriter(),
+    };
+
+    if (this.pendingClose !== undefined) {
+      const finalEvent = this.pendingClose ?? undefined;
+      this.pendingClose = undefined;
+      this.scheduleClose(finalEvent);
+    }
+
+    return this.stream;
   }
 
   /**
@@ -118,7 +141,7 @@ export class Stream implements StreamTools {
    * HTTP response) read SSE events from here.
    */
   get readable(): ReadableStream<Uint8Array> {
-    return this.transform.readable;
+    return this.ensureStream().transform.readable;
   }
 
   /**
@@ -131,6 +154,7 @@ export class Stream implements StreamTools {
 
   private activate(): void {
     if (!this._activated) {
+      this.ensureStream();
       this._activated = true;
       this.onActivated?.();
     }
@@ -140,7 +164,7 @@ export class Stream implements StreamTools {
    * Encode and write an SSE event string to the underlying writer.
    */
   private writeEncoded(sseEvent: string): Promise<void> {
-    return this.writer.write(this.encoder.encode(sseEvent));
+    return this.ensureStream().writer.write(this.encoder.encode(sseEvent));
   }
 
   /**
@@ -149,6 +173,7 @@ export class Stream implements StreamTools {
   private enqueue(sseEvent: string): void {
     if (this._errored) return;
 
+    this.ensureStream();
     this.writeChain = this.writeChain
       .then(() => this.writeEncoded(sseEvent))
       .catch((err) => {
@@ -302,12 +327,23 @@ export class Stream implements StreamTools {
    * Optionally write a final SSE event, then close the writer.
    */
   private closeWriter(finalEvent?: string): void {
+    if (!this.stream) {
+      if (this.pendingClose === undefined) {
+        this.pendingClose = finalEvent ?? null;
+      }
+      return;
+    }
+
+    this.scheduleClose(finalEvent);
+  }
+
+  private scheduleClose(finalEvent?: string): void {
     this.writeChain = this.writeChain
       .then(async () => {
         if (finalEvent) {
           await this.writeEncoded(finalEvent);
         }
-        await this.writer.close();
+        await this.ensureStream().writer.close();
       })
       .catch((err) => {
         this.onWriteError?.(err);
