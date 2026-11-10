@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { freshKv, run } from "./test-helpers.ts";
@@ -19,7 +19,9 @@ const makeClient = () => {
 
 describe("an agent with no handler", () => {
   test("runs, posts nothing and ends with output undefined", async () => {
-    const agents = createAgents(makeClient(), { store: memoryKvAdapter() });
+    const agentsClient = makeClient();
+    setAppKvStore(agentsClient.id, memoryKvAdapter());
+    const agents = createAgents(agentsClient);
     const defined = agents.agent({
       id: "plain",
       triggers: [{ event: "shop/order", thread: "event.data.id" }],
@@ -103,7 +105,9 @@ describe("the handler's event, me and inbox", () => {
   const refund = eventType("shop/refund", {
     schema: z.object({ id: z.string() }),
   });
-  const agents = createAgents(makeClient(), { store: memoryKvAdapter() });
+  const agentsClient = makeClient();
+  setAppKvStore(agentsClient.id, memoryKvAdapter());
+  const agents = createAgents(agentsClient);
   const config = {
     id: "shop",
     triggers: [order, refund],
@@ -170,7 +174,8 @@ describe("a trigger with nothing at its thread path", () => {
       id: testClientId,
       logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     });
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
     let key = "";
     const { fn } = agents.agent(
       {
@@ -207,7 +212,8 @@ describe("a trigger with nothing at its thread path", () => {
       id: testClientId,
       logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     });
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
     let key = "";
     const { fn } = agents.agent(
       {

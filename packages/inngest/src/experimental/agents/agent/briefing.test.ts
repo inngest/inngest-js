@@ -11,7 +11,7 @@ import { tool, toolDefinitions } from "../../../components/sandbox/tools.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { reportTool } from "../inbox/reports.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import type { AgentModelRequest, AgentModelResponse } from "../loop/loop.ts";
 import { model } from "../loop/loopKit.ts";
 import { createAgentFunction } from "./agentFunction.ts";
@@ -606,7 +606,8 @@ describe("a started child", () => {
       },
       say("started"),
     ]);
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
 
     agents.agent({ id: "child" });
 

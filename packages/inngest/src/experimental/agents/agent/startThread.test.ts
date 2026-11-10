@@ -9,7 +9,7 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 import { mintGrant, proofOf, verifyGrant } from "./grant.ts";
 import { run } from "./test-helpers.ts";
@@ -36,7 +36,8 @@ const setup = () => {
       return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
     }) as unknown as typeof fetch,
   });
-  const agents = createAgents(client, { store: memoryKvAdapter() });
+  setAppKvStore(client.id, memoryKvAdapter());
+  const agents = createAgents(client);
 
   return { agents, client, sent };
 };

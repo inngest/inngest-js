@@ -6,7 +6,7 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { threadHandle } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
@@ -90,7 +90,8 @@ describe("thread.message().result()", () => {
 
   test("a message called without await in an agent is still sent", async () => {
     const { client, bodies } = setup(async () => {});
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
     const callee = agents.agent({ id: "callee" });
     const caller = agents.agent({ id: "caller" }, async () => {
       callee.thread("t9").message("y");

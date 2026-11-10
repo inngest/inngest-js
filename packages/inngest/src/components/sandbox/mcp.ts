@@ -14,7 +14,6 @@
 
 import { traceWarning } from "../../experimental/agents/agent/traceWarning.ts";
 import { currentThreadKey } from "../../experimental/agents/kv/kv.ts";
-import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { durationToMs } from "../../helpers/duration.ts";
 import { version } from "../../version.ts";
 import { getAsyncCtxSync } from "../execution/als.ts";
@@ -315,7 +314,7 @@ export class McpServer {
       options.auth && "oauth" in options.auth ? options.auth.oauth : undefined;
 
     if (oauthOptions) {
-      const store = oauthOptions.store ?? kvOAuthStore();
+      const store = oauthOptions.store;
 
       this.oauth = new McpOAuth(
         oauthOptions,

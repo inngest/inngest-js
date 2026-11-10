@@ -10,18 +10,13 @@ import { runToEnd } from "../../../components/sandbox/test-helpers.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { StepOpCode } from "../../../types.ts";
 import { run } from "../agent/test-helpers.ts";
-import { fakeD1, hasNodeSqlite } from "./fake-d1.ts";
-import { startFakeRedis } from "./fake-redis.ts";
 import {
   createKv,
   type KvStore,
   kvHash,
   memoryKvAdapter,
-  redisKvAdapter,
   typedKey,
 } from "./kv.ts";
-import { d1KvAdapter } from "./kvD1.ts";
-import { connectRedis } from "./redis.ts";
 
 describe("kv", () => {
   test("each call is a memoized step and the scope is chosen up front", async () => {
@@ -349,106 +344,6 @@ describe("kv ttl, setIfAbsent and sorted indexes", () => {
         Date.now = real;
       },
     };
-  });
-
-  contract("redis adapter against the fake server", async () => {
-    const server = await startFakeRedis();
-
-    return {
-      adapter: redisKvAdapter(server.url),
-      advance: server.advance,
-      done: server.close,
-    };
-  });
-
-  if (hasNodeSqlite) {
-    contract("d1 adapter on SQLite", async () => {
-      let clock = 1_700_000_000_000;
-
-      return {
-        adapter: d1KvAdapter(await fakeD1(() => clock), { createTables: true }),
-        advance: (ms) => {
-          clock += ms;
-        },
-        done: async () => {},
-      };
-    });
-  }
-
-  test("the redis registry stays small and in one slot", async () => {
-    const server = await startFakeRedis();
-    const env = createKv({ adapter: redisKvAdapter(server.url) }).with({
-      id: "app",
-      env: null,
-    }).env;
-    const registry = () => {
-      const key = server.keys().find((name) => {
-        return name.endsWith("|keys");
-      });
-
-      return key === undefined ? [] : server.members(key);
-    };
-
-    await env.set("a", 1, { ttl: 10 });
-    await env.setIfAbsent("c", "x", { ttl: 10 });
-    await env.setIfAbsent("c", "y", { ttl: 10 });
-    await env.setIfAbsent("plain", "x");
-    await env.index("i").add("m", 1);
-    expect(registry()).toEqual(["t:a", "t:c", "z:i"]);
-
-    await env.delete("a");
-    await env.index("i").remove("m");
-    expect(registry()).toEqual(["t:c"]);
-
-    // Entries expire by the server's clock, and writes prune them.
-    server.advance(11_000);
-    await env.set("b", 2, { ttl: 10 });
-    expect(registry()).toEqual(["t:b"]);
-    expect(await env.all()).toEqual({ plain: "x", b: 2 });
-
-    // Every key shares the hash tag, so a cluster keeps them in one slot.
-    for (const key of server.keys()) {
-      expect(key).toMatch(/^\{inngest:kv:env:default\}/);
-    }
-    await server.close();
-  });
-
-  test("clear removes a large scope in batches", async () => {
-    const server = await startFakeRedis();
-    const env = createKv({ adapter: redisKvAdapter(server.url) }).with({
-      id: "app",
-      env: null,
-    }).env;
-
-    // Seeded in one burst of pipelined commands, as the adapter would leave it.
-    const seed = await connectRedis(server.url);
-    const hash = "{inngest:kv:env:default}";
-    await Promise.all(
-      Array.from({ length: 1200 }, (_, i) => {
-        return Promise.all([
-          seed.command("SET", `${hash}|t|k${i}`, "1", "EX", "100"),
-          seed.command("ZADD", `${hash}|keys`, "+inf", `t:k${i}`),
-        ]);
-      }),
-    );
-    seed.close();
-    expect(server.keys()).toHaveLength(1201);
-
-    await env.clear();
-
-    expect(server.keys()).toEqual([]);
-    const deletes = server.commands.filter((c) => {
-      return c[0] === "DEL";
-    });
-    // 1200 keys in batches of 500, then the registry and the rest.
-    const sizes = deletes.map((c) => {
-      return c.length - 1;
-    });
-
-    expect(sizes.slice(0, 2)).toEqual([500, 500]);
-    expect(Math.max(...sizes)).toBe(500);
-    expect(sizes.reduce((a, b) => a + b, 0)).toBe(1202);
-    await server.close();
   });
 
   test("inside a function each operation is a memoized step", async () => {

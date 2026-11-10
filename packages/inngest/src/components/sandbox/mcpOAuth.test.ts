@@ -5,7 +5,6 @@
  */
 import { beforeAll, describe, expect, test } from "vitest";
 import { memoryKvAdapter } from "../../experimental/agents/kv/kv.ts";
-import { kvOAuthStore } from "../../experimental/agents/kv/mcpOAuthStore.ts";
 import { getAsyncLocalStorage, runWithAsyncCtx } from "../execution/als.ts";
 import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
 import {
@@ -537,37 +536,5 @@ describe("tool.mcp OAuth", () => {
 
     expect(failed.status).toBeGreaterThanOrEqual(400);
     expect(await failed.text()).not.toContain("secret-code-1234");
-  });
-
-  test("kvOAuthStore encrypts at rest and swaps by plaintext", async () => {
-    const adapter = memoryKvAdapter();
-    const store = kvOAuthStore({
-      adapter,
-      encryptionKey: secret(() => "a-long-random-test-key"),
-    });
-
-    expect(await store.compareAndSet("k", null, "hello")).toBe(true);
-    expect(await store.get("k")).toBe("hello");
-    expect(await adapter.get("inngest:mcp-oauth", "k")).not.toContain("hello");
-    expect(await store.compareAndSet("k", null, "x")).toBe(false);
-    expect(await store.compareAndSet("k", "nope", "x")).toBe(false);
-    expect(await store.compareAndSet("k", "hello", "world")).toBe(true);
-    expect(await store.get("k")).toBe("world");
-
-    // A value moved to another field does not decrypt.
-    const raw = await adapter.get("inngest:mcp-oauth", "k");
-
-    await adapter.set("inngest:mcp-oauth", "moved", raw ?? "");
-    expect(await store.get("moved")).toBeNull();
-
-    // The wrong key reads as absent.
-    const other = kvOAuthStore({
-      adapter,
-      encryptionKey: secret(() => "different-key-entirely"),
-    });
-
-    expect(await other.get("k")).toBeNull();
-    await store.delete("k");
-    expect(await store.get("k")).toBeNull();
   });
 });

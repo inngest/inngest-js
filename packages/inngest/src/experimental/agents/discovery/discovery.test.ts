@@ -13,7 +13,7 @@ import * as agentsApi from "../agent/agents.ts";
 import { createAgents } from "../agent/agents.ts";
 import { agentToolSet } from "../agent/agentTools.ts";
 import { signCards } from "../agent/relations.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import {
   type AnnouncedCard,
   addressOf,
@@ -39,7 +39,8 @@ const client = new Inngest({ id: testClientId });
 const signedData = (app: string, cards: AnnouncedCard[]) => {
   return { app, cards, sig: signCards({ id: app } as Inngest.Any, cards) };
 };
-const agents = createAgents(client, { store: memoryKvAdapter() });
+setAppKvStore(client.id, memoryKvAdapter());
+const agents = createAgents(client);
 
 const docs = agents.agent(
   {

@@ -102,6 +102,11 @@ describe("tools types", () => {
               return "user-1";
             },
             redirectUri: "https://app.example.com/oauth/hex",
+            store: {
+              get: async () => null,
+              compareAndSet: async () => true,
+              delete: async () => {},
+            },
             onNeedsAuthorization: ({ url, server, thread, user }) => {
               expectTypeOf(url).toBeString();
               expectTypeOf(server).toBeString();

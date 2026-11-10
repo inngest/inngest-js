@@ -7,7 +7,7 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { answerQuestion } from "../inbox/answer.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { threadHandle } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
@@ -173,7 +173,8 @@ describe("answerQuestion()", () => {
 describe("msg.reply()", () => {
   test("a folded question is answered with reply(), which sends the agent/answer", async () => {
     const { client, bodies } = setup(async () => {});
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
     const callee = agents.agent({ id: "callee" }, async ({ inbox }) => {
       const message = await inbox.next();
 

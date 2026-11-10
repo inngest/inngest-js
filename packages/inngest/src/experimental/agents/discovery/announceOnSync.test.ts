@@ -8,7 +8,7 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { serve } from "../../../next.ts";
 import { createAgents } from "../agent/agents.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { agentsRegisteredEvent, announceIfChanged } from "./discovery.ts";
 
 const makeApp = (id: string, description: string) => {
@@ -20,7 +20,8 @@ const makeApp = (id: string, description: string) => {
       return new Response(JSON.stringify({ status: 200 }), { status: 200 });
     }) as typeof fetch,
   });
-  const agents = createAgents(client, { store: memoryKvAdapter() });
+  setAppKvStore(client.id, memoryKvAdapter());
+  const agents = createAgents(client);
 
   agents.agent(
     {

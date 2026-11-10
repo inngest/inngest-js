@@ -7,12 +7,14 @@ import { z } from "zod";
 import { Inngest } from "../../../components/Inngest.ts";
 import type { SandboxTool } from "../../../components/sandbox/tools.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
-import { createKv, memoryKvAdapter } from "../kv/kv.ts";
+import { createKv, memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 
 export const inngest = new Inngest({ id: "types" });
 
-export const agents = createAgents(inngest, { store: memoryKvAdapter() });
+setAppKvStore(inngest.id, memoryKvAdapter());
+
+export const agents = createAgents(inngest);
 
 export const kvStore = createKv({ adapter: memoryKvAdapter() });
 

@@ -23,7 +23,7 @@ import {
   announceOnSync,
   rememberCard,
 } from "../discovery/discovery.ts";
-import { type KvStore, setAppKvStore, usesLedger } from "../kv/kv.ts";
+import { usesLedger } from "../kv/kv.ts";
 import type { AgentModel } from "../loop/loop.ts";
 import type { SandboxToolNames } from "../sandboxes/defs.ts";
 import { createLedgerFunctions } from "../threads/ledger.ts";
@@ -295,24 +295,6 @@ const ledgers = new WeakMap<object, InngestFunction.Any[]>();
  */
 export interface CreateAgentsOptions {
   /**
-   * Where the KV, thread state, run records and indexes live:
-   * `redisKvAdapter(url)`, `d1KvAdapter(env.DB)`, `memoryKvAdapter()` or
-   * `ledgerKvAdapter()`. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL` when
-   * that is set, else the ledger. The guarantees of a store are on `KvStore`.
-   * One store per app ID: a second `createAgents` for the same client ID
-   * replaces the first's.
-   *
-   * Optional. With no store everything (`kv.thread`, `kv.app`, `kv.env`,
-   * `previousRun`, history, `budget`, `recovery` and a thread's sandboxes) is
-   * kept by the ledger, functions that `agents.functions()` serves, with no
-   * outside service. Its limits are on `ledgerKvAdapter`: 128 KB per scope
-   * instance, no writes inside a step's callback, no reads from outside a
-   * function, and `kv.env` shared by one app only. An operation it cannot do
-   * throws an error that says to configure a store.
-   */
-  store?: KvStore;
-
-  /**
    * EXPERIMENTAL: The shared tools (`tool.shared()`) this app hosts. Only
    * tools listed here are served: `agents.functions()` returns a function for
    * each, and the app announces their cards with its agents'. An app of
@@ -338,7 +320,7 @@ export interface CreateAgentsOptions {
  * needs an event key (none in dev) and happens in the serve handler's `PUT`.
  *
  * @param client Inngest client.
- * @param options Where the agents keep their state.
+ * @param options The shared tools this app hosts.
  */
 export const createAgents = <TClient extends Inngest.Any>(
   client: TClient,
@@ -351,10 +333,6 @@ export const createAgents = <TClient extends Inngest.Any>(
   // read fresh per request rather than snapshotted at construction.
   if (!client.middleware.includes(InboxMiddleware)) {
     client.middleware.push(InboxMiddleware);
-  }
-
-  if (options.store) {
-    setAppKvStore(client.id, options.store);
   }
 
   const made: AgentFunction[] = [];
@@ -496,27 +474,7 @@ export type {
   AgentReportRoute,
 } from "../inbox/reports.ts";
 export type { Sender } from "../inbox/sender.ts";
-export type {
-  Kv,
-  KvIndex,
-  KvIndexEntry,
-  KvIndexRange,
-  KvKey,
-  KvScope,
-  KvScopeInstance,
-  KvSetOptions,
-  KvStore,
-} from "../kv/kv.ts";
-export {
-  kv,
-  memoryKvAdapter,
-  redisKvAdapter,
-} from "../kv/kv.ts";
-export type { D1KvDatabase, D1KvOptions, D1KvStatement } from "../kv/kvD1.ts";
-export { d1KvAdapter, d1KvSchema } from "../kv/kvD1.ts";
 export type { AgentScoreName } from "../loop/scores.ts";
-export type { LedgerKvStore } from "../threads/ledgerClient.ts";
-export { ledgerKvAdapter } from "../threads/ledgerClient.ts";
 export type {
   AskOptions,
   RunHandle,

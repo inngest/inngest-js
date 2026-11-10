@@ -5,13 +5,14 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 import { run } from "./test-helpers.ts";
 
 const make = () => {
   const client = new Inngest({ id: testClientId });
-  const agents = createAgents(client, { store: memoryKvAdapter() });
+  setAppKvStore(client.id, memoryKvAdapter());
+  const agents = createAgents(client);
 
   return agents.agent({ id: "bot" }, async ({ inbox }) => {
     const message = await inbox.next();
@@ -95,7 +96,8 @@ describe("me.message()", () => {
         return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
       }) as unknown as typeof fetch,
     });
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
     const bot = agents.agent({ id: "bot" }, async ({ me }) => {
       return await me.message({ note: "remember" });
     });

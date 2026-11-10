@@ -6,7 +6,7 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { createAgents } from "./agents.ts";
 import { agentFinishedFunction } from "./finishedRelay.ts";
 import { run } from "./test-helpers.ts";
@@ -117,7 +117,8 @@ describe("the finished relay", () => {
 
   test("an app serves one, however many agents it defines", () => {
     const client = new Inngest({ id: testClientId });
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
 
     agents.agent({ id: "one" });
     agents.agent({ id: "two" });

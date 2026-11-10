@@ -57,7 +57,7 @@ export interface McpAuthorizedData {
  * What a store must guarantee: `compareAndSet` is atomic across callers (of
  * two calls that expect the same value, one wins), because concurrent runs
  * refresh a token under a lease made with it. Values are secrets: a store
- * encrypts them at rest. `kvOAuthStore()` does.
+ * encrypts them at rest.
  */
 export interface McpOAuthStore {
   get(key: string): Promise<string | null>;
@@ -113,10 +113,11 @@ export interface McpOAuthOptions {
   redirectUri: string;
 
   /**
-   * Where tokens live. Default: `kvOAuthStore()`, the agents KV encrypted
-   * with the key in `MCP_OAUTH_ENCRYPTION_KEY`.
+   * Where tokens live: your own durable store, implementing `get`,
+   * `compareAndSet` and `delete` over (say) Redis. Encrypt the values at
+   * rest: they are OAuth tokens.
    */
-  store?: McpOAuthStore;
+  store: McpOAuthStore;
 
   /**
    * An OAuth client you registered, for a server without dynamic client
@@ -1149,7 +1150,7 @@ const finishAuthorization = async (options: {
       ? options.clientSecret
       : await options.clientSecret.value();
   const oauth = new McpOAuth(
-    { user: pending.user, redirectUri: pending.redirectUri },
+    { user: pending.user, redirectUri: pending.redirectUri, store },
     { url: pending.url, id: pending.id },
     () => {
       return store;

@@ -8,7 +8,7 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { model } from "../loop/loopKit.ts";
 import { createAgents } from "./agents.ts";
 import { childWait } from "./children.ts";
@@ -27,7 +27,8 @@ const make = () => {
       return new Response(JSON.stringify(functionList), { status: 200 });
     }) as never,
   });
-  const agents = createAgents(client, { store: memoryKvAdapter() });
+  setAppKvStore(client.id, memoryKvAdapter());
+  const agents = createAgents(client);
   const requests: string[][] = [];
 
   agents.agent({ id: "child" });

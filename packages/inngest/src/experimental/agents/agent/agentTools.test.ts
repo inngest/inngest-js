@@ -8,7 +8,7 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { resolveToolCall } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { threadKv, threadRecordKey } from "../threads/thread.ts";
 import { createAgents } from "./agents.ts";
 import {
@@ -27,7 +27,8 @@ import { relatedKey } from "./relations.ts";
 import { run } from "./test-helpers.ts";
 
 const client = new Inngest({ id: testClientId });
-const agents = createAgents(client, { store: memoryKvAdapter() });
+setAppKvStore(client.id, memoryKvAdapter());
+const agents = createAgents(client);
 
 const plain = agents.agent({ id: "plain" });
 const typed = agents.agent(

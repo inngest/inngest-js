@@ -7,7 +7,7 @@ import { z } from "zod/v4";
 import { Inngest } from "../../../components/Inngest.ts";
 import { tool } from "../../../components/sandbox/tools.ts";
 import { createAgents } from "../agent/agents.ts";
-import { memoryKvAdapter } from "../kv/kv.ts";
+import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import { announcement, summaryOf } from "./discovery.ts";
 
@@ -27,7 +27,8 @@ const lab = sandbox({
 describe("card provenance", () => {
   const make = (isDev: boolean) => {
     const client = new Inngest({ id: `prov-${isDev}`, isDev });
-    const agents = createAgents(client, { store: memoryKvAdapter() });
+    setAppKvStore(client.id, memoryKvAdapter());
+    const agents = createAgents(client);
 
     agents.agent({
       id: "helper",

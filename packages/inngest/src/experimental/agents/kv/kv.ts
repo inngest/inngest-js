@@ -2,9 +2,8 @@
  * @module
  * EXPERIMENTAL: a scoped key-value store. Scopes say how long a value lives and
  * who sees it: `kv.env`, `kv.app`, `kv.run` and `kv.thread`, always written out.
- * The store is the one given to `createAgents(client, { store })`, else Redis at
- * `INNGEST_EXPERIMENTAL_KV_URL`, else the ledger (`ledgerKvAdapter()`), which
- * needs no outside service.
+ * The store is the ledger (`ledgerKvAdapter()`), which needs no outside
+ * service.
  *
  * Inside a function every read and write is its own memoized step, so a
  * replay sees the values the first execution saw. Outside a function (a thread
@@ -35,7 +34,6 @@ import {
   type LedgerSender,
   ledgerKvAdapter,
 } from "../threads/ledgerClient.ts";
-import { redisConnection } from "./redis.ts";
 
 /**
  * How long a value lives and who sees it: `env` (the whole environment),
@@ -47,24 +45,19 @@ export type KvScope = "env" | "app" | "run" | "thread";
  * Where values are stored. Each scope instance is one hash, so removing a
  * whole scope (a finished run) is one call.
  *
- * Four stores ship: the ledger (`ledgerKvAdapter`, the default), Redis
- * (`redisKvAdapter`), Cloudflare D1 (`d1KvAdapter`) and memory
- * (`memoryKvAdapter`, for tests). Give an app its store with
- * `createAgents(client, { store })`; with none (and no
- * `INNGEST_EXPERIMENTAL_KV_URL`) the ledger is used.
+ * Two stores ship: the ledger (`ledgerKvAdapter`, the default) and memory
+ * (`memoryKvAdapter`, for tests).
  *
  * What a store must guarantee:
  *
  * - `setIfAbsent` is atomic across callers: of two racing calls exactly one
- *   writes. Redis does it with `SET NX`, D1 with one upsert statement, memory
- *   by running on one thread.
+ *   writes. Memory does it by running on one thread.
  * - A field past its `ttl` reads as absent, and `setIfAbsent` may take it over.
  * - A single write (`set`, `delete`, `indexAdd`, `indexRemove`) takes effect
  *   whole or not at all.
  * - `compareAndSet` is atomic across callers, and the KV's `update` is built on
  *   it: it reads, computes, and writes only if the value is still the one it
- *   read, else it reads again. Redis does it in a script, D1 in one statement
- *   that matches on the old value, memory on one thread.
+ *   read, else it reads again. Memory does it on one thread.
  * - Nothing else spans two calls. A `get` followed by a `set` is not atomic.
  */
 export interface KvStore {
@@ -277,283 +270,6 @@ export function memoryKvAdapter(): KvStore {
     },
     async indexRemove(hash, index, member) {
       hashes.get(hash)?.indexes.get(index)?.delete(member);
-    },
-  };
-}
-
-// Compares the field (in either of its two forms) with the expected value and
-// writes the new one as a plain hash field, all on the server.
-const compareAndSetScript = `-- inngest-kv-cas
-local cur = redis.call('HGET', KEYS[1], ARGV[1])
-if not cur then cur = redis.call('GET', KEYS[2]) end
-if ARGV[2] == '0' then
-  if cur then return 0 end
-elseif cur ~= ARGV[3] then
-  return 0
-end
-redis.call('DEL', KEYS[2])
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
-return 1`;
-
-/**
- * A Redis adapter that connects on first use. Needs Redis 6.2 or newer.
- *
- * Plain fields live in one hash. Fields with a time to live are string keys
- * (older servers cannot expire a hash field) and each index is a sorted set.
- * Every key of a scope instance carries the hash in `{braces}`, so they share
- * a cluster slot and one scope instance can be read or removed in one go.
- * @param url `redis://` or `rediss://` URL.
- */
-export function redisKvAdapter(url: string): KvStore {
-  const client = redisConnection(url);
-  const removeBatch = 500;
-
-  function main(hash: string) {
-    return `{${hash}}`;
-  }
-
-  function expiring(hash: string, field: string) {
-    return `{${hash}}|t|${field}`;
-  }
-
-  function sorted(hash: string, index: string) {
-    return `{${hash}}|z|${index}`;
-  }
-
-  // Lists the expiring fields and indexes of a hash, so `all()` and `clear()`
-  // touch only that hash. Entries are `t:<field>` or `z:<index>`, scored by
-  // when the entry may be forgotten (never, for an index).
-  function registry(hash: string) {
-    return `{${hash}}|keys`;
-  }
-
-  async function command(...args: string[]) {
-    return (await client()).command(...args);
-  }
-
-  async function transaction(commands: string[][]) {
-    return (await client()).transaction(commands);
-  }
-
-  // Redis's own clock, so a host with a skewed clock cannot mis-score entries.
-  async function serverNow() {
-    const [seconds, micros] = (await command("TIME")) as [string, string];
-
-    return Number(seconds) * 1000 + Math.floor(Number(micros) / 1000);
-  }
-
-  async function register(hash: string, entry: string, ttl?: number) {
-    const now = await serverNow();
-    const until = ttl === undefined ? "+inf" : String(now + ttl * 1000);
-
-    // GT: a later write with a shorter life never lowers the score.
-    await command("ZADD", registry(hash), "GT", until, entry);
-    await command("ZREMRANGEBYSCORE", registry(hash), "-inf", String(now));
-  }
-
-  async function members(hash: string) {
-    return (await command(
-      "ZRANGEBYSCORE",
-      registry(hash),
-      String(await serverNow()),
-      "+inf",
-    )) as string[];
-  }
-
-  return {
-    async get(hash, field) {
-      // One block, so a field moving between the two forms is never missed.
-      const [stored, timed] = (await transaction([
-        ["HGET", main(hash), field],
-        ["GET", expiring(hash, field)],
-      ])) as [string | null, string | null];
-
-      return stored ?? timed;
-    },
-    async set(hash, field, value, ttl) {
-      if (ttl === undefined) {
-        // One block, so a reader never sees the field in neither form.
-        await transaction([
-          ["DEL", expiring(hash, field)],
-          ["HSET", main(hash), field, value],
-        ]);
-
-        return;
-      }
-
-      // Listed before the write in case the process dies in between, and
-      // after it so the entry cannot end before the key does.
-      await register(hash, `t:${field}`, ttl);
-      await transaction([
-        ["HDEL", main(hash), field],
-        ["SET", expiring(hash, field), value, "EX", String(ttl)],
-      ]);
-      await register(hash, `t:${field}`, ttl);
-    },
-    async setIfAbsent(hash, field, value, ttl) {
-      const stored = (await command("HGET", main(hash), field)) as
-        | string
-        | null;
-      if (stored !== null) {
-        return stored === value;
-      }
-
-      // A holder that vanishes between our failed write and our read leaves
-      // the key free, so the claim is tried once more.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (ttl === undefined) {
-          const live = (await command("GET", expiring(hash, field))) as
-            | string
-            | null;
-          if (live !== null) {
-            return live === value;
-          }
-
-          if ((await command("HSETNX", main(hash), field, value)) === 1) {
-            return true;
-          }
-
-          const current = await command("HGET", main(hash), field);
-          if (current !== null) {
-            return current === value;
-          }
-
-          continue;
-        }
-
-        // Not listed before the claim: a lost claim must not list the winner's
-        // key under this call's score. A crash before listing is repaired by the
-        // retry, which finds its own value and lists it.
-        const claimed = await command(
-          "SET",
-          expiring(hash, field),
-          value,
-          "EX",
-          String(ttl),
-          "NX",
-        );
-        const current =
-          claimed === "OK"
-            ? value
-            : await command("GET", expiring(hash, field));
-        if (current === value) {
-          // Also on a retry, which may have died before listing the key.
-          await register(hash, `t:${field}`, ttl);
-
-          return true;
-        }
-        if (current !== null) {
-          return false;
-        }
-      }
-
-      return false;
-    },
-    async compareAndSet(hash, field, expected, next) {
-      // A script, so the compare and the write are one step on the server.
-      const swapped = await command(
-        "EVAL",
-        compareAndSetScript,
-        "2",
-        main(hash),
-        expiring(hash, field),
-        field,
-        expected === null ? "0" : "1",
-        expected ?? "",
-        next,
-      );
-
-      return swapped === 1;
-    },
-    async delete(hash, field) {
-      await command("HDEL", main(hash), field);
-      await command("DEL", expiring(hash, field));
-      await command("ZREM", registry(hash), `t:${field}`);
-    },
-    async all(hash) {
-      const reply = (await command("HGETALL", main(hash))) as string[];
-      const out: Record<string, string> = {};
-      for (let i = 0; i < reply.length; i += 2) {
-        out[reply[i] as string] = reply[i + 1] as string;
-      }
-
-      const fields = (await members(hash))
-        .filter((entry) => {
-          return entry.startsWith("t:");
-        })
-        .map((entry) => {
-          return entry.slice(2);
-        });
-      if (fields.length > 0) {
-        const values = (await command(
-          "MGET",
-          ...fields.map((field) => {
-            return expiring(hash, field);
-          }),
-        )) as (string | null)[];
-        fields.forEach((field, i) => {
-          const value = values[i];
-          // The hash wins, as in get().
-          if (value !== null && value !== undefined && !(field in out)) {
-            out[field] = value;
-          }
-        });
-      }
-
-      return out;
-    },
-    async clear(hash) {
-      const keys = (await members(hash)).map((entry) => {
-        return entry.startsWith("t:")
-          ? expiring(hash, entry.slice(2))
-          : sorted(hash, entry.slice(2));
-      });
-
-      // The hash and registry go last, so a failed clear can be run again.
-      for (let i = 0; i < keys.length; i += removeBatch) {
-        await command("DEL", ...keys.slice(i, i + removeBatch));
-      }
-      await command("DEL", registry(hash), main(hash));
-    },
-    async indexAdd(hash, index, member, score) {
-      // Listed before the write in case the process dies in between, and
-      // after it so a racing removal that unlisted the index cannot win.
-      await register(hash, `z:${index}`);
-      await command("ZADD", sorted(hash, index), String(score), member);
-      await register(hash, `z:${index}`);
-    },
-    async indexRange(hash, index, options) {
-      const low = options.min === undefined ? "-inf" : String(options.min);
-      const high = options.max === undefined ? "+inf" : String(options.max);
-      const args =
-        options.order === "desc"
-          ? ["ZREVRANGEBYSCORE", sorted(hash, index), high, low]
-          : ["ZRANGEBYSCORE", sorted(hash, index), low, high];
-      args.push("WITHSCORES");
-      if (options.limit !== undefined) {
-        args.push("LIMIT", "0", String(options.limit));
-      }
-
-      const reply = (await command(...args)) as string[];
-      const out: KvIndexEntry[] = [];
-      for (let i = 0; i < reply.length; i += 2) {
-        out.push({ member: reply[i] as string, score: Number(reply[i + 1]) });
-      }
-
-      return out;
-    },
-    async indexRemove(hash, index, member) {
-      await command("ZREM", sorted(hash, index), member);
-
-      // An index with no members is gone from Redis; forget its entry too.
-      if ((await command("ZCARD", sorted(hash, index))) === 0) {
-        await command("ZREM", registry(hash), `z:${index}`);
-
-        // An add that raced the removal is listed again.
-        if ((await command("ZCARD", sorted(hash, index))) !== 0) {
-          await register(hash, `z:${index}`);
-        }
-      }
     },
   };
 }
@@ -1361,7 +1077,6 @@ function checkedTtl(options?: KvSetOptions): number | undefined {
 }
 
 const appStores = new Map<string, KvStore>();
-const envStores = new Map<string, KvStore>();
 let ledgerStoreCache: KvStore | undefined;
 
 // Lazy: building it at module load reads `ledgerKvAdapter` before an import
@@ -1373,7 +1088,6 @@ const ledgerStore = (): KvStore => {
 
 /**
  * Sets the store the KV of an app uses, unless a KV was built with its own.
- * `createAgents(client, { store })` calls it.
  * @param app The app ID of the client.
  * @param store The store.
  */
@@ -1382,41 +1096,17 @@ export function setAppKvStore(app: string, store: KvStore): void {
 }
 
 /**
- * The store an app's KV uses: the one the app gave `createAgents`, else Redis
- * at `INNGEST_EXPERIMENTAL_KV_URL`, else the ledger. Direct calls, not steps,
- * so other parts of the SDK that run inside a step (such as MCP OAuth tokens)
+ * The store an app's KV uses: the ledger, unless a store was set for the app.
+ * Direct calls, not steps, so other parts of the SDK that run inside a step
  * can share it.
  * @param app The app ID of the client, if known.
  */
 export function kvAdapterFor(app?: string): KvStore {
-  const given = app ? appStores.get(app) : undefined;
-  if (given) {
-    return given;
-  }
-
-  // A Worker may have no `process`; it gives a store instead.
-  const url =
-    typeof process === "undefined"
-      ? undefined
-      : process.env.INNGEST_EXPERIMENTAL_KV_URL;
-  if (!url) {
-    return ledgerStore();
-  }
-
-  // One connection per URL, however many KVs are built (`kv.with(client)`
-  // builds one per call).
-  let found = envStores.get(url);
-  if (!found) {
-    found = redisKvAdapter(url);
-    envStores.set(url, found);
-  }
-
-  return found;
+  return (app ? appStores.get(app) : undefined) ?? ledgerStore();
 }
 
 /**
- * Whether an app's KV is the ledger: no store was given to `createAgents` and
- * there is no `INNGEST_EXPERIMENTAL_KV_URL`.
+ * Whether an app's KV is the ledger: no store was set for the app.
  * @param app The app ID of the client, if known.
  */
 export function usesLedger(app?: string): boolean {
@@ -1630,7 +1320,7 @@ function localRunHandle(): RawKv {
 
 /**
  * Builds a store.
- * @param options.adapter Where values live. Default: Redis at `INNGEST_EXPERIMENTAL_KV_URL`.
+ * @param options.adapter Where values live. Default: the app's store.
  * @param options.bound Environment and app to use outside a function.
  */
 export function createKv(
@@ -1639,8 +1329,7 @@ export function createKv(
     bound?: { env: string; app: string; client?: LedgerSender };
   } = {},
 ): Kv {
-  // The store of an app: the one this KV was built with, else the one the app
-  // gave `createAgents`, else Redis at the environment's URL.
+  // The store of an app: the one this KV was built with, else the app's.
   function store(app?: string): KvStore {
     return options.adapter ?? kvAdapterFor(app);
   }
@@ -1889,7 +1578,6 @@ export function createKv(
 }
 
 /**
- * The default KV. Its store is the one the app gave `createAgents`, else Redis
- * at `INNGEST_EXPERIMENTAL_KV_URL`.
+ * The default KV. Its store is the app's, the ledger unless one was set.
  */
 export const kv: Kv = createKv();

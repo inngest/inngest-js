@@ -170,14 +170,6 @@ test("agents: me has message and key, and no post", () => {
   });
 });
 
-test("agents: createAgents takes a store", () => {
-  typesOnly(() => {
-    expectTypeOf<{ store: entry.KvStore }>().toExtend<
-      NonNullable<Parameters<typeof entry.createAgents>[1]>
-    >();
-  });
-});
-
 test("agents: loop is in the handler argument only for an agent with a model", () => {
   typesOnly(() => {
     agents.agent(
