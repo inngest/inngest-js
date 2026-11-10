@@ -1,0 +1,42 @@
+{
+  "name": "@inngest/middleware-remote-state",
+  "version": "0.0.0",
+  "description": "...",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "postversion": "pnpm run build",
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest-middleware",
+    "inngest",
+    "middleware",
+    "remote",
+    "state"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/middleware-remote-state#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/middleware-remote-state"
+  },
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "inngest": "^3.19.7",
+    "typescript": "~5.4.0"
+  },
+  "peerDependencies": {
+    "inngest": ">=3.0.0"
+  }
+}
