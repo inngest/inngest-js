@@ -102,7 +102,10 @@ const isNormalizedEntry = (
   return (
     (app === undefined || typeof app === "string") &&
     (owner === undefined || typeof owner === "string") &&
-    (effects === undefined || effects === "read" || effects === "write") &&
+    (effects === undefined ||
+      effects === "read" ||
+      effects === "write" ||
+      effects === "destructive") &&
     (tags === undefined ||
       (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")))
   );
