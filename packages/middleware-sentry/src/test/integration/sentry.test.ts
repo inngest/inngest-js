@@ -5,6 +5,7 @@ import {
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
+import * as Sentry from "@sentry/core";
 import { Inngest } from "inngest";
 import { createServer } from "inngest/node";
 import { describe, expect, test } from "vitest";
@@ -442,5 +443,64 @@ test("request span uses function name", async () => {
       return tx.payload.transaction === fnName;
     });
     expect(hasMatchingTransaction).toBe(true);
+  });
+});
+
+test("function run continues sender trace when client.send is called inside an active span", async () => {
+  const captured = initSentryCapture();
+
+  const state = createState({ eventData: undefined as unknown });
+
+  const eventName = randomSuffix("evt");
+  const fnName = randomSuffix("Child Run");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [SentryMiddleware],
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      name: fnName,
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ event, runId, step }) => {
+      state.runId = runId;
+      state.eventData = event.data;
+      await step.run("work", () => "done");
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  let senderTraceId = "";
+  let senderSpanId = "";
+  await Sentry.startSpan(
+    { name: "POST /checkout", op: "http.server" },
+    async (span) => {
+      senderTraceId = span.spanContext().traceId;
+      senderSpanId = span.spanContext().spanId;
+      await client.send({ name: eventName, data: { orderId: "ord_99" } });
+    },
+  );
+
+  await state.waitForRunComplete();
+
+  expect(state.eventData).toEqual({ orderId: "ord_99" });
+
+  await waitFor(() => {
+    const fnTransactions = capturedTransactions(captured).filter(
+      (tx) => tx.payload.transaction === fnName,
+    );
+    expect(fnTransactions.length).toBeGreaterThanOrEqual(1);
+    for (const tx of fnTransactions) {
+      const traceCtx = (
+        tx.payload.contexts as Record<string, Record<string, unknown>>
+      )?.trace;
+      expect(traceCtx?.trace_id).toBe(senderTraceId);
+      expect(traceCtx?.parent_span_id).toBe(senderSpanId);
+    }
   });
 });
