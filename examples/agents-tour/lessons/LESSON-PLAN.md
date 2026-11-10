@@ -428,3 +428,59 @@ The closing page: what a body is for (work that is not a conversation, a typed o
 - **The model the tour talks to.** A chat that answers needs a model. `runtime/scripted-model.ts` is the only model the tour has, and `00-welcome/03-what-runs-on-your-machine` promises the reader that "no API key is needed: the models in the tour are scripted". A scripted model cannot hold the conversations module 1 promises. The resolution is a `lessons/_shared/models.ts` that gives `anthropic()` when `ANTHROPIC_API_KEY` is set and the scripted model otherwise, and a welcome page that says so. Pages 6 to 9 then teach what that file already does.
 - **The fake provider of page 8.** The adapter for another provider needs something to `fetch`. The tour already serves its own MCP server from `lessons/_shared/mcp.ts`, so a fake provider endpoint beside it is the same move.
 - **Exercises.** `03-sample-exercise/12-greeter` is a temporary page that proves Check works. Each module should end with one exercise, written once the module's pages exist; a page that is an exercise takes the next page number in its module.
+
+## Where this got to
+
+Written at the point the tour was parked until the agent primitives settle. The plan above is finished and agreed. The chat box is half built. Read this before touching `site/`.
+
+### The model: a real key, not the scripted one
+
+Decided and not yet carried out. Every page runs a genuine model: the reader supplies `ANTHROPIC_API_KEY` and pages call `anthropic()` directly. There is no conditional `lessons/_shared/models.ts` and no scripted fallback for the reader. `runtime/scripted-model.ts` stays, for the test suite only (`test/run.test.ts`, `tour:page-check`, the exercise checks), so CI stays keyless and deterministic while the reader's experience is real. Nothing in the code or in `PAGES.md` says this yet, and these four jobs are outstanding:
+
+1. Rewrite `00-welcome/03-what-runs-on-your-machine`, which still promises "no API key is needed: the models in the tour are scripted". That is now false.
+2. Add a loud, early preflight check for `ANTHROPIC_API_KEY` to `pnpm tour` and `pnpm tour:devserver`, beside the checks they already do, failing by name before the browser opens.
+3. Say in `PAGES.md` that a page check asserts shape, not wording: a reply exists, is not empty, the run completed. A real model cannot be asserted against an exact string.
+4. Give `check.ts` scripts the same treatment: assert what the reader's code did, never what the model said.
+
+### What the chat box change is, so far
+
+One commit, `wip(agents-tour): start the chat box that replaces the trace view`. It compiles as far as it was taken by hand, but it has not been typechecked, not been built, and never been opened in a browser. Treat it as a sketch with real intent, not as working code.
+
+Done:
+
+- **`site/src/chat.tsx`, new.** `ChatPanel`: the reader's messages as bubbles on the right, the agent's as bubbles on the left, and everything the agent does as a plain line between them. A line is clickable and reveals the step's input and output, reusing `Detail` from `trace.tsx`. The box has an optional thread switcher (`chat.threads`) and optional suggestion buttons (`chat.prompts`).
+- **`site/src/trace.tsx`.** Nothing removed. `isPlumbing`, `isPlaceholder`, `isFinalization`, `isNextCall`, `parse`, `rounded`, `Detail` and `FailedRun` are now exported so the chat uses the same rules rather than its own.
+- **`shared/types.ts`.** The manifest's `message?: { agent, thread, threads? }` became `chat?: { agent, thread, threads?, prompts? }`.
+- **The Messages panel is gone.** `site/src/panels/message.panel.tsx` and `panels/Messages.tsx` are deleted: the chat does that job, better. `01-agents/04-what-started-it` still names the Messages panel in its prose and its manifest, and is now broken until it is rewritten for the chat.
+- **Keys.** `shared/keys/messages.ts` became `shared/keys/chat.ts`: `chat` focuses the box (`Alt+Shift+M`, `3`, `g m`, the old message-box binding) and `chatSend` sends it (`Alt+Shift+Enter`, `s`). `sendEvent` moved to `shared/keys/events.ts`, where the Events panel still owns it, on `Alt+Shift+9` and `9`. `sendOther` is gone with the Messages panel.
+- **`site/src/App.tsx`.** A `dirty` flag, set by the editor's `onChange` and cleared in `run()` just before the files are posted. The `chatTarget` memo: the page's `manifest.chat` if it has one, else inferred from the newest run, whose `fn` is the agent's id and whose trigger's `data.thread` is the thread, so a page that says nothing still has a working chat. The play pane no longer falls back to the Messages panel, and `play` starts as `""` instead of `"message"`.
+
+### How a chat entry is derived from a run
+
+This is the part worth keeping. The chat reads exactly what the Trace reads, `TraceRun[]` off the stream, and nothing else.
+
+- **The reader's messages** come from two places. A run's trigger gives one, read as `data.content`, falling back to `data.text` and `data.message`. The chat's own sends give the rest: a sent message is held in local state and shown at the bottom until it stops being in flight, because a message that arrives in a live run's inbox leaves no span of its own (the SDK's `subscribe` spans are plumbing) and so cannot be read back from the trace.
+- **The agent's answers** come from the model call's step, not from the run's output. The SDK records one step per model call, `id` `<loop>:model:<turn>`, name `Thinking`, span kind `llm`, and that step's recorded output is the whole `AgentModelResponse`. So `api.output(step.outputID)` parsed gives `.text`, which is what the agent said on that turn. `isThinking()` matches on the name, `type` or `group` being `llm`, because which of those the Dev Server puts a span's kind in was never confirmed against a live run: see below.
+- **The lines** are every other step the run recorded, after the same filter the Trace uses: not a placeholder, not `Finalization`, not an `inbox.next()` call, and not `isPlumbing`. That is the reuse, not a copy: `trace.tsx` keeps the rules and the chat imports them. The SDK's own `subscribe`, `inbox`, `close`, thread state and ledger spans are therefore invisible in the chat as they are in the Trace, which is the whole point of reusing it.
+- **A line's words.** A tool the reader wrote keeps its own name, since that name is in the editor in front of them. The tools the SDK gives a model are renamed to what they did: `list_agents` reads "looked for other agents", `start_agent` "started another agent", `ask_agent` "asked another agent", and so on through `message_agent`, `stop_agent`, `describe_agent`, `inbox_listen`, `inbox_close`, `open_skill` and `report`. The map is `saidAs` in `chat.tsx`.
+- **Another agent's work** is nested by run, not by span. Runs whose `fn` is not the chat's own agent are indented one level and their rows carry that agent's name, so a handoff reads as a handoff. Rows of every run are merged and each run's steps are sorted by `startedAt`.
+- **Threads** filter the rows: when the chat has a thread selected, a run whose trigger names a different thread is left out.
+
+### What did not work, or was not finished
+
+- **Per-turn answers are unverified, and this is the main risk.** The design above reads each `Thinking` step's output so that a multi-turn loop shows each turn as its own bubble, rather than one bubble at the end. `api.output` on a step id does return `{ input, data, error }`, so the mechanism exists. What was never checked against a live run is whether the Dev Server's `runTraceSpanOutputByID` returns the full `AgentModelResponse` for that step or something trimmed, and whether a large reply is spilled elsewhere: the SDK has a `${stepId}:spill` step named "Save the full output of ...", which suggests a big output does not live on the step. If per-turn text turns out not to be readable, the fallback is one bubble per run from `run.output`, which is the run's final result only, and the multi-turn conversation then collapses into its last line.
+- **The span's kind was never confirmed.** The SDK passes `"~span": { kind: "llm" }` for a model call and `{ kind: "tool" }` for a tool call. `server/runs.ts` reads `stepType` into `TraceStep.type` and `groupKind` into `TraceStep.group`, and which of the two carries `"llm"` for a `step.run` with a `~span` was not established. `isThinking()` hedges by checking the name and both fields. Confirm it against one real run and then narrow it.
+- **Reports arriving back are still invisible.** Jack asked explicitly for "getting reports back from them, and understanding those reports" to show as lines. A report arrives as an inbox message, which leaves only plumbing spans, so there is no line for it today. What the chat does show is the `start_agent` or `ask_agent` line, whose output carries the child's answer. A real solution needs either a non-plumbing span for an arriving report, or a server-side stream event when one lands.
+- **Nothing was wired into the layout.** `App.tsx` still renders `TracePanel` in the bottom right and nothing renders `ChatPanel`. The intention, which is a decision worth confirming before building it, was two tabs in that pane, Chat by default and Trace beside it, rather than deleting the Trace: every written page's prose says "In the Trace, ..." and `PAGES.md` documents it at length, so deleting it breaks all of that at once.
+- **Save-and-run on blur is only half there.** `ChatPanel.send()` awaits `onRun()` when `dirty`, but `onRun` resolves when the files have been posted, not when the restarted app is serving again, so a message sent straight after an edit can reach an app that is still starting. It needs a queue that waits for the status to be `live` before it sends.
+
+### The immediate next step
+
+Render `ChatPanel` in the bottom right of `App.tsx`, as a tab beside the Trace, passing `runs`, `chatTarget`, `live`, `dirty`, `runSignal`, `failure`, `run` and `jumpTo`. Add the chat's CSS to `site/src/styles.css`, which has none of it: `.chat`, `.chat-scroll`, `.chat-line` with `.reader` and `.agent`, `.bubble`, `.chat-did`, `.chat-box`. Add `chat` and `chatSend` to the key handler map in `App.tsx` (they are not panel ids any more, so `panelHandlers` does not cover them, and an unhandled action does nothing). Then `pnpm tour:lessons`, then `pnpm tour:page 01-agents/02-hello-agent`, and drive it in a browser: whether the per-turn bubbles work is a thing to see, not to reason about.
+
+### Two defects to fix while in there
+
+Both were reported as pre-existing and neither was looked for in this worktree.
+
+- The harness UI and observer show a `destructive` tool as `write`. `AgentEffects` is `"read" | "write" | "destructive"`, so three values, and a UI that knows two is wrong.
+- The agent-builder's prompt text describes the old discovery card schema. The card and the per-caller roster were split, so `AgentCard`, `AgentRoster` and `AgentSummary` are what the prompt should describe.
