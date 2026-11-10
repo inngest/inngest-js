@@ -8,13 +8,18 @@
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { hashedStepId } from "../execution/inboxState.ts";
 import { Inngest } from "../Inngest.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 describe("a step beside a waiting read", () => {
   test.each([false, true])(
     "is planned, not run in-process (optimizeParallelism %s)",
     async (optimizeParallelism) => {
       const ran: string[] = [];
-      const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
+      const fn = new Inngest({
+        id: testClientId,
+        isDev: true,
+        middleware: [inboxMiddleware()],
+      }).createFunction(
         {
           id: "race-wait",
           triggers: [{ event: "race/wait" }],

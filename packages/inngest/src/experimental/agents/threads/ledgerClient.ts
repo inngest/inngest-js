@@ -51,6 +51,7 @@ import {
 } from "../../../components/inbox/Inbox.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import { ledgerDataIsSigned, signLedgerData } from "../agent/relations.ts";
+import type { StepWithSubscribe } from "../agent/types.ts";
 import type { KvIndexEntry, KvIndexRange, KvStore } from "../kv/kv.ts";
 import {
   applyChange,
@@ -600,7 +601,10 @@ const fetchState = async (copy: Copy): Promise<void> => {
 const load = async (copy: Copy): Promise<void> => {
   const { thread, runId, app } = copy;
   const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
-  const sub = step.subscribe(`ledger-state:${thread}`, [
+  // `subscribe` only types once `inboxMiddleware()` is registered - true at
+  // runtime (`createAgents` always adds it), but invisible to the ambient
+  // `step` singleton's generic type. See `StepWithSubscribe`.
+  const sub = (step as StepWithSubscribe).subscribe(`ledger-state:${thread}`, [
     {
       event: threadWrite.name,
       if: mine,
@@ -734,7 +738,8 @@ const write = async (copy: Copy, change: ThreadChange): Promise<void> => {
     const { thread, app, runId } = copy;
     const mine = `async.data.thread == ${quoted(thread)} && async.data.app == ${quoted(app)}`;
 
-    copy.echo = step.subscribe(`ledger-echo:${thread}`, [
+    // See the comment on the other `step.subscribe` call in this file.
+    copy.echo = (step as StepWithSubscribe).subscribe(`ledger-echo:${thread}`, [
       {
         event: threadWrite.name,
         if: `${mine} && async.data.runId == ${quoted(runId)}`,

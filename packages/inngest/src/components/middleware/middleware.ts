@@ -256,6 +256,7 @@ export namespace Middleware {
     | "sleep"
     | "subscribe"
     | "subscribe.close"
+    | "subscribe.message"
     | "subscribe.read"
     | "subscribe.wait"
     | "waitForEvent"

@@ -7,13 +7,18 @@
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { hashedStepId } from "../execution/inboxState.ts";
 import { Inngest } from "../Inngest.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 const opened = hashedStepId("inbox");
 
 const run = async (
   read: (inbox: ReturnType<typeof subscribe>) => Promise<unknown>,
 ) => {
-  const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
+  const fn = new Inngest({
+    id: testClientId,
+    isDev: true,
+    middleware: [inboxMiddleware()],
+  }).createFunction(
     { id: "ops", triggers: [{ event: "ops/run" }] },
     async ({ step }) => {
       return read(subscribe(step));
@@ -97,7 +102,13 @@ describe("ops of an inbox", () => {
         {
           op: "SubscribeWait",
           opts: {
-            span: [{ id: "inbox:next", name: "next", kind: "\u2709\uFE0F" }],
+            span: [
+              {
+                id: "inngest/inbox/inbox/next/0",
+                name: "next",
+                kind: "\u2709\uFE0F",
+              },
+            ],
             origin: expect.stringMatching(/^inngest@/),
           },
         },
@@ -111,7 +122,13 @@ describe("ops of an inbox", () => {
     });
 
     expect(batch).toMatchObject({
-      steps: [{ opts: { span: [{ id: "inbox:next", name: "nextBatch" }] } }],
+      steps: [
+        {
+          opts: {
+            span: [{ id: "inngest/inbox/inbox/next/0", name: "nextBatch" }],
+          },
+        },
+      ],
     });
   });
 
@@ -125,7 +142,13 @@ describe("ops of an inbox", () => {
         {
           op: "SubscribeClose",
           opts: {
-            span: [{ id: "inbox:close", name: "close", kind: "\u2709\uFE0F" }],
+            span: [
+              {
+                id: "inngest/inbox/inbox/close",
+                name: "close",
+                kind: "\u2709\uFE0F",
+              },
+            ],
             origin: expect.stringMatching(/^inngest@/),
           },
         },

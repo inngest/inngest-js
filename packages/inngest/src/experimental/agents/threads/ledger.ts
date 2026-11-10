@@ -92,6 +92,7 @@
 import type { Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { inboxOpenedPromise } from "../../../components/inbox/Inbox.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
 import {
   eventType,
   invoke,
@@ -797,6 +798,10 @@ export const createLedgerFunctions = (
       retries: ledgerRetries,
       optimizeParallelism: false,
       triggers: [invoke(staticSchema<LedgerRunInput>())],
+      // `step.subscribe()` below ("ledger") only types once
+      // `inboxMiddleware()` is in this function's `middleware` - see the
+      // comment on the same line in `agentFunction.ts`.
+      middleware: [InboxMiddleware],
     },
     async ({ event, step, logger, runId }) => {
       const input = event.data as unknown as LedgerRunInput;

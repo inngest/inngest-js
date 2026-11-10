@@ -35,6 +35,7 @@ import {
   inboxOpenedPromise,
   type UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
 import { NonRetriableError } from "../../../components/NonRetriableError.ts";
 import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
 import {
@@ -480,6 +481,14 @@ export function createAgentFunction(
     {
       ...functionOptions(config),
       id: config.id,
+
+      // `step.subscribe()` below only types once `inboxMiddleware()` is in
+      // this function's `middleware`. `createAgents` also registers it on
+      // the client itself (for every function's runtime, including ones
+      // the caller added later), but that mutation happens after this call
+      // is type-checked, so it has to be named here too for `step` to type
+      // `subscribe` in this handler.
+      middleware: [InboxMiddleware, ...(config.middleware ?? [])],
 
       // A child started attached ends with its parent's run.
       cancelOn: [...(config.cancelOn ?? []), parentEndedCancel],

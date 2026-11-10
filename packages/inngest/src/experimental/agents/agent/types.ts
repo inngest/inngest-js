@@ -7,10 +7,11 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { GetFunctionInput, Inngest } from "../../../components/Inngest.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
-import { step } from "../../../components/InngestStepTools.ts";
+import type { step } from "../../../components/InngestStepTools.ts";
 import type {
   Inbox,
   InboxMessageOf,
+  InboxSources,
   UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import type { Middleware } from "../../../components/middleware/middleware.ts";
@@ -25,6 +26,7 @@ import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareGroupExtensions,
   ApplyAllMiddlewareStepExtensions,
+  StepOptionsOrId,
 } from "../../../types.ts";
 import type {
   AgentCardConfig,
@@ -855,6 +857,25 @@ export interface OpenedInbox {
    */
   inbox: Inbox<UntypedInboxMessage>;
 }
+
+/**
+ * `step`, widened with `subscribe`. `subscribe` only types on `step` once
+ * `inboxMiddleware()` is in a client's `middleware`, because it is added by
+ * that middleware's `transformFunctionInput`, not by a core step tool - see
+ * `InngestStepTools.ts`. The ambient `step` singleton this module imports
+ * (the one `inngest.globals()` hands out) is typed generically as
+ * `GetStepTools<Inngest.Any>`, which cannot see that `createAgents` always
+ * registers `inboxMiddleware()` on the client at runtime (it mutates
+ * `client.middleware`, which the ambient type does not re-read). Call sites
+ * that reach `step.subscribe()` through that ambient singleton, rather than
+ * a function's own typed `ctx.step`, need this instead of `typeof step`.
+ */
+export type StepWithSubscribe = typeof step & {
+  subscribe: <const S extends InboxSources>(
+    idOrOptions: StepOptionsOrId,
+    sources: S,
+  ) => Inbox<InboxMessageOf<S>>;
+};
 
 /**
  * The function context an agent's body shares with a plain function, typed

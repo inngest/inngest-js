@@ -6,12 +6,11 @@
  */
 
 import { stepsIssued } from "../../../components/execution/als.ts";
-import {
-  type BatchOptions,
-  type Inbox,
-  inboxHasUnread,
-  type ReadOptions,
-  type UntypedInboxMessage,
+import type {
+  BatchOptions,
+  Inbox,
+  ReadOptions,
+  UntypedInboxMessage,
 } from "../../../components/inbox/Inbox.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { asyncDispose } from "../../../helpers/asyncDispose.ts";
@@ -574,16 +573,32 @@ export function threadInbox(
       const quiet = quietNow();
 
       if (quiet === 0) {
-        // A message saved in the run's state that the reader has not handed
-        // over yet is on its way: wait for it.
-        if (!bg.ended && inboxHasUnread(source)) {
-          bgArm();
-          await bgArrival();
-
-          return true;
+        if (bg.ended) {
+          return false;
         }
 
-        return false;
+        if (bg.reading) {
+          // A read armed by an earlier fold is already on its way; quiet of 0
+          // does not wait for it to land, so this turn ends without it - it
+          // is still in the queue for the next one.
+          return false;
+        }
+
+        // No budget to wait: take whatever is already unread without
+        // waiting for more to arrive. A drain is always answered at once,
+        // and taking it commits to nothing a wait would not already have -
+        // the read is a durable step either way, so there is no cost to
+        // draining over peeking first.
+        const drained = await source.drain();
+
+        if (drained.length === 0) {
+          return false;
+        }
+
+        bg.queue.push(...drained);
+        bgWake();
+
+        return true;
       }
 
       if (bg.ended) {
@@ -673,11 +688,6 @@ export function threadInbox(
 
         for (;;) {
           const queued = first.shift();
-
-          // The trigger comes from the run's state: it still gets its row.
-          if (queued && main && queued === started) {
-            source.noteStart();
-          }
 
           const raw =
             queued ??

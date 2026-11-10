@@ -1,7 +1,7 @@
 /**
  * @module
  * Type tests for `InboxMessage`, which names what an inbox reads, and the types
- * the package root exports so declaration files can name inbox types.
+ * `inngest/experimental` exports so declaration files can name inbox types.
  */
 import { expectTypeOf } from "vitest";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import type {
   InboxMessage,
   InboxMessageOf,
   UntypedInboxMessage,
-} from "../../index.ts";
+} from "../../experimental.ts";
 import { eventType } from "../triggers/triggers.ts";
 
 const review = eventType("review", {

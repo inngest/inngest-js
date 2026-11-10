@@ -44,6 +44,9 @@ const fakeDeps = (ids: string[] = []) => {
     message: (id) => {
       return message(id);
     },
+    transform: async (_op, _id, value) => {
+      return value;
+    },
     batch: async (op, read) => {
       batches.push({ op, ...read });
 
@@ -101,7 +104,7 @@ describe("closing an inbox", () => {
     const unread = await inbox.close();
 
     expect(closes).toEqual([
-      { op: "inbox:close", closing: { inbox: "inbox" } },
+      { op: "inngest/inbox/inbox/close", closing: { inbox: "inbox" } },
     ]);
     expect(unread).toMatchObject([message("m2")]);
     expect(inbox.closed).toBe(true);
@@ -175,7 +178,7 @@ describe("closing an inbox", () => {
   test("a read that found nothing and whose close is in state ends when the close is replayed past", async () => {
     const { deps, waits } = fakeDeps([]);
     deps.closed = (op) => {
-      return op === "inbox:close";
+      return op === "inngest/inbox/inbox/close";
     };
     const inbox = new Inbox(deps);
 
@@ -216,7 +219,12 @@ describe("reads on one inbox", () => {
     await tick();
 
     expect(waits).toEqual([
-      { op: "inbox:next", inbox: "inbox", seen: "inbox", timeout: "1m" },
+      {
+        op: "inngest/inbox/inbox/next/0",
+        inbox: "inbox",
+        seen: "inbox",
+        timeout: "1m",
+      },
     ]);
   });
 
@@ -246,7 +254,7 @@ describe("batch reads", () => {
     expect(drained).toMatchObject([message("m1"), message("m2")]);
     expect(batches).toEqual([
       {
-        op: "inbox:next",
+        op: "inngest/inbox/inbox/next/0",
         inbox: "inbox",
         seen: "inbox",
         drain: true,

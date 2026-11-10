@@ -33,6 +33,7 @@ import {
   type ResultOptions,
 } from "../agent/runResults.ts";
 import { senderOf } from "../agent/sender.ts";
+import type { StepWithSubscribe } from "../agent/types.ts";
 import { parseWithAsync } from "../agent/validate.ts";
 import {
   type AgentAnswerData,
@@ -435,7 +436,10 @@ export function sendMessage<TOutput = unknown>(
 
   // Opened before the message is sent, so a result that comes quickly is
   // not missed. It ends with the sender's run.
-  const answers = step.subscribe(id, {
+  // `subscribe` only types once `inboxMiddleware()` is registered - true at
+  // runtime (`createAgents` always adds it), but invisible to the ambient
+  // `step` singleton's generic type. See `StepWithSubscribe`.
+  const answers = (step as StepWithSubscribe).subscribe(id, {
     event: agentMessageResultEvent,
     if: `async.data.id == ${JSON.stringify(id)}`,
   });
@@ -513,7 +517,8 @@ export function threadHandle<TOutput = unknown>(
 
       // Opened before the question is sent, so an answer that comes quickly is
       // not missed. It ends with this call, whichever way it ends.
-      await using answers = step.subscribe(id, {
+      // See the comment on the other `step.subscribe` call in this file.
+      await using answers = (step as StepWithSubscribe).subscribe(id, {
         event: agentAnswerEvent,
         if: `async.data.re == ${JSON.stringify(id)}`,
       });

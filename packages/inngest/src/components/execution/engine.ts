@@ -362,6 +362,9 @@ class InngestExecutionEngine
                 place: (id: string) => {
                   return this.reachStackPlace(id);
                 },
+                transform: (op: string, id: string, message: unknown) => {
+                  return this.transformInboxMessage(op, id, message);
+                },
               },
               skipStep: async (id: string) => {
                 this.state.remainingStepsToBeSeen.delete(hashId(id));
@@ -2311,6 +2314,34 @@ class InngestExecutionEngine
     return Object.fromEntries(this.state.steps);
   }
 
+  /**
+   * Runs a message read from the run's state through `wrapStep`, as the step it
+   * is. With no middleware there is nothing to run, so the message is its own
+   * value.
+   */
+  private transformInboxMessage(
+    op: string,
+    id: string,
+    message: unknown,
+  ): Promise<unknown> {
+    if (!this.middlewareManager.hasMiddleware()) {
+      return Promise.resolve(message);
+    }
+
+    return this.middlewareManager.buildWrapStepChain(
+      () => {
+        return Promise.resolve(message);
+      },
+      {
+        hashedId: id,
+        input: undefined,
+        memoized: true,
+        options: { id: op },
+        stepType: "subscribe.message",
+      },
+    )();
+  }
+
   private createFnArg(): Context.Any {
     const { step, defer } = this.createStepTools();
     const experimentStepRun = (step as unknown as ExperimentStepTools)[
@@ -2324,9 +2355,11 @@ class InngestExecutionEngine
       defer,
     } as unknown as Context.Any;
 
-    addEventIs(fnArg.event);
-    for (const event of fnArg.events ?? []) {
-      addEventIs(event);
+    fnArg.event = addEventIs(fnArg.event);
+    if (fnArg.events) {
+      fnArg.events = fnArg.events.map((event) => {
+        return addEventIs(event);
+      }) as typeof fnArg.events;
     }
 
     // Aggregate the run's triggering events into its propagated sessions in
