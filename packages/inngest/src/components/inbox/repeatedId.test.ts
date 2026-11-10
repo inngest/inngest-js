@@ -10,6 +10,7 @@ import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { hashedStepId } from "../execution/inboxState.ts";
 import { Inngest } from "../Inngest.ts";
 import { withStepIdPrefix } from "../InngestStepTools.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 const firstOpen = hashedStepId("inbox");
 const secondOpen = hashedStepId("inbox:1");
@@ -22,7 +23,11 @@ const message = (opener: string, name: string, n: number) => {
 };
 
 const sequential = () => {
-  return new Inngest({ id: testClientId, isDev: true }).createFunction(
+  return new Inngest({
+    id: testClientId,
+    isDev: true,
+    middleware: [inboxMiddleware()],
+  }).createFunction(
     { id: "repeated", triggers: [{ event: "repeated/run" }] },
     async ({ step }) => {
       const first = step.subscribe("inbox", "msg");
@@ -63,7 +68,11 @@ describe("step.subscribe with an ID the run already used", () => {
 
   test("the second inbox's wait and close name its own opening step", async () => {
     const closeFirst = hashedStepId("inngest/inbox/inbox/close");
-    const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
+    const fn = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [inboxMiddleware()],
+    }).createFunction(
       { id: "repeated-ops", triggers: [{ event: "repeated/ops" }] },
       async ({ step }) => {
         const first = step.subscribe("inbox", "msg");
@@ -97,7 +106,11 @@ describe("step.subscribe with an ID the run already used", () => {
 
   test("the second inbox's close names its own opening step", async () => {
     const closeFirst = hashedStepId("inngest/inbox/inbox/close");
-    const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
+    const fn = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [inboxMiddleware()],
+    }).createFunction(
       { id: "repeated-close", triggers: [{ event: "repeated/close" }] },
       async ({ step }) => {
         const first = step.subscribe("inbox", "msg");
@@ -129,7 +142,11 @@ describe("step.subscribe with an ID the run already used", () => {
 
   test("an inbox opened under a step ID prefix is named from the prefixed ID", async () => {
     const prefixed = hashedStepId("a:inbox");
-    const fn = new Inngest({ id: testClientId, isDev: true }).createFunction(
+    const fn = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [inboxMiddleware()],
+    }).createFunction(
       { id: "prefixed", triggers: [{ event: "prefixed/run" }] },
       async ({ step }) => {
         return withStepIdPrefix("a:", () => {

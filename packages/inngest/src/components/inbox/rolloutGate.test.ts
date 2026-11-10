@@ -8,9 +8,10 @@ import { describe, expect, test } from "vitest";
 import { createClient } from "../../test/helpers.ts";
 import { StepMode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 const run = async (executorCapabilities?: string[]) => {
-  const client = createClient({ id: "test" });
+  const client = createClient({ id: "test", middleware: [inboxMiddleware()] });
 
   const fn = new InngestFunction(
     client,

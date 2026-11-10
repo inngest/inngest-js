@@ -11,6 +11,7 @@ import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { hashedStepId } from "../execution/inboxState.ts";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/index.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 const open = hashedStepId("inbox");
 
@@ -57,7 +58,7 @@ const fn = (read: "next" | "drain") => {
   return new Inngest({
     id: testClientId,
     isDev: true,
-    middleware: [Decode],
+    middleware: [inboxMiddleware(), Decode],
   }).createFunction(
     { id: "decoded", triggers: [{ event: "decoded/run" }] },
     async ({ step }) => {

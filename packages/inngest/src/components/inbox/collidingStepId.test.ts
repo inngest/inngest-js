@@ -9,6 +9,7 @@
 import { runFnWithStack, testClientId } from "../../test/helpers.ts";
 import { hashedStepId } from "../execution/inboxState.ts";
 import { Inngest } from "../Inngest.ts";
+import { inboxMiddleware } from "./middleware.ts";
 
 const open = hashedStepId("inbox");
 
@@ -27,7 +28,11 @@ const returned = (result: unknown): unknown => {
 };
 
 const read = (userStepId: string) => {
-  return new Inngest({ id: testClientId, isDev: true }).createFunction(
+  return new Inngest({
+    id: testClientId,
+    isDev: true,
+    middleware: [inboxMiddleware()],
+  }).createFunction(
     { id: "colliding", triggers: [{ event: "colliding/run" }] },
     async ({ step }) => {
       const inbox = step.subscribe("inbox", "msg");
