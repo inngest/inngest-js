@@ -94,6 +94,7 @@ To test examples: `pnpm dev:example` and select from the list.
 
 - **Durable Endpoint Streaming**: `packages/inngest/src/experimental/durable-endpoints/docs/streaming.md`
 - **Defer (companion functions)**: `packages/inngest/src/components/execution/defer.md`
+- **Loops and FSMs**: `packages/inngest/src/components/execution/loop.md`
 - **Execution engine architecture**: `packages/inngest/src/components/execution/ARCHITECTURE.md`
 
 ## Special Notes

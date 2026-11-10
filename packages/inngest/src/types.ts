@@ -288,6 +288,12 @@ export enum StepOpCode {
 
   DeferAdd = "DeferAdd",
   DeferAbort = "DeferAbort",
+
+  /**
+   * ends one run of a loop.  the data holds the state to commit and the wake,
+   * end, subscribe, and unsubscribe calls from the handler.
+   */
+  LoopReturn = "LoopReturn",
 }
 
 /**
@@ -1692,6 +1698,12 @@ export interface RegisterRequest {
 export interface Capabilities {
   trust_probe: "v1";
   connect: "v1";
+
+  /**
+   * the server rejects a function with a `loop` block at sync when this is
+   * missing.
+   */
+  loop: "v1";
 }
 
 export interface InBandRegisterRequest
@@ -1883,6 +1895,14 @@ export const functionConfigSchema = z.strictObject({
         .min(1)
         .max(2),
     ])
+    .optional(),
+  loop: z
+    .strictObject({
+      kind: z.enum(["loop", "fsm"]),
+      key: z.string(),
+      tick: z.string().optional(),
+      idle_ttl: z.string().optional(),
+    })
     .optional(),
 });
 

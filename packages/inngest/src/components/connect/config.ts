@@ -130,6 +130,7 @@ export function prepareConnectionConfig(
   const capabilities: Capabilities = {
     trust_probe: "v1",
     connect: "v1",
+    loop: "v1",
   };
 
   const functions = collectFunctions(apps);

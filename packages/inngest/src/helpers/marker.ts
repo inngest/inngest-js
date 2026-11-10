@@ -1,5 +1,6 @@
 import type { StaleDispatchError } from "../api/api.ts";
 import type { DeferredFunction } from "../components/DeferredFunction.ts";
+import type { LoopFunction } from "../components/LoopFunction.ts";
 
 /**
  * Property name used to stamp SDK-internal metadata onto objects. The tilde
@@ -8,7 +9,7 @@ import type { DeferredFunction } from "../components/DeferredFunction.ts";
 export const markerKey = "~inngest" as const;
 
 export type Marker = {
-  kind?: "DeferredFunction" | "StaleDispatchError";
+  kind?: "DeferredFunction" | "LoopFunction" | "StaleDispatchError";
 };
 
 function getMarker(value: unknown): Marker | undefined {
@@ -26,6 +27,10 @@ export function isDeferredFunction(
   value: unknown,
 ): value is DeferredFunction.Any {
   return getMarker(value)?.kind === "DeferredFunction";
+}
+
+export function isLoopFunction(value: unknown): value is LoopFunction.Any {
+  return getMarker(value)?.kind === "LoopFunction";
 }
 
 export function isStaleDispatchError(

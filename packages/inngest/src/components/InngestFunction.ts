@@ -194,6 +194,11 @@ export class InngestFunction<
       singleton,
     };
 
+    const loop = this.getConfigLoop();
+    if (loop) {
+      fn.loop = loop;
+    }
+
     if (cancelOn) {
       fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
         let eventName: string;
@@ -292,6 +297,14 @@ export class InngestFunction<
     }
 
     return triggers;
+  }
+
+  /**
+   * returns the `loop` block of the sync config.  only `LoopFunction` returns
+   * one.
+   */
+  protected getConfigLoop(): FunctionConfig["loop"] {
+    return undefined;
   }
 
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {

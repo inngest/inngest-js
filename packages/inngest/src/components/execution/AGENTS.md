@@ -5,3 +5,4 @@ Read `ARCHITECTURE.md` before making non-trivial changes in this folder. It cove
 Feature docs:
 
 - `defer.md` — `createDefer` / `defer(...)` user-facing API and behavior.
+- `loop.md` — `createLoop` / `createFSM` user-facing API, wire protocol, and engine behavior.
