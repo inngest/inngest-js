@@ -155,6 +155,18 @@ export const parseFnData = (
             .record(z.object({ abortable: z.boolean().optional() }))
             .optional()
             .default({}),
+          loop: z
+            .object({
+              state: z.unknown(),
+              version: z.number(),
+              key: z.string(),
+              input: z.object({
+                kind: z.string(),
+                id: z.string().optional(),
+              }),
+            })
+            .optional()
+            .nullable(),
           ctx: z
             .object({
               run_id: z.string(),

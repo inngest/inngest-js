@@ -19,6 +19,7 @@ import type {
   MetadataWriteOptions,
 } from "../InngestMetadata.ts";
 import type { Middleware } from "../middleware/middleware.ts";
+import type { LoopRequest } from "./loop.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -125,6 +126,12 @@ export interface InngestExecutionOptions {
    * re-emitting them on replay.
    */
   priorDefers?: Record<string, { abortable?: boolean }>;
+
+  /**
+   * the `loop` block of the request.  the executor sends it only for a loop
+   * function.
+   */
+  loop?: LoopRequest;
 
   stepCompletionOrder: string[];
   stepMode: StepMode;

@@ -869,7 +869,7 @@ describe("introspection", () => {
       api_origin: "https://api.inngest.com/",
       app_id: "test",
       authentication_succeeded: true,
-      capabilities: { trust_probe: "v1", connect: "v1" },
+      capabilities: { trust_probe: "v1", connect: "v1", loop: "v1" },
       env: fakeEnv,
       event_api_origin: "https://inn.gs/",
       event_key_hash: null,

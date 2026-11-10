@@ -232,6 +232,19 @@ export enum internalEvents {
    * Triggers a deferred function. The backend emits this.
    */
   DeferredSchedule = "inngest/deferred.schedule",
+
+  /**
+   * the backend sends this event to start a loop run when the tick interval
+   * of the loop passes.  `data.key` is the loop key.
+   */
+  LoopTick = "inngest/loop.tick",
+
+  /**
+   * the backend sends this event to start a loop run when a wake from
+   * `loop.wake()` is due.  `data.key` is the loop key and `data.id` is the
+   * wake id.
+   */
+  LoopWake = "inngest/loop.wake",
 }
 
 /**

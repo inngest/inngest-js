@@ -6,6 +6,15 @@ export {
 } from "./components/DeferredFunction.ts";
 export type { AsyncContext } from "./components/execution/als.ts";
 export { getAsyncCtx, runWithAsyncCtx } from "./components/execution/als.ts";
+// Loops
+export type {
+  FSMTools,
+  LoopInput,
+  LoopInputKind,
+  LoopKind,
+  LoopSubscribeOptions,
+  LoopTools,
+} from "./components/execution/loop.ts";
 // Extended Traces (OpenTelemetry)
 export type { ExtendedTracesMiddlewareOptions } from "./components/execution/otel/middleware.ts";
 export { extendedTracesMiddleware } from "./components/execution/otel/middleware.ts";
@@ -89,6 +98,18 @@ export {
 } from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
+export type {
+  CreateLoopInput,
+  LoopContext,
+  LoopHandler,
+  LoopTickEvent,
+  LoopWakeEvent,
+} from "./components/LoopFunction.ts";
+export {
+  createFSM,
+  createLoop,
+  LoopFunction,
+} from "./components/LoopFunction.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
 export { createSandboxCleanup } from "./components/sandbox/cleanup.ts";
 export { image } from "./components/sandbox/image.ts";

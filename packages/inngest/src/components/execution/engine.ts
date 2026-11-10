@@ -19,6 +19,7 @@ import {
 import { undefinedToNull } from "../../helpers/functions.js";
 import {
   isDeferredFunction,
+  isLoopFunction,
   isStaleDispatchError,
 } from "../../helpers/marker.ts";
 import {
@@ -103,6 +104,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
+import { LoopRun, loopRejectedOps } from "./loop.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
   type AIMetadata,
@@ -142,6 +144,11 @@ function errorMessage(error: unknown): string {
  * Placeholder step ID used when completing a checkpointed run.
  */
 const RUN_COMPLETE_STEP_ID = "complete";
+
+/**
+ * the id and name of the `LoopReturn` opcode that ends a loop run.
+ */
+const LOOP_RETURN_STEP_ID = "loop";
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
@@ -185,6 +192,11 @@ class InngestExecutionEngine
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
   private failuresAreFinal = false;
+
+  /**
+   * set when the function is a loop and this request runs its main handler.
+   */
+  private loopRun?: LoopRun;
   private middlewareManager: MiddlewareManager;
   /**
    * Close the stream via {@link streamCloseSucceeded}, {@link streamCloseFailed},
@@ -271,6 +283,7 @@ class InngestExecutionEngine
         ),
     });
     this.state = this.createExecutionState();
+    this.loopRun = this.createLoopRun();
     this.fnArg = this.createFnArg();
 
     // Setup middleware
@@ -1359,6 +1372,12 @@ class InngestExecutionEngine
           data = await this.options.createResponse(jsonResponse(resultData));
         }
 
+        // a loop run ends with a `LoopReturn` opcode in place of a plain 200.
+        // the executor fails a loop run that ends without one.
+        if (this.loopRun) {
+          return this.loopReturn(this.loopRun, data);
+        }
+
         // Terminal. `attachLazyOps` only adds `RunComplete` when lazy ops
         // (e.g. `defer` calls) are buffered, so the executor receives them
         // and finalizes in one round-trip. Otherwise this is a plain 200.
@@ -1471,6 +1490,23 @@ class InngestExecutionEngine
                 steps,
               };
             }
+          }
+
+          // the executor does not accept a `LoopReturn` in a checkpoint.  the
+          // steps that are not checkpointed yet go in the same response,
+          // before the `LoopReturn`, so the executor saves them before it
+          // commits the state.
+          if (
+            output?.type === "steps-found" &&
+            output.steps.some((step) => step.op === StepOpCode.LoopReturn)
+          ) {
+            return {
+              ...output,
+              steps: [
+                ...this.state.checkpointingStepBuffer,
+                ...output.steps,
+              ] as [OutgoingOp, ...OutgoingOp[]],
+            };
           }
 
           if (output?.type === "steps-found" && lazyOps.length) {
@@ -1909,6 +1945,7 @@ class InngestExecutionEngine
     }
 
     const innerHandler: () => Promise<unknown> = async () => {
+      this.loopRun?.assertRequest();
       await this.validateEventSchemas();
       return this.userFnToRun(this.fnArg);
     };
@@ -2040,6 +2077,12 @@ class InngestExecutionEngine
       // schema. This catches type mismatches from serialization (e.g. a
       // Date that becomes an ISO string over the wire).
       await this.validateDeferEventSchema();
+      return;
+    }
+
+    // a tick, a wake, and a subscribed event are not in the triggers of the
+    // loop, so they have no schema to check.
+    if (this.loopRun && this.loopRun.input.kind !== "event") {
       return;
     }
 
@@ -2191,6 +2234,54 @@ class InngestExecutionEngine
     }
   }
 
+  /**
+   * builds the result that ends a loop run.  it holds one `LoopReturn` opcode
+   * with the state the handler left in `ctx.state`.
+   */
+  private loopReturn(loopRun: LoopRun, returned: unknown): ExecutionResult {
+    if (returned !== undefined && returned !== null) {
+      this.options.client[internalLoggerSymbol].warn(
+        { runId: this.fnArg.runId },
+        "loop handler returned a value.  the value is dropped.  change `state` to keep data",
+      );
+    }
+
+    const { state } = this.fnArg as unknown as { state?: unknown };
+
+    return {
+      type: "steps-found",
+      ctx: this.fnArg,
+      ops: this.ops,
+      steps: [
+        {
+          op: StepOpCode.LoopReturn,
+          id: hashId(LOOP_RETURN_STEP_ID),
+          name: LOOP_RETURN_STEP_ID,
+          data: loopRun.result(state),
+        },
+      ],
+    };
+  }
+
+  /**
+   * returns the loop run for a request that runs the main handler of a loop
+   * function.
+   */
+  private createLoopRun(): LoopRun | undefined {
+    const { fn, handlerKind } = this.options;
+    if (!isLoopFunction(fn) || (handlerKind ?? "main") !== "main") {
+      return undefined;
+    }
+
+    return new LoopRun({
+      kind: fn.loop.kind,
+      fnId: fn.id(this.options.client.id),
+      initialState: fn.initialState,
+      request: this.options.loop,
+      isInStep: () => Boolean(this.state.executingStep),
+    });
+  }
+
   private createExecutionState(): ExecutionState {
     const d = createDeferredPromiseWithStack<Checkpoint>();
     let checkpointResolve = d.deferred.resolve;
@@ -2259,6 +2350,15 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
       defer,
     } as unknown as Context.Any;
+
+    if (this.loopRun) {
+      Object.assign(fnArg, {
+        state: this.loopRun.state,
+        input: this.loopRun.input,
+        loop: this.loopRun.tools,
+        defer: this.loopDefer(),
+      });
+    }
 
     // Aggregate the run's triggering events into its propagated sessions in
     // `ctx.sessions`
@@ -2510,6 +2610,15 @@ class InngestExecutionEngine
         opId.opts.payload = stampPropagatedSessionsOnEvent(
           opId.opts.payload,
           this.fnArg.sessions,
+        );
+      }
+
+      // a loop waits with `loop.wake` or `loop.subscribe`.  the run fails
+      // without retry, because a retry makes the same call.
+      const rejected = this.loopRun ? loopRejectedOps[opId.op] : undefined;
+      if (rejected) {
+        throw new NonRetriableError(
+          `${rejected} is not allowed in a loop handler.  use loop.wake or loop.subscribe instead`,
         );
       }
 
@@ -2813,6 +2922,22 @@ class InngestExecutionEngine
     const defer = this.buildDefer(stepHandler);
 
     return { step: baseTools, defer };
+  }
+
+  /**
+   * returns the `defer` of a loop handler.  the executor accepts only step
+   * outputs next to a `LoopReturn`, so a `DeferAdd` opcode in the last
+   * response fails the run.  the call is logged and skipped.
+   */
+  private loopDefer(): DeferFn {
+    return () => {
+      this.options.client[internalLoggerSymbol].error(
+        { runId: this.fnArg.runId },
+        "defer skipped: defer is not supported in a loop handler",
+      );
+
+      return { abort: () => {} };
+    };
   }
 
   /**

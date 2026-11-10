@@ -2280,7 +2280,7 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const { defers, event, events, steps, ctx } = anyFnData.value;
+      const { defers, event, events, loop, steps, ctx } = anyFnData.value;
       const requestId = await actions.headers(
         "getting request ID for execution",
         headerKeys.RequestId,
@@ -2354,6 +2354,7 @@ export class InngestCommHandler<
           requestStartedAt,
           stepState,
           priorDefers: defers,
+          loop: loop ?? undefined,
           requestedRunStep,
           timer,
           handlerKind: fn.handlerKind,
@@ -2443,6 +2444,7 @@ export class InngestCommHandler<
       capabilities: {
         trust_probe: "v1",
         connect: "v1",
+        loop: "v1",
       },
       appVersion: this.client.appVersion,
       featureObservations: sdkFeatureObservations.getJson(this.client),
@@ -2576,6 +2578,7 @@ export class InngestCommHandler<
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
+            loop: "v1",
           },
           env,
           event_api_origin: this.client.eventBaseUrl,
