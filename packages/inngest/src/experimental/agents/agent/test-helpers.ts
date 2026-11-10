@@ -246,8 +246,13 @@ export const run = async (
   const arriveNow = (value: unknown) => {
     const given = (value as { name?: unknown } | null)?.name;
     // The name the message is saved under, which is the forward's when the
-    // event is wrapped: an agent run subscribes to forwards and nothing else,
-    // so checking the event's own name here would drop it before it is wrapped.
+    // event is wrapped.
+    //
+    // This check has to ask for the name the message will be SAVED under, not
+    // the name it arrived with. An agent run subscribes to forwards and
+    // nothing else, so checking the event's own name drops it here, before it
+    // is wrapped - and then a mid-run forward looks like it is never
+    // delivered, when it was dropped at the door. An hour went into that once.
     const name =
       typeof given === "string" &&
       forwarding &&

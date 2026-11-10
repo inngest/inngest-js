@@ -582,20 +582,29 @@ export function createAgentFunction(
         // the thread start does not share a request with it.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the inbox.
-        // ONE subscription, and one source in it: the thread's forwards.
+        // ONE RESOLVER PER EVENT. This is the run's inbox and its one source is
+        // the thread's forwards; the thread run holds every other subscription
+        // - the agent layer's own events, the agent's triggers, each `inbox`
+        // source, and every listen asked for at runtime - and forwards what
+        // arrives here as one event per batch.
         //
-        // The thread run holds every other subscription - the agent layer's
-        // own events, the agent's triggers, each `inbox` source, and every
-        // listen asked for at runtime - and forwards what arrives here as one
-        // event per batch. That is what keeps **one resolver**.
+        // The rule is that an agent run never subscribes to anything its
+        // thread subscribes to, which is not quite the same as holding exactly
+        // one subscription. A run that awaits a child's `result()` opens an
+        // inbox of its own for `agent/message.result` (see `threads/thread.ts`),
+        // and that is allowed: the thread neither subscribes to that event nor
+        // forwards it, so no event has two resolvers. Routing results through
+        // the thread instead would make `result()` depend on the thread
+        // forwarding them, for no safety gain, and would put
+        // code-waits-for-a-child traffic through the conversation's log.
         //
-        // What breaks if a second subscription is ever added here: two
-        // subscriptions that match the same arriving event each save it, only
-        // the drained one is read, and the message is lost with no duplicate
-        // and no error anywhere. An arbitrary survivor and silent loss is the
-        // signature, and no type checker will ever catch it. So: one
-        // subscription, one source, and anything else the run needs from its
-        // thread is a request/response or a write, never a subscription.
+        // What the rule prevents: two subscriptions that match the SAME
+        // arriving event each save it, only the drained one is read, and the
+        // message is lost with no duplicate and no error anywhere. An
+        // arbitrary survivor and silent loss is the signature, and no type
+        // checker will ever catch it. So anything else this run needs from its
+        // thread is a request/response or a write, never a subscription on an
+        // event the thread already takes.
         //
         // The requirement this places on the primitive: `step.subscribe` must
         // hand over everything that matched while the subscription was open,
@@ -819,8 +828,23 @@ export function createAgentFunction(
         // The entries the thread holds that nothing has taken up, then the
         // rest of the batch that woke this run. Reading them is how a run that
         // lost a forward catches up: late, not wrong.
+        //
+        // The batch that woke this run is itself untaken in the state the
+        // forward carried - the thread appends, then forwards, and `took` only
+        // comes back later - so its own entries are left out here. They are
+        // handed over in their own order: the first as the event that started
+        // the run, the rest trailing it. Without that, entries two onwards
+        // would lead the inbox and the run would see the batch out of order.
+        const batched = new Set(
+          (forwarded ?? []).map((entry) => {
+            return entry.seq;
+          }),
+        );
         const caughtUp = threadState.pending().filter((entry) => {
-          return entry.id === undefined || entry.id !== startMessage.id;
+          return (
+            !batched.has(entry.seq) &&
+            (entry.id === undefined || entry.id !== startMessage.id)
+          );
         });
         const lead = caughtUp.map(entryAsMessage);
 

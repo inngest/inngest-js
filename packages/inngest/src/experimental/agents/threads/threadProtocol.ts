@@ -13,8 +13,16 @@
  * reads, anything - the agent is *late, not wrong*, because the thread still
  * holds the entry and the agent reconciles against the log on its next read
  * (every read hands back everything the thread holds that no agent has taken
- * up). That property is why nothing here needs compare-and-keep-max, strict
- * ordering, or non-independent compaction.
+ * up, and so does the state a forward carries). That property is why nothing
+ * here needs compare-and-keep-max, strict ordering, or non-independent
+ * compaction.
+ *
+ * **"Late, not wrong" is a claim about the log, not about any one answer.** An
+ * answer given while the log is still converging can be incomplete, on the
+ * atomic path as much as on the one where a forward carries the state: that is
+ * ordinary concurrency and not a property of either. What is guaranteed is
+ * that nothing the log holds is lost to a run that reads it. Read as a promise
+ * about replies it would be the wrong promise.
  *
  * Of the three things an agent run does, only the read waits:
  *
@@ -260,6 +268,11 @@ export type ThreadWriteOp =
   /**
    * The agent confirming it has taken up the log to this position, so a later
    * read does not hand those entries back again.
+   *
+   * It is fire and forget like every other write, and it fails in the right
+   * direction: a `take` that is lost means the next run is handed those
+   * entries again, which is duplication rather than loss, and write ids make
+   * the duplication harmless.
    */
   | { kind: "take"; seq: number };
 

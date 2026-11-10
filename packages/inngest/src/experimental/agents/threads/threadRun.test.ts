@@ -184,6 +184,53 @@ describe("an agent run and its thread", () => {
     ).toEqual([]);
   });
 
+  test("a run that starts from carried state still catches up, and in order", async () => {
+    freshKv();
+
+    const { fn, seen } = reader();
+
+    // The state a forward carries is the whole log, including what nothing has
+    // taken up - so the fast path, which does no read at all, replays exactly
+    // what the read path would have handed back. The batch that woke the run
+    // is itself untaken in that state, and it keeps its own order rather than
+    // leading the inbox.
+    await run(fn, {
+      forward: false,
+      event: forward(["two", "three"], {
+        from: 2,
+        state: held({
+          seq: 3,
+          taken: 0,
+          entries: [
+            {
+              seq: 1,
+              id: "evt-lost",
+              name: "agent/message",
+              data: { agent: ref, thread: "t1", content: "lost" },
+              ts: 0,
+            },
+            {
+              seq: 2,
+              id: "evt-2",
+              name: "agent/message",
+              data: { agent: ref, thread: "t1", content: "two" },
+              ts: 0,
+            },
+            {
+              seq: 3,
+              id: "evt-3",
+              name: "agent/message",
+              data: { agent: ref, thread: "t1", content: "three" },
+              ts: 0,
+            },
+          ],
+        }),
+      }),
+    });
+
+    expect(seen).toEqual(["lost", "two", "three"]);
+  });
+
   test("a batch forwarded as one event becomes one turn's messages", async () => {
     freshKv();
 

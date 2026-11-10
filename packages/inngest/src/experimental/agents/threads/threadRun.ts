@@ -92,6 +92,7 @@ import {
   threadFilter,
   threadForward,
   threadListen,
+  threadLost,
   threadRead,
   threadWrite,
 } from "./threadProtocol.ts";
@@ -113,6 +114,13 @@ const handoverAt = 700;
  * twice a day. A holder hands over at its step ceiling and for nothing else.
  */
 const readTimeout = "12h";
+
+/**
+ * How many holders may fail for good, in a row, before the supervisor gives up
+ * on the thread. Each failure emits a give-up of its own and starts the next
+ * generation from nothing.
+ */
+const holderFailures = 3;
 
 /**
  * How long the supervisor waits on a holder: a thread lives as long as the
@@ -153,7 +161,7 @@ interface HolderInput extends Record<string, unknown> {
 interface HolderResult {
   thread: string;
   generation: number;
-  ended: "done" | "handover";
+  ended: "done" | "handover" | "lost";
   entries: number;
 
   /**
@@ -678,12 +686,50 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
       // roughly 900 generations and then the supervisor has nowhere to go and
       // the thread is lost: a known limit, accepted, and stated here because
       // nothing else will say it.
+      // Holders that failed for good, in a row. A thread is worth restarting
+      // from nothing - it says it is empty rather than looking like one whose
+      // history was lost - but not for ever: a holder that fails on the way up
+      // would otherwise be invoked again as fast as the platform allows.
+      let failures = 0;
+
       for (let generation = 1; ; generation += 1) {
-        const result = (await step.invoke(`hold:${generation}`, {
-          function: holder,
-          data: input,
-          timeout: holdTimeout,
-        })) as HolderResult | null;
+        let result: HolderResult | null;
+
+        try {
+          result = (await step.invoke(`hold:${generation}`, {
+            function: holder,
+            data: input,
+            timeout: holdTimeout,
+          })) as HolderResult | null;
+          failures = 0;
+        } catch (error) {
+          failures += 1;
+
+          // A give-up says so on an event of its OWN, never on the done path:
+          // a deliberate ending means the state is meant to be gone, and
+          // anything that borrows it hides a loss behind an ending that the
+          // loss checks exempt.
+          await step.sendEvent(
+            `lost:${generation}`,
+            threadLost.create({
+              agent: ref,
+              thread,
+              generation,
+              why: error instanceof Error ? error.message : String(error),
+            }),
+          );
+
+          if (failures >= holderFailures) {
+            return { thread, generation, ended: "lost", entries: 0 };
+          }
+
+          // Start again from nothing. The log since the last handover is gone,
+          // which is the accepted gap for a thread run that fails for good,
+          // and the next generation says that it is empty.
+          input = { agent: ref, thread, generation: generation + 1 };
+
+          continue;
+        }
 
         if (!result?.handover) {
           return result;
