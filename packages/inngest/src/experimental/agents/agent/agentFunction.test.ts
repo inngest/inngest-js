@@ -116,7 +116,6 @@ describe("agent function", () => {
     });
     expect(config.triggers.map((t) => t.event)).toEqual([
       "agent/message",
-      "agent/recover",
       "agent/question",
       "agent/answer",
       "agent/finished",
@@ -258,35 +257,6 @@ describe("agent function", () => {
         isMessage: true,
       },
     ]);
-  });
-
-  test("a thread message made from a trigger event (sent again by recovery) is that event", async () => {
-    const { fn } = createAgentFunction(
-      makeClient(),
-      { id: "bot" },
-      async ({ inbox }) => {
-        await inbox.next();
-        const again = await inbox.next();
-
-        return [again?.name, again?.id, again?.data];
-      },
-    );
-
-    const { output } = await run(fn, {
-      event: trigger("go"),
-      saved: [
-        {
-          name: "agent/recover",
-          data: {
-            agent: `${testClientId}/bot`,
-            thread: "t1",
-            event: { id: "evt9", name: "chat/message", data: { text: "hi" } },
-          },
-        },
-      ],
-    });
-
-    expect(output).toEqual(["chat/message", "evt9", { text: "hi" }]);
   });
 
   test("an invoke of a plain agent with { agent, thread, content } is message 1, an agent/message", async () => {
@@ -542,7 +512,6 @@ describe("inbox sources", () => {
       }),
     ).toEqual([
       "agent/message",
-      "agent/recover",
       "agent/question",
       "agent/answer",
       "agent/finished",
@@ -839,7 +808,6 @@ describe("agent cleanup", () => {
       ),
     ).toEqual([
       "agent/message",
-      "agent/recover",
       "agent/question",
       "agent/answer",
       "agent/finished",

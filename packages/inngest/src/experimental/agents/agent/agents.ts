@@ -484,7 +484,6 @@ export type {
   AgentGroupJoinedData,
   AgentMessageData,
   AgentQuestionData,
-  AgentRecoverData,
   AgentRouting,
 } from "../inbox/events.ts";
 export {
@@ -493,7 +492,6 @@ export {
   agentGroupJoined,
   agentMessage,
   agentQuestion,
-  agentRecover,
 } from "../inbox/events.ts";
 export type {
   AgentReportLine,
@@ -529,10 +527,7 @@ export type {
   ThreadStatus,
   TriggerEvent,
 } from "../threads/thread.ts";
-export {
-  agentMessageEvent,
-  agentRecoverEvent,
-} from "../threads/thread.ts";
+export { agentMessageEvent } from "../threads/thread.ts";
 export type {
   ThreadCronEvent,
   ThreadCronTrigger,

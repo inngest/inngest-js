@@ -127,7 +127,6 @@ import {
   agentFinishedEvent,
   agentMessageEvent,
   agentQuestionEvent,
-  agentRecoverEvent,
   type ThreadRecord,
   threadHandle,
   threadSessions,
@@ -181,7 +180,7 @@ import {
 import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
-import { finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedOf } from "./recovery.ts";
 import { groupOf, starterOfKey, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
@@ -759,14 +758,13 @@ export function createAgentFunction(
           user: {},
         }) as unknown as UntypedInboxMessage;
 
-        // The event the handler gets is that message: exactly the event sent,
-        // or, for a run that recovery resumed, the event of the run that failed.
+        // The event the handler gets is that message: exactly the event sent.
         const runEvent = resentAs(startMessage);
 
         // A `start()` of an agent with an `invoke()` trigger sends its input as
         // a message, so core did not check it against the trigger's schema: the
         // child does, here, for every caller. A bad input fails the run for
-        // good, so `result()` throws it and recovery never resends it.
+        // good, so `result()` throws it.
         if (
           !found &&
           (runEvent.name as string) === internalEvents.FunctionInvoked

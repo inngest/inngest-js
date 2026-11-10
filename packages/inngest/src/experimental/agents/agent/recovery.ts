@@ -1,7 +1,6 @@
 /**
  * @module
- * EXPERIMENTAL: how an agent's runs end, kept on the thread, and what an agent
- * may do about a run that failed unexpectedly.
+ * EXPERIMENTAL: how an agent's runs end, kept on the thread.
  *
  * Every run of an agent ends as `completed`, `failed` or `cancelled` (a
  * cancelled run includes one that hit a `timeouts.finish` limit). The executor
@@ -11,16 +10,8 @@
  * `defer` also runs after every ending, but its event carries only the data
  * it was given, and `onFailure` sees failures only. The next run is handed
  * `lastRun` as `previousRun`, and `thread.state()` shows it.
- *
- * Recovery is opt-in (`recovery` in the agent's config). For a run that failed
- * it resends the turn that was in flight, so a fresh run takes it up. The
- * guard against a loop is the error's fingerprint, not a count: a turn that
- * fails with the same error twice is not resent. A run that failed with a
- * `NonRetriableError` is never resent: its failure was declared
- * final, and a fresh run would only repeat it.
  */
 import hashjs from "hash.js";
-import type { Inflight } from "../threads/thread.ts";
 
 /**
  * How a run ended.
@@ -57,27 +48,7 @@ export interface LastRun {
    * failure has the same fingerprint however often it happens.
    */
   fingerprint?: string;
-
-  /**
-   * For a failed run with `recovery` on: what was done. `"resumed"` sent the
-   * turn that was in flight to a fresh run; `"stuck"` did not, because the
-   * same error had already failed that turn, or because it could not be
-   * checked.
-   */
-  recovery?: "resumed" | "stuck";
-
-  /**
-   * The turn that failed (a hash of the message in flight), and every
-   * fingerprint that has failed it. This is the loop guard.
-   */
-  guard?: { turn: string; fingerprints: string[] };
 }
-
-/**
- * The most different errors one turn may fail with before it stops being
- * resent, so an error with a changing token cannot loop.
- */
-const maxKinds = 3;
 
 /**
  * One line of an error for people: no stack, no request ID, short.
@@ -132,92 +103,6 @@ export const fingerprint = (
     .update(`${name ?? ""}|${shape}`)
     .digest("hex")
     .slice(0, 12);
-};
-
-/**
- * Names a turn by the message in flight, so the same text that is resent is
- * the same turn.
- */
-export const turnOf = (
-  /**
-   * The message that was being answered.
-   */
-  inflight: Inflight | undefined,
-): string => {
-  return hashjs
-    .sha1()
-    .update(
-      inflight?.event
-        ? JSON.stringify([inflight.event.name, inflight.event.data])
-        : inflight?.content === undefined
-          ? ""
-          : JSON.stringify(inflight.content),
-    )
-    .digest("hex")
-    .slice(0, 12);
-};
-
-/**
- * The turn a failed run left in flight, and whether it can be resent.
- */
-export interface Turn {
-  /**
-   * The message the run was answering.
-   */
-  inflight?: Inflight;
-
-  /**
-   * Whether there is a turn to resend: the run was answering a message when it
-   * failed. It is not when the run had answered and was waiting for the next
-   * message, or when a newer run has taken the thread over.
-   */
-  resendable: boolean;
-}
-
-/**
- * Finds the turn a failed run left in flight from the thread's record.
- */
-export const turnInFlight = (
-  /**
-   * The thread's record.
-   */
-  record: {
-    runId?: string;
-    inflight?: Inflight;
-  },
-
-  /**
-   * The failed run.
-   */
-  runId: string,
-
-  /**
-   * The message that started the failed run, if it carried one, and whether
-   * the run began with a turn at all.
-   */
-  start: { inflight?: Inflight; turn: boolean },
-
-  /**
-   * Whether a run's ID is older than another's.
-   */
-  older: (a: string, b: string) => boolean,
-): Turn => {
-  // The run wrote the record: it kept the turn it was answering until it
-  // waited for the next message.
-  if (record.runId === runId) {
-    return record.inflight
-      ? { inflight: record.inflight, resendable: true }
-      : { resendable: false };
-  }
-
-  // A newer run owns the record: the failed run's turn is not known.
-  if (record.runId && !older(record.runId, runId)) {
-    return { resendable: false };
-  }
-
-  // The run failed before it wrote anything: it was answering its first
-  // message.
-  return { inflight: start.inflight, resendable: start.turn };
 };
 
 /**
@@ -306,110 +191,4 @@ export const runScore = (
   }
 
   return score;
-};
-
-/**
- * How a run ended as the thread's `lastRun`, with no recovery guard: the
- * record a thread without a KV store keeps.
- */
-export const lastRunOf = (
-  /**
-   * The run that ended.
-   */
-  runId: string,
-
-  /**
-   * When it ended, in milliseconds since the epoch.
-   */
-  at: number,
-
-  /**
-   * How it ended.
-   */
-  finished: Finished,
-): LastRun => {
-  const last: LastRun = { runId, status: finished.status, at };
-
-  if (finished.status === "failed" && finished.error) {
-    return {
-      ...last,
-      error: summarize(finished.error.message),
-      fingerprint: fingerprint(finished.error.name, finished.error.message),
-    };
-  }
-
-  return last;
-};
-
-/**
- * What to do about a failed run, given the guard of the run before it.
- */
-export interface Decision {
-  /**
-   * The new record for the thread's `lastRun`.
-   */
-  last: LastRun;
-
-  /**
-   * The same error had already failed this turn (or three different ones
-   * had).
-   */
-  repeated: boolean;
-
-  /**
-   * The turn is resent to a fresh run.
-   */
-  resuming: boolean;
-}
-
-/**
- * Decides whether a failed turn is resent, and builds the record. Deciding
- * the same run twice gives the answer it got the first time, so a retried
- * step never resends twice.
- */
-export const decide = (
-  /**
-   * The thread's `lastRun` before this run's.
-   */
-  prior: LastRun | undefined,
-
-  /**
-   * The failed run.
-   */
-  failed: {
-    runId: string;
-    at: number;
-    error: string;
-    fingerprint: string;
-    turn: string;
-    resume: boolean;
-  },
-): Decision => {
-  const same = prior?.runId === failed.runId;
-  const sameTurn = prior?.guard?.turn === failed.turn;
-  const seen = sameTurn ? (prior?.guard?.fingerprints ?? []) : [];
-  const repeated = same
-    ? prior?.recovery === "stuck" && failed.resume
-    : seen.includes(failed.fingerprint) || seen.length >= maxKinds;
-  const resuming = failed.resume && !repeated;
-  const fingerprints =
-    same && prior?.guard
-      ? prior.guard.fingerprints
-      : seen.includes(failed.fingerprint)
-        ? seen
-        : [...seen, failed.fingerprint];
-
-  return {
-    repeated,
-    resuming,
-    last: {
-      runId: failed.runId,
-      status: "failed",
-      at: failed.at,
-      error: failed.error,
-      fingerprint: failed.fingerprint,
-      recovery: failed.resume ? (resuming ? "resumed" : "stuck") : undefined,
-      guard: { turn: failed.turn, fingerprints },
-    },
-  };
 };

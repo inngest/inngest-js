@@ -715,11 +715,8 @@ export const reportsOf = (
   start: { name: string; data?: unknown },
   grant: Grant | undefined,
 ): ReportSpec | undefined => {
-  const data = start.data as
-    | { from?: SenderData; event?: { data?: { from?: SenderData } } }
-    | undefined;
-  const from =
-    start.name === "agent/recover" ? data?.event?.data?.from : data?.from;
+  const data = start.data as { from?: SenderData } | undefined;
+  const from = data?.from;
   const schemas = from?.reports ?? {};
   const types = new Set([
     ...Object.keys(schemas),

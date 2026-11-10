@@ -742,14 +742,7 @@ export const startGrantOf = (
   event: { id?: string; name?: string; ts?: number; data?: unknown },
   thread: string,
 ): Grant | undefined => {
-  const recovered = event.name === "agent/recover";
-  const inner = recovered
-    ? (
-        event.data as
-          | { event?: { id?: string; name?: string; data?: unknown } }
-          | undefined
-      )?.event
-    : event;
+  const inner = event;
 
   // Only a message or a question carries what a start or a message relies on.
   if (inner?.name !== "agent/message" && inner?.name !== "agent/question") {

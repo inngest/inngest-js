@@ -4,7 +4,7 @@
  * address: its key. It spans many runs.
  *
  * Everything sent to a thread is a plain event (`agent/message`,
- * `agent/recover`), so messages show up in the
+ * so messages show up in the
  * event stream, can be inspected and shared like any other event, and start a
  * run when none is live: the agent function has a singleton
  * per thread, so a message sent while a run is live is skipped as a trigger and
@@ -44,7 +44,6 @@ import {
   agentMessage,
   agentMessageResult,
   agentQuestion,
-  agentRecover,
 } from "../inbox/events.ts";
 import { handleAddressKey } from "../inbox/handleAddressKey.ts";
 import type { Json } from "../json.ts";
@@ -54,11 +53,6 @@ import { type KvScopeInstance, kv } from "../kv/kv.ts";
  * The name of the event `thread.message()` sends.
  */
 export const agentMessageEvent = agentMessage.name;
-
-/**
- * The name of the event that sends a failed run's message again.
- */
-export const agentRecoverEvent = agentRecover.name;
 
 /**
  * The names of the question, answer and finished events.

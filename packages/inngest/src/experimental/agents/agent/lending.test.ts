@@ -99,46 +99,6 @@ describe("lending", () => {
     ).toBe(undefined);
   });
 
-  test("a resent lend is taken only on a resend this app signed", () => {
-    const resent = {
-      agent: "app/a",
-      thread,
-      event: { name: "agent/message", data: { from: { lent } } },
-    };
-    const claim = lendOf(
-      client,
-      {
-        name: "agent/recover",
-        data: signLedgerData(client, "agent/recover", resent),
-      },
-      thread,
-      grant,
-    );
-
-    expect(claim?.recovered).toBe(true);
-    expect(claim?.parentRun).toBe("run1");
-    expect(() => {
-      return lendOf(
-        client,
-        { name: "agent/recover", data: resent },
-        thread,
-        grant,
-      );
-    }).toThrow("unsigned");
-    // A resend signed for another thread's lend does not carry this one.
-    expect(() => {
-      return lendOf(
-        client,
-        {
-          name: "agent/recover",
-          data: signLedgerData(client, "agent/recover", resent),
-        },
-        "app/a:run1.1",
-        grant,
-      );
-    }).toThrow("unsigned");
-  });
-
   test("the thread's record decides whether a lend that checked out is used", () => {
     const start = lendOf(client, message(), thread, grant);
     const kept = { parentRun: "run1", tools: ["work_run"], takenBy: "child1" };
@@ -150,21 +110,11 @@ describe("lending", () => {
     // The run that took it first uses it; a copy of the start does not.
     expect(lendIsOpen(start, kept, "child1")).toBe(true);
     expect(lendIsOpen(start, kept, "child2")).toBe(false);
-    // A recovery's resend of the same thread uses it again.
-    expect(lendIsOpen({ ...start, recovered: true }, kept, "child2")).toBe(
-      true,
-    );
     // Not one that names another parent run, or a thread that kept none.
-    expect(
-      lendIsOpen(
-        { ...start, recovered: true },
-        { ...kept, parentRun: "x" },
-        "c",
-      ),
-    ).toBe(false);
-    expect(lendIsOpen({ ...start, recovered: true }, undefined, "c")).toBe(
+    expect(lendIsOpen(start, { ...kept, parentRun: "x" }, "child1")).toBe(
       false,
     );
+    expect(lendIsOpen(start, undefined, "child1")).toBe(false);
   });
 
   test("the model of a thread whose lend is over is told so", () => {

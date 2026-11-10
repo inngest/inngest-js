@@ -14,14 +14,11 @@
 import type { LentRecord } from "../agent/lending.ts";
 import { type EffectiveLimits, narrowInherited } from "../agent/limits.ts";
 import {
-  decide,
   type Finished,
   fingerprint,
   type LastRun,
   runScore,
   summarize,
-  turnInFlight,
-  turnOf,
 } from "../agent/recovery.ts";
 import { type Kv, type KvScopeInstance, typedKey } from "../kv/kv.ts";
 import type { AgentTurn } from "../loop/loop.ts";
@@ -391,8 +388,7 @@ export const markThreadIdle = async (
 /**
  * Writes how `runId` ended as the thread's `lastRun`, unless a newer run has
  * ended since. Deciding the same run again gives the same record, so a
- * retried step changes nothing. For a failed run with `resume` set, the
- * record also carries the loop guard: see `decide()`.
+ * retried step changes nothing.
  * @returns The thread's `lastRun` after the write, and the record the run
  * left behind (to know the turn it was answering).
  */
@@ -437,12 +433,6 @@ export const recordEnd = async (
      */
     inflight?: Inflight;
     turn: boolean;
-
-    /**
-     * Whether a failed turn is resent (recovery on). `undefined`: recovery
-     * is off, so the record has no guard.
-     */
-    resume?: boolean;
   },
   options: {
     /**
@@ -475,28 +465,11 @@ export const recordEnd = async (
     };
 
     if (finished.status === "failed" && finished.error) {
-      const error = summarize(finished.error.message);
-      const print = fingerprint(finished.error.name, finished.error.message);
-      const turn = turnInFlight(
-        record,
-        end.runId,
-        { inflight: end.inflight, turn: end.turn },
-        (x, y) => {
-          return runScore(x) < runScore(y);
-        },
-      );
-
-      next =
-        end.resume === undefined
-          ? { ...next, error, fingerprint: print }
-          : decide(found ?? undefined, {
-              runId: end.runId,
-              at: end.at,
-              error,
-              fingerprint: print,
-              turn: turnOf(turn.inflight),
-              resume: end.resume && turn.resendable,
-            }).last;
+      next = {
+        ...next,
+        error: summarize(finished.error.message),
+        fingerprint: fingerprint(finished.error.name, finished.error.message),
+      };
     }
 
     return next;

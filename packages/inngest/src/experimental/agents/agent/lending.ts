@@ -20,7 +20,6 @@ import {
   lendableSandbox,
   lendableTool,
 } from "../sandboxes/defs.ts";
-import { agentRecoverEvent } from "../threads/thread.ts";
 import { type Grant, lendDigest } from "./grant.ts";
 import { ledgerDataIsSigned } from "./relations.ts";
 
@@ -205,33 +204,17 @@ export interface LendClaim {
    * The parent run that lent them.
    */
   parentRun: string;
-
-  /**
-   * Whether the lend came on a resend made by `recovery`, not on the start
-   * message itself.
-   */
-  recovered: boolean;
 }
 
 /**
- * The `from` a start event carries: on the message itself, or inside the
- * message a recovery resent.
+ * The `from` a start event carries.
  */
 const startFrom = (event: {
   name?: string;
   data?: unknown;
-}): { from: Record<string, unknown> | undefined; recovered: boolean } => {
-  if (event.name === agentRecoverEvent) {
-    const resent = (
-      event.data as { event?: { data?: { from?: Record<string, unknown> } } }
-    )?.event;
-
-    return { from: resent?.data?.from, recovered: true };
-  }
-
+}): { from: Record<string, unknown> | undefined } => {
   return {
     from: (event.data as { from?: Record<string, unknown> } | undefined)?.from,
-    recovered: false,
   };
 };
 
@@ -239,8 +222,7 @@ const startFrom = (event: {
  * The lend a run's start event carries, with its signature checked. A lend
  * that is unsigned, or whose signature does not match its parent run and this
  * thread, is refused: the run fails for good, since a forged lend would
- * otherwise name any sandbox. A lend on a recovery's resend must also come on
- * a resend this app signed.
+ * otherwise name any sandbox.
  *
  * Whether the thread may use it is `lendIsOpen`.
  * @param client The app's client, whose signing key checks the signatures.
@@ -255,7 +237,7 @@ export const lendOf = (
   thread: string,
   grant?: Grant,
 ): LendClaim | undefined => {
-  const { from, recovered } = startFrom(event);
+  const { from } = startFrom(event);
   const lent = from?.lent as Record<string, LentMachine> | undefined;
 
   if (!lent) {
@@ -266,15 +248,14 @@ export const lendOf = (
     grant?.sub !== thread ||
     grant.iss !== client.id ||
     grant.run === undefined ||
-    grant.lend !== lendDigest(lent) ||
-    (recovered && !ledgerDataIsSigned(client, agentRecoverEvent, event.data))
+    grant.lend !== lendDigest(lent)
   ) {
     throw new NonRetriableError(
       "The sandboxes lent to this run are unsigned or do not match: only a run of this app can lend",
     );
   }
 
-  return { machines: lent, parentRun: grant.run, recovered };
+  return { machines: lent, parentRun: grant.run };
 };
 
 /**
@@ -302,10 +283,7 @@ export interface LentRecord {
  * record, which keeps the lend the first run took:
  *
  * - the message that started the thread opens the lend once: the run that
- *   first took it is the only run of that message that may use it;
- * - a recovery's resend on that same thread may use it again, since the failed
- *   run was the one that took it. The lend names the thread and the parent
- *   run, and the resend is signed by this app.
+ *   first took it is the only run of that message that may use it.
  *
  * Any other message, or a copy of the start event, gets no lend.
  * @param claim What the start event lends.
@@ -317,10 +295,7 @@ export const lendIsOpen = (
   kept: LentRecord | undefined,
   runId: string,
 ): boolean => {
-  return (
-    kept?.parentRun === claim.parentRun &&
-    (claim.recovered || kept.takenBy === runId)
-  );
+  return kept?.parentRun === claim.parentRun && kept.takenBy === runId;
 };
 
 /**
@@ -350,12 +325,11 @@ export const lentEndedNote = (tools: string[]): string => {
  * that started it attached. A run nothing attached never matches it.
  *
  * In `cancelOn`, `event` is the run's own trigger and `async` is the arriving
- * `agent/parent.ended`. The trigger names the parent run, directly or inside
- * the message a recovery resent (so a recovered child ends with its parent
- * too); the arriving event names the run that ended. A trigger without a
- * `parent_run` never matches a real event.
+ * `agent/parent.ended`. The trigger names the parent run; the arriving event
+ * names the run that ended. A trigger without a `parent_run` never matches a
+ * real event.
  */
 export const parentEndedCancel = {
   event: agentParentEnded.name,
-  if: `async.data.run_id == (event.name == "${agentRecoverEvent}" ? event.data.event.data.from.parent_run : event.data.from.parent_run)`,
+  if: "async.data.run_id == event.data.from.parent_run",
 };

@@ -49,11 +49,9 @@ describe("lending: agent/parent.ended cascade", () => {
   // In cancelOn, `event` is the run's trigger and `async` the incoming
   // cancel event. A field the trigger lacks turns `event.data.x == async.y`
   // into `async.y == null`, which every real `agent/parent.ended` satisfies.
-  test("cancels only the children of the run that ended, recovered ones too", () => {
-    expect(parentEndedCancel.if).toContain("async.data.run_id == (");
-    expect(parentEndedCancel.if).toContain("event.data.from.parent_run");
-    expect(parentEndedCancel.if).toContain(
-      "event.data.event.data.from.parent_run",
+  test("cancels only the children of the run that ended", () => {
+    expect(parentEndedCancel.if).toBe(
+      "async.data.run_id == event.data.from.parent_run",
     );
   });
 });

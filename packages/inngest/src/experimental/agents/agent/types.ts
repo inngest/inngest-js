@@ -435,23 +435,6 @@ export interface AgentFunctionConfig<
    * multiplies cost and is hard to follow.
    */
   limits?: AgentLimits;
-
-  /**
-   * What the agent does about a run that fails for good. Off by default.
-   * `true` resends the message the run was handling as an `agent/recover`
-   * event, so a fresh run takes it up. The same error is never resent twice,
-   * a `NonRetriableError` is never resent, and at most 3 kinds of error are
-   * allowed per message. Only the message `inbox.next()` delivered last is
-   * resent: messages that arrived during the failed turn and were not read
-   * stay with the failed run. Nothing is posted about the failure: it shows
-   * in the trace. A cancelled run (`thread.stop()`, a `cancelOn` event
-   * or a `timeouts.finish` limit) is a choice, not a failure: it is neither
-   * reported nor resumed, and a completed run is neither. How every run ended
-   * is kept either way: see `previousRun`. The guard (the error
-   * fingerprints of the turn) is kept in this agent's own `lastRun` record on
-   * the thread, so two agents sharing a thread key never share a guard.
-   */
-  recovery?: boolean;
 }
 
 /**
@@ -603,7 +586,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * The event that started the run, exactly as sent (an app event, the input
    * of `start()`, a cron tick), narrowed per trigger with `event.is()`. It is
    * also the inbox's first message. For `invoke()` the data is the caller's
-   * input. A run that recovery resumed has the event of the run that failed.
+   * input.
    */
   event: AgentEventOf<AgentTypesOf<TTypes>["event"]>;
 
@@ -649,7 +632,7 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
 
   /**
    * How the last run of this thread that ended, ended: `completed`,
-   * `failed` (with the error and what recovery did) or `cancelled`. Use it
+   * `failed` (with the error) or `cancelled`. Use it
    * to tell the person what happened to the run before this one. It is
    * `undefined` for a thread that no run has ended on yet, and it stays the
    * same until this run ends, so decide for yourself when it has been said.
@@ -873,7 +856,7 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
 
   /**
    * Runs when the executor reports that a run of `fn` ended, whichever way,
-   * and writes the thread's `lastRun`. With `recovery` on, it also reports a
+   * and writes the thread's `lastRun`. It also reports a
    * failure and resends the turn.
    */
   finished: InngestFunction.Any;

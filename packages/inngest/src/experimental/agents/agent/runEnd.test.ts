@@ -6,27 +6,8 @@
 import { owedReports, requiredReports } from "../inbox/reports.ts";
 import { formatEvent } from "../loop/loop.ts";
 import { finishedNotice } from "./finishedRelay.ts";
-import { lastRunOf } from "./recovery.ts";
 
 describe("run end", () => {
-  test("lastRunOf: a completed run has no error", () => {
-    expect(lastRunOf("r1", 5, { status: "completed" })).toEqual({
-      runId: "r1",
-      status: "completed",
-      at: 5,
-    });
-  });
-
-  test("lastRunOf: a failed run has a summary and a fingerprint", () => {
-    const last = lastRunOf("r1", 5, {
-      status: "failed",
-      error: { message: "boom\nstack", nonRetriable: true },
-    });
-
-    expect(last).toMatchObject({ status: "failed", error: "boom" });
-    expect(last.fingerprint).toBeTypeOf("string");
-  });
-
   test("finishedNotice: only a run start_agent began has one", () => {
     const from = {
       kind: "agent",

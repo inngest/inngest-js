@@ -49,7 +49,6 @@ describe("thread key from a trigger", () => {
       }),
     ).toEqual([
       "agent/message",
-      "agent/recover",
       "agent/question",
       "agent/answer",
       "agent/finished",
@@ -81,7 +80,6 @@ describe("thread key from a trigger", () => {
 
     expect(opts.triggers).toEqual([
       expect.objectContaining({ event: "agent/message" }),
-      expect.objectContaining({ event: "agent/recover" }),
       expect.objectContaining({ event: "agent/question" }),
       expect.objectContaining({ event: "agent/answer" }),
       expect.objectContaining({ event: "agent/finished" }),
@@ -138,7 +136,6 @@ describe("thread key from a trigger", () => {
       }),
     ).toEqual([
       "agent/message",
-      "agent/recover",
       "agent/question",
       "agent/answer",
       "agent/finished",

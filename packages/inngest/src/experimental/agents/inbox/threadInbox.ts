@@ -22,7 +22,6 @@ import {
   agentFinishedEvent,
   agentMessageEvent,
   agentQuestionEvent,
-  agentRecoverEvent,
   type Inflight,
 } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
@@ -30,7 +29,6 @@ import type { Answer } from "./answer.ts";
 import type {
   AgentMessageData,
   AgentQuestionData,
-  AgentRecoverData,
   SenderData,
 } from "./events.ts";
 import {
@@ -54,7 +52,6 @@ const warned = new Set<string>();
  */
 export const ownEvents: string[] = [
   agentMessageEvent,
-  agentRecoverEvent,
   agentQuestionEvent,
   agentAnswerEvent,
   agentFinishedEvent,
@@ -79,12 +76,6 @@ export const inflightOf = (event: {
   name: string;
   data: unknown;
 }): Inflight | undefined => {
-  if (event.name === agentRecoverEvent) {
-    const data = event.data as Partial<AgentRecoverData>;
-
-    return data.event ? { event: data.event } : undefined;
-  }
-
   if (event.name === agentMessageEvent) {
     const data = event.data as Partial<AgentMessageData>;
 
@@ -131,26 +122,11 @@ const senderIds = (
 };
 
 /**
- * A message as the agent sees it. The event stays as it came; an event that
- * recovery sent again is the event it was made from, with its own name, id and
- * data. It has `is()`.
+ * A message as the agent sees it. The event stays as it came. It has `is()`.
  * @param message The message as it was saved.
  */
 export const resentAs = (message: UntypedInboxMessage): UntypedInboxMessage => {
-  const resent =
-    message.name === agentRecoverEvent
-      ? (message.data as Partial<AgentRecoverData>).event
-      : undefined;
-  const as = {
-    ...message,
-    ...(resent
-      ? {
-          id: resent.id ?? message.id,
-          name: resent.name,
-          data: resent.data,
-        }
-      : {}),
-  };
+  const as = { ...message };
   // A report is sent with its routing around it; the message is the report's
   // own data under its type's name, with the sender beside it as `from` and
   // what it relies on in `report`.

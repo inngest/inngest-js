@@ -1,8 +1,7 @@
 /**
  * @module
  * EXPERIMENTAL: the two helper functions an agent adds beside its own: the
- * cleanup that runs after every run, and the one that records how a run ended
- * and resumes a failed turn.
+ * cleanup that runs after every run, and the one that records how a run ended.
  */
 
 import { createDefer } from "../../../components/DeferredFunction.ts";
@@ -12,7 +11,6 @@ import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import {
   agentFinished,
   agentMessageResult,
-  agentRecover,
   type MessageOutcome,
 } from "../inbox/events.ts";
 import { quote, type RawEvent } from "../inbox/threadInbox.ts";
@@ -24,15 +22,11 @@ import {
 } from "../sandboxes/threadSandboxes.ts";
 import { runEnded } from "../threads/ledger.ts";
 import { closeThreadCopies } from "../threads/ledgerClient.ts";
-import {
-  agentMessageEvent,
-  agentRecoverEvent,
-  threadSessions,
-} from "../threads/thread.ts";
-import { markThreadIdle, recordEnd, runScore } from "../threads/threadState.ts";
+import { agentMessageEvent, threadSessions } from "../threads/thread.ts";
+import { markThreadIdle, recordEnd } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
 import { finishedNotice } from "./finishedRelay.ts";
-import { finishedOf, turnInFlight } from "./recovery.ts";
+import { finishedOf } from "./recovery.ts";
 import { signLedgerData } from "./relations.ts";
 import { startData, startInflight } from "./startEvent.ts";
 import type { AgentFunctionConfig } from "./types.ts";
@@ -121,27 +115,16 @@ export const createCleanupFunction = (
 
 /**
  * The IDs of the messages a run took whose senders wait for its result: the
- * message that started it, or the one a recovery resent.
+ * message that started it.
  */
 const senderIdsOf = (start: RawEvent): string[] => {
-  if (start.name === agentMessageEvent) {
-    return start.id ? [start.id] : [];
-  }
-
-  if (start.name === agentRecoverEvent) {
-    const resent = (start.data as { event?: RawEvent }).event;
-
-    return resent?.name === agentMessageEvent && resent.id ? [resent.id] : [];
-  }
-
-  return [];
+  return start.name === agentMessageEvent && start.id ? [start.id] : [];
 };
 
 /**
  * The function that runs when the executor reports that a run of the agent
- * ended. It writes the thread's `lastRun` for the agent and, with `recovery`
- * on, resends the turn that was in flight. The senders of the messages the run
- * took hear how it ended. With the ledger KV store the ledger stores the record
+ * ended. It writes the thread's `lastRun` for the agent. The senders of the
+ * messages the run took hear how it ended. With the ledger KV store the ledger stores the record
  * of the end (`agent/run.ended`), and the end of a run `start_agent` began goes
  * to its starter as `agent/finished`, which the starter's SDK completes with
  * `missing`. With another store the `agents-finished` relay sends the latter.
@@ -154,8 +137,6 @@ export const createFinishedFunction = (
   triggers: CompiledTrigger[],
   onLedger: () => boolean,
 ): InngestFunction.Any => {
-  const recovery = config.recovery === true;
-
   // The executor reports every ending of a run (completed, failed, cancelled)
   // in one `inngest/function.finished` event with the status and the error.
   // A `defer` runs after each ending too, but carries no outcome, and
@@ -197,29 +178,16 @@ export const createFinishedFunction = (
           finished: ended,
           inflight: started,
           turn: started !== undefined,
-          resume:
-            ended.status === "failed" && recovery
-              ? !ended.error?.nonRetriable
-              : undefined,
         },
         // With the ledger the ledger stores it, from `agent/run.ended`.
         { persist: !onLedger() },
       );
 
-      // Only a run that `recordEnd` marked as resumed is resumed: a late report
-      // for an older run, after a newer one has ended, is not.
-      const mine = last?.runId === runId ? last : undefined;
-      const resumed =
-        recovery && ended.status === "failed" && mine?.recovery === "resumed";
-
-      // The sender of each message the run took hears how the run ended. A
-      // run that recovery resumes reports when the resumed run ends.
-      const messageIds = resumed
-        ? []
-        : [
-            ...senderIdsOf(start),
-            ...(record.folded?.run === runId ? record.folded.ids : []),
-          ];
+      // The sender of each message the run took hears how the run ended.
+      const messageIds = [
+        ...senderIdsOf(start),
+        ...(record.folded?.run === runId ? record.folded.ids : []),
+      ];
 
       if (messageIds.length > 0) {
         const outcome: MessageOutcome =
@@ -272,52 +240,6 @@ export const createFinishedFunction = (
         ]);
       }
 
-      if (!resumed) {
-        await closeCopies();
-
-        return last;
-      }
-
-      const { inflight } = turnInFlight(
-        record,
-        runId,
-        { inflight: started, turn: started !== undefined },
-        (a, b) => {
-          return runScore(a) < runScore(b);
-        },
-      );
-
-      if (!inflight || (!inflight.event && inflight.content === undefined)) {
-        await closeCopies();
-
-        return last;
-      }
-
-      await step.sendEvent(
-        "recover-resend",
-        agentRecover.create(
-          // Signed, so a run takes the lend a resent start carries only from
-          // a resend this app made.
-          signLedgerData(client, agentRecover.name, {
-            agent: ref,
-            thread: message.thread,
-            event: inflight.event ?? {
-              ...(inflight.id !== undefined && { id: inflight.id }),
-              name: agentMessageEvent,
-              data: {
-                agent: ref,
-                thread: message.thread,
-                content: inflight.content,
-                ...(inflight.from !== undefined && { from: inflight.from }),
-              },
-            },
-          }),
-          {
-            id: `recover-${runId}`,
-            meta: { sessions: threadSessions(message.thread) },
-          },
-        ),
-      );
       await closeCopies();
 
       return last;

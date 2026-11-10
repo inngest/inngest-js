@@ -7,8 +7,8 @@
  *
  * Everything a thread receives is a plain event. `agent/message` carries text
  * for the model; `agent/question`, `agent/answer` and `agent/finished` carry
- * the asks and the ends of started runs; `agent/recover` is the agent's own
- * control event. All of them show up in the thread's inbox like any other.
+ * the asks and the ends of started runs. All of them show up in the thread's
+ * inbox like any other.
  */
 import {
   eventType,
@@ -105,26 +105,6 @@ export type AgentMessageData = AgentRouting & {
   content: Json;
   from?: SenderData;
   "::agents"?: GrantData;
-};
-
-/**
- * The data of `agent/recover`: the message a failed run was handling, sent
- * again when `recovery` is on so a fresh run takes it up. The inbox shows it
- * as the event it was made from, not as an `agent/recover`.
- */
-export type AgentRecoverData = AgentRouting & {
-  /**
-   * The message the failed run was handling: its id, name and data as they
-   * were sent.
-   */
-  event: { id?: string; name: string; data: unknown };
-
-  /**
-   * The app that made the resend and its signature over the data. A run
-   * accepts a lend carried by a resent start only when the resend is signed.
-   */
-  by?: string;
-  sig?: string;
 };
 
 /**
@@ -234,14 +214,6 @@ export type AgentParentEndedData = {
  */
 export const agentParentEnded = eventType("agent/parent.ended", {
   schema: staticSchema<AgentParentEndedData>(),
-});
-
-/**
- * The message a failed run was handling, sent again by `recovery` (and by
- * nothing else), so a fresh run takes it up.
- */
-export const agentRecover = eventType("agent/recover", {
-  schema: staticSchema<AgentRecoverData>(),
 });
 
 /**
