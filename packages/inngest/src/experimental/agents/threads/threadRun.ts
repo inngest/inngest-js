@@ -17,8 +17,8 @@
  *   no singleton** - only `invoke()` - so a successor can never be skipped by
  *   its predecessor, and no event anybody sends can start one.
  *
- * That split is the design decision, and it is the shape the existing thread
- * ledger already uses (`threads/ledger.ts`). It makes two model-checked holes
+ * That split is the design decision, and it is the shape the thread ledger
+ * used before this replaced it. It makes two model-checked holes
  * unreachable rather than defended: an arrival cannot spawn a holder of its
  * own, so it cannot duplicate a write into the log, and no single arrival can
  * drive a series of holders.

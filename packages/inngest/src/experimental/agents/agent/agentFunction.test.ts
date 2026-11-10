@@ -120,7 +120,7 @@ describe("agent function", () => {
       "agent/answer",
       "agent/finished",
       "agent/report",
-      "agent/thread-run.forward",
+      "agent/thread.forward",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -519,7 +519,7 @@ describe("inbox sources", () => {
     // One subscription, one source. A second one in an agent run is the bug
     // that loses messages with an arbitrary survivor and no error.
     expect(opens).toHaveLength(1);
-    expect(sourcesOf(opens)).toEqual(["agent/thread-run.forward"]);
+    expect(sourcesOf(opens)).toEqual(["agent/thread.forward"]);
 
     // The thread holds the rest: the agent layer's own events and every
     // configured source, with the extra filter for a source whose thread path
@@ -550,10 +550,10 @@ describe("inbox sources", () => {
       "agent/report",
       "ci/status",
       "ci/status",
-      "agent/thread-run.read",
-      "agent/thread-run.write",
-      "agent/thread-run.listen",
-      "agent/thread-run.done",
+      "agent/thread.read",
+      "agent/thread.write",
+      "agent/thread.listen",
+      "agent/thread.done",
     ]);
   });
 
@@ -844,7 +844,7 @@ describe("agent cleanup", () => {
           return source.event;
         },
       ),
-    ).toEqual(["agent/thread-run.forward"]);
+    ).toEqual(["agent/thread.forward"]);
   });
 });
 

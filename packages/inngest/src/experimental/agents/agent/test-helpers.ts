@@ -173,7 +173,7 @@ export const run = async (
       : { id: `evt-${n}`, name: "msg", data: value, ts: 0, user: {} };
     const name0 = String((given as { name: string }).name);
     const event =
-      forwarding && !name0.startsWith("agent/thread-run.") && !wanted(name0)
+      forwarding && !name0.startsWith("agent/thread.") && !wanted(name0)
         ? asForward(given as { id?: string; name: string; data?: unknown })
         : given;
     const name = (event as { name: string }).name;
@@ -256,7 +256,7 @@ export const run = async (
     const name =
       typeof given === "string" &&
       forwarding &&
-      !given.startsWith("agent/thread-run.") &&
+      !given.startsWith("agent/thread.") &&
       !wanted(given)
         ? threadForward.name
         : given;

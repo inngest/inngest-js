@@ -363,7 +363,7 @@ export type ThreadLostData = AgentRouting & {
 };
 
 /*
- * WHY THE NAMES ARE `agent/thread-run.*` AND NOT `agent/thread.*`
+ * WHY THE NAMES ARE `agent/thread.*` AND NOT `agent/thread.*`
  *
  * The ledger (`threads/ledger.ts`) already owns `agent/thread.read`,
  * `agent/thread.write`, `agent/thread.ready`, `agent/thread.state` and
@@ -381,42 +381,42 @@ export type ThreadLostData = AgentRouting & {
 /**
  * EXPERIMENTAL: an agent run asking its thread for state.
  */
-export const threadRead = eventType("agent/thread-run.read", {
+export const threadRead = eventType("agent/thread.read", {
   schema: staticSchema<ThreadReadData>(),
 });
 
 /**
  * EXPERIMENTAL: an agent run writing to its thread. Fire and forget.
  */
-export const threadWrite = eventType("agent/thread-run.write", {
+export const threadWrite = eventType("agent/thread.write", {
   schema: staticSchema<ThreadWriteData>(),
 });
 
 /**
  * EXPERIMENTAL: an agent run asking its thread to subscribe to something.
  */
-export const threadListen = eventType("agent/thread-run.listen", {
+export const threadListen = eventType("agent/thread.listen", {
   schema: staticSchema<ThreadListenData>(),
 });
 
 /**
  * EXPERIMENTAL: a thread forwarding what arrived to its agent.
  */
-export const threadForward = eventType("agent/thread-run.forward", {
+export const threadForward = eventType("agent/thread.forward", {
   schema: staticSchema<ThreadForwardData>(),
 });
 
 /**
  * EXPERIMENTAL: a thread ending on purpose.
  */
-export const threadDone = eventType("agent/thread-run.done", {
+export const threadDone = eventType("agent/thread.done", {
   schema: staticSchema<ThreadDoneData>(),
 });
 
 /**
  * EXPERIMENTAL: a thread run giving up. Never the done path.
  */
-export const threadLost = eventType("agent/thread-run.lost", {
+export const threadLost = eventType("agent/thread.lost", {
   schema: staticSchema<ThreadLostData>(),
 });
 

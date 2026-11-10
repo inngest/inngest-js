@@ -156,7 +156,7 @@ beforeEach(() => {
         // tools are what these tests are about.
         if (
           String((event as { name?: string } | null)?.name).startsWith(
-            "agent/thread-run.",
+            "agent/thread.",
           )
         ) {
           continue;

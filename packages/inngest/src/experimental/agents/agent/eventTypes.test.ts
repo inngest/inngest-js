@@ -129,7 +129,7 @@ describe("triggers", () => {
       expect.objectContaining({ event: "agent/report" }),
       { event: order, if: "event.data.total > 5" },
       { event: ping },
-      expect.objectContaining({ event: "agent/thread-run.forward" }),
+      expect.objectContaining({ event: "agent/thread.forward" }),
     ]);
   });
 

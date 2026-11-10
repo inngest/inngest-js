@@ -596,7 +596,7 @@ describe("a started child", () => {
           // The run's own talk with its thread is not what this is about.
           if (
             String((event as { name?: string } | null)?.name).startsWith(
-              "agent/thread-run.",
+              "agent/thread.",
             )
           ) {
             continue;

@@ -102,7 +102,7 @@ describe("the finished function", () => {
         sent.push(
           ...(JSON.parse(init?.body ?? "[]") as { name?: string }[]).filter(
             (event) => {
-              return !String(event.name).startsWith("agent/thread-run.");
+              return !String(event.name).startsWith("agent/thread.");
             },
           ),
         );

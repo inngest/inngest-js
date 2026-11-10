@@ -154,7 +154,7 @@ describe("an agent run and its thread", () => {
     const { fn } = reader();
     const { sent } = await run(fn, { event: message("go") });
     const read = sent.find((event) => {
-      return event.name === "agent/thread-run.read";
+      return event.name === "agent/thread.read";
     });
 
     expect(read).toBeDefined();
@@ -179,7 +179,7 @@ describe("an agent run and its thread", () => {
     expect(seen).toEqual(["go"]);
     expect(
       sent.filter((event) => {
-        return event.name === "agent/thread-run.read";
+        return event.name === "agent/thread.read";
       }),
     ).toEqual([]);
   });
@@ -281,7 +281,7 @@ describe("an agent run and its thread", () => {
     const { fn } = reader();
     const { sent } = await run(fn, { event: forward(["one", "two"]) });
     const writes = sent.filter((event) => {
-      return event.name === "agent/thread-run.write";
+      return event.name === "agent/thread.write";
     });
     const took = writes.find((event) => {
       return (
@@ -361,7 +361,7 @@ describe("kv.thread, which is sugar", () => {
 
     const write = sent.find((event) => {
       return (
-        event.name === "agent/thread-run.write" &&
+        event.name === "agent/thread.write" &&
         (event.data as { ops?: { key?: string }[] }).ops?.some((op) => {
           return op.key === "greeting";
         }) === true
@@ -399,8 +399,8 @@ describe("the thread run", () => {
     });
 
     expect(triggers).toContain("agent/message");
-    expect(triggers).toContain("agent/thread-run.read");
-    expect(triggers).toContain("agent/thread-run.write");
+    expect(triggers).toContain("agent/thread.read");
+    expect(triggers).toContain("agent/thread.write");
 
     // Nothing a thread run sends to another thread run is a trigger.
     for (const name of threadRunSubscribedOnly) {
@@ -436,7 +436,7 @@ describe("the thread run", () => {
       forward: false,
       event: holding({ start: message("hello") }),
       incoming: [
-        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
       ],
     });
     const forwards = sent.filter((event) => {
@@ -464,7 +464,7 @@ describe("the thread run", () => {
       },
       event: holding({
         start: {
-          name: "agent/thread-run.write",
+          name: "agent/thread.write",
           data: {
             agent: ref,
             thread: "t1",
@@ -475,7 +475,7 @@ describe("the thread run", () => {
       }),
       incoming: [
         {
-          name: "agent/thread-run.read",
+          name: "agent/thread.read",
           data: {
             agent: ref,
             thread: "t1",
@@ -483,7 +483,7 @@ describe("the thread run", () => {
             run: "reader",
           },
         },
-        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
       ],
     });
 
@@ -520,7 +520,7 @@ describe("listening, which the model asks for at runtime", () => {
       event: message("watch 412"),
     });
     const asked = sent.find((event) => {
-      return event.name === "agent/thread-run.listen";
+      return event.name === "agent/thread.listen";
     });
 
     expect(output).toBe(true);
@@ -545,7 +545,7 @@ describe("listening, which the model asks for at runtime", () => {
           thread: "t1",
           generation: 1,
           start: {
-            name: "agent/thread-run.listen",
+            name: "agent/thread.listen",
             data: {
               agent: ref,
               thread: "t1",
@@ -558,7 +558,7 @@ describe("listening, which the model asks for at runtime", () => {
       },
       incoming: [
         {
-          name: "agent/thread-run.read",
+          name: "agent/thread.read",
           data: {
             agent: ref,
             thread: "t1",
@@ -566,7 +566,7 @@ describe("listening, which the model asks for at runtime", () => {
             run: "reader",
           },
         },
-        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
       ],
     });
 
@@ -608,7 +608,7 @@ describe("the holder's reads", () => {
       },
       incoming: [
         message("two"),
-        { name: "agent/thread-run.done", data: { agent: ref, thread: "t1" } },
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
       ],
     });
     const waits = ops.filter((op) => {

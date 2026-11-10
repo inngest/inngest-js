@@ -53,7 +53,7 @@ describe("thread key from a trigger", () => {
       "agent/answer",
       "agent/finished",
       "agent/report",
-      "agent/thread-run.forward",
+      "agent/thread.forward",
     ]);
     expect(opts.singleton.key).toBe(reportAwareThread);
   });
@@ -87,7 +87,7 @@ describe("thread key from a trigger", () => {
       expect.objectContaining({ event: "agent/report" }),
       { event: "chat/message", if: "event.data.bot != true" },
       { event: "gh/comment" },
-      expect.objectContaining({ event: "agent/thread-run.forward" }),
+      expect.objectContaining({ event: "agent/thread.forward" }),
     ]);
     expect(opts.singleton.mode).toBe("skip");
     expect(opts.singleton.key).toBe(
@@ -143,7 +143,7 @@ describe("thread key from a trigger", () => {
       "agent/finished",
       "agent/report",
       "chat/message",
-      "agent/thread-run.forward",
+      "agent/thread.forward",
     ]);
     expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
     expect(opened[5]?.if).toBe(
