@@ -430,7 +430,7 @@ describe("the defaults", () => {
 
     await run(fn, { event: outside("hi") });
 
-    expect(toolNames(requests[0])).toEqual(["wait"]);
+    expect(toolNames(requests[0])).toEqual(["wait", "listen", "unlisten"]);
     expect(requests[0]?.system).toContain(
       "This run ends when you finish a turn with nothing unread.",
     );
@@ -454,6 +454,8 @@ describe("the defaults", () => {
       "ask_agent",
       "stop_agent",
       "wait",
+      "listen",
+      "unlisten",
     ]);
   });
 
@@ -476,6 +478,8 @@ describe("the defaults", () => {
       "ask_agent",
       "stop_agent",
       "wait",
+      "listen",
+      "unlisten",
     ]);
     expect(requests[0]?.system).toContain("app/lead started this thread.");
     expect(requests[0]?.system).toContain(
@@ -513,8 +517,17 @@ describe("the defaults", () => {
       { event: outside("hi") },
     );
 
-    expect(toolNames(asked.requests[0])).toEqual(["wait", "reply"]);
-    expect(toolNames(plain.requests[0])).toEqual(["wait"]);
+    expect(toolNames(asked.requests[0])).toEqual([
+      "wait",
+      "listen",
+      "unlisten",
+      "reply",
+    ]);
+    expect(toolNames(plain.requests[0])).toEqual([
+      "wait",
+      "listen",
+      "unlisten",
+    ]);
     expect(replyTool).toBeDefined();
   });
 
@@ -580,6 +593,15 @@ describe("a started child", () => {
       configurable: true,
       value: async (input: { payload: unknown }) => {
         for (const event of [input.payload].flat()) {
+          // The run's own talk with its thread is not what this is about.
+          if (
+            String((event as { name?: string } | null)?.name).startsWith(
+              "agent/thread-run.",
+            )
+          ) {
+            continue;
+          }
+
           if (!JSON.stringify(sent).includes(JSON.stringify(event))) {
             sent.push(event as (typeof sent)[number]);
           }
@@ -690,6 +712,8 @@ describe("a started child", () => {
       "stop_agent",
       "report",
       "wait",
+      "listen",
+      "unlisten",
     ]);
     expect(request.briefing?.situation).toContain(
       `${testClientId}/lead (thread lead-thread) started you. When you finish, your last text goes to it as your result`,

@@ -120,6 +120,7 @@ describe("agent function", () => {
       "agent/answer",
       "agent/finished",
       "agent/report",
+      "agent/thread-run.forward",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
   });
@@ -518,6 +519,7 @@ describe("inbox sources", () => {
       "agent/report",
       "ci/status",
       "ci/status",
+      "agent/thread-run.forward",
     ]);
   });
 
@@ -553,6 +555,8 @@ describe("inbox sources", () => {
         "ask_agent",
         "stop_agent",
         "wait",
+        "listen",
+        "unlisten",
       ],
     ]);
   });
@@ -580,7 +584,7 @@ describe("inbox sources", () => {
 
     await run(fn, { event: trigger("go") });
 
-    expect(asked).toEqual([["wait"]]);
+    expect(asked).toEqual([["wait", "listen", "unlisten"]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
@@ -812,6 +816,7 @@ describe("agent cleanup", () => {
       "agent/answer",
       "agent/finished",
       "agent/report",
+      "agent/thread-run.forward",
     ]);
   });
 });
@@ -833,9 +838,11 @@ describe("createAgents", () => {
       }),
     ).toEqual([
       `${testClientId}-a`,
+      `${testClientId}-a-thread`,
       `${testClientId}-a-cleanup`,
       `${testClientId}-a-finished`,
       `${testClientId}-b`,
+      `${testClientId}-b-thread`,
       `${testClientId}-b-cleanup`,
       `${testClientId}-b-finished`,
       `${testClientId}-agents-announce`,

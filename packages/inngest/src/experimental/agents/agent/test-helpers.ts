@@ -16,6 +16,11 @@ import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../../types.ts";
 import { type Kv, kv, memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
+import {
+  emptySnapshot,
+  type ThreadSnapshot,
+  threadForward,
+} from "../threads/threadProtocol.ts";
 
 interface Pause {
   id: string;
@@ -54,6 +59,21 @@ export const run = async (
      * allowed to arrive.
      */
     timeouts?: number;
+
+    /**
+     * What the thread run answers the run's read with: the state it holds.
+     * Left out, the thread answers with an empty thread that says it is empty,
+     * which is what a first run of a conversation gets.
+     */
+    thread?: ThreadSnapshot;
+
+    /**
+     * What a signal is answered with, by the signal's name, for a test that
+     * drives the thread protocol itself. Returning `undefined` leaves the
+     * default answer; returning `null` leaves the wait unanswered until its
+     * timeout.
+     */
+    signals?: (signal: string) => unknown;
     onOp?: (op: OutgoingOp, saved: unknown[]) => void;
 
     /**
@@ -64,6 +84,15 @@ export const run = async (
      * Called with each `step.run` step as it ran, metadata included.
      */
     onStep?: (op: OutgoingOp) => void;
+
+    /**
+     * Whether an event sent to a live run is wrapped in the forward its thread
+     * would have sent it in, which is the only way a real agent run receives
+     * one: an agent run holds one subscription and the thread holds the rest.
+     * Default: it is NOT, because the tests written before the thread run
+     * drive the events they wrote. `true` wraps them.
+     */
+    forward?: boolean;
   } = {},
 ) => {
   const root = hashedStepId(options.key ?? "inbox");
@@ -80,6 +109,44 @@ export const run = async (
   // The executor saves a message as a step holding the event, the inbox and
   // the pauses of the sources that matched it. A value that is not an event is
   // the data of one.
+  // An agent run holds one subscription: the thread's forwards. So an event a
+  // test sends to a live run reaches it the way a real one does, wrapped in
+  // the forward its thread would have sent. `forward: false` turns that off
+  // for a test that drives the protocol itself.
+  const routing = (options.event?.data ?? {}) as {
+    agent?: unknown;
+    thread?: unknown;
+  };
+  const forwarding = options.forward === true;
+  let forwarded = 0;
+  const asForward = (event: { id?: string; name: string; data?: unknown }) => {
+    forwarded += 1;
+
+    return {
+      id: `fwd-${forwarded}`,
+      ts: 0,
+      user: {},
+      name: threadForward.name,
+      data: {
+        agent: typeof routing.agent === "string" ? routing.agent : "",
+        thread:
+          typeof routing.thread === "string"
+            ? routing.thread
+            : (options.key ?? ""),
+        gen: 0,
+        events: [
+          {
+            seq: forwarded,
+            ...(event.id !== undefined && { id: event.id }),
+            name: event.name,
+            data: event.data,
+            ts: 0,
+          },
+        ],
+      },
+    };
+  };
+
   const save = (value: unknown) => {
     const n = saved.length + 1;
     const isEvent =
@@ -87,9 +154,14 @@ export const run = async (
       value !== null &&
       "data" in value &&
       "name" in value;
-    const event = isEvent
+    const given = isEvent
       ? { id: `evt-${n}`, ts: 0, user: {}, ...(value as object) }
       : { id: `evt-${n}`, name: "msg", data: value, ts: 0, user: {} };
+    const event =
+      forwarding &&
+      !String((given as { name: string }).name).startsWith("agent/thread-run.")
+        ? asForward(given as { id?: string; name: string; data?: unknown })
+        : given;
     const name = (event as { name: string }).name;
     const matching = pauses.filter((pause) => {
       return pause.event === name;
@@ -105,7 +177,7 @@ export const run = async (
     const owner = matching[0]?.id.split(":")[0] ?? root;
     const data = { data: event, [inboxKey]: owner, src };
 
-    saved.push(event);
+    saved.push(given);
     stack.push(id);
     state = { ...state, [id]: { id, data } };
   };
@@ -202,6 +274,72 @@ export const run = async (
     }
   };
 
+  // Every agent run asks its thread for state, which is an event, and a test
+  // client has nowhere to send events to. The sends are taken here instead and
+  // handed back, so a test can assert on what the run sent rather than mock a
+  // transport.
+  const client = fn["client"] as unknown as {
+    _send: (args: { payload?: unknown }) => Promise<{ ids: string[] }>;
+    eventKeySet?: () => boolean;
+  };
+  const sent: { name: string; data?: unknown }[] = [];
+  // A client with somewhere to send to keeps sending: the tests that watch
+  // their own `fetch` still see every event. One with no event key has
+  // nowhere, and a run that asks its thread for state would fail for it, so
+  // its sends are taken here and handed back instead.
+  const sends = client._send;
+  const posting = Boolean(client.eventKeySet?.());
+  const taking = async (args: { payload?: unknown }) => {
+    const { payload } = args;
+    const list = (
+      Array.isArray(payload) ? payload : payload === undefined ? [] : [payload]
+    ) as { name: string; data?: unknown }[];
+
+    sent.push(...list);
+
+    if (posting) {
+      return sends.call(client, args);
+    }
+
+    return {
+      ids: list.map((_payload, at) => {
+        return `evt-sent-${sent.length - list.length + at + 1}`;
+      }),
+    };
+  };
+  const held = Object.getOwnPropertyDescriptor(client, "_send");
+  const restoreSends = () => {
+    if (!taken) {
+      return;
+    }
+
+    if (held) {
+      Object.defineProperty(client, "_send", held);
+    } else {
+      Reflect.deleteProperty(client, "_send");
+    }
+  };
+
+  let taken = false;
+
+  // A test that installed its own `_send` keeps it: that is how the tests
+  // that assert on what a run sent watch it.
+  try {
+    if (held) {
+      throw new Error("the test holds `_send`");
+    }
+
+    Object.defineProperty(client, "_send", {
+      value: taking,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+    taken = true;
+  } catch {
+    // A test that holds `_send` itself (a spy, a stub) keeps it.
+  }
+
   for (const [stepId, data] of Object.entries(options.memos ?? {})) {
     answer(_internals.hashId(stepId), data);
   }
@@ -233,10 +371,13 @@ export const run = async (
     let retried = false;
 
     if (result.type === "function-resolved") {
+      restoreSends();
+
       return {
         ops,
         reads,
         saved,
+        sent,
         output: result.data,
         error: undefined as unknown,
         waiting: false,
@@ -244,10 +385,13 @@ export const run = async (
     }
 
     if (result.type === "function-rejected") {
+      restoreSends();
+
       return {
         ops,
         reads,
         saved,
+        sent,
         output: result.error,
         error: result.error as unknown,
         waiting: false,
@@ -256,10 +400,13 @@ export const run = async (
 
     for (const op of found) {
       if (op.id === _internals.hashId("complete")) {
+        restoreSends();
+
         return {
           ops,
           reads,
           saved,
+          sent,
           output: op.data,
           error: op.error as unknown,
           waiting: false,
@@ -410,6 +557,35 @@ export const run = async (
         continue;
       }
 
+      // The thread run answers an agent run's read with the state it holds,
+      // and its listens with the thread's acknowledgement. Here the thread is
+      // whatever the test gave, else an empty one that says so.
+      if (op.op === StepOpCode.WaitForSignal) {
+        const signal = String(opts?.signal ?? "");
+        const given = options.signals?.(signal);
+
+        if (given !== undefined) {
+          answer(op.id, given === null ? null : given);
+          continue;
+        }
+
+        if (signal.startsWith("agents/read:")) {
+          answer(op.id, {
+            signal,
+            data: options.thread ?? emptySnapshot(),
+          });
+          continue;
+        }
+
+        if (signal.startsWith("agents/listen:")) {
+          answer(op.id, { signal, data: { listening: true } });
+          continue;
+        }
+
+        answer(op.id, null);
+        continue;
+      }
+
       // The wait for `idle` of quiet is a sleep beside the read. It is a wait
       // with a timeout, as the tests see it: it ends only when one of the
       // `timeouts` is left, and otherwise the run waits for a message. Any
@@ -466,10 +642,13 @@ export const run = async (
       if (pendingWaits.size > 0 && incoming.length > 0) {
         arriveNow(incoming.shift());
       } else {
+        restoreSends();
+
         return {
           ops,
           reads,
           saved,
+          sent,
           output: undefined,
           error: undefined as unknown,
           waiting: true,

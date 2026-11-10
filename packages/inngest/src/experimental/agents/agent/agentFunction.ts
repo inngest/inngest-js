@@ -128,6 +128,18 @@ import {
   threadSessions,
 } from "../threads/thread.ts";
 import {
+  entryAsMessage,
+  forwardedEntries,
+  obtainThreadState,
+} from "../threads/threadClient.ts";
+import {
+  type ThreadForwardData,
+  threadAgentFilter,
+  threadFilter,
+  threadForward,
+} from "../threads/threadProtocol.ts";
+import { createThreadFunction } from "../threads/threadRun.ts";
+import {
   markThreadIdle,
   readLastRun,
   recordEnd,
@@ -144,7 +156,10 @@ import {
   agentToolsFor,
   codeAgentTools,
   handlerWaitTool,
+  listenFilter,
+  listenTool,
   replyTool,
+  unlistenTool,
   waitTool,
 } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
@@ -196,6 +211,7 @@ import type {
   AgentFunctionConfig,
   AgentMessage,
   InboxSource,
+  StepWithSubscribe,
 } from "./types.ts";
 
 /**
@@ -347,6 +363,13 @@ const createHandlerLoop = async (options: {
     ...(!(tools && Object.hasOwn(tools, "wait")) && {
       wait: briefing.loop === "default" ? waitTool : handlerWaitTool,
     }),
+    // Asks the thread to watch for an event. The model decides what to watch
+    // while it works, so this cannot be configuration. A tool of the agent's
+    // own by either name wins.
+    ...(!(tools && Object.hasOwn(tools, "listen")) && { listen: listenTool }),
+    ...(!(tools && Object.hasOwn(tools, "unlisten")) && {
+      unlisten: unlistenTool,
+    }),
   } as SandboxTools;
   // Shared tools the definition lists are called through their hosted
   // function; the others `discovery.tools` allows are added beside them.
@@ -492,9 +515,17 @@ export function createAgentFunction(
             if: ownTriggerFilter(name, ref),
           };
         }),
+
         ...triggers.map((trigger) => {
           return trigger.fnTrigger;
         }),
+
+        // What the thread run forwards. Under the thread's singleton in
+        // `skip` mode it either starts a run, carrying the batch, or is
+        // skipped and reaches the live run through its inbox; lost at that
+        // boundary it leaves the agent late rather than wrong, because the
+        // thread still holds the entries and the next read hands them back.
+        { event: threadForward.name, if: threadAgentFilter(ref) },
       ],
       singleton: { key: threadExpression, mode: "skip" },
     },
@@ -551,41 +582,68 @@ export function createAgentFunction(
         // the thread start does not share a request with it.
         // Closed when the run's work is done, whichever way it ends. That only
         // ends the inbox.
+        // ONE subscription, and one source in it: the thread's forwards.
+        //
+        // The thread run holds every other subscription - the agent layer's
+        // own events, the agent's triggers, each `inbox` source, and every
+        // listen asked for at runtime - and forwards what arrives here as one
+        // event per batch. That is what keeps **one resolver**.
+        //
+        // What breaks if a second subscription is ever added here: two
+        // subscriptions that match the same arriving event each save it, only
+        // the drained one is read, and the message is lost with no duplicate
+        // and no error anywhere. An arbitrary survivor and silent loss is the
+        // signature, and no type checker will ever catch it. So: one
+        // subscription, one source, and anything else the run needs from its
+        // thread is a request/response or a write, never a subscription.
+        //
+        // The requirement this places on the primitive: `step.subscribe` must
+        // hand over everything that matched while the subscription was open,
+        // whether or not a read was outstanding when it arrived. Without that,
+        // the thread's log is not authoritative and "late, not wrong" becomes
+        // "wrong", silently, for every agent.
         await using subscription = step.subscribe("inbox", [
-          ...ownEvents.map((name) => {
-            return {
-              event: name,
-              if: ownInboxFilter(name, ref, data.thread),
-            };
-          }),
-          ...triggers
-            .filter((trigger) => {
-              return trigger.listen;
-            })
-            .map((trigger) => {
-              const own = `(${trigger.thread.asAsync}) == ${quote(data.thread)}`;
-
-              return {
-                event: trigger.event,
-                if: trigger.asyncIf ? `(${trigger.asyncIf}) && ${own}` : own,
-              };
-            }),
-          ...inboxSources.flatMap((source) => {
-            const missing = missingThreadFilter(source, config.thread);
-
-            return [
-              {
-                event: eventNameOf(source.event),
-                if: inboxFilter(source, data.thread, config.thread),
-              },
-              ...(missing === undefined
-                ? []
-                : [{ event: eventNameOf(source.event), if: missing }]),
-            ];
-          }),
+          { event: threadForward.name, if: threadFilter(ref, data.thread) },
         ]);
 
         await inboxOpenedPromise(subscription);
+
+        // The thread's state, obtained with the request for it: the wait and
+        // the send are issued together, so the executor registers the wait
+        // before the send executes and no arriving write can reach this run by
+        // neither route. Do not reorder them, and do not serve the answer from
+        // anywhere else - a precomputed answer reopens the gap this closes.
+        // A forward that started this run may carry the thread's state with
+        // it, in which case there is nothing to ask for.
+        const handed =
+          (event.name as string) === threadForward.name
+            ? (event.data as ThreadForwardData).state
+            : undefined;
+        const threadState = await obtainThreadState({
+          client,
+          step: step as unknown as StepWithSubscribe,
+          ref,
+          thread: data.thread,
+          runId,
+          ...(handed && { given: handed }),
+          arrival: {
+            ...(event.id !== undefined && { id: event.id }),
+            name: event.name,
+            data: event.data,
+          },
+        });
+
+        // The model's `listen` and `unlisten` tools, and the handler's
+        // `thread.listen()`, reach the thread through this.
+        bridge.thread = threadState;
+
+        if (!threadState.answered) {
+          traceWarning(
+            logger,
+            "thread.unanswered",
+            `No thread run answered ${ref} for ${data.thread}, so this run works from an empty thread. The thread run starts from the same events, so this is either the first moment of the thread or a thread run that was lost.`,
+          );
+        }
 
         // Writes what `thread.state()` shows. One step per change.
         const recorder = threadRecorder(store, ref, runId, onLedger());
@@ -737,13 +795,87 @@ export function createAgentFunction(
         const told =
           (event.name as string) === internalEvents.FunctionInvoked &&
           "from" in ((event.data ?? {}) as object);
-        const startMessage = addEventIs({
-          id: event.id ?? "",
-          name: invokedAsMessage ? agentMessageEvent : event.name,
-          data: invokedAsMessage ? event.data : told ? invokedData : event.data,
-          ts: event.ts ?? 0,
-          user: {},
-        }) as unknown as UntypedInboxMessage;
+        // A run the thread started carries the batch that woke it: its first
+        // entry is the event that started the run, and the rest lead the inbox.
+        const forwarded =
+          (event.name as string) === threadForward.name
+            ? ((event.data as ThreadForwardData).events ?? [])
+            : undefined;
+        const startMessage =
+          forwarded?.[0] !== undefined
+            ? entryAsMessage(forwarded[0])
+            : (addEventIs({
+                id: event.id ?? "",
+                name: invokedAsMessage ? agentMessageEvent : event.name,
+                data: invokedAsMessage
+                  ? event.data
+                  : told
+                    ? invokedData
+                    : event.data,
+                ts: event.ts ?? 0,
+                user: {},
+              }) as unknown as UntypedInboxMessage);
+
+        // The entries the thread holds that nothing has taken up, then the
+        // rest of the batch that woke this run. Reading them is how a run that
+        // lost a forward catches up: late, not wrong.
+        const caughtUp = threadState.pending().filter((entry) => {
+          return entry.id === undefined || entry.id !== startMessage.id;
+        });
+        const lead = caughtUp.map(entryAsMessage);
+
+        // The rest of the batch that woke this run, which comes after the
+        // entry that started it rather than before.
+        const trail = (forwarded ?? []).slice(1).map(entryAsMessage);
+
+        // The highest position of the log this run has been handed, which it
+        // confirms to the thread when its work is done.
+        let took = Math.max(
+          0,
+          ...caughtUp.map((entry) => {
+            return entry.seq;
+          }),
+          ...(forwarded ?? []).map((entry) => {
+            return entry.seq;
+          }),
+        );
+
+        // The same event must not become two messages. The thread forwards
+        // what this run is also subscribed to, so whichever arrives second is
+        // dropped without a word.
+        // Each message's ID is noted as it is handed over, so whichever copy
+        // arrives second is dropped. Nothing is noted ahead of time: the event
+        // that started the run goes through the same check, and must pass it.
+        const delivered = new Set<string>();
+        const expand = (raw: UntypedInboxMessage) => {
+          const entries = forwardedEntries(raw);
+
+          if (entries === undefined) {
+            return undefined;
+          }
+
+          took = Math.max(
+            took,
+            ...entries.map((entry) => {
+              return entry.seq;
+            }),
+          );
+
+          return entries.map(entryAsMessage);
+        };
+        const seen = (raw: UntypedInboxMessage) => {
+          if (typeof raw.id !== "string" || raw.id === "") {
+            return false;
+          }
+
+          if (delivered.has(raw.id)) {
+            return true;
+          }
+
+          delivered.add(raw.id);
+
+          return false;
+        };
 
         // The event the handler gets is that message: exactly the event sent.
         const runEvent = resentAs(startMessage);
@@ -889,6 +1021,10 @@ export function createAgentFunction(
         const { inbox } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
+            lead,
+            trail,
+            expand,
+            seen,
           },
           async function problemOf(raw, started) {
             // A report is taken only from a thread this thread started: the
@@ -1159,6 +1295,25 @@ export function createAgentFunction(
               event as unknown as { data?: Record<string, unknown> },
             ),
 
+            // Slot: kv. What the thread keeps for the user's code, which is
+            // sugar over the thread's log: a get is local, a set is one write.
+            kv: {
+              thread: {
+                get: (key: string) => {
+                  return threadState.handle.get(key) as Promise<never>;
+                },
+                set: (key: string, value: Json) => {
+                  return threadState.handle.set(key, value);
+                },
+                delete: (key: string) => {
+                  return threadState.handle.delete(key);
+                },
+                all: () => {
+                  return threadState.handle.all();
+                },
+              },
+            },
+
             // Slot: thread. The handle to the run's own thread.
             thread: {
               key: data.thread,
@@ -1187,6 +1342,31 @@ export function createAgentFunction(
                       })
                       .join("; ");
                   },
+                );
+              },
+              listen: async (
+                event: string | { name: string },
+                where?: Record<string, string | number | boolean>,
+              ) => {
+                const filter = listenFilter(where);
+
+                return threadState.listen({
+                  event: typeof event === "string" ? event : event.name,
+                  ...(filter !== undefined && { if: filter }),
+                });
+              },
+              unlisten: async (
+                event: string | { name: string },
+                where?: Record<string, string | number | boolean>,
+              ) => {
+                const filter = listenFilter(where);
+
+                return threadState.listen(
+                  {
+                    event: typeof event === "string" ? event : event.name,
+                    ...(filter !== undefined && { if: filter }),
+                  },
+                  true,
                 );
               },
               message: async (content: Json) => {
@@ -1246,6 +1426,11 @@ export function createAgentFunction(
           // touches thread state (a second close, from the scope exit, does
           // nothing).
           await flushOwes(instance, owes).catch(() => undefined);
+
+          // The thread is told how far this run read, so a later read does not
+          // hand those entries back. Fire and forget, like every write: if it
+          // is lost the next run sees them again, which is late, not wrong.
+          await threadState.took(took);
           await inbox.close();
 
           // A score the handler did not await is still written.
@@ -1299,6 +1484,13 @@ export function createAgentFunction(
     fn,
     cleanup,
     finished,
+    threadRun: createThreadFunction({
+      client,
+      config,
+      ref,
+      triggers,
+      inboxSources,
+    }),
     ref,
     card: cardOf(client.id, config.id, fn, {
       card: config.card,

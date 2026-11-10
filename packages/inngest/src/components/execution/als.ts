@@ -2,6 +2,7 @@ import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.
 import type { ReportBook } from "../../experimental/agents/inbox/reports.ts";
 import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
 import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
+import type { ThreadClient } from "../../experimental/agents/threads/threadClient.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
@@ -48,6 +49,13 @@ export interface AgentBridge {
    * run owes reports.
    */
   codeTools?: SandboxTools;
+
+  /**
+   * The run's view of its thread: the state it obtained when it started, and
+   * the two things it can ask the thread for - a write, and a subscription.
+   * The model's `listen` and `unlisten` tools reach the thread through it.
+   */
+  thread?: ThreadClient;
 }
 
 export interface AsyncContext {

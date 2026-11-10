@@ -526,6 +526,35 @@ export interface StartOptions extends LendOptions {
 }
 
 /**
+ * What a thread keeps for your code, as `kv.thread`. A shape users recognise
+ * over a log they do not need to see - not a store, and nothing here reaches
+ * one.
+ */
+export interface AgentThreadKeys {
+  /**
+   * Reads a key from the state this run already holds. Local: no round trip
+   * and no step.
+   */
+  get<T = unknown>(key: string): Promise<T | undefined>;
+
+  /**
+   * Sends the thread one write. One event, one step, no wait: the thread is
+   * the only writer and applies it in the one order it has.
+   */
+  set(key: string, value: Json): Promise<void>;
+
+  /**
+   * Sends the thread a write that drops a key.
+   */
+  delete(key: string): Promise<void>;
+
+  /**
+   * Every key this run holds.
+   */
+  all(): Promise<Record<string, unknown>>;
+}
+
+/**
  * The handle to a run's own thread.
  */
 export interface AgentThread {
@@ -540,6 +569,41 @@ export interface AgentThread {
    * replay sends it once.
    */
   message(content: Json): Promise<void>;
+
+  /**
+   * EXPERIMENTAL: asks the thread to watch for an event and bring it to the
+   * agent as a message when it happens. It returns once the thread has
+   * recorded the subscription, which is the only thing it waits for.
+   *
+   * The **thread** holds the subscription, not this run, so the watch outlives
+   * the run that asked for it and is re-established after a rollover. The
+   * model has the same thing as a tool (`listen`), because what to watch for
+   * is usually its decision rather than the handler's.
+   *
+   * ```ts
+   * await thread.listen(prReviewed, { "data.number": 412 });
+   * ```
+   *
+   * @param event The event to watch for, by name or as an event type.
+   * @param where Which of those events to take, as paths into the arriving
+   * event and the values they must have. Left out, every event of that name
+   * reaches the agent.
+   * @returns Whether the thread confirmed the subscription.
+   */
+  listen(
+    event: string | { readonly name: string },
+    where?: Record<string, string | number | boolean>,
+  ): Promise<boolean>;
+
+  /**
+   * EXPERIMENTAL: asks the thread to stop watching an event it watches. The
+   * `event` and `where` must be the ones it was asked to watch with.
+   * @returns Whether the thread confirmed that it stopped.
+   */
+  unlisten(
+    event: string | { readonly name: string },
+    where?: Record<string, string | number | boolean>,
+  ): Promise<boolean>;
 
   /**
    * EXPERIMENTAL: sends a typed report to the destinations the run's starter
@@ -589,6 +653,20 @@ export interface AgentBodyFields<TTypes extends AgentTypes = AgentTypes> {
    * The handle to this run's own thread.
    */
   thread: AgentThread;
+
+  /**
+   * EXPERIMENTAL: what this thread keeps, in a shape you already know. It is
+   * **not** a key-value store and there is no store behind it: `get` reads the
+   * state the run already holds, obtained when it started and kept current by
+   * what the thread forwards, so it is local and costs no round trip; `set`
+   * sends the thread one write, which is one step and no wait.
+   *
+   * ```ts
+   * await kv.thread.set("stage", "triage");
+   * const stage = await kv.thread.get("stage");
+   * ```
+   */
+  kv: { thread: AgentThreadKeys };
 
   /**
    * How many agents deep this run is when another agent started it: 1 for
@@ -855,6 +933,13 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
    * failure and resends the turn.
    */
   finished: InngestFunction.Any;
+
+  /**
+   * The agent's thread run: long-lived, one per thread, the only writer to the
+   * thread's state, and the holder of every subscription. Runs of `fn` are
+   * short-lived and many; this is the one long-lived thing in a conversation.
+   */
+  threadRun: InngestFunction.Any;
 
   /**
    * The agent's address, `"<appId>/<functionId>"`.

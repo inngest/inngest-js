@@ -1125,6 +1125,51 @@ interface RunLocal {
 const runLocals = new WeakMap<object, RunLocal>();
 
 /**
+ * EXPERIMENTAL: the shape of a scope's handle, so the thread run's own handle
+ * can be registered for a run without this module knowing what a thread run
+ * is.
+ */
+export type KvScopeHandle = RawKv;
+
+/**
+ * The thread handle registered for one execution: the one the thread run backs.
+ * While it is there, `kv.thread` reads what the run already holds and writes by
+ * sending the thread an event, rather than reaching a store.
+ */
+const threadHandles = new WeakMap<
+  object,
+  { handle: KvScopeHandle; thread: string }
+>();
+
+/**
+ * EXPERIMENTAL: makes `kv.thread` of this run read and write through the
+ * thread run. Reads are local; writes are events. There is no store behind it.
+ * @param instance The execution's instance.
+ * @param thread The thread key the handle belongs to.
+ * @param handle The handle.
+ */
+export function setThreadHandle(
+  instance: object,
+  thread: string,
+  handle: KvScopeHandle,
+): void {
+  threadHandles.set(instance, { handle, thread });
+}
+
+/**
+ * The thread handle of this run, if the thread run backs it.
+ * @param thread The thread key asked for, when a call named one.
+ */
+function threadHandleOf(thread?: string): KvScopeHandle | undefined {
+  const instance = getAsyncCtxSync()?.execution?.instance;
+  const held = instance ? threadHandles.get(instance) : undefined;
+
+  return held && (thread === undefined || thread === held.thread)
+    ? held.handle
+    : undefined;
+}
+
+/**
  * A write to a run's own keys, as its step returns it.
  */
 type RunOp =
@@ -1352,6 +1397,17 @@ export function createKv(
       }
 
       const adapter = store(ids.app);
+
+      // The thread's own state is held by its thread run, which is the only
+      // writer to it: inside an agent run that has it, `kv.thread` is sugar
+      // over what the run already holds rather than a store it reaches.
+      if (scope === "thread") {
+        const held = threadHandleOf(explicitId);
+
+        if (held) {
+          return { handle: held, inFunction: false };
+        }
+      }
 
       // The ledger keeps its own steps, so its calls are not wrapped in
       // another. Outside a function it writes through the bound client.

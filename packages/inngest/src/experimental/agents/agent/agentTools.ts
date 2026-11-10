@@ -785,3 +785,132 @@ export const codeAgentTools = (
     ...sandboxAgentTools(options),
   } as Record<string, SandboxTool>;
 };
+
+/**
+ * What a model reads about `listen`.
+ */
+const listenDescription: ToolDescriptionParts = {
+  does: "Asks your thread to watch for an event and bring it to you as a message when it happens. It returns once your thread has the subscription, and does not wait for the event itself.",
+  use: 'to watch something while you carry on: "watch PR 412" is `listen({ event: "github/pull_request.review", where: { "data.number": 412 } })`',
+  avoid:
+    "to wait for the event: end your turn instead, and the event reaches you as a message when it arrives",
+  context:
+    "Your thread holds the subscription, not this run, so the watch outlives you: it survives this run ending and is still there for the runs after it. Watched events arrive as messages like any other.",
+};
+
+const unlistenDescription: ToolDescriptionParts = {
+  does: "Asks your thread to stop watching an event it was watching.",
+  use: "when what you were watching for has happened, or is no longer wanted",
+  avoid: "for an event you never asked your thread to watch",
+};
+
+/**
+ * A path into an arriving event, as a model may write one: `data.number`,
+ * `name`. Anything else is refused rather than put into an expression.
+ */
+const eventPath = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+
+const listenInput = z.object({
+  event: z.string().describe("The name of the event to watch for."),
+  where: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .optional()
+    .describe(
+      'Which of those events to bring you, as paths into the event and the values they must have: `{ "data.number": 412 }`. Left out, every event of that name reaches you.',
+    ),
+  reason: z
+    .string()
+    .optional()
+    .describe("Why you are watching for it, in a few words."),
+});
+
+/**
+ * The filter a thread subscribes with, from what the model asked for. A
+ * subscription sees the arriving event as `async`, so each path is read there.
+ */
+export const listenFilter = (
+  where: Record<string, unknown> | undefined,
+): string | undefined => {
+  const terms = Object.entries(where ?? {}).map(([path, value]) => {
+    if (!eventPath.test(path)) {
+      throw new Error(
+        `"${path}" is not a path into an event: write it as \`data.number\` or \`name\`.`,
+      );
+    }
+
+    return `async.${path} == ${
+      typeof value === "string" ? JSON.stringify(value) : String(value)
+    }`;
+  });
+
+  return terms.length === 0 ? undefined : terms.join(" && ");
+};
+
+/**
+ * The run's thread, or an error a model can act on.
+ */
+const threadOfRun = () => {
+  const held = getAsyncCtxSync()?.execution?.agentBridge?.thread;
+
+  if (!held) {
+    throw new Error(
+      "This run has no thread to ask, so it cannot watch for events.",
+    );
+  }
+
+  return held;
+};
+
+/**
+ * EXPERIMENTAL: `listen({ event, where?, reason? })`. Asks the thread to
+ * subscribe to an event and returns once the thread has recorded it.
+ *
+ * This is the model-facing way to ask for a subscription, and it has to be a
+ * tool rather than configuration: "watch PR 412" is a decision the model makes
+ * while it works, so nothing written at definition time can express it. The
+ * thread holds the subscription and re-establishes it after a rollover, so the
+ * watch outlives the run that asked for it.
+ */
+export const listenTool = tool({
+  id: "listen",
+  description: listenDescription,
+  group: true,
+  input: listenInput,
+  run: async (asked) => {
+    const filter = listenFilter(asked.where);
+    const recorded = await threadOfRun().listen({
+      event: asked.event,
+      ...(filter !== undefined && { if: filter }),
+      ...(asked.reason !== undefined && { asked: asked.reason }),
+    });
+
+    return recorded
+      ? `Your thread is watching for ${asked.event}. It will reach you as a message.`
+      : `Your thread did not confirm the watch for ${asked.event}, so treat it as not set up and try again.`;
+  },
+}) as unknown as AgentTool<z.infer<typeof listenInput>, string>;
+
+/**
+ * EXPERIMENTAL: `unlisten({ event, where? })`. Asks the thread to drop a
+ * subscription it holds.
+ */
+export const unlistenTool = tool({
+  id: "unlisten",
+  description: unlistenDescription,
+  group: true,
+  input: listenInput.omit({ reason: true }),
+  run: async (asked) => {
+    const filter = listenFilter(asked.where);
+    const dropped = await threadOfRun().listen(
+      {
+        event: asked.event,
+        ...(filter !== undefined && { if: filter }),
+      },
+      true,
+    );
+
+    return dropped
+      ? `Your thread has stopped watching for ${asked.event}.`
+      : `Your thread did not confirm that it stopped watching for ${asked.event}.`;
+  },
+}) as unknown as AgentTool<z.infer<typeof listenInput>, string>;

@@ -388,7 +388,14 @@ export const createAgents = <TClient extends Inngest.Any>(
     }) as unknown as Agents<TClient>["agent"],
     functions: () => {
       const functions = made.flatMap((created) => {
-        return [created.fn, created.cleanup, created.finished];
+        // The thread run is served beside the agent's own: a user declares one
+        // agent and gets both functions.
+        return [
+          created.fn,
+          created.threadRun,
+          created.cleanup,
+          created.finished,
+        ];
       });
       const announcer = announceFunctions.get(client);
       const relay = finishedFunctions.get(client);
@@ -513,6 +520,7 @@ export type {
   AgentFunctionConfig,
   AgentFunctionInput,
   AgentMessage,
+  AgentThreadKeys,
   AgentTypeDefaults,
   AgentTypes,
   AgentTypesOf,

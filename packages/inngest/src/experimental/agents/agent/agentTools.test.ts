@@ -152,6 +152,16 @@ beforeEach(() => {
       // The fake executor reports an op again on each pass until it has
       // answered it; an event is sent once.
       for (const event of [input.payload].flat()) {
+        // Every run asks its thread for state and tells it what it took; the
+        // tools are what these tests are about.
+        if (
+          String((event as { name?: string } | null)?.name).startsWith(
+            "agent/thread-run.",
+          )
+        ) {
+          continue;
+        }
+
         if (JSON.stringify(sent).includes(JSON.stringify(event))) {
           continue;
         }

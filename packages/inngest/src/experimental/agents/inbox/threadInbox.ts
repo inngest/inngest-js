@@ -178,6 +178,34 @@ interface ThreadSources {
    * The thread's inbox.
    */
   inbox: Inbox<UntypedInboxMessage>;
+
+  /**
+   * Messages to hand over before the inbox's own, ahead of the event that
+   * started the run: what the thread held and no agent run had taken up, so a
+   * run that fell behind catches up before it does anything else.
+   */
+  lead?: UntypedInboxMessage[];
+
+  /**
+   * Messages to hand over after the event that started the run, before the
+   * inbox's own: the rest of the batch the thread forwarded, whose first entry
+   * is what started the run.
+   */
+  trail?: UntypedInboxMessage[];
+
+  /**
+   * Turns one message into the messages it carries, or `undefined` when it
+   * carries nothing: a forward from the thread run is one event holding a
+   * batch of arrivals, and each arrival is a message of its own.
+   */
+  expand?: (raw: UntypedInboxMessage) => UntypedInboxMessage[] | undefined;
+
+  /**
+   * Whether this message has already reached the run by another route, so it
+   * is dropped without a word: the thread forwards what the run may also be
+   * subscribed to, and the same event must not become two messages.
+   */
+  seen?: (raw: UntypedInboxMessage) => boolean;
 }
 
 /**
@@ -370,17 +398,29 @@ export function threadInbox(
     );
   }
 
-  // Messages to return before the source's: the event that started the run.
-  const lead: UntypedInboxMessage[] = started ? [started] : [];
+  // Messages to return before the source's: what the thread held and nothing
+  // had taken up, then the event that started the run.
+  const lead: UntypedInboxMessage[] = [
+    ...(sources.lead ?? []),
+    ...(started ? [started] : []),
+    ...(sources.trail ?? []),
+  ];
 
-  // What is left of messages the source handed over once the ones that break
+  // What is left of messages the source handed over once what they carry is
+  // unpacked, what the run has already had is dropped, and the ones that break
   // their schema are dropped.
   async function keep(raws: UntypedInboxMessage[]) {
     const kept: UntypedInboxMessage[] = [];
 
     for (const raw of raws) {
-      if (!(await skipped(raw))) {
-        kept.push(raw);
+      for (const one of sources.expand?.(raw) ?? [raw]) {
+        if (sources.seen?.(one)) {
+          continue;
+        }
+
+        if (!(await skipped(one))) {
+          kept.push(one);
+        }
       }
     }
 
@@ -673,6 +713,22 @@ export function threadInbox(
 
           if (raw === undefined) {
             return undefined;
+          }
+
+          if (!queued && raw !== null) {
+            // What the message carries becomes the messages before the rest:
+            // one forward is a batch, and this reader hands out one message.
+            const carried = sources.expand?.(raw);
+
+            if (carried !== undefined) {
+              first.unshift(...carried);
+
+              continue;
+            }
+          }
+
+          if (raw !== null && sources.seen?.(raw)) {
+            continue;
           }
 
           if (raw === null) {
