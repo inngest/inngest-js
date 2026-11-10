@@ -90,26 +90,6 @@ test("agents: triggers take what createFunction triggers take", () => {
   });
 });
 
-test("agents: idle takes a duration or a function of the run's start, and nothing else", () => {
-  typesOnly(() => {
-    agents.agent({ id: "idle-1", triggers: [created], idle: 5000 });
-    agents.agent({ id: "idle-2", triggers: [created], idle: "7d" });
-    agents.agent({
-      id: "idle-3",
-      triggers: [created],
-      idle: async ({ event, thread }) => {
-        expectTypeOf(event.name).toEqualTypeOf<"order/created">();
-        expectTypeOf(thread).toEqualTypeOf<{ key: string }>();
-
-        return "2m";
-      },
-    });
-
-    // @ts-expect-error idle is a duration
-    agents.agent({ id: "idle-4", triggers: [created], idle: true });
-  });
-});
-
 test("agents: listen takes event types and inboxTools is gone", () => {
   typesOnly(() => {
     agents.agent({ id: "listen-1", triggers: [created], listen: [created] });

@@ -69,7 +69,6 @@ const bot = (
   const defined = createAgentFunction(new Inngest({ id: testClientId }), {
     id: "bot",
     model: scripted,
-    idle: 0,
     ...options,
   });
 

@@ -3,7 +3,7 @@
  * Tests for the run-time fields: a value, or a pure, possibly async function
  * of `{ event, thread }`, evaluated once per run at its start.
  */
-import { createRunFields, defaultIdle, idleMs } from "./runField.ts";
+import { createRunFields } from "./runField.ts";
 
 const context = {
   event: { name: "shop/order", data: { id: "o1" } },
@@ -61,42 +61,5 @@ describe("run fields", () => {
 
     await expect(fields.get("system", field)).rejects.toThrow("lookup failed");
     await expect(fields.get("system", field)).rejects.toThrow("lookup failed");
-  });
-});
-
-describe("idle", () => {
-  test("defaults to 2 minutes", async () => {
-    const fields = createRunFields(context);
-
-    expect(defaultIdle).toBe(120_000);
-    expect(await idleMs(fields, undefined)).toBe(120_000);
-  });
-
-  test("takes a number of milliseconds or a string", async () => {
-    expect(await idleMs(createRunFields(context), 5000)).toBe(5000);
-    expect(await idleMs(createRunFields(context), "7d")).toBe(
-      7 * 24 * 60 * 60 * 1000,
-    );
-    expect(await idleMs(createRunFields(context), "1h30m")).toBe(5_400_000);
-  });
-
-  test("zero means the run never waits", async () => {
-    expect(await idleMs(createRunFields(context), 0)).toBe(0);
-  });
-
-  test("is a function of the event too", async () => {
-    const fields = createRunFields(context);
-
-    expect(
-      await idleMs(fields, ({ event }) => {
-        return event.name === "shop/order" ? "2m" : "1h";
-      }),
-    ).toBe(120_000);
-  });
-
-  test("a string that is not a duration fails with the field's name", async () => {
-    await expect(idleMs(createRunFields(context), "soon")).rejects.toThrow(
-      /idle/,
-    );
   });
 });

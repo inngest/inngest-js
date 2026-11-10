@@ -55,7 +55,7 @@ const again: AgentModelResponse = {
  */
 const make = (
   script: AgentModelResponse[],
-  options: { idle?: string; failOnce?: number } = {},
+  options: { failOnce?: number } = {},
 ) => {
   freshKv();
 
@@ -65,7 +65,6 @@ const make = (
 
   const { fn } = createAgentFunction(new Inngest({ id: testClientId }), {
     id: "bot",
-    ...(options.idle && { idle: options.idle }),
     model: model(async (request) => {
       if (calls.length + 1 === options.failOnce && !failed) {
         failed = true;
@@ -201,32 +200,6 @@ describe("the default handler's background reader", () => {
         );
       }),
     ).toHaveLength(0);
-  });
-
-  test("an idle that runs out ends the run", async () => {
-    const { fn, calls } = make([say("first")], { idle: "5m" });
-    const { output, waiting } = await run(fn, {
-      event: start("go"),
-      timeouts: 1,
-    });
-
-    expect(calls).toHaveLength(1);
-    expect(waiting).toBe(false);
-    expect(output).toBe("first");
-  });
-
-  test("a message that arrives before idle runs out wins the race, and the next wait is fresh", async () => {
-    const { fn, calls } = make([say("first"), say("second")], { idle: "5m" });
-    const { output, waiting } = await run(fn, {
-      event: start("go"),
-      incoming: [arriving("wake up")],
-      timeouts: 0,
-    });
-
-    expect(calls).toHaveLength(2);
-    expect(calls[1]).toContain("wake up");
-    expect(output).toBeUndefined();
-    expect(waiting).toBe(true);
   });
 
   test("a model call that fails and is retried folds the arrival once, not twice", async () => {

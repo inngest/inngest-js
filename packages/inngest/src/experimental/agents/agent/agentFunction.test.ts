@@ -1688,7 +1688,6 @@ describe("the loop in an agent", () => {
       id: "bot",
       model: scripted,
       system: "Be brief.",
-      idle: 0,
     });
 
     const { output } = await run(fn, { event: trigger("go") });

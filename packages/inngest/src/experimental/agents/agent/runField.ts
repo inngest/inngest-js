@@ -92,30 +92,3 @@ export const createRunFields = <TContext>(
     },
   };
 };
-
-/**
- * How long a run a trigger opened waits in quiet before it ends, when the
- * agent sets no `idle`: 2 minutes. A later message starts a new run, which
- * picks up the thread's history.
- */
-export const defaultIdle = 120_000;
-
-/**
- * The `idle` of a run in milliseconds. `0` means the run never waits.
- * @param fields The run's fields.
- * @param idle The agent's `idle`: a duration, or a function returning one.
- */
-export const idleMs = async <TContext>(
-  fields: RunFields<TContext>,
-  idle: RunField<DurationInput, TContext> | undefined,
-): Promise<number> => {
-  if (idle === undefined) {
-    return defaultIdle;
-  }
-
-  const duration = await fields.get("idle", idle);
-
-  // Zero is allowed here (a run opened through a handle never waits), though
-  // a duration must be positive everywhere else.
-  return duration === 0 ? 0 : durationToMs(duration, { name: "idle" });
-};

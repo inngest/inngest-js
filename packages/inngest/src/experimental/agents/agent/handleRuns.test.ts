@@ -2,7 +2,7 @@
  * @module
  * How a run opened through a handle ends (lead's calls L57 and L58): it ends
  * once it has answered and nothing is unread, so its `result()` resolves
- * promptly. A run a trigger started waits `idle`.
+ * promptly. Every run is short-lived: it reads its inbox and ends.
  */
 
 import { z } from "zod";
@@ -43,12 +43,12 @@ const waited = (ops: { op: string; opts: unknown }[]) => {
 };
 
 describe("a run opened through a handle", () => {
-  const make = (read: "inbox" | "batches", idle?: string) => {
+  const make = (read: "inbox" | "batches") => {
     freshKv();
 
     return createAgentFunction(
       new Inngest({ id: testClientId }),
-      { id: "bot", ...(idle && { idle }) },
+      { id: "bot" },
       async ({ inbox }) => {
         const seen: unknown[] = [];
 
@@ -70,7 +70,7 @@ describe("a run opened through a handle", () => {
   };
 
   test.each(["inbox", "batches"] as const)(
-    "for await over the %s yields what is unread and ends without waiting idle",
+    "for await over the %s yields what is unread and ends without waiting",
     async (read) => {
       const agent = make(read);
       const { output, ops } = await run(agent.fn, {
@@ -83,35 +83,6 @@ describe("a run opened through a handle", () => {
     },
   );
 
-  test.each(["inbox", "batches"] as const)(
-    "an explicit idle keeps a handle-opened run waiting (%s)",
-    async (read) => {
-      const agent = make(read, "1m");
-      const { output, ops } = await run(agent.fn, {
-        event: message("first", { from: sender }),
-        saved: [message("second")],
-        timeouts: 1,
-      });
-
-      expect(output).toEqual(["first", "second"]);
-      expect(waited(ops).length).toBeGreaterThan(0);
-    },
-  );
-
-  test.each(["inbox", "batches"] as const)(
-    "a run a trigger started with the same handler waits idle (%s)",
-    async (read) => {
-      const agent = make(read, "1m");
-      const { output, ops } = await run(agent.fn, {
-        event: message("first"),
-        saved: [message("second")],
-        timeouts: 1,
-      });
-
-      expect(output).toEqual(["first", "second"]);
-      expect(waited(ops).length).toBeGreaterThan(0);
-    },
-  );
 });
 
 describe("a model agent opened through a handle (L58)", () => {
@@ -260,7 +231,7 @@ describe("a run opened through a handle waits for the runs it started with start
 });
 
 describe("a typed agent opened through start()", () => {
-  test("ends once it has answered, not when `idle` runs out", async () => {
+  test("ends once it has answered and nothing is unread", async () => {
     freshKv();
 
     const requests: unknown[] = [];

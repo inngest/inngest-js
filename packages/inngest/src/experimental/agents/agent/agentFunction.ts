@@ -192,7 +192,6 @@ import { finishedOf, turnInFlight } from "./recovery.ts";
 import { groupOf, starterOfKey, taggedKeyAddress } from "./relations.ts";
 import {
   createRunFields,
-  idleMs,
   type RunField,
   type RunFieldContext,
   type RunFields,
@@ -866,9 +865,9 @@ export function createAgentFunction(
         bridge.score = agentScore.score;
 
         // A run opened through a handle (`start()`, `message()`, `ask()`, or a
-        // model's agent tools) has a sender, and ends once it has answered and
-        // nothing is unread, unless the agent sets `idle`: then, like a run a
-        // trigger started, it waits `idle` for more, keeping its sandboxes.
+        // model's agent tools) has a sender. Every run is short-lived: it ends
+        // once it has answered and nothing is unread, and the thread starts a
+        // new one when it next has input.
         // The start message is checked as well as the run's event: a typed
         // start (an `invoke()` trigger) is handed to the handler as the typed
         // input, which has no sender, but the message that carried it did.
@@ -880,10 +879,8 @@ export function createAgentFunction(
               undefined
           );
         });
-        const idle =
-          openedByHandle && config.idle === undefined
-            ? 0
-            : await idleMs(fields, config.idle);
+        // A run never waits in quiet: it reads its inbox and ends.
+        const idle = 0;
 
         bridge.handleOpened = openedByHandle;
 
@@ -1170,10 +1167,7 @@ export function createAgentFunction(
           loop: bodyOrDefault === undefined ? "default" : "handler",
           ...(starter && { starter }),
           ...(opener && { opener }),
-          run: {
-            endsWhenRead: idle === 0,
-            idleMs: idle,
-          },
+
           reports: Object.entries(reportSpec ?? {}).map(([type, entry]) => {
             return {
               type,

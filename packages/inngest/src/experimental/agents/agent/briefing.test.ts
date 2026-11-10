@@ -73,7 +73,6 @@ const examples: Record<string, BriefingFacts> = {
     agent: "acme/helper",
     thread: "8d1e2f",
     loop: "default",
-    run: { endsWhenRead: false, idleMs: 120_000 },
     reports: [],
     group: false,
     tools: toolFacts({ wait: waitTool }),
@@ -82,7 +81,6 @@ const examples: Record<string, BriefingFacts> = {
     agent: "agent-playground/lead",
     thread: "s-7f2c",
     loop: "default",
-    run: { endsWhenRead: false, idleMs: 120_000 },
     reports: [],
     group: false,
     depth: 2,
@@ -104,7 +102,6 @@ const examples: Record<string, BriefingFacts> = {
       thread: "s-7f2c",
       start: true,
     },
-    run: { endsWhenRead: true, idleMs: 0 },
     reports: [
       {
         type: "demo/progress",
@@ -134,7 +131,6 @@ const examples: Record<string, BriefingFacts> = {
     thread: "agent-playground/security:01M7.0.0123456789abcdef.",
     loop: "handler",
     opener: { kind: "function", run: "01M7", start: true },
-    run: { endsWhenRead: true, idleMs: 0 },
     reports: [],
     group: false,
     tools: toolFacts({ wait: handlerWaitTool }),
@@ -363,7 +359,6 @@ describe("an agent run's briefing", () => {
       id: "bot",
       model: scripted,
       system: "Be brief.",
-      idle: 0,
     });
 
     await run(fn, { event: outside("hi") });
@@ -386,7 +381,6 @@ describe("an agent run's briefing", () => {
         id: "bot",
         model: replaced.scripted,
         system: "S",
-        idle: 0,
         briefing: ({ sections }) => {
           seen.splice(0, seen.length, ...Object.keys(sections));
 
@@ -400,7 +394,6 @@ describe("an agent run's briefing", () => {
         id: "bot",
         model: dropped.scripted,
         system: "S",
-        idle: 0,
         briefing: () => null,
       }).fn,
       { event: outside("hi") },
@@ -422,7 +415,6 @@ describe("an agent run's briefing", () => {
       {
         id: "bot",
         model: recording().scripted,
-        idle: 0,
       },
       async ({ inbox }) => {
         await inbox.next();
@@ -451,7 +443,6 @@ describe("an agent run's briefing", () => {
         id: "bot",
         model: withChat.scripted,
         tools: { chat },
-        idle: 0,
       }).fn,
       { event: outside("hi") },
     );
@@ -459,7 +450,6 @@ describe("an agent run's briefing", () => {
       createAgentFunction(client, {
         id: "bot",
         model: without.scripted,
-        idle: 0,
       }).fn,
       { event: outside("hi") },
     );
@@ -477,18 +467,18 @@ describe("an agent run's briefing", () => {
 });
 
 describe("the defaults", () => {
-  test("a bare agent a trigger started has only wait, and idles for 2 minutes", async () => {
+  test("a bare agent a trigger started has only wait, and ends when nothing is unread", async () => {
     const { requests, scripted } = recording();
     const { fn } = createAgentFunction(new Inngest({ id: testClientId }), {
       id: "bot",
       model: scripted,
     });
 
-    await run(fn, { event: outside("hi"), timeouts: 1 });
+    await run(fn, { event: outside("hi") });
 
     expect(toolNames(requests[0])).toEqual(["wait"]);
     expect(requests[0]?.system).toContain(
-      "This run ends after 2 minutes with no new message.",
+      "This run ends when you finish a turn with nothing unread.",
     );
   });
 
@@ -498,7 +488,6 @@ describe("the defaults", () => {
       id: "bot",
       model: scripted,
       discovery: true,
-      idle: 0,
     });
 
     await run(fn, { event: outside("hi") });
@@ -524,7 +513,6 @@ describe("the defaults", () => {
     const { fn } = createAgentFunction(client, {
       id: "bot",
       model: scripted,
-      idle: 0,
     });
 
     await run(fn, { event: outside("steer", key) });
@@ -560,7 +548,6 @@ describe("the defaults", () => {
       createAgentFunction(client, {
         id: "bot",
         model: asked.scripted,
-        idle: 0,
       }).fn,
       { event: question },
     );
@@ -568,7 +555,6 @@ describe("the defaults", () => {
       createAgentFunction(client, {
         id: "bot",
         model: plain.scripted,
-        idle: 0,
       }).fn,
       { event: outside("hi") },
     );

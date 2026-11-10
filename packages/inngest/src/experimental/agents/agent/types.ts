@@ -256,30 +256,6 @@ export interface AgentFunctionConfig<
   discovery?: AgentDiscovery;
 
   /**
-   * How long a run waits in quiet before it ends: a number of milliseconds, a
-   * string such as `"7d"` or a Temporal duration, or a function of
-   * `{ event, thread }` returning one. Default: 2 minutes for a run a trigger
-   * opened; a run opened through a handle (`start()`, `message()`, a model's
-   * `start_agent`) ends once it has answered and nothing is unread, unless
-   * `idle` is set. It ends the run of
-   * a handler that loops over its inbox, with `for await (const batch of
-   * inbox.batches())` or `for await (const m of inbox)`: the loop returns after
-   * that much quiet. A later message starts a new run on the same thread. A
-   * long `idle` keeps a run live across deploys, and every step it takes counts
-   * toward the step limit.
-   *
-   * Choose it by how soon the next message is likely. Leave the default for
-   * work that is done when it has answered. Raise it (`"1h"`) for an agent in
-   * a conversation or one waiting on a person, so a reply finds the run still
-   * live and its context warm. Don't set days to be safe: a later message
-   * starts a new run on the same thread and the thread's history carries on.
-   */
-  idle?: RunField<
-    DurationInput,
-    RunFieldContext<AgentTypesOf<TTypes>["event"]>
-  >;
-
-  /**
    * The model the agent's loop calls: an adapter such as
    * `anthropic({ model })`, or a function of `{ event, thread }` returning one,
    * read once at the start of each run. A function of the model's own shape

@@ -93,13 +93,6 @@ export interface BriefingFacts {
   opener?: BriefingParty & { start: boolean };
 
   /**
-   * How the run ends. `endsWhenRead`: it ends once a turn ends with nothing
-   * unread (a run opened through a handle). Otherwise it ends after `idleMs`
-   * of quiet.
-   */
-  run: { endsWhenRead: boolean; idleMs: number };
-
-  /**
    * The reports the run owes.
    */
   reports: BriefingReport[];
@@ -309,17 +302,11 @@ const situationLines = (facts: BriefingFacts): string[] => {
   if (!handler) {
     const children = has(facts, "start_agent");
 
-    if (facts.run.endsWhenRead) {
-      lines.push(
-        children
-          ? "This run ends when you finish a turn with nothing unread, unless agents you started are still working: then it stays open for their results."
-          : "This run ends when you finish a turn with nothing unread.",
-      );
-    } else if (facts.run.idleMs > 0) {
-      lines.push(
-        `This run ends after ${duration(facts.run.idleMs)} with no new message. A message after that starts a new run of this thread, with your history.`,
-      );
-    }
+    lines.push(
+      children
+        ? "This run ends when you finish a turn with nothing unread, unless agents you started are still working: then it stays open for their results. A message after that starts a new run of this thread, with your history."
+        : "This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.",
+    );
   }
 
   if (facts.group) {
