@@ -72,13 +72,25 @@ export const announceCron = "0 */6 * * *";
  * Who may find an agent. `"private"`: only agents of its own app. `"team"`:
  * any agent in the environment. Discovery is not access control: code that
  * imports an agent or builds a reference to it does not read cards.
+ *
+ * Not a field of the published `AgentCard`: it is an input to computing a
+ * caller's roster (see `AnnouncedCard`), not something the card itself says.
  */
 export type AgentShare = "private" | "team";
 
 /**
- * What a call to an agent does to the world, after MCP's tool hints.
+ * What a call to an agent does to the world: `"read"` looks things up or
+ * computes an answer and changes nothing outside its own thread; `"write"`
+ * can send, post, charge or otherwise change the world; `"destructive"`
+ * deletes or otherwise does something a write cannot undo. Default
+ * `"write"` when a card does not say.
+ *
+ * Corresponds to MCP's tool hints: `"read"` is `readOnlyHint: true`,
+ * `"destructive"` is `destructiveHint: true`. The names are not renamed to
+ * match MCP's so that a future integration with MCP tool hints is a mapping
+ * between the two vocabularies, not a redesign of this one.
  */
-export type AgentEffects = "read" | "write";
+export type AgentEffects = "read" | "write" | "destructive";
 
 /**
  * A skill of an agent, as its card lists it.
@@ -89,7 +101,11 @@ export interface AgentCardSkill {
 }
 
 /**
- * What an agent publishes about itself.
+ * What an agent publishes about itself: public, static, and identical for
+ * every reader. A card says what an agent *is*; it carries only identity and
+ * capability, never a policy about who may see it. Who may see what is a
+ * roster, computed per caller from the card plus the definition's `share`
+ * and `explicit` (see `AnnouncedCard`) — not a field of the card itself.
  */
 export interface AgentCard {
   /**
@@ -123,8 +139,21 @@ export interface AgentCard {
   skills?: AgentCardSkill[];
 
   /**
-   * Free-form labels from the card, such as `"sdk"` or `"billing"`.
-   * `list_agents` matches them like words of the description.
+   * Prose labels of the problem domains the agent handles, such as
+   * `"pipeline failures"` or `"deployment readiness"` — when to pick this
+   * agent, not what tools it has. Always present on a published card: given
+   * in `card.capabilities`, or derived from `card.tags` when absent (logged
+   * as a warning at definition time, since a derived list is worse than an
+   * authored one).
+   */
+  capabilities: string[];
+
+  /**
+   * Authorization labels from the card, such as `"sdk"` or `"billing"`. Used
+   * only by the policy filter (`discovery.agents`' `{ tags }`); nothing
+   * matches a free-text query against them. Routing — finding the right
+   * agent for a job — reads `capabilities` and `description` instead, so a
+   * tag added for findability never silently widens who may reach the agent.
    */
   tags?: string[];
 
@@ -145,16 +174,12 @@ export interface AgentCard {
   tools?: AgentCardTool[];
 
   /**
-   * EXPERIMENTAL: set when the card says `explicit: true`. Filter entries in
-   * `discovery.agents` never match the card; only an imported agent or its
-   * exact address does.
+   * How to work with the agent once you've picked it: what to give it, how
+   * it expects to be asked. Free prose, optional. Appears only in the full
+   * card from `describe_agent`, not in the roster `list_agents` returns —
+   * by the time you're reading it you've already chosen this agent.
    */
-  explicit?: boolean;
-
-  /**
-   * Who may find the agent. `"private"` unless the card says `"team"`.
-   */
-  share: AgentShare;
+  instructions?: string;
 
   /**
    * The team or person who owns the agent.
@@ -162,7 +187,7 @@ export interface AgentCard {
   owner?: string;
 
   /**
-   * What a call does. `"write"` unless the card says `"read"`.
+   * What a call does. `"write"` unless the card says otherwise.
    */
   effects: AgentEffects;
 
@@ -177,6 +202,40 @@ export interface AgentCard {
    */
   paused?: boolean;
 }
+
+/**
+ * A card together with the definition's roster inputs: `share` and
+ * `explicit` from `AgentCardConfig`. These decide who may see the card and
+ * through what kind of discovery entry, but they are not part of the card
+ * itself — the card is identical for every reader; the roster computed from
+ * it is not. This is the shape kept in bookkeeping (`cardsOf`, `currentCards`,
+ * `agents/registered`'s `cards`) and consumed by `mayUse`/`matchesDiscovery`;
+ * `describe_agent` and `list_agents` strip `share`/`explicit` back off before
+ * answering, since a reader is never shown why it was let through.
+ */
+export interface AnnouncedCard extends AgentCard {
+  /**
+   * Who may find the agent. `"private"` unless the definition says `"team"`.
+   */
+  share: AgentShare;
+
+  /**
+   * Set when the definition says `explicit: true`. Filter entries in
+   * `discovery.agents` never match the card; only an imported agent or its
+   * exact address does.
+   */
+  explicit?: boolean;
+}
+
+/**
+ * The public card inside an `AnnouncedCard`, with the roster inputs
+ * (`share`, `explicit`) removed: what a reader may actually be shown.
+ */
+export const publicCardOf = (announced: AnnouncedCard): AgentCard => {
+  const { share: _share, explicit: _explicit, ...card } = announced;
+
+  return card;
+};
 
 /**
  * EXPERIMENTAL: What a card's `description` takes: a string, used as it is, or
@@ -215,6 +274,7 @@ export type AgentCardDescription =
  *     use: "when the question is about how a product works",
  *     avoid: "for account or billing questions",
  *   },
+ *   capabilities: ["docs questions"],
  *   tags: ["docs", "research"],
  *   share: "team",
  *   effects: "read",
@@ -238,15 +298,30 @@ export interface AgentCardConfig {
   description?: AgentCardDescription;
 
   /**
-   * Labels for discovery. Name the capability or role the agent has, in
-   * lower-case words that other agents will search for: `["research"]`,
-   * `["billing", "refunds"]`. `list_agents` matches a query against the tags
-   * like words of the description, and a `{ tags }` filter in
-   * `discovery.agents` needs the card to have every tag it lists, exactly as
-   * spelled. So keep a few, and spell them the same way on every agent of the
-   * environment: `"research"` on one agent and `"researcher"` on another will
-   * not match one filter. Tags for roles you filter on are better than tags
-   * that restate the agent's name.
+   * Short prose labels of the problem domains the agent handles — when to
+   * pick it, not what tools it has: `["pipeline failures", "deployment
+   * readiness"]`, not `["run_tests", "deploy"]` (those are tool names, not
+   * capabilities). This is what a model matches against when choosing an
+   * agent in `list_agents`, alongside `description`.
+   *
+   * Optional here; always present on the published card. Without it, the
+   * card derives `capabilities` from `tags` and a warning is logged at
+   * definition time naming the agent, since a derived capability list is
+   * worse than an authored one — write this yourself when you can.
+   */
+  capabilities?: string[];
+
+  /**
+   * Authorization labels, in lower-case words agreed across the agents of
+   * the environment: `["research"]`, `["billing", "refunds"]`. Used only by
+   * the policy filter: a `{ tags }` entry in `discovery.agents` needs the
+   * card to have every tag it lists, exactly as spelled. Not used to find
+   * the agent — `list_agents` never matches a query against tags, and
+   * routing reads `capabilities`/`description` instead — so a tag added here
+   * for authorization never doubles as something that makes the agent easier
+   * to stumble onto. Spell tags the same way on every agent that shares a
+   * role: `"research"` on one and `"researcher"` on another will not match
+   * one filter.
    */
   tags?: string[];
 
@@ -275,6 +350,15 @@ export interface AgentCardConfig {
   share?: AgentShare;
 
   /**
+   * How to work with the agent once picked: what to give it, how it expects
+   * to be asked, such as `"Give me a repo and a time range."`. Free prose,
+   * optional. Published in the full card `describe_agent` returns; left out
+   * of the roster `list_agents` returns, since it only matters once you've
+   * already chosen the agent.
+   */
+  instructions?: string;
+
+  /**
    * The team or person who owns the agent, such as `"payments"`. Other agents
    * can filter on it with `{ owner }` in `discovery.agents`, and a person
    * reading the card knows whom to ask.
@@ -282,16 +366,23 @@ export interface AgentCardConfig {
   owner?: string;
 
   /**
-   * What a call does: `"read"` or `"write"`. Default `"write"`.
+   * What a call does: `"read"`, `"write"` or `"destructive"`. Default
+   * `"write"`.
    *
    * Choose `"read"` when a call only looks things up or computes an answer
    * and changes nothing outside its own thread. Choose `"write"` when it can
-   * send, post, charge, delete or otherwise change the world. The default is
-   * the safe one: by default `discovery` shows an agent only the read agents
-   * of other apps (`[{ app: "self" }, { effects: "read" }]`), so an agent you
-   * leave at `"write"` is not found by other apps until they list it. Marking
-   * an agent `"read"` that does write is the mistake to avoid; it makes it
-   * discoverable to every app.
+   * send, post, charge or otherwise change the world, but not in a way that
+   * is hard to undo — opening a pull request, say. Choose `"destructive"`
+   * when it can do something that is hard or impossible to undo — deleting a
+   * saved action, dropping data. The default is the safe one: by default
+   * `discovery` shows an agent only the read agents of other apps
+   * (`[{ app: "self" }, { effects: "read" }]`), so an agent you leave at
+   * `"write"` is not found by other apps until they list it, and a
+   * `{ effects: "write" }` filter never matches a `"destructive"` card (an
+   * exact match, not a ceiling: asking for `"write"` does not also accept
+   * worse). Marking an agent `"read"` that writes, or `"write"` that
+   * destroys, is the mistake to avoid; it makes it discoverable, or reachable
+   * through a filter, that was never meant to reach it.
    */
   effects?: AgentEffects;
 
@@ -384,11 +475,14 @@ export const discoveryOptionsOf = (
 };
 
 /**
- * What `list_agents` returns for each agent.
+ * What `list_agents` returns for each agent: the roster entry. Carries
+ * `capabilities` (the routing signal) instead of `tags` (the authorization
+ * label, which nothing uses for finding), and never `instructions` (the full
+ * card from `describe_agent` has that).
  */
 export type AgentSummary = Pick<
   AgentCard,
-  "address" | "description" | "skills" | "tags" | "effects" | "paused"
+  "address" | "description" | "capabilities" | "skills" | "effects" | "paused"
 >;
 
 /**
@@ -401,9 +495,10 @@ export interface AgentsRegisteredData {
   app: string;
 
   /**
-   * The cards of the app's agents.
+   * The cards of the app's agents, with the roster inputs (`share`,
+   * `explicit`) that decide who may see each one.
    */
-  cards: AgentCard[];
+  cards: AnnouncedCard[];
 
   /**
    * An HMAC with the environment's signing key over the app ID and the
@@ -417,12 +512,12 @@ export interface AgentsRegisteredData {
  * The cards of each app's own agents, by app ID then agent ID: what the
  * running process defines.
  */
-const ownCardsByApp = new Map<string, Map<string, AgentCard>>();
+const ownCardsByApp = new Map<string, Map<string, AnnouncedCard>>();
 
 /**
  * The cards of the agents `appId` defines in this process.
  */
-export const cardsOf = (appId: string): AgentCard[] => {
+export const cardsOf = (appId: string): AnnouncedCard[] => {
   return [...(ownCardsByApp.get(appId)?.values() ?? [])];
 };
 
@@ -430,8 +525,8 @@ export const cardsOf = (appId: string): AgentCard[] => {
  * Remembers the card of an agent of `appId`, for the announce function and for
  * finding same-app agents at once.
  */
-export const rememberCard = (appId: string, card: AgentCard): void => {
-  const cards = ownCardsByApp.get(appId) ?? new Map<string, AgentCard>();
+export const rememberCard = (appId: string, card: AnnouncedCard): void => {
+  const cards = ownCardsByApp.get(appId) ?? new Map<string, AnnouncedCard>();
 
   cards.set(card.address, card);
   ownCardsByApp.set(appId, cards);
@@ -503,8 +598,14 @@ export const cardOf = (
      * The agent's tools.
      */
     tools?: AgentCardTool[];
+
+    /**
+     * Where to log a warning when `capabilities` is derived from `tags`.
+     * Absent for a shared tool's card, which has no `capabilities`.
+     */
+    logger?: { warn: (obj: Record<string, unknown>, msg: string) => void };
   },
-): AgentCard => {
+): AnnouncedCard => {
   const schema = triggerSchema(fn, true);
   let input: JsonSchema | undefined;
 
@@ -531,15 +632,31 @@ export const cardOf = (
             avoid: given.avoid,
           });
 
+  let capabilities = config.capabilities;
+
+  if ((!capabilities || capabilities.length === 0) && parts.kind !== "tool") {
+    capabilities = config.tags ?? [];
+    parts.logger?.warn(
+      { agent: `${app}/${agentId}` },
+      capabilities.length > 0
+        ? `Agent "${app}/${agentId}" has no card.capabilities, so they were derived from card.tags. Write capabilities yourself: a derived list is worse than an authored one.`
+        : `Agent "${app}/${agentId}" has no card.capabilities and no card.tags to derive them from, so its card.capabilities is empty. A model cannot find this agent by what it does; write capabilities.`,
+    );
+  }
+
   return {
     ...(parts.kind === "tool" && { kind: "tool" as const }),
     address: `${app}/${agentId}`,
     ...(description !== undefined && { description }),
     ...(input && { input }),
     ...(parts.skills && parts.skills.length > 0 && { skills: parts.skills }),
+    capabilities: capabilities ?? [],
     ...(config.tags && config.tags.length > 0 && { tags: config.tags }),
     ...(parts.source && { source: parts.source }),
     ...(parts.tools && parts.tools.length > 0 && { tools: parts.tools }),
+    ...(config.instructions !== undefined && {
+      instructions: config.instructions,
+    }),
     ...(config.explicit === true && { explicit: true }),
     share: config.share ?? "private",
     ...(config.owner !== undefined && { owner: config.owner }),
@@ -554,8 +671,8 @@ export const cardOf = (
  */
 export const publishedCard = (
   client: Inngest.Any,
-  card: AgentCard,
-): AgentCard => {
+  card: AnnouncedCard,
+): AnnouncedCard => {
   if (client.mode === "dev" || (!card.source && !card.tools)) {
     return card;
   }
@@ -695,7 +812,7 @@ const maxCardsPerApp = 500;
  * app and cards with the environment's signing key. Unsigned or altered ones
  * give nothing.
  */
-const ownCardsOf = (client: Inngest.Any, data: unknown): AgentCard[] => {
+const ownCardsOf = (client: Inngest.Any, data: unknown): AnnouncedCard[] => {
   const announced = data as Partial<AgentsRegisteredData> | undefined;
 
   if (
@@ -726,7 +843,7 @@ const ownCardsOf = (client: Inngest.Any, data: unknown): AgentCard[] => {
  */
 const keepCards = (
   client: Inngest.Any,
-  latest: Map<string, AgentCard>,
+  latest: Map<string, AnnouncedCard>,
   perApp: Map<string, number>,
   data: unknown,
 ): void => {
@@ -760,8 +877,10 @@ const is501 = (error: unknown): boolean => {
  * failed read throws; it never gives an empty list. A flood of announcements
  * cannot make it throw: it reads the newest 1000 and caps the cards per app.
  */
-export const readCards = async (client: Inngest.Any): Promise<AgentCard[]> => {
-  const latest = new Map<string, AgentCard>();
+export const readCards = async (
+  client: Inngest.Any,
+): Promise<AnnouncedCard[]> => {
+  const latest = new Map<string, AnnouncedCard>();
   const perApp = new Map<string, number>();
   const cutoff = Date.now() - windowMs;
 
@@ -846,7 +965,7 @@ export type ReadFunctions = (app: string) => Promise<AppFunctions>;
 export const currentCards = async (
   client: Inngest.Any,
   options: { functions?: ReadFunctions } = {},
-): Promise<AgentCard[]> => {
+): Promise<AnnouncedCard[]> => {
   const announced = (await readCards(client)).filter((card) => {
     return appOf(card.address) !== client.id;
   });
@@ -890,7 +1009,10 @@ export const currentCards = async (
 /**
  * Whether `caller` may find the agent of `card`.
  */
-export const mayUse = (card: AgentCard, caller: string): boolean => {
+export const mayUse = (
+  card: Pick<AnnouncedCard, "address" | "share">,
+  caller: string,
+): boolean => {
   return card.share === "team" || appOf(card.address) === caller;
 };
 
@@ -901,64 +1023,15 @@ export const addressOf = (card: Pick<AgentCard, "address">): string => {
   return card.address;
 };
 
-const words = (text: string): string[] => {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => {
-      return word.length > 0;
-    });
-};
-
 /**
- * The cards that match a free-text query: those that contain any of its words
- * in their address, description, skills or tags, best matches first. No query
- * matches every card.
+ * What a card shows in `list_agents`: the roster entry, not the whole card.
  */
-export const matchCards = (cards: AgentCard[], query?: string): AgentCard[] => {
-  const wanted = words(query ?? "");
-
-  if (wanted.length === 0) {
-    return cards;
-  }
-
-  return cards
-    .map((card) => {
-      const text = [
-        card.address,
-        card.description ?? "",
-        ...(card.skills ?? []).map((skill) => {
-          return `${skill.name} ${skill.description}`;
-        }),
-        ...(card.tags ?? []),
-      ].join(" ");
-      const have = new Set(words(text));
-      const score = wanted.filter((word) => {
-        return have.has(word) || text.toLowerCase().includes(word);
-      }).length;
-
-      return { card, score };
-    })
-    .filter((entry) => {
-      return entry.score > 0;
-    })
-    .sort((a, b) => {
-      return b.score - a.score;
-    })
-    .map((entry) => {
-      return entry.card;
-    });
-};
-
-/**
- * What a card shows in `list_agents`.
- */
-export const summaryOf = (card: AgentCard): AgentSummary => {
+export const summaryOf = (card: AnnouncedCard): AgentSummary => {
   return {
     address: card.address,
     ...(card.description !== undefined && { description: card.description }),
     ...(card.skills && { skills: card.skills }),
-    ...(card.tags && { tags: card.tags }),
+    capabilities: card.capabilities,
     effects: card.effects,
     ...(card.paused && { paused: true }),
   };
@@ -988,7 +1061,7 @@ export const cardsFreshMs = 30_000;
  */
 const readsByRun = new WeakMap<
   object,
-  { cards?: Promise<{ at: number; cards: AgentCard[] }>; reads: number }
+  { cards?: Promise<{ at: number; cards: AnnouncedCard[] }>; reads: number }
 >();
 
 /**
@@ -1016,7 +1089,7 @@ export interface DiscoveryToolSetOptions {
  */
 export const discoverCards = async (
   options: DiscoveryToolSetOptions = {},
-): Promise<AgentCard[]> => {
+): Promise<AnnouncedCard[]> => {
   const { client } = callerOf();
   const key = getAsyncCtxSync()?.execution ?? client;
   const state = readsByRun.get(key) ?? { reads: 0 };
@@ -1037,10 +1110,10 @@ export const discoverCards = async (
         at: Date.now(),
         cards: await currentCards(client, { functions: options.functions }),
       };
-    })) as { reused: true } | { at: number; cards: AgentCard[] };
+    })) as { reused: true } | { at: number; cards: AnnouncedCard[] };
 
     return "reused" in read
-      ? (previous as { at: number; cards: AgentCard[] })
+      ? (previous as { at: number; cards: AnnouncedCard[] })
       : read;
   })();
 
@@ -1053,7 +1126,7 @@ export const discoverCards = async (
  * and the agent's own list or the default.
  */
 export const allowsAgent = (
-  card: AgentCard,
+  card: AnnouncedCard,
   options: DiscoveryToolSetOptions = {},
 ): boolean => {
   const { appId } = callerOf();
@@ -1069,16 +1142,33 @@ export const allowsAgent = (
 };
 
 /**
- * The card of `address` if the caller may find it, else an error that tells
- * the model to list again. An address that is unknown, one that is not shared
- * with the caller and one that its `discovery.agents` filter rejects read the
- * same, unless `purpose` is `"start"`, which says the filter refused it.
+ * The one error every refusal of `findCard` throws, whatever the reason: an
+ * unknown address, one not shared with the caller's app, and one its
+ * `discovery.agents` filter rejects all read the same. Asking about an agent
+ * that is not shared with you must be indistinguishable from asking about
+ * one that does not exist at all — any wording that differs between those
+ * two (such as naming the agent back, or saying "may not start it" instead
+ * of "is not shared") leaks that the agent exists by omission. `purpose` no
+ * longer changes the wording; it is kept so a caller can log the two cases
+ * apart on its own side without that distinction ever reaching the model.
+ */
+const notShared = (address: string): Error => {
+  return new Error(
+    `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
+  );
+};
+
+/**
+ * The card of `address` if the caller may find it, else `notShared`. An
+ * address that is unknown, one that is not shared with the caller and one
+ * that its `discovery.agents` filter rejects all refuse with the identical
+ * error (see `notShared`).
  */
 export const findCard = async (
   address: string,
   options: DiscoveryToolSetOptions = {},
-  purpose: "describe" | "start" = "describe",
-): Promise<AgentCard> => {
+  _purpose: "describe" | "start" = "describe",
+): Promise<AnnouncedCard> => {
   const { appId } = callerOf();
   const cards = await discoverCards(options);
   const found = cards.find((card) => {
@@ -1086,17 +1176,11 @@ export const findCard = async (
   });
 
   if (!found || found.kind === "tool" || !mayUse(found, appId)) {
-    throw new Error(
-      `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
-    );
+    throw notShared(address);
   }
 
   if (!allowsAgent(found, options)) {
-    throw new Error(
-      purpose === "start"
-        ? `Refused: ${address} was not started. This agent may not start it (discovery.agents). Use list_agents to see the agents you may start.`
-        : `No agent "${address}" is shared with you. Use list_agents to see the ones that are.`,
-    );
+    throw notShared(address);
   }
 
   return found;
@@ -1133,10 +1217,41 @@ export const prepareInput = async (
 };
 
 /**
+ * Who else a `list_agents` answer is good for. Always `"private"`: the
+ * answer depends on the caller's own `discovery.agents` and on which agents
+ * are shared with its app, so it must never be reused for a different
+ * caller.
+ */
+export type CacheScope = "private";
+
+/**
+ * What `list_agents` returns.
+ */
+export interface AgentRoster {
+  /**
+   * How long this answer stays good, in milliseconds. Equal to
+   * `cardsFreshMs`: the same window a read of the cards is reused within a
+   * run, since the roster is exactly as fresh as the cards it was built from.
+   */
+  ttlMs: number;
+
+  /**
+   * `"private"`: this roster is specific to the caller that asked for it
+   * (its app, its `discovery.agents`) and must not be cached across callers.
+   */
+  cacheScope: CacheScope;
+
+  /**
+   * Every agent the caller may currently see.
+   */
+  agents: AgentSummary[];
+}
+
+/**
  * `list_agents` and `describe_agent`.
  */
 export type DiscoveryToolSet = {
-  list_agents: AgentTool<{ query?: string }, { agents: AgentSummary[] }>;
+  list_agents: AgentTool<Record<string, never>, AgentRoster>;
   describe_agent: AgentTool<{ address: string }, AgentCard>;
 };
 
@@ -1144,15 +1259,17 @@ export type DiscoveryToolSet = {
  * What `list_agents` returns, which its description shows the model.
  */
 const listOutput = z.object({
+  ttlMs: z.number(),
+  cacheScope: z.literal("private"),
   agents: z.array(
     z.object({
       address: z.string(),
       description: z.string().optional(),
+      capabilities: z.array(z.string()),
       skills: z
         .array(z.object({ name: z.string(), description: z.string() }))
         .optional(),
-      tags: z.array(z.string()).optional(),
-      effects: z.enum(["read", "write"]),
+      effects: z.enum(["read", "write", "destructive"]),
       paused: z.boolean().optional(),
     }),
   ),
@@ -1162,7 +1279,7 @@ const listOutput = z.object({
  * The two tools that let an agent find other agents without naming them in
  * code.
  *
- * - `list_agents({ query? })`: the visible agents that match.
+ * - `list_agents()`: every agent the caller can currently see.
  * - `describe_agent({ address })`: the whole card of one.
  *
  * An agent is visible to its own app, and to any app when its card says
@@ -1176,18 +1293,15 @@ export const discoveryToolSet = (
       id: "list_agents",
       group: true,
       description: {
-        does: "Lists the agents you can start, with what each does. Agents you can't start, and you yourself, are never listed.",
-        use: "to find an agent for a piece of work; a few words in `query` narrow the list",
+        does: "Lists every agent you can start right now, with what each does. Agents you can't start, and you yourself, are never listed. Returns the whole list; there is no paging and no search.",
+        use: "to find an agent for a piece of work",
         avoid:
-          "to decide an agent doesn't exist from an old answer: the list can change while you run, so search again",
-        context:
-          "Agents can be added or removed while you run. `list_agents` reads the current list (at most 30 seconds old).",
+          "to decide an agent doesn't exist from an old answer: the list can change while you run, so list again",
+        context: `Agents can be added or removed while you run. The answer is good for ${cardsFreshMs}ms (its ttlMs) and is specific to you (cacheScope: "private").`,
       },
-      input: z.object({
-        query: z.string().optional().describe("Words to look for."),
-      }),
+      input: z.object({}),
       output: listOutput,
-      run: async ({ query }: { query?: string }) => {
+      run: async () => {
         const { appId } = callerOf();
         const cards = await discoverCards(options);
         // The agent that calls is never one of the agents it can find. Naming
@@ -1195,17 +1309,18 @@ export const discoveryToolSet = (
         const self = getAsyncCtxSync()?.execution?.agent?.ref;
 
         return {
-          agents: matchCards(
-            cards.filter((card) => {
+          ttlMs: cardsFreshMs,
+          cacheScope: "private" as const,
+          agents: cards
+            .filter((card) => {
               return (
                 card.kind !== "tool" &&
                 card.address !== self &&
                 mayUse(card, appId) &&
                 allowsAgent(card, options)
               );
-            }),
-            query,
-          ).map(summaryOf),
+            })
+            .map(summaryOf),
         };
       },
     }),
@@ -1213,14 +1328,14 @@ export const discoveryToolSet = (
       id: "describe_agent",
       group: true,
       description: {
-        does: "Shows one agent's whole card: what it does, its skills and the input a start takes. It refuses an agent that isn't shared with you.",
+        does: "Shows one agent's whole card: what it does, its skills, its instructions and the input a start takes. It refuses an agent that isn't shared with you.",
         use: "before `start_agent` when you don't know the input an agent takes",
       },
       input: z.object({
         address: z.string().describe("The agent's address, `app/agent`."),
       }),
       run: async ({ address }: { address: string }) => {
-        return findCard(address, options);
+        return publicCardOf(await findCard(address, options));
       },
     }),
   };

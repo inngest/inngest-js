@@ -18,8 +18,8 @@ import {
 import type { Logger } from "../../../middleware/logger.ts";
 import { limitStateOf } from "../agent/limits.ts";
 import {
-  type AgentCard,
   type AgentDiscovery,
+  type AnnouncedCard,
   cardsOf,
   currentCards,
   discoveryOptionsOf,
@@ -118,7 +118,7 @@ export const sharedToolsFor = async (
   const mine = cardsOf(appId).filter((card) => {
     return card.kind === "tool";
   });
-  let others: AgentCard[] = [];
+  let others: AnnouncedCard[] = [];
 
   if (reachesOtherApps(own, appId)) {
     others = (await step.run("discover:tools", async () => {
@@ -134,7 +134,7 @@ export const sharedToolsFor = async (
 
         return [];
       }
-    })) as AgentCard[];
+    })) as AnnouncedCard[];
   }
 
   const allowed = [...mine, ...others].filter((card) => {

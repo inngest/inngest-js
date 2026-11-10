@@ -16,7 +16,7 @@ import {
   type SharedToolContext,
 } from "../../../components/sandbox/tools.ts";
 import { invoke } from "../../../components/triggers/triggers.ts";
-import { type AgentCard, cardOf } from "../discovery/discovery.ts";
+import { type AnnouncedCard, cardOf } from "../discovery/discovery.ts";
 
 /**
  * Makes the function that hosts `shared` in the app of `client`, and its card.
@@ -24,7 +24,7 @@ import { type AgentCard, cardOf } from "../discovery/discovery.ts";
 export const createSharedToolFunction = (
   client: Inngest.Any,
   shared: SharedTool,
-): { fn: InngestFunction.Any; card: AgentCard } => {
+): { fn: InngestFunction.Any; card: AnnouncedCard } => {
   const input = shared.input as Parameters<typeof invoke>[0];
   const description = toolDescriptionText(
     shared.description ?? shared.card?.description,

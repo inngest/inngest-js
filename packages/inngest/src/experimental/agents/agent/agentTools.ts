@@ -32,6 +32,7 @@ import {
   discoveryToolSet,
   findCard,
   prepareInput,
+  publicCardOf,
 } from "../discovery/discovery.ts";
 import { startability } from "../discovery/functions.ts";
 import { checkAgainstSchema } from "../discovery/inputCheck.ts";
@@ -189,7 +190,7 @@ const startAgent = (options: AgentToolSetOptions, via?: "start_agent") => {
     const card = await findCard(address, options, "start");
     const prepared = card.input
       ? await prepareInput(options.discovery, {
-          card,
+          card: publicCardOf(card),
           input: (input ?? {}) as Record<string, Json>,
         })
       : input;

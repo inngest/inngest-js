@@ -453,14 +453,21 @@ export type {
   AgentDiscovery,
   AgentDiscoveryOptions,
   AgentEffects,
+  AgentRoster,
   AgentShare,
   AgentSummary,
   AgentsRegisteredData,
+  AnnouncedCard,
+  CacheScope,
   DiscoveryEntry,
   DiscoveryFilter,
   DiscoveryToolSet,
 } from "../discovery/discovery.ts";
-export { addressOf, matchesDiscovery } from "../discovery/discovery.ts";
+export {
+  addressOf,
+  matchesDiscovery,
+  publicCardOf,
+} from "../discovery/discovery.ts";
 export type {
   AgentAnswerData,
   AgentFinishedData,

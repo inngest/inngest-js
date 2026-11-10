@@ -1373,6 +1373,7 @@ export function createAgentFunction(
       description: config.description,
       ...(source && { source }),
       tools: cardToolsOf(config),
+      logger: client[internalLoggerSymbol],
       skills: definedSkills.map((skill) => {
         return { name: skill.name, description: skill.description };
       }),

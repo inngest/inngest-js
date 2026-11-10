@@ -27,9 +27,9 @@ import type {
   ApplyAllMiddlewareStepExtensions,
 } from "../../../types.ts";
 import type {
-  AgentCard,
   AgentCardConfig,
   AgentDiscovery,
+  AnnouncedCard,
 } from "../discovery/discovery.ts";
 import type {
   AgentAnswerData,
@@ -955,9 +955,10 @@ export interface AgentFunction<TOutput = unknown, TInput = Json> {
   ref: string;
 
   /**
-   * What the agent publishes for discovery.
+   * What the agent publishes for discovery, plus the roster inputs
+   * (`share`, `explicit`) `rememberCard` and the announcement need.
    */
-  card: AgentCard;
+  card: AnnouncedCard;
 
   /**
    * The agent's function ID.
