@@ -97,6 +97,7 @@ function and step input and output. You can assert:
 - Function output
 - Step output
 - Step tool usage
+- Execution warnings
 
 All of these values are returned from both `t.execute()` and `t.executeStep()`;
 we'll only show one for simplicity here.
@@ -136,6 +137,16 @@ input:
 const { state } = await t.execute();
 expect(state["my-step"]).resolves.toEqual("some successful output");
 expect(state["dangerous-step"]).rejects.toThrowError("something failed");
+```
+
+`warnings` contains SDK execution warnings and duplicate step ID warnings
+detected by the test engine. It is empty when the run has no warnings:
+
+```ts
+const { warnings } = await t.execute();
+expect(warnings).toContainEqual(
+  expect.objectContaining({ code: "AUTOMATIC_PARALLEL_INDEXING" }),
+);
 ```
 
 ## Mocking
