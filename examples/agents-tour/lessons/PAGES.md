@@ -1,6 +1,6 @@
 # Writing a page
 
-How to add one page of the Agents Tour and prove it works. Written for someone who has never seen the tour. The plan for every page is `projects/agents-tour/lesson-plan.md` in Jack's workspace; teach only the API in `packages/inngest/src/experimental/agents/` and its spec.
+How to add one page of the Agents Tour and prove it works. Written for someone who has never seen the tour. The plan for every page is `lessons/LESSON-PLAN.md`; teach only the API in `packages/inngest/src/experimental/agents/` and its spec.
 
 ## Writing the text
 
