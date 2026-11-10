@@ -126,12 +126,18 @@ const quietGenerations = 2;
 /**
  * How many empty reads in a row make a holder hand over.
  *
- * This is the whole of the recovery latency for a holder that is alive but no
- * longer being delivered to - the case the playground measured, where a
- * subscription stops delivering while the run itself looks healthy. A holder
- * that waited for its step ceiling instead would take `handoverAt` reads to
- * notice, which at this timeout is most of a day; handing over after a few
- * makes the latency `empties x timeout`, which is minutes, and tunable.
+ * THIS IS NOT WEDGE DETECTION, and calling it that would invite a check that
+ * cannot be written. N empty reads in a row is indistinguishable from a
+ * conversation nobody is talking in: there is no way to tell "this
+ * subscription stopped delivering" from "nothing has happened". So what this
+ * does is **recycle the holder periodically**, and a subscription that had
+ * stopped delivering is fixed as a side effect, because the successor
+ * subscribes again.
+ *
+ * It is also the whole of the recovery latency for that case. A holder that
+ * waited for its step ceiling instead would take `handoverAt` reads to recycle,
+ * which at this timeout is most of a day; recycling after a few makes it
+ * `empties x timeout`, which is minutes, and tunable.
  *
  * **A handover restores the thread. It does not recover the messages**: what
  * was lost while the subscription was not delivering is gone, and the
@@ -350,6 +356,13 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
       ]);
 
       await inboxOpenedPromise(subscription);
+
+      // Note on `threadInbox`'s `drainSource`, which skips a drain when no step
+      // has been issued since the last read: the holder never drains. Every
+      // read here is a bounded `nextBatch`, which is a step of its own, so the
+      // count always moves and the skip is not on this path. The obvious
+      // optimisation - drain first to avoid paying for a wait - would walk
+      // straight into it.
 
       const inbox = subscription as unknown as Inbox<UntypedInboxMessage>;
       const state: ThreadSnapshot = input.carried
@@ -604,17 +617,38 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
       // Reads that came back empty in a row.
       let empties = 0;
 
-      for (;;) {
-        if ((stepsIssued() ?? 0) >= handoverAt) {
-          return over("handover", state);
-        }
-
-        const batch = await inbox.nextBatch({
+      // A read kept armed while the holder works. `nextBatch` is called before
+      // the batch in hand is applied and forwarded, and awaited at the top of
+      // the next turn of the loop, so an arrival that lands while the holder is
+      // busy is already being read for rather than falling into the gap between
+      // two reads. It is the same thing the default agent body's background
+      // reader does, and the measured difference between a body that has one
+      // and a body that does not.
+      //
+      // Deliberately NOT a race. A memoized step's result has to be the same on
+      // a replay, and `Promise.race` is the opposite of that; this arms a read
+      // and awaits it in a fixed order, which replays identically. The bounded
+      // timeout below is what provides liveness, not a timer beside the read.
+      let armed: Promise<UntypedInboxMessage[] | null | undefined> | undefined;
+      const arm = () => {
+        armed ??= inbox.nextBatch({
           timeout:
             (input.quiet ?? 0) >= quietGenerations
               ? dormantTimeout
               : readTimeout,
         });
+
+        return armed;
+      };
+
+      for (;;) {
+        if ((stepsIssued() ?? 0) >= handoverAt) {
+          return over("handover", state);
+        }
+
+        const batch = await arm();
+
+        armed = undefined;
 
         if (batch === undefined) {
           // The inbox closed, which only this run does.
@@ -637,6 +671,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         empties = 0;
         quiet = false;
+
+        // The next read is armed before this batch is applied, so the window
+        // in which the holder is busy is covered rather than open.
+        arm();
 
         // Applying what arrived and deciding to end are one path, not two: the
         // state a handover carries is what this batch applied, and nothing
