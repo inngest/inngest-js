@@ -56,7 +56,6 @@ import {
 } from "../discovery/discovery.ts";
 import { sharedToolsFor } from "../discovery/sharedTools.ts";
 import { answerQuestion } from "../inbox/answer.ts";
-import { createBodyInboxTools } from "../inbox/bodyInboxTools.ts";
 import {
   agentGroupJoined,
   agentMessage,
@@ -202,7 +201,6 @@ import type {
   AgentFunctionConfig,
   AgentMessage,
   InboxSource,
-  OpenedInbox,
 } from "./types.ts";
 
 /**
@@ -249,7 +247,7 @@ const createHandlerLoop = async (options: {
   logger: Logger;
   config: AgentFunctionConfig;
   fields: RunFields<RunFieldContext>;
-  listenTools: Record<string, unknown>;
+  addedTools: Record<string, unknown>;
   skills: readonly Skill[];
 
   /**
@@ -275,7 +273,7 @@ const createHandlerLoop = async (options: {
     logger,
     config,
     fields,
-    listenTools,
+    addedTools,
     skills,
     lentEnded,
     briefing,
@@ -347,7 +345,7 @@ const createHandlerLoop = async (options: {
 
   const own = {
     ...agentToolsFor(config.discovery, related),
-    ...listenTools,
+    ...addedTools,
     ...(skills.length > 0 && createSkillTools(skills)),
     // Ends the turn on purpose. A tool of the agent's own named `wait` wins.
     ...(!(tools && Object.hasOwn(tools, "wait")) && {
@@ -736,19 +734,6 @@ export function createAgentFunction(
           noteSource(source);
         }
 
-        // The inboxes the model opened, by the name it gave them. They end with
-        // the run, whichever way it ends, before the thread's own inbox.
-        const named = new Map<string, OpenedInbox>();
-        await using _named = {
-          async [Symbol.asyncDispose]() {
-            for (const open of [...named.values()]) {
-              if (!open.inbox.closed) {
-                await open.inbox.close();
-              }
-            }
-          },
-        };
-
         // A plain agent (no `invoke()` trigger) that `step.invoke` started with
         // `{ agent, thread, content }` reads that as the `agent/message` it is.
         const invokedAsMessage =
@@ -916,7 +901,7 @@ export function createAgentFunction(
           }
         };
 
-        const { inbox, view } = threadInbox(
+        const { inbox } = threadInbox(
           {
             inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
           },
@@ -1087,8 +1072,6 @@ export function createAgentFunction(
           reports: reportBook,
           config,
           inbox,
-          view,
-          named,
           limits,
           recorder,
           threadKey: thread.key,
@@ -1096,15 +1079,6 @@ export function createAgentFunction(
           ...(startMessage.id && { triggerId: startMessage.id }),
           agent: ref,
           recordInStep: !onLedger(),
-        });
-
-        const listenTools = createBodyInboxTools({
-          config,
-          view,
-          named,
-          noteSource,
-          step,
-          thread: data.thread,
         });
 
         // Who started the thread and who opened this run, for the briefing. A
@@ -1182,9 +1156,8 @@ export function createAgentFunction(
           lentEnded,
           briefing: runBriefing,
           related: starter !== undefined || runBriefing.group,
-          listenTools: {
+          addedTools: {
             ...sandboxTools(opened),
-            ...listenTools,
             ...(reportBook && { report: reportTool(reportBook) }),
           },
         });

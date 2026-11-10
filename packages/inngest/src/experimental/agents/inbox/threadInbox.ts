@@ -288,7 +288,6 @@ export function threadInbox(
   },
 ): {
   inbox: Inbox<AgentMessage>;
-  view: (source: Inbox<UntypedInboxMessage>) => Reader<UntypedInboxMessage>;
 } {
   function unwrap(message: UntypedInboxMessage | null): AgentMessage | null {
     if (!message) {
@@ -933,9 +932,6 @@ export function threadInbox(
     return reader;
   }
 
-  const plain = (raw: UntypedInboxMessage) => {
-    return addEventIs({ ...raw });
-  };
   const main = view(
     sources.inbox,
     (raw) => {
@@ -946,9 +942,6 @@ export function threadInbox(
 
   return {
     inbox: main as unknown as Inbox<AgentMessage>,
-    view: (source: Inbox<UntypedInboxMessage>) => {
-      return view(source, plain, false);
-    },
   };
 }
 

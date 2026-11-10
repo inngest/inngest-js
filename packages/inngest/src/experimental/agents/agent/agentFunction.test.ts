@@ -552,80 +552,6 @@ describe("inbox sources", () => {
     ]);
   });
 
-  test("inbox_listen opens a named inbox: one subscribe whose if is over the arriving event, tied to the thread", async () => {
-    const status = eventType("ci/status", {
-      schema: z.object({ t: z.string(), state: z.string() }),
-    });
-    const asked: string[][] = [];
-    const { fn } = createAgentFunction(
-      makeClient(),
-      {
-        id: "bot",
-        thread: "event.data.t",
-        listen: [status],
-        model: model(async (request) => {
-          asked.push((request.tools ?? []).map((tool) => tool.name));
-
-          return request.turn === 1
-            ? {
-                message: {
-                  role: "assistant",
-                  content: [
-                    {
-                      type: "tool_use",
-                      id: "t1",
-                      name: "inbox_listen",
-                      input: {
-                        source: "ci/status",
-                        match: { state: "red" },
-                        as: "ci",
-                      },
-                    },
-                  ],
-                },
-                toolCalls: [
-                  {
-                    id: "t1",
-                    name: "inbox_listen",
-                    input: {
-                      source: "ci/status",
-                      match: { state: "red" },
-                      as: "ci",
-                    },
-                  },
-                ],
-              }
-            : say("done");
-        }),
-      },
-      async ({ inbox, loop }) => {
-        await inbox.next();
-        await loop("go");
-
-        return (
-          getAsyncCtxSync()
-            ?.execution?.agentBridge?.wiring?.inboxes?.()
-            .map((open) => {
-              return [open.as, open.source];
-            }) ?? []
-        );
-      },
-    );
-
-    const { output } = await run(fn, { event: trigger("go") });
-
-    expect(output).toEqual([
-      [
-        "ci",
-        {
-          event: "ci/status",
-          if: '(has(async.data) && has(async.data.t)) && (async.data.state == "red") && (async.data.t) == "t1"',
-        },
-      ],
-    ]);
-    expect(asked[0]).toEqual(["inbox_listen", "inbox_close", "wait"]);
-  });
-
   test("an agent with no listen and discovery: true gives the model the agent tools and neither inbox_listen nor inbox_close", async () => {
     const asked: string[][] = [];
     const { fn } = createAgentFunction(
@@ -1563,11 +1489,6 @@ describe("the loop in an agent", () => {
         id: "bot",
         model: own.scripted,
         system: "Agent system.",
-        listen: [
-          eventType("ci/status", {
-            schema: z.object({ state: z.string() }),
-          }),
-        ],
       },
       async ({ loop }) => {
         return (await loop.with({ model: other.scripted })("hi")).text;

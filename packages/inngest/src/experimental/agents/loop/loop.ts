@@ -926,11 +926,6 @@ export interface AgentLoopWiring {
   drain?: (call: { turn: number }) => Promise<AgentEvent[]>;
 
   /**
-   * The inboxes the model opened, with the source each was opened on.
-   */
-  inboxes?: () => { as: string; source: { event: string; if: string } }[];
-
-  /**
    * Records the turn inside the model call's step, so it costs no step of its
    * own. What it returns rides with the reply.
    */

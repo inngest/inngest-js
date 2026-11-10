@@ -566,6 +566,5 @@ export type {
   InboxSource,
   InboxSourceInput,
   ModelField,
-  OpenedInbox,
   StartInput,
 } from "./types.ts";

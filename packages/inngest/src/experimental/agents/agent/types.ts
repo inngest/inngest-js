@@ -389,16 +389,6 @@ export interface AgentFunctionConfig<
     : readonly InboxSourceInput[];
 
   /**
-   * The event types the model may start watching while it works, with its
-   * `inbox_listen({ source, match, as })` tool and `inbox_close({ as })` to
-   * stop. Both tools exist only when this list is not empty, and `source`
-   * must name a type listed here: anything else is refused with a message the
-   * model can read. `match` narrows what the model hears to events whose
-   * `data` has given values at given paths. Event types only, no plain names.
-   */
-  listen?: readonly EventTypeWithAnySchema<string>[];
-
-  /**
    * The agent's skills: know-how the model reads, in the `SKILL.md` format.
    * A value such as `[skills.folder("./skills")]`, or a function of
    * `{ event, thread }` read once at the start of each run. The model sees
@@ -778,27 +768,6 @@ export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | (MessageOf<AgentFinishedData, "agent/finished"> & FromSender);
 
 /**
- * An inbox the model opened with `inbox_listen`.
- */
-export interface OpenedInbox {
-  /**
-   * The name the model gave it.
-   */
-  as: string;
-
-  /**
-   * The source it was opened on: the event, and the filter that ties it to the
-   * thread.
-   */
-  source: { event: string; if: string };
-
-  /**
-   * The inbox. Messages that break their source's schema are dropped.
-   */
-  inbox: Inbox<UntypedInboxMessage>;
-}
-
-/**
  * `step`, widened with `subscribe`. `subscribe` only types on `step` once
  * `inboxMiddleware()` is in a client's `middleware`, because it is added by
  * that middleware's `transformFunctionInput`, not by a core step tool - see
@@ -850,8 +819,7 @@ export type AgentBodyContext<TTypes extends AgentTypes = AgentTypes> =
       ? {
           /**
            * The agent's own loop, made from its definition: `model`, `system`
-           * and `tools`, plus the model's `inbox_listen` and `inbox_close`
-           * when the agent has `listen`. `loop(batch)` folds the messages that
+           * and `tools`. `loop(batch)` folds the messages that
            * arrive meanwhile into the very next model call and posts nothing.
            * `loop.with(options)` derives another from it. Only an agent with a
            * `model` has one, as a value or a function. Its result's runs

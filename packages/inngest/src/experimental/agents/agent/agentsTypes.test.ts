@@ -90,18 +90,6 @@ test("agents: triggers take what createFunction triggers take", () => {
   });
 });
 
-test("agents: listen takes event types and inboxTools is gone", () => {
-  typesOnly(() => {
-    agents.agent({ id: "listen-1", triggers: [created], listen: [created] });
-
-    // @ts-expect-error listen takes event types, not names
-    agents.agent({ id: "listen-2", triggers: [created], listen: ["order/x"] });
-
-    // @ts-expect-error inboxTools became `listen`
-    agents.agent({ id: "listen-3", triggers: [created], inboxTools: {} });
-  });
-});
-
 test("agents: event is the trigger event, narrowed per trigger by is()", () => {
   typesOnly(() => {
     agents.agent(

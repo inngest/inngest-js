@@ -1,11 +1,10 @@
 /**
  * @module
- * EXPERIMENTAL: what an agent gives the loops that run inside it: the inboxes
+ * EXPERIMENTAL: what an agent gives the loops that run inside it: the inbox
  * they fold from and the record of each turn.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
-import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import type { QuestionBook } from "../inbox/questionBook.ts";
 import { owedReports, type ReportBook } from "../inbox/reports.ts";
 import type { Reader } from "../inbox/threadInbox.ts";
@@ -14,11 +13,11 @@ import { closesCopies } from "../threads/ledgerClient.ts";
 import type { ThreadRecord } from "../threads/thread.ts";
 import type { threadRecorder } from "../threads/threadState.ts";
 import type { LimitState } from "./limits.ts";
-import type { AgentFunctionConfig, OpenedInbox } from "./types.ts";
+import type { AgentFunctionConfig } from "./types.ts";
 
 /**
- * The wiring of one run: a loop in it folds the handler's inbox and every inbox
- * the model opened and records each turn.
+ * The wiring of one run: a loop in it folds the handler's inbox and records
+ * each turn.
  */
 export const createLoopWiring = (options: {
   config: AgentFunctionConfig;
@@ -28,11 +27,6 @@ export const createLoopWiring = (options: {
    */
   inbox: Pick<Reader<AgentEvent>, "drain" | "~fold">;
 
-  /**
-   * Reads an inbox the model opened with the agent's rules.
-   */
-  view: (inbox: OpenedInbox["inbox"]) => Reader<UntypedInboxMessage>;
-  named: Map<string, OpenedInbox>;
   limits: LimitState;
   recorder: ReturnType<typeof threadRecorder>;
   threadKey: string;
@@ -75,8 +69,6 @@ export const createLoopWiring = (options: {
 
   const {
     inbox,
-    view,
-    named,
     limits,
     recorder,
     threadKey,
@@ -90,19 +82,12 @@ export const createLoopWiring = (options: {
   return {
     agent,
     async drain({ turn }) {
-      // The handler's inbox first, then each inbox the model opened, in the
-      // order it opened them. The run's trigger is the handler's to give.
+      // The handler's inbox. The run's trigger is the handler's to give.
       const taken: AgentEvent[] = (
         await (inbox["~fold"]?.(turn) ?? inbox.drain())
       ).filter((event) => {
         return !triggerId || event.id !== triggerId;
       });
-
-      for (const open of [...named.values()]) {
-        if (!open.inbox.closed) {
-          taken.push(...(await view(open.inbox).drain()));
-        }
-      }
 
       // An answer is shown once; a second or late one is dropped.
       return taken.filter((event) => {
@@ -120,11 +105,6 @@ export const createLoopWiring = (options: {
     },
     questionArrived() {
       return questions.hasReceived();
-    },
-    inboxes() {
-      return [...named.values()].map((open) => {
-        return { as: open.as, source: open.source };
-      });
     },
     ...(recordInStep && {
       async recordTurn(turn: AgentTurn) {

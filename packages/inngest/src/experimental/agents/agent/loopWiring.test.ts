@@ -16,10 +16,6 @@ const wiringFor = (questions: QuestionBook, events: AgentEvent[]) => {
         return events;
       },
     },
-    view: (() => {
-      throw new Error("no named inboxes");
-    }) as never,
-    named: new Map(),
     limits: { limits: {}, used: { input: 0, output: 0 } },
     recorder: {} as never,
     threadKey: "t1",
