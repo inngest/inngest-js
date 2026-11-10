@@ -1,5 +1,57 @@
 # inngest
 
+## 4.27.0
+
+### Minor Changes
+
+- [#1878](https://github.com/inngest/inngest-js/pull/1878) [`addf9cb0`](https://github.com/inngest/inngest-js/commit/addf9cb0130d6424dfffb2e5712c7f0a5d2e0434) Thanks [@tonyhb](https://github.com/tonyhb)! - Add support for `INNGEST_CONNECT_INSTANCE_ID` to set the connect instance ID when the `instanceId` option is omitted. Checkpoint requests now include the connected app's instance ID in the `x-inngest-instance-id` header. Outside of connect, checkpoint requests use `INNGEST_CONNECT_INSTANCE_ID` when it is set.
+
+- [#1870](https://github.com/inngest/inngest-js/pull/1870) [`2caf225a`](https://github.com/inngest/inngest-js/commit/2caf225a6a384231f8e2ae66e44914ad994f0fba) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Narrow an event by its type with `is()`. `myEvent.is(value)` checks any value, including plain JSON such as the result of `step.invoke`, and the `event` your function receives has `event.is(types)`, which takes one event type or an array of them. A multi-trigger function can narrow `event` the same way.
+
+  ```ts
+  const issueOpened = eventType("issue.opened", {
+    schema: z.object({ id: z.string() }),
+  });
+  const issueClosed = eventType("issue.closed");
+
+  inngest.createFunction(
+    { id: "issues", triggers: [issueOpened, issueClosed] },
+    async ({ event }) => {
+      if (event.is(issueOpened)) {
+        return event.data.id;
+      }
+
+      if (event.is([issueOpened, issueClosed])) {
+        return event.name;
+      }
+    },
+  );
+  ```
+
+- [#1870](https://github.com/inngest/inngest-js/pull/1870) [`2caf225a`](https://github.com/inngest/inngest-js/commit/2caf225a6a384231f8e2ae66e44914ad994f0fba) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental `step.subscribe()` and `Inbox`, behind `inboxMiddleware()` from `inngest/experimental`. `step.subscribe(id, sources)` opens an inbox inside a run: every event that matches one of the sources and arrives afterwards becomes a message the run can read with `inbox.next()`, in the order the messages arrive, whether or not the run is waiting at that moment. On an executor that does not support inboxes (an older Dev Server or Cloud), `step.subscribe` fails at once with an error that says what to upgrade instead of leaving a read waiting.
+
+  ```ts
+  import { Inngest } from "inngest";
+  import { inboxMiddleware } from "inngest/experimental";
+
+  const inngest = new Inngest({
+    id: "my-app",
+    middleware: [inboxMiddleware()],
+  });
+
+  inngest.createFunction(
+    { id: "reviews", triggers: [{ event: "pr/opened" }] },
+    async ({ event, step }) => {
+      await using inbox = step.subscribe("reviews", {
+        event: "pr/reviewed",
+        if: "async.data.pr == event.data.pr",
+      });
+
+      const review = await inbox.next();
+    },
+  );
+  ```
+
 ## 4.26.2
 
 ### Patch Changes
