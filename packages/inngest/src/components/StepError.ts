@@ -12,6 +12,7 @@ import { jsonErrorSchema } from "../types.ts";
  */
 export class StepError extends Error {
   public override cause?: unknown;
+  public code?: string;
 
   constructor(
     /**
@@ -28,6 +29,11 @@ export class StepError extends Error {
 
     // Don't show the internal stack trace if we don't have one.
     this.stack = parsedErr.stack ?? undefined;
+
+    // Preserve the error code if the serialized error carried one.
+    if (typeof parsedErr.code === "string") {
+      this.code = parsedErr.code;
+    }
 
     // Try setting the cause if we have one
     this.cause = parsedErr.cause
