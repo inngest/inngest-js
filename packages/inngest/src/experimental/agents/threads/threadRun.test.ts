@@ -564,49 +564,13 @@ describe("the holder's reads", () => {
       return op.op === "wait";
     });
 
-    // Every read is bounded: the timeout is what provides liveness, and it is
-    // what makes an empty read countable rather than a wait with no end.
+    // No read is literally unbounded. The timeout is not a recovery
+    // mechanism: an empty read says nothing has happened, and the holder reads
+    // again.
     expect(waits.length).toBeGreaterThan(0);
 
     for (const wait of waits) {
-      expect((wait.opts as { timeout?: unknown }).timeout).toBeDefined();
+      expect((wait.opts as { timeout?: unknown }).timeout).toBe("12h");
     }
-  });
-
-  test("a holder that has been handed nothing for several generations reads with a longer timeout", async () => {
-    freshKv();
-
-    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
-    const quiet = await run(threadHolder, {
-      timeouts: 20,
-      event: {
-        name: "inngest/function.invoked",
-        data: { agent: ref, thread: "t1", generation: 9, quiet: 4 },
-      },
-    });
-    const busy = await run(threadHolder, {
-      timeouts: 20,
-      event: {
-        name: "inngest/function.invoked",
-        data: { agent: ref, thread: "t1", generation: 9, quiet: 0 },
-      },
-    });
-    const timeoutOf = (ops: { op: string; opts: unknown }[]) => {
-      return (
-        ops.find((op) => {
-          return op.op === "wait";
-        })?.opts as { timeout?: string } | undefined
-      )?.timeout;
-    };
-
-    // The thread nobody is asking after pays a couple of steps an hour; the
-    // one that was just being used pays a step a minute and is recycled in
-    // minutes rather than in an hour.
-    expect(timeoutOf(quiet.ops)).toBe("15m");
-    expect(timeoutOf(busy.ops)).toBe("1m");
-
-    // Nothing was delivered, so the holder recycles itself and says that it is
-    // still quiet.
-    expect(quiet.output).toMatchObject({ ended: "handover", quiet: 5 });
   });
 });

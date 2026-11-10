@@ -182,6 +182,7 @@ describe("agent function", () => {
       );
 
       const { output } = await run(fn, {
+        forward: true,
         event: trigger("go"),
         arrive: [{ event: message("user", "late"), at: "agent:model:1", when }],
       });

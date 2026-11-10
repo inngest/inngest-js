@@ -105,45 +105,14 @@ import { type CompiledTrigger, singletonKey } from "./threadTrigger.ts";
 const handoverAt = 700;
 
 /**
- * How long a holder waits for its next batch before the read comes back empty.
- * Every empty read costs a step, so this is what an idle thread spends: one
- * step a minute.
- */
-const readTimeout = "1m";
-
-/**
- * What a holder of a thread nobody is asking after waits instead. Reached
- * after `quietGenerations` generations in a row with nothing delivered.
- */
-const dormantTimeout = "15m";
-
-/**
- * How many generations of nothing it takes before a holder backs off to
- * `dormantTimeout`.
- */
-const quietGenerations = 2;
-
-/**
- * How many empty reads in a row make a holder hand over.
+ * How long a holder waits for its next batch.
  *
- * THIS IS NOT WEDGE DETECTION, and calling it that would invite a check that
- * cannot be written. N empty reads in a row is indistinguishable from a
- * conversation nobody is talking in: there is no way to tell "this
- * subscription stopped delivering" from "nothing has happened". So what this
- * does is **recycle the holder periodically**, and a subscription that had
- * stopped delivering is fixed as a side effect, because the successor
- * subscribes again.
- *
- * It is also the whole of the recovery latency for that case. A holder that
- * waited for its step ceiling instead would take `handoverAt` reads to recycle,
- * which at this timeout is most of a day; recycling after a few makes it
- * `empties x timeout`, which is minutes, and tunable.
- *
- * **A handover restores the thread. It does not recover the messages**: what
- * was lost while the subscription was not delivering is gone, and the
- * successor starts after the loss.
+ * It is here only so that no read is literally unbounded. It is **not** a
+ * recovery mechanism and nothing is built on it: a read that comes back empty
+ * means nothing has happened, the holder reads again, and that costs one step
+ * twice a day. A holder hands over at its step ceiling and for nothing else.
  */
-const handoverAfterEmpties = 5;
+const readTimeout = "12h";
 
 /**
  * How long the supervisor waits on a holder: a thread lives as long as the
@@ -175,18 +144,6 @@ interface HolderInput extends Record<string, unknown> {
    * skipped, dropped, or rejected for its size.
    */
   carried?: ThreadSnapshot;
-
-  /**
-   * How many generations in a row have ended with nothing delivered.
-   *
-   * A thread that is being used reads with a short timeout, so a subscription
-   * that stopped delivering is noticed in minutes. One nobody is asking after
-   * backs off, so a dormant thread costs a couple of steps an hour rather than
-   * one a minute. Every timed read costs exactly one step whether or not
-   * anything arrives, which is what makes this a real trade rather than a
-   * tuning detail.
-   */
-  quiet?: number;
 }
 
 /**
@@ -198,12 +155,6 @@ interface HolderResult {
   generation: number;
   ended: "done" | "handover";
   entries: number;
-
-  /**
-   * How many generations in a row have now ended with nothing delivered, which
-   * the next one reads with.
-   */
-  quiet?: number;
 
   /**
    * The state the next generation starts from. Absent: the thread is over and
@@ -574,8 +525,6 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         return applied;
       };
 
-      // Nothing has been delivered to this generation yet.
-      let quiet = true;
       const over = (
         ended: HolderResult["ended"],
         handover?: ThreadSnapshot,
@@ -585,7 +534,6 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           generation,
           ended,
           entries: state.seq,
-          quiet: quiet ? (input.quiet ?? 0) + 1 : 0,
           ...(handover && { handover }),
         };
       };
@@ -602,7 +550,6 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           } as unknown as UntypedInboxMessage,
         ]);
 
-        quiet = false;
         await forward(first.appended);
 
         if (first.done) {
@@ -613,9 +560,6 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           return over("handover", state);
         }
       }
-
-      // Reads that came back empty in a row.
-      let empties = 0;
 
       // A read kept armed while the holder works. `nextBatch` is called before
       // the batch in hand is applied and forwarded, and awaited at the top of
@@ -631,12 +575,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
       // timeout below is what provides liveness, not a timer beside the read.
       let armed: Promise<UntypedInboxMessage[] | null | undefined> | undefined;
       const arm = () => {
-        armed ??= inbox.nextBatch({
-          timeout:
-            (input.quiet ?? 0) >= quietGenerations
-              ? dormantTimeout
-              : readTimeout,
-        });
+        armed ??= inbox.nextBatch({ timeout: readTimeout });
 
         return armed;
       };
@@ -656,21 +595,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         }
 
         if (batch === null) {
-          empties += 1;
-
-          if (empties >= handoverAfterEmpties) {
-            // Alive, but nothing has been delivered for a while. Hand over
-            // rather than wait for the step ceiling: a successor subscribes
-            // again, which is the only thing that recovers a subscription that
-            // stopped delivering. What was lost meanwhile stays lost.
-            return over("handover", state);
-          }
-
+          // Nothing arrived in the time the read allowed, which says only that
+          // nothing has happened. Read again.
           continue;
         }
-
-        empties = 0;
-        quiet = false;
 
         // The next read is armed before this batch is applied, so the window
         // in which the holder is busy is covered rather than open.
@@ -773,7 +701,6 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           thread,
           generation: generation + 1,
           carried: result.handover,
-          ...(result.quiet !== undefined && { quiet: result.quiet }),
         };
       }
     },
