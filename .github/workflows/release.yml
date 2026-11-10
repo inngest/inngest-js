@@ -122,6 +122,10 @@ jobs:
           CANDIDATE_COUNT=$(jq 'length' <<< "$TAG_CANDIDATES")
           CHOSEN_RAW=$(jq -r '.[0] // ""' <<< "$TAG_CANDIDATES")
 
+          # Only a tag derived from a label is allowed to be anything other
+          # than `pr-<number>`; prerelease.js refuses one otherwise.
+          ALLOW_LABEL_TAG=""
+
           if [[ -z "$CHOSEN_RAW" ]]; then
             TAG="$FALLBACK_TAG"
           else
@@ -141,14 +145,17 @@ jobs:
               TAG="$FALLBACK_TAG"
             else
               TAG="$SANITISED"
+              ALLOW_LABEL_TAG="1"
             fi
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "allow_label_tag=$ALLOW_LABEL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Prerelease PR
         run: |
           export TAG=${{ steps.prerelease-tag.outputs.tag }}
+          export ALLOW_LABEL_TAG=${{ steps.prerelease-tag.outputs.allow_label_tag }}
           export NODE_ENV=test
           [[ -n "${{ matrix.dist_dir }}" ]] && export DIST_DIR=${{ matrix.dist_dir }}
           node ../../scripts/release/prerelease.js

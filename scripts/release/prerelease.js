@@ -2,9 +2,30 @@ const path = require("path");
 const { exec: rawExec, getExecOutput } = require("@actions/exec");
 
 const tag = process.env.TAG;
-if (!tag || !tag.startsWith("pr-")) {
+
+// Tags that are real release channels: a prerelease must never move one of
+// them, however it was derived.
+const reservedTags = ["latest", "next", "beta", "alpha", "rc", "canary"];
+
+// Set by the workflow only in the branch that derives the tag from a
+// `prerelease-tag/<tag>` label, where the label has already been sanitised
+// (lowercased, non-alphanumerics collapsed to hyphens, semver-shaped values
+// rejected). Without it, only `pr-*` may release.
+const labelDerived = Boolean(process.env.ALLOW_LABEL_TAG);
+
+if (!tag) {
+  throw new Error("Stopping prerelease: no TAG was given");
+}
+
+if (!tag.startsWith("pr-") && !labelDerived) {
   throw new Error(
-    `Stopping prerelease from tag ${tag}; only "pr-*" tags are allowed to release`
+    `Stopping prerelease from tag ${tag}; only "pr-*" tags, or a tag the workflow derived from a prerelease-tag/* label (ALLOW_LABEL_TAG), are allowed to release`
+  );
+}
+
+if (reservedTags.includes(tag)) {
+  throw new Error(
+    `Stopping prerelease from tag ${tag}; it is a release channel (${reservedTags.join(", ")}) and publishing would move it off the released version`
   );
 }
 
