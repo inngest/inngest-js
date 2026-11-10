@@ -121,7 +121,11 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
     }
 
     this.#traceId = ulidToTraceId(runId);
-    const sentryTrace = `${this.#traceId}-1000000000000000-1`;
+    // Omit the sampled flag so the SDK falls through to the app's
+    // tracesSampleRate / tracesSampler. Appending `-1` would set
+    // parentSampled=true and override that config (including an explicit 0).
+    // Trace continuity only needs the deterministic run-derived trace ID.
+    const sentryTrace = `${this.#traceId}-1000000000000000`;
 
     // startNewTrace breaks out of the auto-instrumented HTTP span so our
     // trace ID (derived from the run ID) takes effect. continueTrace then
