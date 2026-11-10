@@ -27,8 +27,9 @@ export class StreamFanout<TInput = unknown> {
 
   write(chunk: TInput) {
     for (const writer of this.#writers) {
-      writer.ready
-        .then(() => writer.write(chunk))
+      // Queue the write before close(), even if the subscriber is backpressured.
+      writer
+        .write(chunk)
         // Dereference the writer if we fail, as this means it's closed
         .catch(() => this.#writers.delete(writer));
     }
