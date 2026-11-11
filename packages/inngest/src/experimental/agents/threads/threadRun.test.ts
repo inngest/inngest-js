@@ -5,9 +5,11 @@
  * lost forward costs latency rather than data.
  */
 
+import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgentFunction } from "../agent/agentFunction.ts";
+import { trackChild } from "../agent/children.ts";
 import { freshKv, run } from "../agent/test-helpers.ts";
 import { kv as internalKv } from "../kv/kv.ts";
 import {
@@ -1385,5 +1387,139 @@ describe("every reader that hands a message over confirms it", () => {
     });
 
     expect(seen).toEqual(["older", "waking", "newer"]);
+  });
+});
+
+describe("a run with an open child", () => {
+  test("reads with next() through for-await, and still confirms", async () => {
+    freshKv();
+
+    const seen: unknown[] = [];
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox }) => {
+        // An open child is what makes `quietNow()` non-zero, which is the one
+        // condition that reroutes `for await` onto `next()`. So this body
+        // reads through the path that confirmed nothing, without naming it.
+        const instance = getAsyncCtxSync()?.execution?.instance;
+
+        if (instance) {
+          trackChild(instance, `${testClientId}/child:c1`);
+        }
+
+        for await (const one of inbox) {
+          const content = (one.data as { content?: unknown }).content;
+
+          if (!seen.includes(content)) {
+            seen.push(content);
+          }
+        }
+
+        return null;
+      },
+    );
+    const { sent } = await run(made.fn, {
+      event: { ...message("one"), id: "evt-1" },
+      thread: held({
+        seq: 2,
+        taken: 0,
+        entries: [
+          {
+            seq: 1,
+            id: "evt-1",
+            name: "agent/message",
+            data: { agent: ref, thread: "t1", content: "one" },
+            ts: 0,
+          },
+          {
+            seq: 2,
+            id: "evt-2",
+            name: "agent/message",
+            data: { agent: ref, thread: "t1", content: "two" },
+            ts: 0,
+          },
+        ],
+      }),
+    });
+    const takes = sent.flatMap((event) => {
+      return event.name === "agent/thread.write"
+        ? ((event.data as { ops?: { kind: string; seq?: number }[] }).ops ?? [])
+            .filter((op) => {
+              return op.kind === "take";
+            })
+            .map((op) => {
+              return op.seq;
+            })
+        : [];
+    });
+
+    expect(seen).toContain("two");
+    expect(takes.at(-1)).toBe(2);
+  });
+});
+
+describe("why an unconfirmed watermark is not enough on its own", () => {
+  const logged = (contents: string[]) => {
+    return contents.map((content, at) => {
+      return {
+        seq: at + 1,
+        id: `evt-${at + 1}`,
+        name: "agent/message",
+        data: { agent: ref, thread: "t1", content },
+        ts: 0,
+      };
+    });
+  };
+
+  test("a run a forward woke sees nothing twice, even with the watermark at 0", async () => {
+    freshKv();
+
+    const { fn, seen } = reader();
+
+    // The thread holds three entries and has confirmed NONE of them, so a
+    // read would hand all three back as catch-up. This run is woken by a
+    // forward that carries those same three, and the batch's own entries are
+    // left out of the catch-up: so it sees each exactly once.
+    //
+    // Which is why "the watermark never advanced" is not sufficient for the
+    // symptom. The duplicate needs the NEXT run to arrive by the route that
+    // uses the catch-up - its own trigger - rather than by a forward carrying
+    // the same entries. Both routes exist for every message, and which one
+    // wins the agent's singleton is a race, which is what makes the symptom
+    // rare and unquotable rather than conditional on anything in the state.
+    await run(fn, {
+      forward: false,
+      event: forward(["one", "two", "three"], {
+        state: held({
+          seq: 3,
+          taken: 0,
+          entries: logged(["one", "two", "three"]),
+        }),
+      }),
+    });
+
+    expect(seen).toEqual(["one", "two", "three"]);
+  });
+
+  test("a run its own trigger woke sees them again, which is the symptom", async () => {
+    freshKv();
+
+    const { fn, seen } = reader();
+
+    // The same unconfirmed thread, but this run was started by the fourth
+    // message directly rather than by a forward. Nothing excludes the three
+    // the thread still holds, so they lead the inbox: the entries a previous
+    // run already answered are answered again.
+    await run(fn, {
+      event: { ...message("four"), id: "evt-4" },
+      thread: held({
+        seq: 4,
+        taken: 0,
+        entries: logged(["one", "two", "three", "four"]),
+      }),
+    });
+
+    expect(seen).toEqual(["one", "two", "three", "four"]);
   });
 });
