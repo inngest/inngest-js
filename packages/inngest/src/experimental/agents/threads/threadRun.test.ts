@@ -1268,3 +1268,68 @@ describe("a confirmation is never refused", () => {
     expect(state.keys.k?.v).toBe('"first"');
   });
 });
+
+describe("every reader that hands a message over confirms it", () => {
+  const logged = (contents: string[]) => {
+    return contents.map((content, at) => {
+      return {
+        seq: at + 1,
+        id: `evt-${at + 1}`,
+        name: "agent/message",
+        data: { agent: ref, thread: "t1", content },
+        ts: 0,
+      };
+    });
+  };
+
+  const takesOf = (sent: { name: string; data?: unknown }[]) => {
+    return sent.flatMap((event) => {
+      return event.name === "agent/thread.write"
+        ? ((event.data as { ops?: { kind: string; seq?: number }[] }).ops ?? [])
+            .filter((op) => {
+              return op.kind === "take";
+            })
+            .map((op) => {
+              return op.seq;
+            })
+        : [];
+    });
+  };
+
+  test("a run that reads one message at a time confirms them", async () => {
+    freshKv();
+
+    const seen: unknown[] = [];
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox }) => {
+        for (;;) {
+          const message = await inbox.next();
+
+          if (!message) {
+            break;
+          }
+
+          seen.push((message.data as { content?: unknown }).content);
+        }
+
+        return null;
+      },
+    );
+    const { sent } = await run(made.fn, {
+      event: { ...message("one"), id: "evt-1" },
+      thread: held({
+        seq: 3,
+        taken: 0,
+        entries: logged(["one", "two", "three"]),
+      }),
+    });
+
+    // `inbox.next()` has its own path and did not go through the one place
+    // that confirms, so a run reading this way confirmed NOTHING - for any
+    // message, however many it took - and the thread handed all of them to the
+    // next run. An agent that reads with a timeout reads this way.
+    expect(takesOf(sent).at(-1)).toBe(3);
+  });
+});

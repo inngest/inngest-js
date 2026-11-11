@@ -762,6 +762,14 @@ export function threadInbox(
             continue;
           }
 
+          // Confirmed here too. Every other reader hands its messages over
+          // through `keep`, which confirms them; this one has its own path and
+          // did not, so a run that read with `next()` confirmed NOTHING, for
+          // any message, however many it took - and the thread handed all of
+          // them to the next run. `inbox.next()` is what an agent with a
+          // timeout reads with, so this is reachable rather than theoretical.
+          await sources.took?.([raw]);
+
           if (!main) {
             return present(raw);
           }

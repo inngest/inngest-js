@@ -36,7 +36,23 @@ interface Pause {
 export const run = async (
   fn: InngestFunction.Any,
   options: {
-    event?: { name: string; data: Record<string, unknown> };
+    /**
+     * The event that starts the run. Its `id` matters when the thread holds
+     * the same event as an entry: that is how a run's own event is matched to
+     * its position in the log.
+     */
+    event?: {
+      name: string;
+      data: Record<string, unknown>;
+
+      /**
+       * Left loose, because the tests build events in several shapes. It
+       * matters when the thread holds the same event as an entry: that is how
+       * a run's own event is matched to its position in the log.
+       */
+      id?: unknown;
+      ts?: unknown;
+    };
     key?: string;
     saved?: unknown[];
     incoming?: unknown[];
