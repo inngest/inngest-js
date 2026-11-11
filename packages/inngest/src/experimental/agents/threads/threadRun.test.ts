@@ -1332,4 +1332,58 @@ describe("every reader that hands a message over confirms it", () => {
     // next run. An agent that reads with a timeout reads this way.
     expect(takesOf(sent).at(-1)).toBe(3);
   });
+  test("an entry newer than the message that woke the run trails it", async () => {
+    freshKv();
+
+    const seen: unknown[] = [];
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox }) => {
+        for await (const one of inbox) {
+          const content = (one.data as { content?: unknown }).content;
+
+          // The fake executor replays the run, so a message reaches the body
+          // more than once; the order they first arrive in is the point.
+          if (!seen.includes(content)) {
+            seen.push(content);
+          }
+        }
+
+        return null;
+      },
+    );
+
+    // The thread held an older entry, then the one that woke this run, then
+    // one that arrived while the run was starting. The log is ordered, and the
+    // run's own event sits in the middle of it.
+    await run(made.fn, {
+      event: { ...message("waking"), id: "evt-2" },
+      thread: held({
+        seq: 3,
+        taken: 0,
+        entries: [
+          ...logged(["older"]).map((entry) => {
+            return { ...entry, id: "evt-1" };
+          }),
+          {
+            seq: 2,
+            id: "evt-2",
+            name: "agent/message",
+            data: { agent: ref, thread: "t1", content: "waking" },
+            ts: 0,
+          },
+          {
+            seq: 3,
+            id: "evt-3",
+            name: "agent/message",
+            data: { agent: ref, thread: "t1", content: "newer" },
+            ts: 0,
+          },
+        ],
+      }),
+    });
+
+    expect(seen).toEqual(["older", "waking", "newer"]);
+  });
 });

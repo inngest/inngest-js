@@ -901,11 +901,33 @@ export function createAgentFunction(
             (entry.id === undefined || entry.id !== startMessage.id)
           );
         });
-        const lead = caughtUp.map(entryAsMessage);
 
-        // The rest of the batch that woke this run, which comes after the
-        // entry that started it rather than before.
-        const trail = (forwarded ?? []).slice(1).map(entryAsMessage);
+        // The catch-up is SPLIT at the entry that started the run, because the
+        // thread's log is ordered and the run's own event sits in it.
+        //
+        // Everything the thread held before that entry leads the inbox, and
+        // everything it held after it trails - otherwise a message that
+        // arrived while the thread was waking this run would be handed over
+        // BEFORE the message that woke it, and the model would read the
+        // conversation out of order. A catch-up entry is almost always older,
+        // which is why this was not obvious: the newer ones only exist when
+        // something arrived in the window between the thread logging the
+        // waking message and this run obtaining state.
+        const startPosition = startedAt?.seq ?? Number.POSITIVE_INFINITY;
+        const before = caughtUp.filter((entry) => {
+          return entry.seq < startPosition;
+        });
+        const after = caughtUp.filter((entry) => {
+          return entry.seq > startPosition;
+        });
+        const lead = before.map(entryAsMessage);
+
+        // The rest of the batch that woke this run, then anything the thread
+        // held that is newer still: both come after the entry that started it
+        // rather than before.
+        const trail = [...(forwarded ?? []).slice(1), ...after].map(
+          entryAsMessage,
+        );
 
         // The same event must not become two messages. The thread forwards
         // what this run is also subscribed to, so whichever arrives second is
