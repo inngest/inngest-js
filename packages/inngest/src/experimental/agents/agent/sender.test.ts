@@ -91,7 +91,14 @@ describe("me.message()", () => {
       id: testClientId,
       eventKey: "key",
       fetch: (async (_url: unknown, init?: { body?: string }) => {
-        sent.push(...JSON.parse(init?.body ?? "[]"));
+        // A run's own talk with its thread is not what this is about.
+        sent.push(
+          ...(JSON.parse(init?.body ?? "[]") as { name?: string }[]).filter(
+            (event) => {
+              return !String(event?.name).startsWith("agent/thread.");
+            },
+          ),
+        );
 
         return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
       }) as unknown as typeof fetch,

@@ -18,13 +18,23 @@ const setup = (body: (thread: ReturnType<typeof threadHandle>) => unknown) => {
     id: testClientId,
     eventKey: "key",
     fetch: (async (_url: unknown, init?: { body?: string }) => {
-      const sent = JSON.parse(init?.body ?? "null");
+      const sent = JSON.parse(init?.body ?? "null") as { name?: string }[];
 
-      bodies.push(...(Array.isArray(sent) ? sent : [sent]));
+      // A run's own talk with its thread is not what these tests are about.
+      bodies.push(
+        ...(Array.isArray(sent) ? sent : [sent]).filter((event) => {
+          return !String(event?.name).startsWith("agent/thread.");
+        }),
+      );
 
       return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
     }) as unknown as typeof fetch,
   });
+  // A real app makes its agents, which is what registers the middleware that
+  // provides `step.subscribe` - and awaiting a run's result needs it, because
+  // the result comes back through a private inbox.
+  createAgents(client);
+
   const thread = threadHandle(client, `${testClientId}/callee`, "t1");
   const fn = client.createFunction(
     { id: "caller", triggers: [{ event: "go" }] },

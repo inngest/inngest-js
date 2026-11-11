@@ -15,6 +15,27 @@
  * holds, so it costs no round trip, and a `set` sends the thread a write, so
  * it costs one step. It is a shape users recognise over a log they do not need
  * to see, and it is **not** a key-value store.
+ *
+ * THE RULE FOR ANYONE TOUCHING THREAD STATE: a write happens BETWEEN steps,
+ * never inside another step's callback. There are two reasons and only the
+ * first announces itself.
+ *
+ * 1. A write to the thread is an event, so it is a step, and a step issued
+ *    inside another step's callback makes the run wait on itself. It hangs:
+ *    no error, no timeout, the request never returns. Findable, because it
+ *    hangs.
+ * 2. A write made inside a memoized callback is applied to this run's own view
+ *    ONLY in the request where that callback actually ran. A replay skips the
+ *    callback, so a later read in the same run returns a view missing its own
+ *    writes. **Nothing fails.** It surfaces somewhere else entirely, as state
+ *    that sometimes forgets the last turn.
+ *
+ * The second is the same family as the rule that a stamp or a step id must be
+ * a pure function of durable values - the one a module-level counter broke by
+ * turning 12 writes into 50 events. Both are replay determinism, both are
+ * invisible when broken, and both are the reason the thread bookkeeping in
+ * `agentFunction.ts` and `threadState.ts` is deliberately not wrapped in a
+ * `step.run`, however much it looks like it should be.
  */
 
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";

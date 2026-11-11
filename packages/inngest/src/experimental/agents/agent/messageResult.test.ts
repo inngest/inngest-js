@@ -6,6 +6,11 @@
  */
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import {
+  applyThreadWrite,
+  emptySnapshot,
+  type ThreadWriteOp,
+} from "../threads/threadProtocol.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { freshKv, run } from "./test-helpers.ts";
 
@@ -131,31 +136,36 @@ describe("the finished function tells the sender of the message that started the
 });
 
 describe("messages folded into a live run", () => {
-  const seed = async (
-    { store, client }: ReturnType<typeof setup>,
-    folded: { run: string; ids: string[] },
-  ) => {
-    await store
-      .with(client)
-      .scope("thread", "t1")
-      .set(`__state:${testClientId}/bot`, {
-        status: "idle",
-        turn: 0,
-        usage: { input: 0, output: 0 },
-        runId: "r1",
-        folded,
-      });
+  /**
+   * A thread that already holds a record, as its holder would hand it over.
+   */
+  const seeded = (folded: { run: string; ids: string[] }) => {
+    return {
+      ...emptySnapshot(),
+      fresh: false,
+      keys: {
+        [`__state:${testClientId}/bot`]: {
+          v: JSON.stringify({
+            status: "idle",
+            turn: 0,
+            usage: { input: 0, output: 0 },
+            runId: "r1",
+            folded,
+          }),
+        },
+      },
+    };
   };
 
   test("the finished function reports every folded message beside the one that started the run", async () => {
     const made = setup();
 
-    await seed(made, { run: "r1", ids: ["m6", "m7"] });
     await run(made.agent.finished, {
       event: finished(trigger("m1"), {
         _inngest: { status: "Completed" },
         result: "ok",
       }),
+      thread: seeded({ run: "r1", ids: ["m6", "m7"] }),
     });
 
     expect(
@@ -170,9 +180,9 @@ describe("messages folded into a live run", () => {
   test("ids folded by another run are not reported", async () => {
     const made = setup();
 
-    await seed(made, { run: "older", ids: ["m6"] });
     await run(made.agent.finished, {
       event: finished(trigger("m1"), { _inngest: { status: "Completed" } }),
+      thread: seeded({ run: "older", ids: ["m6"] }),
     });
 
     expect(
@@ -183,7 +193,7 @@ describe("messages folded into a live run", () => {
   });
 
   test("a run records the ids of the messages it takes after the one that started it", async () => {
-    const { client, store } = setup();
+    const { client } = setup();
     const agent = createAgentFunction(
       client,
       { id: "bot" },
@@ -193,22 +203,30 @@ describe("messages folded into a live run", () => {
         return (await inbox.drain()).length;
       },
     );
-    const { output } = await run(agent.fn, {
+    const { output, sent } = await run(agent.fn, {
       event: trigger("m1"),
       runId: "r1",
       saved: [{ ...trigger("m2"), id: "m2" }],
     });
+    const held = emptySnapshot();
+
+    for (const event of sent) {
+      if (event.name !== "agent/thread.write") {
+        continue;
+      }
+
+      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
+        applyThreadWrite(held, op);
+      }
+    }
+
+    const record = held.keys[`__state:${testClientId}/bot`];
 
     expect(output).toBe(1);
+    // The thread is told which messages this run took, so the function that
+    // reports how the run ended can tell each of their senders.
     expect(
-      (
-        (await store
-          .with(client)
-          .scope("thread", "t1")
-          .get(`__state:${testClientId}/bot`)) as {
-          folded?: unknown;
-        }
-      ).folded,
+      (JSON.parse(record?.v ?? "{}") as { folded?: unknown }).folded,
     ).toEqual({ run: "r1", ids: ["m2"] });
   });
 });

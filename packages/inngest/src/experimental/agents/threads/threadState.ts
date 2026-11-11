@@ -83,6 +83,13 @@ export const withTransition = (
   };
 };
 
+/*
+ * Every write here goes to the thread as an event, and so it happens BETWEEN
+ * steps. Do not wrap any of it in a `step.run`, however much the two KV calls
+ * at a run's start look like one step: see the rule at the top of
+ * `threadClient.ts` for the two reasons, the second of which fails silently
+ * and surfaces somewhere else.
+ */
 export const threadRecorder = (
   /**
    * KV store of the thread state.
