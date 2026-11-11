@@ -407,7 +407,10 @@ export const run = async (
       options.event ?? { name: "sub/run", data: {} },
     );
     const result = await runFnWithStack(fn, state, {
-      event,
+      // A clone for the call as well as for `events`: a deferred function
+      // strips its own metadata off the event in place, and a planned step
+      // later in the same request clones what is left.
+      event: structuredClone(event),
       events: [structuredClone(event)],
       stackOrder: [...stack],
       runId: options.runId,

@@ -6,6 +6,11 @@
 
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
+import {
+  applyThreadWrite,
+  emptySnapshot,
+  type ThreadWriteOp,
+} from "../threads/threadProtocol.ts";
 import { markThreadIdle } from "../threads/threadState.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import {
@@ -98,6 +103,8 @@ describe("the finished function", () => {
       id: testClientId,
       eventKey: "key",
       fetch: (async (_url: unknown, init?: { body?: string }) => {
+        taking(init?.body ?? "[]");
+
         // A run's own talk with its thread is not what these tests are about.
         sent.push(
           ...(JSON.parse(init?.body ?? "[]") as { name?: string }[]).filter(
@@ -111,6 +118,31 @@ describe("the finished function", () => {
       }) as unknown as typeof fetch,
     });
     const store = freshKv();
+
+    // The thread's own state, as its holder would hold it: the tests seed it
+    // and read it back, because there is no store between a run and its
+    // thread any more. `taken` is what a run sends and `held` is what the next
+    // one would be handed.
+    let held = { ...emptySnapshot(), fresh: false };
+    const taking = (body: string) => {
+      for (const event of JSON.parse(body) as {
+        name?: string;
+        data?: { ops?: ThreadWriteOp[] };
+      }[]) {
+        if (event.name !== "agent/thread.write") {
+          continue;
+        }
+
+        for (const op of event.data?.ops ?? []) {
+          applyThreadWrite(held, op);
+        }
+      }
+    };
+    const keyed = <T>(key: string): T | undefined => {
+      const found = held.keys[key];
+
+      return found ? (JSON.parse(found.v) as T) : undefined;
+    };
     const agent = createAgentFunction(
       client,
       {
@@ -120,37 +152,55 @@ describe("the finished function", () => {
       async () => {},
     );
     const lastRun = async () => {
-      return (await store
-        .with(client)
-        .scope("thread", "t1")
-        .get(`__lastRun:${testClientId}/bot`)) as LastRun | undefined;
+      return keyed<LastRun>(`__lastRun:${testClientId}/bot`);
     };
 
     const seed = async (record: Record<string, unknown>) => {
-      await store
-        .with(client)
-        .scope("thread", "t1")
-        .set(`__state:${testClientId}/bot`, {
-          status: "idle",
-          turn: 0,
-          usage: { input: 0, output: 0 },
-          ...record,
-        });
+      held = {
+        ...held,
+        keys: {
+          ...held.keys,
+          [`__state:${testClientId}/bot`]: {
+            v: JSON.stringify({
+              status: "idle",
+              turn: 0,
+              usage: { input: 0, output: 0 },
+              ...record,
+            }),
+          },
+        },
+      };
     };
 
-    return { agent, sent, lastRun, seed, store, client };
+    return {
+      agent,
+      sent,
+      lastRun,
+      seed,
+      store,
+      client,
+      /**
+       * What the thread holds now, to hand to the next run.
+       */
+      thread: () => {
+        return held;
+      },
+    };
   };
 
   test("is one function of the agent, listening for how its runs end", () => {
-    const { agent } = setup();
+    const { agent, thread } = setup();
 
     expect(agent.finished.id()).toContain("bot-finished");
   });
 
   test("a completed run is recorded", async () => {
-    const { agent, lastRun, sent } = setup();
+    const { agent, lastRun, sent, thread } = setup();
 
-    await run(agent.finished, { event: finishedEvent("r1", "Completed") });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Completed"),
+      thread: thread(),
+    });
 
     expect(await lastRun()).toMatchObject({
       runId: "r1",
@@ -160,9 +210,12 @@ describe("the finished function", () => {
   });
 
   test("a cancelled run is recorded", async () => {
-    const { agent, lastRun, sent } = setup();
+    const { agent, lastRun, sent, thread } = setup();
 
-    await run(agent.finished, { event: finishedEvent("r1", "Cancelled") });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Cancelled"),
+      thread: thread(),
+    });
 
     expect(await lastRun()).toMatchObject({
       runId: "r1",
@@ -172,10 +225,11 @@ describe("the finished function", () => {
   });
 
   test("a failed run is recorded with its error", async () => {
-    const { agent, lastRun, sent } = setup();
+    const { agent, lastRun, sent, thread } = setup();
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", { name: "Error", message: "boom" }),
+      thread: thread(),
     });
 
     expect(await lastRun()).toMatchObject({
@@ -186,13 +240,14 @@ describe("the finished function", () => {
   });
 
   test("a run that failed with a NonRetriableError is recorded", async () => {
-    const { agent, lastRun, sent } = setup();
+    const { agent, lastRun, sent, thread } = setup();
 
     await run(agent.finished, {
       event: finishedEvent("r1", "Failed", {
         name: "NonRetriableError",
         message: "bad input",
       }),
+      thread: thread(),
     });
 
     expect(await lastRun()).toMatchObject({ status: "failed" });
@@ -209,23 +264,30 @@ describe("the finished function", () => {
   });
 
   test("a late report for an older run is still said after a newer run ended", async () => {
-    const { agent, sent } = setup();
+    const { agent, sent, thread } = setup();
     const newer = "01K00000000000000000000009";
     const older = "01J00000000000000000000001";
 
-    await run(agent.finished, { event: finishedEvent(newer, "Completed") });
+    await run(agent.finished, {
+      event: finishedEvent(newer, "Completed"),
+      thread: thread(),
+    });
     await run(agent.finished, {
       event: finishedEvent(older, "Failed", { name: "Error", message: "late" }),
+      thread: thread(),
     });
 
     expect(sent).toEqual([]);
   });
 
   test("the cleanup marking the thread idle does not touch lastRun", async () => {
-    const { agent, lastRun, seed, store, client } = setup();
+    const { agent, lastRun, seed, store, client, thread } = setup();
 
     await seed({ status: "waiting", runId: "r1" });
-    await run(agent.finished, { event: finishedEvent("r1", "Completed") });
+    await run(agent.finished, {
+      event: finishedEvent("r1", "Completed"),
+      thread: thread(),
+    });
     await run(
       client.createFunction(
         { id: "idle", triggers: [{ event: "x" }] },
@@ -240,7 +302,7 @@ describe("the finished function", () => {
   });
 
   test("a newer run on the thread is named in what is said", async () => {
-    const { agent, seed } = setup();
+    const { agent, seed, thread } = setup();
 
     await seed({ status: "running", runId: "01K00000000000000000000009" });
     await run(agent.finished, {
@@ -248,17 +310,22 @@ describe("the finished function", () => {
         name: "Error",
         message: "boom",
       }),
+      thread: thread(),
     });
   });
 
   test("a run that ended before a newer one's record does not overwrite it", async () => {
-    const { agent, lastRun } = setup();
+    const { agent, lastRun, thread } = setup();
     const newer = "01K00000000000000000000009";
     const older = "01J00000000000000000000001";
 
-    await run(agent.finished, { event: finishedEvent(newer, "Completed") });
+    await run(agent.finished, {
+      event: finishedEvent(newer, "Completed"),
+      thread: thread(),
+    });
     await run(agent.finished, {
       event: finishedEvent(older, "Failed", { name: "Error", message: "late" }),
+      thread: thread(),
     });
 
     expect((await lastRun())?.runId).toBe(newer);
@@ -274,43 +341,65 @@ describe("what the body is told", () => {
       content: "hi",
     },
   };
-  const seeded = async (
+  /**
+   * An agent whose thread already holds a record, and the writes its run sends
+   * back. The thread's holder is what hands a run its state and what takes its
+   * writes, so a test seeds the one and reads the other.
+   */
+  const seeded = (
     record: Record<string, unknown>,
     body: Parameters<typeof createAgentFunction>[2],
     lastRun?: LastRun,
   ) => {
     const client = new Inngest({ id: testClientId });
-    const store = freshKv();
 
-    if (lastRun) {
-      await store
-        .with(client)
-        .scope("thread", "t1")
-        .set(`__lastRun:${testClientId}/bot`, lastRun);
-    }
+    freshKv();
 
-    await store
-      .with(client)
-      .scope("thread", "t1")
-      .set(`__state:${testClientId}/bot`, {
-        status: "idle",
-        turn: 0,
-        usage: { input: 0, output: 0 },
-        ...record,
-      });
-
+    const held = {
+      ...emptySnapshot(),
+      fresh: false,
+      keys: {
+        ...(lastRun && {
+          [`__lastRun:${testClientId}/bot`]: { v: JSON.stringify(lastRun) },
+        }),
+        [`__state:${testClientId}/bot`]: {
+          v: JSON.stringify({
+            status: "idle",
+            turn: 0,
+            usage: { input: 0, output: 0 },
+            ...record,
+          }),
+        },
+      },
+    };
     const agent = createAgentFunction(client, { id: "bot" }, body);
-    const read = async () => {
-      return (await store
-        .with(client)
-        .scope("thread", "t1")
-        .get(`__state:${testClientId}/bot`)) as
-        | Record<string, unknown>
-        | undefined;
+
+    /**
+     * The record as the thread ends up holding it, from what the run wrote.
+     */
+    const read = (sent: { name: string; data?: unknown }[]) => {
+      const after = { ...held, keys: { ...held.keys } };
+
+      for (const event of sent) {
+        if (event.name !== "agent/thread.write") {
+          continue;
+        }
+
+        for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
+          applyThreadWrite(after, op);
+        }
+      }
+
+      const found = after.keys[`__state:${testClientId}/bot`];
+
+      return found
+        ? (JSON.parse(found.v) as Record<string, unknown>)
+        : undefined;
     };
 
-    return { agent, read };
+    return { agent, held, read };
   };
+
   const previous: LastRun = {
     runId: "old",
     status: "failed",
@@ -319,7 +408,7 @@ describe("what the body is told", () => {
   };
 
   test("previousRun is how the run before this one ended", async () => {
-    const { agent } = await seeded(
+    const { agent, held } = seeded(
       {},
       async (ctx) => {
         return ctx.previousRun;
@@ -327,72 +416,78 @@ describe("what the body is told", () => {
       previous,
     );
 
-    const { output } = await run(agent.fn, { event: trigger });
+    const { output } = await run(agent.fn, { event: trigger, thread: held });
 
     expect(output).toEqual(previous);
   });
 
   test("previousRun is undefined for a thread no run has ended on", async () => {
-    const { agent } = await seeded({}, async (ctx) => {
+    const { agent, held } = seeded({}, async (ctx) => {
       return ctx.previousRun ?? "none";
     });
 
-    const { output } = await run(agent.fn, { event: trigger });
+    const { output } = await run(agent.fn, { event: trigger, thread: held });
 
     expect(output).toBe("none");
   });
 
   test("the message in flight is kept until the run waits for the next one", async () => {
-    const { agent, read } = await seeded({}, async ({ inbox }) => {
+    const { agent, held, read } = seeded({}, async ({ inbox }) => {
       await inbox.next();
     });
 
-    await run(agent.fn, { event: trigger });
+    const { sent } = await run(agent.fn, { event: trigger, thread: held });
 
-    expect((await read())?.inflight).toEqual({ content: "hi" });
+    expect(read(sent)?.inflight).toEqual({ content: "hi" });
   });
 
   test("a run that begins without a message does not keep the one the run before it left", async () => {
-    const { agent, read } = await seeded(
+    const { agent, held, read } = seeded(
       { runId: "older-run", inflight: { content: "stale" } },
       async () => {},
     );
 
-    await run(agent.fn, {
+    const { sent } = await run(agent.fn, {
       event: {
         name: "agent/message",
         data: { agent: trigger.data.agent, thread: trigger.data.thread },
       },
+      thread: held,
     });
 
-    expect((await read())?.inflight).toBeUndefined();
+    expect(read(sent)?.inflight).toBeUndefined();
   });
 
   test("restarts counts the times the run continued in another process", async () => {
-    const { agent } = await seeded(
+    const { agent, held } = seeded(
       { runId: "run", host: "another-process", restarts: 1 },
       async (ctx) => {
         return ctx.restarts;
       },
     );
 
-    const { output } = await run(agent.fn, { event: trigger });
+    const { output } = await run(agent.fn, { event: trigger, thread: held });
 
     expect(output).toBe(2);
   });
 
   test("a run that began in this process has no restarts, and a new run starts at zero", async () => {
-    const same = await seeded({}, async (ctx) => {
+    const same = seeded({}, async (ctx) => {
       return ctx.restarts;
     });
-    const fresh = await seeded(
+    const fresh = seeded(
       { runId: "older-run", host: "another-process", restarts: 4 },
       async (ctx) => {
         return ctx.restarts;
       },
     );
 
-    expect((await run(same.agent.fn, { event: trigger })).output).toBe(0);
-    expect((await run(fresh.agent.fn, { event: trigger })).output).toBe(0);
+    expect(
+      (await run(same.agent.fn, { event: trigger, thread: same.held })).output,
+    ).toBe(0);
+    expect(
+      (await run(fresh.agent.fn, { event: trigger, thread: fresh.held }))
+        .output,
+    ).toBe(0);
   });
 });

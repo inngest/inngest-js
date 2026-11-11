@@ -674,26 +674,27 @@ export function createAgentFunction(
           };
         };
 
-        // The record and how the run before this one ended, in one step: both
-        // are reads of what this run already holds and writes that the thread
-        // applies, so the start costs one step and the write is safe to
-        // repeat if the step is retried.
-        const begun = await step.run(
-          { id: "thread:start", name: "Thread state" },
-          async () => {
-            // The warning rides on this step's metadata, so it is written
-            // once and costs no step.
-            if (data.fresh) {
-              traceWarning(
-                logger,
-                "thread.fresh",
-                `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
-              );
-            }
+        // The record and how the run before this one ended, read and written
+        // BETWEEN steps rather than inside one.
+        //
+        // This is not a style choice. A write to the thread is an event, so it
+        // is a step of its own, and a step cannot be issued inside another
+        // step's callback - the run would wait on itself. Writing from inside
+        // a `step.run` would also mean the write is applied to this run's own
+        // view only in the request where that callback actually ran: a replay
+        // skips a memoized callback, and the run would then read a view
+        // missing its own writes. Between steps, each write is its own
+        // memoized step and the view is rebuilt in the same order on every
+        // replay.
+        if (data.fresh) {
+          traceWarning(
+            logger,
+            "thread.fresh",
+            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+          );
+        }
 
-            return startWith(thread.key);
-          },
-        );
+        const begun = await startWith();
         const started = begun.started as ThreadRecord;
         const previousRun = begun.previousRun ?? undefined;
 
@@ -1202,7 +1203,12 @@ export function createAgentFunction(
           questions,
           ...(startMessage.id && { triggerId: startMessage.id }),
           agent: ref,
-          recordInStep: true,
+          // A turn is recorded BETWEEN steps, not inside the model call's own
+          // step. A write to the thread is an event and so a step of its own,
+          // and a write made inside a memoized callback is applied to this
+          // run's view only in the request where that callback ran: a replay
+          // skips it and the run reads a view missing its own writes.
+          recordInStep: false,
         });
 
         // Who started the thread and who opened this run, for the briefing. A

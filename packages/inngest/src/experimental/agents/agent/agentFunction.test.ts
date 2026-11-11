@@ -6,6 +6,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import { Inngest } from "../../../components/Inngest.ts";
+import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { Middleware } from "../../../components/middleware/middleware.ts";
 import {
   eventType,
@@ -18,6 +19,11 @@ import type { Kv } from "../kv/kv.ts";
 import type { AgentModelResponse, ModelMessage } from "../loop/loop.ts";
 import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
+import {
+  applyThreadWrite,
+  emptySnapshot,
+  type ThreadWriteOp,
+} from "../threads/threadProtocol.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { mintGrant, proofOf } from "./grant.ts";
@@ -27,6 +33,30 @@ import type { AgentFunctionConfig } from "./types.ts";
 beforeEach(() => {
   freshKv();
 });
+
+/**
+ * The sources a thread's holder subscribes with. Every source a definition
+ * names belongs to the thread, not to the agent run: the agent subscribes to
+ * forwards and nothing else.
+ */
+const threadSources = async (
+  holder: InngestFunction.Any,
+  thread = "t1",
+): Promise<{ event: string; if?: string }[]> => {
+  const held = await run(holder, {
+    forward: false,
+    event: {
+      name: "inngest/function.invoked",
+      data: { agent: `${testClientId}/bot`, thread, generation: 1 },
+    },
+  });
+
+  return held.ops.flatMap((op) => {
+    return (
+      (op.opts as { sources?: { event: string; if?: string }[] })?.sources ?? []
+    );
+  });
+};
 
 const say = (text: string): AgentModelResponse => {
   return {
@@ -202,7 +232,8 @@ describe("agent function", () => {
 
     const { output, ops } = await run(fn, {
       event: trigger("go"),
-      arrive: [{ event: message("user", "early"), at: "thread:start" }],
+      // While the thread starts: the run is asking its thread for state.
+      arrive: [{ event: message("user", "early"), at: "thread:read" }],
     });
 
     expect(output).toEqual(["go", "early"]);
@@ -373,7 +404,7 @@ describe("inbox sources", () => {
 
   test("a configured source maps to the thread and its events are user messages for the model", async () => {
     const filters: unknown[] = [];
-    const { fn } = createAgentFunction(
+    const { fn, threadHolder } = createAgentFunction(
       makeClient(),
       {
         id: "bot",
@@ -404,18 +435,15 @@ describe("inbox sources", () => {
         ci("red"),
         { name: "deploy/done", data: { t: "t1", v: "1.2" } },
       ],
-      onOp: (op) => {
-        const opts = op.opts as
-          | { sources?: { event: string; if?: string }[] }
-          | undefined;
-
-        for (const source of opts?.sources ?? []) {
-          if (source.event === "ci/status" || source.event === "deploy/done") {
-            filters.push([source.event, source.if]);
-          }
-        }
-      },
     });
+
+    // The filters belong to the thread, which is what subscribes to a
+    // definition's sources; the agent run subscribes to forwards.
+    for (const source of await threadSources(threadHolder)) {
+      if (source.event === "ci/status" || source.event === "deploy/done") {
+        filters.push([source.event, source.if]);
+      }
+    }
 
     expect(output).toEqual([
       "ci/status",
@@ -651,7 +679,7 @@ describe("inbox sources", () => {
 
   test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
     const names = ["reply", "reaction", "mention", "tap", "dry"] as const;
-    const { fn } = createAgentFunction(
+    const { fn, threadHolder } = createAgentFunction(
       makeClient(),
       {
         id: "improver",
@@ -676,7 +704,7 @@ describe("inbox sources", () => {
       },
     );
 
-    const { output, ops } = await run(fn, {
+    const { output } = await run(fn, {
       event: trigger("go"),
       incoming: names.map((name) => {
         return { name: `chat/${name}`, data: { thread: "t1" }, stream: 4 };
@@ -685,12 +713,8 @@ describe("inbox sources", () => {
 
     expect(output).toEqual(names.map((name) => `chat/${name}`));
 
-    const sources = ops.flatMap((op) => {
-      return (
-        (op.opts as { sources?: { event: string; if?: string }[] })?.sources ??
-        []
-      );
-    });
+    // One inbox, and it is the thread's: five sources in one subscription.
+    const sources = await threadSources(threadHolder);
 
     // The if is handed to the executor as written: `event` is the trigger.
     expect(
@@ -892,18 +916,49 @@ describe("createAgents", () => {
 });
 
 describe("thread state", () => {
+  /**
+   * The record as the run holds it, read the way the run's own code would:
+   * `kv.thread` inside a run reads what it already has.
+   */
   const record = async (kv: Kv) => {
     const found = await kv
       .with({ id: testClientId, env: null })
       .scope("thread", "t1")
       .get(`__state:${testClientId}/bot`);
 
-    // The status changes with their times are not part of what state() shows.
+    // The status changes with their times are not part of the record's shape
+    // that these tests are about.
     const { transitions: _transitions, ...rest } = (found ?? {}) as {
       transitions?: unknown;
     };
 
     return found ? rest : found;
+  };
+
+  /**
+   * The record as the THREAD ends up holding it, from the writes the run sent
+   * it. Thread state lives in the thread's holder, so this is what a later run
+   * would be handed: there is nothing to read from a store afterwards.
+   */
+  const recorded = (sent: { name: string; data?: unknown }[]) => {
+    const state = emptySnapshot();
+
+    for (const event of sent) {
+      if (event.name !== "agent/thread.write") {
+        continue;
+      }
+
+      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
+        applyThreadWrite(state, op);
+      }
+    }
+
+    const held = state.keys[`__state:${testClientId}/bot`];
+    const { transitions: _transitions, ...rest } = (
+      held ? JSON.parse(held.v) : {}
+    ) as { transitions?: unknown };
+
+    return held ? rest : undefined;
   };
 
   test("the run, each turn and the wait for the next message write what state() shows", async () => {
@@ -931,7 +986,7 @@ describe("thread state", () => {
       },
     );
 
-    await run(fn, { event: trigger("one") });
+    const { sent } = await run(fn, { event: trigger("one") });
 
     expect([...seen.values()]).toMatchObject([
       {
@@ -944,7 +999,9 @@ describe("thread state", () => {
         restarts: 0,
       },
     ]);
-    expect(await record(kv)).toMatchObject({ status: "running" });
+    // And the thread was told the same thing, which is what a later run is
+    // handed.
+    expect(recorded(sent)).toMatchObject({ status: "running", turn: 1 });
   });
 
   test("a message waited for after the first marks the thread waiting", async () => {
@@ -959,13 +1016,13 @@ describe("thread state", () => {
     );
 
     // The second read finds nothing, so the run ends waiting.
-    await run(fn, { event: trigger("one") });
+    const { sent } = await run(fn, { event: trigger("one") });
 
-    expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
+    expect(recorded(sent)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
   test("a batch waited for after the first marks the thread waiting", async () => {
-    const kv = freshKv();
+    freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -977,9 +1034,9 @@ describe("thread state", () => {
     );
 
     // The second read finds nothing, so the run ends waiting.
-    await run(fn, { event: trigger("one") });
+    const { sent } = await run(fn, { event: trigger("one") });
 
-    expect(await record(kv)).toMatchObject({ status: "waiting", runId: "run" });
+    expect(recorded(sent)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
   test("a delivered batch after the first marks the thread running with its message in flight", async () => {
@@ -1048,67 +1105,59 @@ describe("thread state", () => {
   });
 
   test("a finished run marks its own record idle and leaves a newer run's alone", async () => {
-    const kv = freshKv();
+    freshKv();
+
     const { cleanup } = createAgentFunction(
       makeClient(),
       { id: "bot" },
       async () => {},
     );
-    const thread = kv
-      .with({ id: testClientId, env: null })
-      .scope("thread", "t1");
     const base = { turn: 2, usage: { input: 1, output: 1 } };
-    await thread.set(`__state:${testClientId}/bot`, {
-      ...base,
-      status: "running",
-      runId: "r1",
-    });
-
-    await run(cleanup, {
-      event: {
-        name: "inngest/deferred.schedule",
-        data: {
-          runId: "r1",
-          thread: "t1",
-          _inngest: {
-            fn_slug: `${testClientId}-bot-cleanup`,
-            parent_fn_slug: `${testClientId}-bot`,
-            parent_run_id: "r1",
+    const holding = (over: Record<string, unknown>) => {
+      return {
+        ...emptySnapshot(),
+        fresh: false,
+        keys: {
+          [`__state:${testClientId}/bot`]: {
+            v: JSON.stringify({ ...base, ...over }),
           },
         },
+      };
+    };
+    const deferred = {
+      name: "inngest/deferred.schedule",
+      data: {
+        runId: "r1",
+        thread: "t1",
+        _inngest: {
+          fn_slug: `${testClientId}-bot-cleanup`,
+          parent_fn_slug: `${testClientId}-bot`,
+          parent_run_id: "r1",
+        },
       },
+    };
+
+    // The thread hands the cleanup the record its run left, and the cleanup
+    // tells the thread what to make of it: there is no store between them.
+    const mine = await run(cleanup, {
+      event: deferred,
+      thread: holding({ status: "running", runId: "r1" }),
     });
 
-    expect(await thread.get(`__state:${testClientId}/bot`)).toMatchObject({
+    expect(recorded(mine.sent)).toMatchObject({
       status: "idle",
       runId: "r1",
       turn: 2,
     });
 
-    await thread.set(`__state:${testClientId}/bot`, {
-      ...base,
-      status: "running",
-      runId: "r2",
-    });
-    await run(cleanup, {
-      event: {
-        name: "inngest/deferred.schedule",
-        data: {
-          runId: "r1",
-          thread: "t1",
-          _inngest: {
-            fn_slug: `${testClientId}-bot-cleanup`,
-            parent_fn_slug: `${testClientId}-bot`,
-            parent_run_id: "r1",
-          },
-        },
-      },
+    // A newer run holds the record, so this one leaves it alone.
+    const newer = await run(cleanup, {
+      event: deferred,
+      thread: holding({ status: "running", runId: "r2" }),
     });
 
-    expect(await thread.get(`__state:${testClientId}/bot`)).toMatchObject({
-      status: "running",
-      runId: "r2",
-    });
+    // Nothing was written, so the thread keeps what the newer run left.
+    expect(recorded(newer.sent)).toBeUndefined();
   });
 });
 
@@ -1274,9 +1323,26 @@ describe("inherited limits persist on the thread", () => {
         return "started";
       },
     );
-    await run(fn, { event: granted("go", ["depth=0"]) });
+    // The first run keeps what it inherited on the thread, as a write; the
+    // thread is what hands it to the next run, so the second run is given
+    // what the first one wrote.
+    const first = await run(fn, { event: granted("go", ["depth=0"]) });
+    const held = emptySnapshot();
 
-    const { output } = await run(fn, { event: trigger("again") });
+    for (const event of first.sent) {
+      if (event.name !== "agent/thread.write") {
+        continue;
+      }
+
+      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
+        applyThreadWrite(held, op);
+      }
+    }
+
+    const { output } = await run(fn, {
+      event: trigger("again"),
+      thread: { ...held, fresh: false },
+    });
 
     expect(output).toContain("/leaf was not started");
   });
@@ -1364,7 +1430,7 @@ describe("an inbox source with nothing at its thread path", () => {
       id: testClientId,
       logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() },
     });
-    const { fn } = createAgentFunction(
+    const { fn, threadHolder } = createAgentFunction(
       client,
       {
         id: "bot",
@@ -1379,7 +1445,7 @@ describe("an inbox source with nothing at its thread path", () => {
       },
     );
 
-    return { fn, warn };
+    return { fn, threadHolder, warn };
   };
 
   test("reaches no thread: the run drops it and the log warns", async () => {
@@ -1408,21 +1474,13 @@ describe("an inbox source with nothing at its thread path", () => {
   });
 
   test("the agent-wide thread expression fills in for a source with none", async () => {
-    const filters: string[] = [];
-    const { fn } = sourced({
+    const { threadHolder } = sourced({
       inbox: [{ event: "ci/status", if: 'async.data.state == "red"' }],
       thread: "event.data.t",
     });
-
-    await run(fn, {
-      event: trigger("go"),
-      onOp: (op) => {
-        const opts = op.opts as { sources?: { event: string; if?: string }[] };
-
-        for (const source of opts.sources ?? []) {
-          filters.push(`${source.event}: ${source.if}`);
-        }
-      },
+    // The thread subscribes to the sources, so the filter is its own.
+    const filters = (await threadSources(threadHolder)).map((source) => {
+      return `${source.event}: ${source.if}`;
     });
 
     expect(filters).toContain(
@@ -1520,8 +1578,25 @@ describe("the loop in an agent", () => {
       },
     );
 
-    await run(fn, { event: trigger("first") });
-    await run(fn, { event: trigger("second") });
+    // The thread holds the history: the first run writes it there, and the
+    // second is handed it when it obtains the thread's state.
+    const first = await run(fn, { event: trigger("first") });
+    const held = emptySnapshot();
+
+    for (const event of first.sent) {
+      if (event.name !== "agent/thread.write") {
+        continue;
+      }
+
+      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
+        applyThreadWrite(held, op);
+      }
+    }
+
+    await run(fn, {
+      event: trigger("second"),
+      thread: { ...held, fresh: false },
+    });
 
     expect(remembered.requests[0]?.messages).toHaveLength(1);
     expect(remembered.requests[1]?.messages.length).toBeGreaterThan(2);
