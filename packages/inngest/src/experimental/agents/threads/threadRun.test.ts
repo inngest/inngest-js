@@ -298,10 +298,18 @@ describe("an agent run and its thread", () => {
       (took?.data as { ops: { kind: string; seq?: number }[] }).ops.at(-1),
     ).toEqual({ kind: "take", seq: 2 });
 
-    // Every write names itself, and the id is the run and a count of its
-    // writes: a replay derives the same one, and the thread keys its log on it.
+    // Every write names itself. A change is named by the run and a count of
+    // its writes; a CONFIRMATION is named by the position it confirms, because
+    // it is a fact rather than a change and is issued from a place that does
+    // not re-execute.
     for (const write of writes) {
-      expect((write.data as { id?: string }).id).toMatch(/^run:\d+$/);
+      const id = String((write.data as { id?: string }).id);
+      const ops = (write.data as { ops?: { kind: string }[] }).ops ?? [];
+      const factual = ops.every((op) => {
+        return op.kind === "take";
+      });
+
+      expect(id).toMatch(factual ? /^run:take:\d+$/ : /^run:\d+$/);
     }
   });
 });
@@ -1002,5 +1010,66 @@ describe("an entry that arrives while the run works", () => {
     // from whatever the final request re-derived, so a batch handed over in an
     // earlier request leaves the thread where it was.
     expect(takes).toEqual([1, 2]);
+  });
+});
+
+describe("a confirmation is never refused", () => {
+  test("a write of nothing but takes is applied even when its id was seen", () => {
+    const state = held({ seq: 9, taken: 0 });
+    const confirm = {
+      agent: ref,
+      thread: "t1",
+      id: "run:take:4",
+      ops: [{ kind: "take" as const, seq: 4 }],
+    };
+
+    expect(applyThreadWriteEvent(state, confirm)).toBe(true);
+    expect(state.taken).toBe(4);
+
+    // The dedupe is there to stop a stale CHANGE reverting a newer one. A
+    // confirmation is not a change: it says how far a run has read, the
+    // maximum is what applies it, and applying it again is a no-op. There is
+    // nothing for the dedupe to protect and plenty for it to break - a refused
+    // confirmation leaves the watermark where it was, and the thread hands
+    // those entries to the next run, which answers them again.
+    expect(applyThreadWriteEvent(state, confirm)).toBe(true);
+    expect(state.taken).toBe(4);
+
+    expect(
+      applyThreadWriteEvent(state, {
+        ...confirm,
+        ops: [{ kind: "take" as const, seq: 7 }],
+      }),
+    ).toBe(true);
+    expect(state.taken).toBe(7);
+
+    // And it never goes backwards, whichever order they arrive in.
+    expect(
+      applyThreadWriteEvent(state, {
+        ...confirm,
+        id: "run:take:2",
+        ops: [{ kind: "take" as const, seq: 2 }],
+      }),
+    ).toBe(true);
+    expect(state.taken).toBe(7);
+  });
+
+  test("a change is still refused when its id was seen", () => {
+    const state = held();
+    const change = {
+      agent: ref,
+      thread: "t1",
+      id: "run:3",
+      ops: [{ kind: "set" as const, key: "k", value: '"first"' }],
+    };
+
+    expect(applyThreadWriteEvent(state, change)).toBe(true);
+    expect(
+      applyThreadWriteEvent(state, {
+        ...change,
+        ops: [{ kind: "set" as const, key: "k", value: '"second"' }],
+      }),
+    ).toBe(false);
+    expect(state.keys.k?.v).toBe('"first"');
   });
 });

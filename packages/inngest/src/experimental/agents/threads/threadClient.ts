@@ -366,6 +366,52 @@ export const obtainThreadState = async (options: {
     const base = "thread:write";
     const executing = getAsyncCtxSync()?.execution?.executingStep;
 
+    // A CONFIRMATION IS NAMED BY WHAT IT SAYS, NOT BY WHEN IT WAS SAID.
+    //
+    // `take` is the one op that is a fact rather than a change: it says "this
+    // run has read up to here", the thread applies it with a maximum, and
+    // saying it twice means nothing. So its id is derived from the position,
+    // and two confirmations of the same position are the same id by
+    // construction.
+    //
+    // The counters below cannot name it. They count the writes a run has
+    // issued, which only re-derives the same number if the write is issued
+    // from a place that re-executes - and a confirmation is issued where a
+    // batch is HANDED OVER, which is a place that does not. A later request
+    // then starts counting from zero again and hands its writes ids that the
+    // earlier confirmations already used, so the thread drops them as repeats.
+    // That is what stalled the watermark at 0 with a single confirmation in
+    // the stream: sent, and silently refused.
+    const taken = ops.every((op) => {
+      return op.kind === "take";
+    })
+      ? ops.reduce((top, op) => {
+          return op.kind === "take" ? Math.max(top, op.seq) : top;
+        }, 0)
+      : undefined;
+
+    if (taken !== undefined) {
+      const payload = threadWrite.create({
+        agent: ref,
+        thread,
+        id: `${runId}:take:${taken}`,
+        ops,
+        run: runId,
+      });
+
+      if (executing?.id) {
+        await client.send(payload);
+
+        return;
+      }
+
+      // Named by the position too, so confirming the same position twice is
+      // one step and one event however the run got there.
+      await step.sendEvent(`thread:take:${taken}`, payload);
+
+      return;
+    }
+
     // A WRITE ID MUST BE A PURE FUNCTION OF DURABLE VALUES, AND EVERY VALUE IT
     // DEPENDS ON MUST BE PRESENT ON EVERY PATH THAT PRODUCES ONE. The second
     // half is the half that bites: a value that can be absent, with a fallback

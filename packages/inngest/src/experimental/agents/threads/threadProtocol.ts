@@ -255,7 +255,25 @@ export const applyThreadWriteEvent = (
 
   const seen = state.writes;
 
-  if (write.id !== undefined && seen.includes(write.id)) {
+  // A write of nothing but `take` ops is never refused, whatever its id.
+  //
+  // The dedupe is there for a change that must not be applied twice - a stale
+  // `set` arriving after a newer one would revert a key. A `take` is not a
+  // change: it says how far a run has read, the maximum below is what applies
+  // it, and applying it again is a no-op. So there is nothing for the dedupe
+  // to protect, and plenty for it to break: a refused confirmation leaves the
+  // watermark where it was, so the thread hands those entries to the next run,
+  // which answers them again. Measured, three times in twenty.
+  //
+  // This is the belt beside the braces. Confirmations are named by the
+  // position they confirm (see `threadClient.ts`), so an id collision should
+  // be unreachable - and if one is ever reachable again, it costs nothing
+  // instead of stalling the thread.
+  const factual = write.ops?.every((op) => {
+    return op.kind === "take";
+  });
+
+  if (!factual && write.id !== undefined && seen.includes(write.id)) {
     return false;
   }
 
