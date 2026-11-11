@@ -9,6 +9,12 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { eventType } from "../../../components/triggers/triggers.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
+import {
+  applyThreadWriteEvent,
+  emptySnapshot,
+  type ThreadSnapshot,
+  type ThreadWriteData,
+} from "../threads/threadProtocol.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
 import { freshKv, run } from "./test-helpers.ts";
@@ -161,6 +167,8 @@ describe("the handler's event, thread and inbox", () => {
     expect(Object.keys(seen.thread as object)).toEqual([
       "key",
       "report",
+      "listen",
+      "unlisten",
       "message",
     ]);
   });
@@ -195,14 +203,11 @@ describe("a trigger with nothing at its thread path", () => {
     });
 
     expect(key).toMatch(/^fresh:/);
+    // The warning is said through the client's own logger rather than on a
+    // step: the thread's bookkeeping happens between steps now, and the
+    // handler's logger is quiet while a run replays.
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("event.data.pr"));
-    expect(
-      steps.find((step) => step.name === "thread:start")?.metadata,
-    ).toEqual([
-      expect.objectContaining({
-        kind: "inngest.warning.sdk.agent.thread.fresh",
-      }),
-    ]);
+    expect(steps.length).toBeGreaterThan(0);
   });
 
   test("a trigger whose path is there joins the thread it names, with no thread warning", async () => {
@@ -254,9 +259,30 @@ describe("a message after the run ended", () => {
         return before;
       },
     );
+
+    // The thread is what carries a key from one run to the next: the first run
+    // writes it there and the second is handed it when it starts. Two threads
+    // never see each other's, because each has its own holder.
+    const held = new Map<string, ThreadSnapshot>();
     const send = async (id: string) => {
-      return (await run(fn, { event: { name: "shop/order", data: { id } } }))
-        .output;
+      const thread = held.get(id) ?? { ...emptySnapshot(), fresh: false };
+      const { output, sent } = await run(fn, {
+        event: { name: "shop/order", data: { id } },
+        thread,
+      });
+      const after = { ...thread, keys: { ...thread.keys } };
+
+      for (const event of sent) {
+        if (event.name !== "agent/thread.write") {
+          continue;
+        }
+
+        applyThreadWriteEvent(after, event.data as ThreadWriteData);
+      }
+
+      held.set(id, after);
+
+      return output;
     };
 
     expect(await send("o1")).toBeNull();

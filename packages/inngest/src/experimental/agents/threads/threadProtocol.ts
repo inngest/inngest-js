@@ -237,6 +237,44 @@ export const applyThreadWrite = (
 };
 
 /**
+ * Applies one write EVENT to the state, with the dedupe the thread's holder
+ * applies: a write whose id the thread has already seen is a no-op.
+ *
+ * The holder uses this, and so must anything that works out what a thread ends
+ * up holding - a test included. Replaying the ops without the dedupe says a
+ * thread holds things it does not, which is how a passing test can sit over a
+ * mechanism that does not work.
+ *
+ * @returns Whether the write was applied; `false` means the thread had seen it.
+ */
+export const applyThreadWriteEvent = (
+  state: ThreadSnapshot,
+  write: ThreadWriteData,
+): boolean => {
+  state.writes ??= [];
+
+  const seen = state.writes;
+
+  if (write.id !== undefined && seen.includes(write.id)) {
+    return false;
+  }
+
+  for (const op of write.ops ?? []) {
+    applyThreadWrite(state, op);
+  }
+
+  if (write.id !== undefined) {
+    seen.push(write.id);
+
+    if (seen.length > rememberedWrites) {
+      seen.splice(0, seen.length - rememberedWrites);
+    }
+  }
+
+  return true;
+};
+
+/**
  * What an agent run's read asks for: the thread's state, sent back as a signal
  * so the answer reaches this run and no other.
  */

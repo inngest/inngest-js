@@ -20,9 +20,9 @@ import type { AgentModelResponse, ModelMessage } from "../loop/loop.ts";
 import { model } from "../loop/loopKit.ts";
 import { sandbox } from "../sandboxes/defs.ts";
 import {
-  applyThreadWrite,
+  applyThreadWriteEvent,
   emptySnapshot,
-  type ThreadWriteOp,
+  type ThreadWriteData,
 } from "../threads/threadProtocol.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { createAgents } from "./agents.ts";
@@ -948,9 +948,7 @@ describe("thread state", () => {
         continue;
       }
 
-      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
-        applyThreadWrite(state, op);
-      }
+      applyThreadWriteEvent(state, event.data as ThreadWriteData);
     }
 
     const held = state.keys[`__state:${testClientId}/bot`];
@@ -1334,9 +1332,7 @@ describe("inherited limits persist on the thread", () => {
         continue;
       }
 
-      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
-        applyThreadWrite(held, op);
-      }
+      applyThreadWriteEvent(held, event.data as ThreadWriteData);
     }
 
     const { output } = await run(fn, {
@@ -1588,9 +1584,7 @@ describe("the loop in an agent", () => {
         continue;
       }
 
-      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
-        applyThreadWrite(held, op);
-      }
+      applyThreadWriteEvent(held, event.data as ThreadWriteData);
     }
 
     await run(fn, {

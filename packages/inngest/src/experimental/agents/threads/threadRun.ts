@@ -76,7 +76,7 @@ import {
   quote,
 } from "../inbox/threadInbox.ts";
 import {
-  applyThreadWrite,
+  applyThreadWriteEvent,
   emptySnapshot,
   forwardStateLimit,
   isThreadControl,
@@ -461,30 +461,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
               break;
             }
             case threadWrite.name: {
-              const write = message.data as ThreadWriteData;
-
-              state.writes ??= [];
-
-              const seen = state.writes;
-
               // The log is keyed on the write's id. A write can reach the
               // holder twice - a step's retry sends it again - and applying it
               // twice would put the same change in the log twice.
-              if (write.id !== undefined && seen.includes(write.id)) {
-                break;
-              }
-
-              for (const op of write.ops ?? []) {
-                applyThreadWrite(state, op);
-              }
-
-              if (write.id !== undefined) {
-                seen.push(write.id);
-
-                if (seen.length > rememberedWrites) {
-                  seen.splice(0, seen.length - rememberedWrites);
-                }
-              }
+              applyThreadWriteEvent(state, message.data as ThreadWriteData);
 
               break;
             }

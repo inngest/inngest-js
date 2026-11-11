@@ -7,9 +7,9 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import {
-  applyThreadWrite,
+  applyThreadWriteEvent,
   emptySnapshot,
-  type ThreadWriteOp,
+  type ThreadWriteData,
 } from "../threads/threadProtocol.ts";
 import { createAgentFunction } from "./agentFunction.ts";
 import { freshKv, run } from "./test-helpers.ts";
@@ -215,9 +215,7 @@ describe("messages folded into a live run", () => {
         continue;
       }
 
-      for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
-        applyThreadWrite(held, op);
-      }
+      applyThreadWriteEvent(held, event.data as ThreadWriteData);
     }
 
     const record = held.keys[`__state:${testClientId}/bot`];

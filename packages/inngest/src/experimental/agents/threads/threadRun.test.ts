@@ -11,6 +11,7 @@ import { createAgentFunction } from "../agent/agentFunction.ts";
 import { freshKv, run } from "../agent/test-helpers.ts";
 import {
   applyThreadWrite,
+  applyThreadWriteEvent,
   emptySnapshot,
   generationKey,
   listenSignal,
@@ -683,5 +684,77 @@ describe("the watermark", () => {
     // Without this the thread would hand that entry to every later run on the
     // thread, for ever, and the log would never get shorter.
     expect(takes).toContain(1);
+  });
+});
+
+describe("write ids", () => {
+  /**
+   * The ids of the writes a run sent, in order.
+   */
+  const idsOf = (sent: { name: string; data?: unknown }[]) => {
+    return sent.flatMap((event) => {
+      return event.name === "agent/thread.write"
+        ? [(event.data as { id?: string }).id]
+        : [];
+    });
+  };
+
+  test("two writes from one run are two writes, wherever they are made from", async () => {
+    freshKv();
+
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox, kv, step }) => {
+        await inbox.next();
+
+        // Between steps.
+        await kv.thread.set("one", 1);
+
+        // And from inside a step's callback, which is the path that cannot
+        // issue a step of its own and sends the event directly.
+        await step.run("work", async () => {
+          await kv.thread.set("two", 2);
+          await kv.thread.set("three", 3);
+
+          return null;
+        });
+
+        // And between steps again, AFTER the callback. On a replay the
+        // callback does not run again, so a counter the callback shares with
+        // this write is one behind: this is the write that used to collide
+        // with one made inside the callback, and be dropped by the thread.
+        await kv.thread.set("four", 4);
+
+        return null;
+      },
+    );
+    const { sent } = await run(made.fn, { event: message("go") });
+    const ids = idsOf(sent);
+
+    // Every write is its own write. An id that repeats is not a duplicate
+    // write: the thread keys its log on the id, so the second one is DROPPED,
+    // and nothing anywhere says so.
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("the thread drops a write whose id it has already applied", () => {
+    const state = held();
+    const write = {
+      agent: ref,
+      thread: "t1",
+      id: "run:7",
+      ops: [{ kind: "set" as const, key: "k", value: '"first"' }],
+    };
+
+    expect(applyThreadWriteEvent(state, write)).toBe(true);
+    expect(
+      applyThreadWriteEvent(state, {
+        ...write,
+        ops: [{ kind: "set" as const, key: "k", value: '"second"' }],
+      }),
+    ).toBe(false);
+    expect(state.keys.k?.v).toBe('"first"');
   });
 });

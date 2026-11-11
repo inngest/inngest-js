@@ -7,9 +7,9 @@
 import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import {
-  applyThreadWrite,
+  applyThreadWriteEvent,
   emptySnapshot,
-  type ThreadWriteOp,
+  type ThreadWriteData,
 } from "../threads/threadProtocol.ts";
 import { markThreadIdle } from "../threads/threadState.ts";
 import { createAgentFunction } from "./agentFunction.ts";
@@ -133,9 +133,7 @@ describe("the finished function", () => {
           continue;
         }
 
-        for (const op of event.data?.ops ?? []) {
-          applyThreadWrite(held, op);
-        }
+        applyThreadWriteEvent(held, event.data as ThreadWriteData);
       }
     };
     const keyed = <T>(key: string): T | undefined => {
@@ -385,9 +383,7 @@ describe("what the body is told", () => {
           continue;
         }
 
-        for (const op of (event.data as { ops?: ThreadWriteOp[] }).ops ?? []) {
-          applyThreadWrite(after, op);
-        }
+        applyThreadWriteEvent(after, event.data as ThreadWriteData);
       }
 
       const found = after.keys[`__state:${testClientId}/bot`];

@@ -233,31 +233,73 @@ export const obtainThreadState = async (options: {
    * is the only writer and a write that reaches no live thread run reaches
    * nothing, which is accepted.
    */
+  // How many writes this run has made from inside each step's callback, by the
+  // step. A callback is not re-run on a replay, so its writes cannot share a
+  // counter with the ones made between steps: that counter is consumed again
+  // on every replay and the callback's is not, so the two paths drift into
+  // each other and produce the same id twice.
+  const inStepWrites = new Map<string, number>();
+
   const write = async (ops: ThreadWriteOp[]) => {
     const base = "thread:write";
-    const nth = instance ? nextCount(instance, base) : 0;
-    // A pure function of durable values: the run, and how many writes this run
-    // has made. The thread keys its log on it, so a write that reaches it twice
-    // is applied once. Never a clock and never a module-level counter.
-    const id = `${runId}:${nth}`;
-    const payload = threadWrite.create({
-      agent: ref,
-      thread,
-      id,
-      ops,
-      run: runId,
-    });
+    const executing = getAsyncCtxSync()?.execution?.executingStep;
 
-    // Inside a step's callback a step cannot be issued - the run would wait on
-    // itself - so the write is sent directly. A retry of that step sends it
-    // again, which is exactly what the write id is for.
-    if (getAsyncCtxSync()?.execution?.executingStep) {
-      await client.send(payload);
+    // A WRITE ID MUST BE A PURE FUNCTION OF DURABLE VALUES, AND EVERY VALUE IT
+    // DEPENDS ON MUST BE PRESENT ON EVERY PATH THAT PRODUCES ONE. The second
+    // half is the half that bites: a value that can be absent, with a fallback
+    // that is not unique, turns an idempotency key into a silencer. The thread
+    // keys its log on this id, so a repeat is not a duplicate write - it is a
+    // DROPPED one, with nothing anywhere saying so. The symptom is an agent
+    // that does not remember.
+    //
+    // So the two paths have their own namespaces, and each uses only what is
+    // present on it:
+    //
+    // - between steps, the run's own count of them, which a replay re-derives
+    //   because it re-executes the same code in the same order;
+    // - inside a step's callback, the step's id and a count within it, because
+    //   the callback is not re-run on a replay and a retry of it runs the same
+    //   writes in the same order.
+    if (executing?.id) {
+      const nth = inStepWrites.get(executing.id) ?? 0;
+
+      inStepWrites.set(executing.id, nth + 1);
+
+      // Inside a step's callback a step cannot be issued - the run would wait
+      // on itself - so the write is sent directly. A retry of that step sends
+      // it again, which is exactly what the id is for.
+      await client.send(
+        threadWrite.create({
+          agent: ref,
+          thread,
+          id: `${runId}:${executing.id}:${nth}`,
+          ops,
+          run: runId,
+        }),
+      );
 
       return;
     }
 
-    await step.sendEvent(nth === 0 ? base : `${base}:${nth}`, payload);
+    if (!instance) {
+      // Nothing to count with, and a shared fallback would collide. Say so.
+      throw new Error(
+        "A write to a thread needs a run to count it: `kv.thread.set` works inside an agent run, and the id of a write must be unique to it.",
+      );
+    }
+
+    const nth = nextCount(instance, base);
+
+    await step.sendEvent(
+      nth === 0 ? base : `${base}:${nth}`,
+      threadWrite.create({
+        agent: ref,
+        thread,
+        id: `${runId}:${nth}`,
+        ops,
+        run: runId,
+      }),
+    );
   };
 
   const text = (value: unknown) => {
