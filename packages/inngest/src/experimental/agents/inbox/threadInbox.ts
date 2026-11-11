@@ -206,6 +206,15 @@ interface ThreadSources {
    * subscribed to, and the same event must not become two messages.
    */
   seen?: (raw: UntypedInboxMessage) => boolean;
+
+  /**
+   * Called with each batch as it is handed over, so the run can confirm to its
+   * thread how far it has read. Awaited, because confirming is a write and it
+   * belongs in the request where the delivery happened: a position confirmed
+   * at the end of a run is a position derived from whatever the final request
+   * re-executed, which is not the same thing.
+   */
+  took?: (messages: UntypedInboxMessage[]) => Promise<void>;
 }
 
 /**
@@ -423,6 +432,15 @@ export function threadInbox(
         }
       }
     }
+
+    // What came from the thread's log is confirmed to the thread HERE, where
+    // it is handed over, and not from a count kept in the run and written when
+    // the run ends. A run only re-executes what it re-executes, so a batch
+    // handed over in an earlier request raises nothing in the last one, and
+    // the end-of-run version wrote a position that had been reset to where it
+    // started. Nothing failed: the thread kept handing those entries to every
+    // later run, which answered them again.
+    await sources.took?.(kept);
 
     return kept;
   }

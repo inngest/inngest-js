@@ -127,9 +127,11 @@ import {
   threadSessions,
 } from "../threads/thread.ts";
 import {
+  atPosition,
   entryAsMessage,
   forwardedEntries,
   obtainThreadState,
+  positionOf,
   threadKeysFor,
 } from "../threads/threadClient.ts";
 import {
@@ -846,6 +848,25 @@ export function createAgentFunction(
           }),
         );
         const pending = threadState.pending();
+
+        // The event that started the run, when the thread holds it as an entry
+        // too, carries that entry's position. It is handed over as the run's
+        // own event rather than as a message leading the inbox, so this is the
+        // only way its position is ever confirmed - and a run whose only entry
+        // is the one that started it would otherwise leave the watermark where
+        // it was, and every later run would be handed that entry again.
+        const startedAt = pending.find((entry) => {
+          return (
+            entry.id !== undefined &&
+            entry.id !== "" &&
+            entry.id === startMessage.id
+          );
+        });
+
+        if (startedAt) {
+          atPosition(startMessage, startedAt.seq);
+        }
+
         const caughtUp = pending.filter((entry) => {
           return (
             !batched.has(entry.seq) &&
@@ -857,28 +878,6 @@ export function createAgentFunction(
         // The rest of the batch that woke this run, which comes after the
         // entry that started it rather than before.
         const trail = (forwarded ?? []).slice(1).map(entryAsMessage);
-
-        // The highest position of the log this run has been handed, which it
-        // confirms to the thread when its work is done.
-        //
-        // EVERY entry the thread held and nothing had taken up is handed to
-        // this run - the catch-up, the batch that woke it, and the entry that
-        // started it - so the watermark covers all of them, not only the ones
-        // that lead the inbox. The entry that started the run is the one to
-        // watch: it is left out of the catch-up because it is handed over as
-        // the run's own event, and a watermark that left it out too would
-        // never advance for a run whose only entry is the one that started it.
-        // The thread would then hand that entry to every later run on the
-        // thread, for ever, and the log would never get shorter.
-        let took = Math.max(
-          0,
-          ...pending.map((entry) => {
-            return entry.seq;
-          }),
-          ...(forwarded ?? []).map((entry) => {
-            return entry.seq;
-          }),
-        );
 
         // The same event must not become two messages. The thread forwards
         // what this run is also subscribed to, so whichever arrives second is
@@ -894,13 +893,8 @@ export function createAgentFunction(
             return undefined;
           }
 
-          took = Math.max(
-            took,
-            ...entries.map((entry) => {
-              return entry.seq;
-            }),
-          );
-
+          // Each entry carries its own position, and the inbox confirms a
+          // position when it hands the message over.
           return entries.map(entryAsMessage);
         };
         const seen = (raw: UntypedInboxMessage) => {
@@ -1065,6 +1059,21 @@ export function createAgentFunction(
             trail,
             expand,
             seen,
+            took: async (messages) => {
+              // The highest position in this batch, confirmed where the batch
+              // was handed over. Fire and forget, like every write, and it
+              // fails in the right direction: a lost confirmation means the
+              // next run is handed those entries again, which is duplication
+              // rather than loss, and the thread's own watermark never goes
+              // backwards.
+              const highest = messages.reduce((top, message) => {
+                return Math.max(top, positionOf(message) ?? 0);
+              }, 0);
+
+              if (highest > 0) {
+                await threadState.took(highest);
+              }
+            },
           },
           async function problemOf(raw, started) {
             // A report is taken only from a thread this thread started: the
@@ -1459,10 +1468,6 @@ export function createAgentFunction(
           // nothing).
           await flushOwes(instance, owes).catch(() => undefined);
 
-          // The thread is told how far this run read, so a later read does not
-          // hand those entries back. Fire and forget, like every write: if it
-          // is lost the next run sees them again, which is late, not wrong.
-          await threadState.took(took);
           await inbox.close();
 
           // A score the handler did not await is still written.

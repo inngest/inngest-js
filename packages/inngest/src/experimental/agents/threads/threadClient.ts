@@ -213,13 +213,73 @@ export const forwardedEntries = (message: {
  * thread.
  */
 export const entryAsMessage = (entry: ThreadEntry): UntypedInboxMessage => {
-  return addEventIs({
-    id: entry.id ?? "",
-    name: entry.name,
-    data: entry.data,
-    ts: entry.ts,
-    user: {},
-  }) as unknown as UntypedInboxMessage;
+  return stampedWith(
+    addEventIs({
+      id: entry.id ?? "",
+      name: entry.name,
+      data: entry.data,
+      ts: entry.ts,
+      user: {},
+    }) as unknown as UntypedInboxMessage,
+    entry.seq,
+  );
+};
+
+/**
+ * The key a message carries its position in the thread's log under. Hidden, so
+ * it is not part of what a handler or a model sees, and read by the inbox when
+ * it hands the message over: **a position is confirmed to the thread when the
+ * message is delivered, in the request where that happens.**
+ *
+ * It is not a number accumulated in the run and written at the end. That is
+ * what this replaced, and it was wrong in a way worth recording: a run only
+ * re-executes what it re-executes, so a batch delivered in an earlier request
+ * raises nothing in the final one, and the watermark was written from a value
+ * that had been reset. Nothing failed - the thread simply kept handing those
+ * entries to every later run, which answered them again. Same family as the
+ * write-id collision: a durable decision made from per-request memory.
+ */
+const logPosition = "~seq";
+
+/**
+ * Stamps a message with its position in the log.
+ */
+const stampedWith = (
+  message: UntypedInboxMessage,
+  seq: number,
+): UntypedInboxMessage => {
+  Object.defineProperty(message, logPosition, {
+    value: seq,
+    enumerable: false,
+    configurable: true,
+  });
+
+  return message;
+};
+
+/**
+ * EXPERIMENTAL: the position in the thread's log a message came from, or
+ * `undefined` for one that did not come from the log (the event that started
+ * a run, when the thread never held it).
+ */
+export const positionOf = (message: unknown): number | undefined => {
+  const held = (message as Record<string, unknown> | null | undefined)?.[
+    logPosition
+  ];
+
+  return typeof held === "number" ? held : undefined;
+};
+
+/**
+ * EXPERIMENTAL: says a message came from a position in the log, for the one
+ * message the inbox does not make from an entry: the event that started the
+ * run, when the thread turns out to hold it too.
+ */
+export const atPosition = (
+  message: UntypedInboxMessage,
+  seq: number,
+): UntypedInboxMessage => {
+  return stampedWith(message, seq);
 };
 
 /**

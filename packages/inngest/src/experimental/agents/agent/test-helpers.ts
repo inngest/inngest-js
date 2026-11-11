@@ -120,6 +120,12 @@ export const run = async (
   };
   const forwarding = options.forward !== false;
 
+  // A wrapped event continues the thread's own log rather than starting a new
+  // count: a seeded thread already holds entries, and a forward that numbered
+  // its first entry 1 would hand the run a position the thread had already
+  // passed - which is indistinguishable from the thread having nothing new.
+  let forwardedFrom = options.thread?.seq ?? 0;
+
   // Whether this event is one a subscription of the run already wants by its
   // own name - an answer to a `result()`, say, which the thread neither
   // subscribes to nor forwards. Those are delivered as they are; everything
@@ -135,6 +141,7 @@ export const run = async (
   let forwarded = 0;
   const asForward = (event: { id?: string; name: string; data?: unknown }) => {
     forwarded += 1;
+    forwardedFrom += 1;
 
     return {
       id: `fwd-${forwarded}`,
@@ -150,7 +157,7 @@ export const run = async (
         gen: 0,
         events: [
           {
-            seq: forwarded,
+            seq: forwardedFrom,
             ...(event.id !== undefined && { id: event.id }),
             name: event.name,
             data: event.data,

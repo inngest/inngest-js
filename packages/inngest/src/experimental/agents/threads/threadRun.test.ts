@@ -18,6 +18,7 @@ import {
   listenSignal,
   readSignal,
   type ThreadSnapshot,
+  type ThreadWriteData,
   threadForward,
   threadRunSubscribedOnly,
   threadRunTriggers,
@@ -822,5 +823,184 @@ describe("write ids", () => {
       }),
     ).toBe(false);
     expect(state.keys.k?.v).toBe('"first"');
+  });
+});
+
+describe("an entry is delivered to one run and not again", () => {
+  /**
+   * What the thread holds after a run, from the writes it sent. This is the
+   * property none of the five demonstrations covers: they count answers and
+   * history, not whether an entry comes back.
+   */
+  const after = (
+    state: ThreadSnapshot,
+    sent: { name: string; data?: unknown }[],
+  ) => {
+    const held = structuredClone(state);
+
+    for (const event of sent) {
+      if (event.name === "agent/thread.write") {
+        applyThreadWriteEvent(held, event.data as ThreadWriteData);
+      }
+    }
+
+    return held;
+  };
+
+  test("a run confirms the batch it was woken with, so the next run is not handed it", async () => {
+    freshKv();
+
+    const first = reader();
+    const cold = held({ seq: 3, taken: 0, entries: [] });
+
+    cold.entries = ["one", "two", "three"].map((content, at) => {
+      return {
+        seq: at + 1,
+        id: `evt-${at + 1}`,
+        name: "agent/message",
+        data: { agent: ref, thread: "t1", content },
+        ts: 0,
+      };
+    });
+
+    // A run woken by the batch of three, with the thread holding all three and
+    // nothing taken up.
+    const run1 = await run(first.fn, {
+      forward: false,
+      event: forward(["one", "two", "three"], { state: cold }),
+    });
+
+    expect(first.seen).toEqual(["one", "two", "three"]);
+
+    const held1 = after(cold, run1.sent);
+
+    // It said so where it read them, not from a count it kept until it ended.
+    expect(held1.taken).toBe(3);
+
+    // So a later run on the same thread is handed nothing of theirs.
+    const second = reader();
+
+    await run(second.fn, {
+      event: message("four", "t1"),
+      thread: held1,
+    });
+
+    expect(second.seen).toEqual(["four"]);
+  });
+
+  test("a run started by the message itself confirms that entry too", async () => {
+    freshKv();
+
+    const first = reader();
+    const cold = held({
+      seq: 1,
+      taken: 0,
+      entries: [
+        {
+          seq: 1,
+          id: "evt-1",
+          name: "agent/message",
+          data: { agent: ref, thread: "t1", content: "one" },
+          ts: 0,
+        },
+      ],
+    });
+    // The agent's own trigger started it, and its event is the entry the
+    // thread holds: the same id, so it leads nothing and is handed over as the
+    // run's event.
+    const run1 = await run(first.fn, {
+      event: { ...message("one"), id: "evt-1" },
+      thread: cold,
+    });
+    const held1 = after(cold, run1.sent);
+
+    expect(held1.taken).toBe(1);
+
+    const second = reader();
+
+    await run(second.fn, { event: message("two", "t1"), thread: held1 });
+
+    expect(second.seen).toEqual(["two"]);
+  });
+});
+
+describe("an entry that arrives while the run works", () => {
+  test("is confirmed too, so the next run is not handed it again", async () => {
+    freshKv();
+
+    const seen: unknown[] = [];
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox, step }) => {
+        for (const one of await inbox.drain()) {
+          seen.push((one.data as { content?: unknown }).content);
+        }
+
+        await step.run("work", async () => {
+          return null;
+        });
+
+        for (const one of await inbox.drain()) {
+          seen.push((one.data as { content?: unknown }).content);
+        }
+
+        return null;
+      },
+    );
+    const cold = held({
+      seq: 1,
+      taken: 0,
+      entries: [
+        {
+          seq: 1,
+          id: "evt-1",
+          name: "agent/message",
+          data: { agent: ref, thread: "t1", content: "one" },
+          ts: 0,
+        },
+      ],
+    });
+
+    // Woken by the first message, with another arriving while it works -
+    // property 2's shape. Its position is in NEITHER the state the run
+    // obtained nor the batch that woke it, so a run that counted positions in
+    // memory and wrote the count when it ended wrote the position it started
+    // with: the thread stayed where it was and handed the entry to the next
+    // run, which answered it again.
+    const run1 = await run(made.fn, {
+      forward: true,
+      event: { ...message("one"), id: "evt-1" },
+      thread: cold,
+      arrive: [{ event: { ...message("two"), id: "evt-2" }, at: "work" }],
+    });
+    const held1 = structuredClone(cold);
+
+    for (const event of run1.sent) {
+      if (event.name === "agent/thread.write") {
+        applyThreadWriteEvent(held1, event.data as ThreadWriteData);
+      }
+    }
+
+    const takes = run1.sent.flatMap((event) => {
+      return event.name === "agent/thread.write"
+        ? ((event.data as { ops?: { kind: string; seq?: number }[] }).ops ?? [])
+            .filter((op) => {
+              return op.kind === "take";
+            })
+            .map((op) => {
+              return op.seq;
+            })
+        : [];
+    });
+
+    expect(seen).toContain("two");
+    expect(held1.taken).toBeGreaterThanOrEqual(2);
+
+    // One confirmation per batch, each sent where that batch was handed over.
+    // A single confirmation at the end is the shape that broke: it is written
+    // from whatever the final request re-derived, so a batch handed over in an
+    // earlier request leaves the thread where it was.
+    expect(takes).toEqual([1, 2]);
   });
 });
