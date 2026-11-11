@@ -1,0 +1,1567 @@
+/**
+ * @module
+ * EXPERIMENTAL: the agent function, an Inngest function whose body owns its
+ * loop and reads a durable inbox. It adds what a plain function lacks for a
+ * conversation that spans runs:
+ *
+ * - a singleton per thread, so there is never more than one live run per thread;
+ * - `inbox`, a `step.subscribe()` inbox of the thread's messages, whose first message
+ *   is the event that started the run;
+ * - `loop`, the model-and-tools loop wired to the thread's inbox and budget, so
+ *   a running turn takes the messages that arrive meanwhile.
+ *
+ * The inbox closes when the body returns. Messages it saved but the body never
+ * read are discarded, and a message that arrives after that, while the thread's
+ * singleton is still in effect, is dropped: it neither starts a new run nor
+ * reaches the finished one. The gap is small (the time between the body
+ * returning and the run ending), and nothing is re-sent at run end.
+ */
+
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { createDefer } from "../../../components/DeferredFunction.ts";
+import {
+  type AgentBridge,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "../../../components/execution/als.ts";
+import {
+  type Inngest,
+  internalLoggerSymbol,
+} from "../../../components/Inngest.ts";
+import { internalQuietOptimizeParallelism } from "../../../components/InngestFunction.ts";
+import { step } from "../../../components/InngestStepTools.ts";
+import {
+  type Inbox,
+  inboxOpenedPromise,
+  type UntypedInboxMessage,
+} from "../../../components/inbox/Inbox.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
+import { NonRetriableError } from "../../../components/NonRetriableError.ts";
+import type { SourceLocation } from "../../../components/sandbox/callSite.ts";
+import {
+  hostOfSharedTool,
+  isSharedTool,
+  type SandboxTool,
+  type SandboxTools,
+} from "../../../components/sandbox/tools.ts";
+import { addEventIs } from "../../../components/triggers/triggers.ts";
+import { internalEvents } from "../../../helpers/consts.ts";
+import type { Logger } from "../../../middleware/logger.ts";
+import { compileKey, toAsync } from "../cel.ts";
+import { cardToolsOf } from "../discovery/cardTools.ts";
+import {
+  cardOf,
+  discoveryOptionsOf,
+  validateDiscoveryList,
+} from "../discovery/discovery.ts";
+import { sharedToolsFor } from "../discovery/sharedTools.ts";
+import { answerQuestion } from "../inbox/answer.ts";
+import { agentMessage, type SenderData } from "../inbox/events.ts";
+import { QuestionBook } from "../inbox/questionBook.ts";
+import {
+  codeReportTool,
+  flushOwes,
+  handleAddressKey,
+  isReportMessage,
+  owesRecord,
+  type ReportBook,
+  reportSenderProblem,
+  reportsOf,
+  reportTool,
+  sendReport,
+} from "../inbox/reports.ts";
+import { senderFrom } from "../inbox/sender.ts";
+import {
+  eventNameOf,
+  inboxFilter,
+  inflightOf,
+  isOwnEvent,
+  missingThreadFilter,
+  ownEvents,
+  ownInboxFilter,
+  ownTriggerFilter,
+  quote,
+  type RawEvent,
+  resentAs,
+  threadInbox,
+} from "../inbox/threadInbox.ts";
+import type { Json } from "../json.ts";
+import { kv } from "../kv/kv.ts";
+import {
+  type AgentHandlerLoop,
+  type AgentLoop,
+  type AgentLoopOptions,
+  type AgentModel,
+  addTools,
+  buildHandlerLoop,
+  isAgentModel,
+} from "../loop/loop.ts";
+import { createAgentScore } from "../loop/scores.ts";
+import {
+  agentSandbox,
+  type LentMachine,
+  openSandboxes,
+  resolveSandboxes,
+  sandboxTools,
+  stepSandboxes,
+} from "../sandboxes/defs.ts";
+import { openRunSandboxes } from "../sandboxes/runSandboxes.ts";
+import {
+  cleanupThreadSandbox,
+  type ThreadSandboxCleanup,
+  threadSandboxOwner,
+} from "../sandboxes/threadSandboxes.ts";
+import {
+  collectSkills,
+  createSkillTools,
+  type Skill,
+  type SkillSources,
+  skillsPrompt,
+} from "../skills/skills.ts";
+import {
+  agentFinishedEvent,
+  agentMessageEvent,
+  agentQuestionEvent,
+  type ThreadRecord,
+  threadHandle,
+  threadSessions,
+} from "../threads/thread.ts";
+import {
+  atPosition,
+  entryAsMessage,
+  forwardedEntries,
+  obtainThreadState,
+  positionOf,
+  threadKeysFor,
+} from "../threads/threadClient.ts";
+import {
+  type ThreadForwardData,
+  threadAgentFilter,
+  threadFilter,
+  threadForward,
+} from "../threads/threadProtocol.ts";
+import { createThreadFunctions } from "../threads/threadRun.ts";
+import {
+  markThreadIdle,
+  readLastRun,
+  recordEnd,
+  runScore,
+  threadRecorder,
+} from "../threads/threadState.ts";
+import {
+  compileTriggers,
+  dataProblem,
+  schemaProblem,
+  singletonKey,
+} from "../threads/threadTrigger.ts";
+import {
+  agentToolsFor,
+  codeAgentTools,
+  handlerWaitTool,
+  listenFilter,
+  listenTool,
+  replyTool,
+  unlistenTool,
+  waitTool,
+} from "./agentTools.ts";
+import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
+import {
+  type BriefingParty,
+  briefingParts,
+  type RunBriefingFacts,
+  registerBriefingFacts,
+  toolFacts,
+} from "./briefing.ts";
+import { childWait, openChildren, settleChild } from "./children.ts";
+import { nextCount } from "./executionCounter.ts";
+import {
+  messageGrantProblem,
+  noteRenewal,
+  proofOf,
+  registerGrant,
+  renewalOfExecution,
+  renewedUntil,
+  startGrantOf,
+} from "./grant.ts";
+import {
+  lendIsOpen,
+  lendOf,
+  lentEndedNote,
+  lentToolNames,
+  parentEndedCancel,
+} from "./lending.ts";
+import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
+import { createLoopWiring } from "./loopWiring.ts";
+import { functionOptions } from "./options.ts";
+import { finishedOf } from "./recovery.ts";
+import { starterOfKey, taggedKeyAddress } from "./relations.ts";
+import {
+  createRunFields,
+  type RunField,
+  type RunFieldContext,
+  type RunFields,
+  resolveRunField,
+} from "./runField.ts";
+import { senderOf } from "./sender.ts";
+import { startData, startInflight, triggerOf } from "./startEvent.ts";
+import { invokeDepthOf, startThread } from "./startThread.ts";
+import { traceWarning } from "./traceWarning.ts";
+import type {
+  AgentBody,
+  AgentBodyContext,
+  AgentFunction,
+  AgentFunctionConfig,
+  AgentMessage,
+  InboxSource,
+  StepWithSubscribe,
+} from "./types.ts";
+
+/**
+ * The runs whose fresh-thread warning has been said, so a replay does not say
+ * it again. Bounded: a run says it once.
+ */
+const freshWarned = new Set<string>();
+
+/**
+ * The handler of an agent with a `model` and no handler of its own: each batch
+ * goes to the model through the loop, and the final answer is the run's
+ * output. The run is short-lived: it ends once the inbox is empty, and the
+ * thread starts a new one when it next sees input.
+ */
+const defaultModelBody: AgentBody<{ model: AgentModel }> = async ({
+  inbox,
+  loop,
+}) => {
+  let answer: unknown;
+
+  for await (const batch of inbox.batches()) {
+    const result = await loop(batch);
+
+    answer = result.text;
+  }
+
+  // A run opened through a handle waits for the children it started, up to a
+  // bound. When the bound is reached with some still running, the model gets
+  // one last turn that names them, and its answer is the run's output.
+  const execution = getAsyncCtxSync()?.execution;
+  const running = execution ? openChildren(execution.instance) : [];
+
+  if (execution?.agentBridge?.handleOpened && running.length > 0) {
+    const result = await loop(
+      `These agents are still running, so their results are not in yet: ${running.join(", ")}. Answer with what you have and say which agents are still running.`,
+    );
+
+    answer = result.text;
+  }
+
+  return answer;
+};
+
+/**
+ * The loop of one run, made from the agent's definition: its `model`, `system`
+ * and `tools` (read once, at the start of the run) and the options of its
+ * `loop` field. A `loop` field that is a whole loop replaces it.
+ */
+const createHandlerLoop = async (options: {
+  client: Inngest.Any;
+  logger: Logger;
+  config: AgentFunctionConfig;
+  fields: RunFields<RunFieldContext>;
+  addedTools: Record<string, unknown>;
+  skills: readonly Skill[];
+
+  /**
+   * The names of tools a parent lent this thread that are over, so the model
+   * is told not to call them.
+   */
+  lentEnded?: string[];
+
+  /**
+   * The facts of this run that the briefing is made from, apart from the
+   * loop's tools.
+   */
+  briefing: RunBriefingFacts;
+
+  /**
+   * Whether the thread has relatives its model can reach without discovery:
+   * an agent started it.
+   */
+  related: boolean;
+}): Promise<AgentHandlerLoop> => {
+  const {
+    client,
+    logger,
+    config,
+    fields,
+    addedTools,
+    skills,
+    lentEnded,
+    briefing,
+    related,
+  } = options;
+
+  if (typeof config.loop === "function") {
+    const swapped = config.loop as AgentLoop;
+
+    return Object.assign(swapped, {
+      with() {
+        throw new Error(
+          "`loop.with()` is not available when the agent's `loop` is a whole loop of its own",
+        );
+      },
+    }) as unknown as AgentHandlerLoop;
+  }
+
+  const written = await fields.get(
+    "system",
+    config.system as RunField<string | undefined>,
+  );
+  const system =
+    skills.length > 0 || lentEnded
+      ? [
+          written,
+          skills.length > 0 ? skillsPrompt(skills) : undefined,
+          lentEnded ? lentEndedNote(lentEnded) : undefined,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : written;
+  const tools = await fields.get(
+    "tools",
+    config.tools as RunField<SandboxTools | undefined>,
+  );
+
+  // A function that is not marked as a model is a function of the run's start.
+  // A model function someone forgot to mark gets called with `{ event, thread }`
+  // instead of a request: say so, rather than fail inside it.
+  const unmarked = `Agent "${config.id}": its \`model\` is a function not marked as a model, so it was called with \`{ event, thread }\` and didn't return a model. Wrap a model function in \`agentModel()\`, or return a model from the function`;
+  let model: AgentModel | undefined;
+
+  if (config.model && isAgentModel(config.model)) {
+    model = config.model;
+  } else if (config.model) {
+    let made: unknown;
+
+    try {
+      made = await fields.get("model", config.model as RunField<unknown>);
+    } catch (error) {
+      throw new Error(unmarked, { cause: error });
+    }
+
+    if (made !== undefined && typeof made !== "function") {
+      throw new Error(unmarked);
+    }
+
+    model = made as AgentModel | undefined;
+  }
+
+  if (!model) {
+    return (() => {
+      throw new Error(
+        `Agent "${config.id}" has no \`model\`, so it has no loop: set \`model\` in its definition`,
+      );
+    }) as unknown as AgentHandlerLoop;
+  }
+
+  const own = {
+    ...agentToolsFor(config.discovery, related),
+    ...addedTools,
+    ...(skills.length > 0 && createSkillTools(skills)),
+    // Ends the turn on purpose. A tool of the agent's own named `wait` wins.
+    ...(!(tools && Object.hasOwn(tools, "wait")) && {
+      wait: briefing.loop === "default" ? waitTool : handlerWaitTool,
+    }),
+    // Asks the thread to watch for an event. The model decides what to watch
+    // while it works, so this cannot be configuration. A tool of the agent's
+    // own by either name wins.
+    ...(!(tools && Object.hasOwn(tools, "listen")) && { listen: listenTool }),
+    ...(!(tools && Object.hasOwn(tools, "unlisten")) && {
+      unlisten: unlistenTool,
+    }),
+  } as SandboxTools;
+  // Shared tools the definition lists are called through their hosted
+  // function; the others `discovery.tools` allows are added beside them.
+  const listed = new Set(
+    Object.values(tools ?? {}).flatMap((entry) => {
+      const host = isSharedTool(entry) ? hostOfSharedTool(entry) : undefined;
+
+      return isSharedTool(entry) && host ? [`${host}/${entry.id}`] : [];
+    }),
+  );
+  const shared = await sharedToolsFor(client, config.discovery, {
+    taken: new Set([...Object.keys(own), ...Object.keys(tools ?? {})]),
+    listed,
+    logger,
+  });
+
+  return buildHandlerLoop({
+    // `format` and `steer` are typed with the agent's own messages on the
+    // definition; the loop hands them those same messages, with `is()`.
+    ...(config.loop as Omit<AgentLoopOptions, "model">),
+    model,
+    ...(system !== undefined && { system }),
+    tools: addTools(addTools(own, shared), tools),
+    // `reply` comes with the run's first question, unless the agent has a
+    // tool of that name.
+    ...(!(tools && Object.hasOwn(tools, "reply")) && {
+      "~afterQuestion": { reply: replyTool },
+    }),
+    "~briefing": (loopTools: SandboxTools) => {
+      return briefingParts(
+        { ...briefing, tools: toolFacts(loopTools) },
+        config.briefing,
+      );
+    },
+  }) as unknown as AgentHandlerLoop;
+};
+
+// The SDK's own marker for the option: no deprecation warning for agents.
+const quietOptimizeParallelism = { [internalQuietOptimizeParallelism]: true };
+
+/**
+ * Defines an agent function. Use `createAgents(client).agent()`.
+ */
+export function createAgentFunction(
+  /**
+   * Inngest client.
+   */
+  client: Inngest.Any,
+
+  /**
+   * Function ID and KV store.
+   */
+  config: AgentFunctionConfig,
+
+  /**
+   * Your handler. Read `inbox` and call `loop`. Without one, an agent with a
+   * `model` runs each batch through the loop and its final answer is the run's
+   * output; an agent without a `model` ends with output `undefined`.
+   */
+  bodyOrDefault?: AgentBody<{ model: AgentModel }>,
+
+  /**
+   * Where the agent was defined.
+   */
+  source?: SourceLocation,
+): AgentFunction {
+  // Skills given as a value are known now: a clash is an error here, and
+  // the card lists them.
+  const definedSkills =
+    typeof config.skills === "function" || config.skills === undefined
+      ? []
+      : collectSkills(config.skills);
+  const discovery = discoveryOptionsOf(config.discovery);
+
+  if (discovery) {
+    validateDiscoveryList(config.id, "agents", discovery.agents);
+    validateDiscoveryList(config.id, "tools", discovery.tools);
+  }
+
+  // A source written as just an event is placed by the agent's `thread`.
+  const inboxSources = (config.inbox ?? []).map((source): InboxSource => {
+    if (typeof source !== "string" && "event" in source) {
+      return source as InboxSource;
+    }
+
+    if (!config.thread) {
+      throw new Error(
+        `Agent "${config.id}" has an inbox source (${eventNameOf(source)}) with no \`thread\` or \`if\` of its own and no agent-level \`thread\` to place it: set \`thread\` on the agent or on the source`,
+      );
+    }
+
+    return { event: source, thread: config.thread };
+  });
+  const body: AgentBody<{ model: AgentModel }> =
+    bodyOrDefault ?? (config.model ? defaultModelBody : async () => undefined);
+  const ref = `${client.id}/${config.id}`;
+  const triggers = compileTriggers(config.id, config);
+  const threadExpression = singletonKey(triggers);
+
+  // Thread state comes from the thread's holder: every function that touches
+  // it obtains the thread's own handle first, and then `kv.thread` reads what
+  // the run already has and writes by sending the thread an event.
+  const store = kv;
+  const cleanup = createCleanupFunction(client, config, ref, store);
+  const finished = createFinishedFunction(client, config, ref, store, triggers);
+
+  const fn = client.createFunction(
+    {
+      ...functionOptions(config),
+      id: config.id,
+
+      // `step.subscribe()` below only types once `inboxMiddleware()` is in
+      // this function's `middleware`. `createAgents` also registers it on
+      // the client itself (for every function's runtime, including ones
+      // the caller added later), but that mutation happens after this call
+      // is type-checked, so it has to be named here too for `step` to type
+      // `subscribe` in this handler.
+      middleware: [InboxMiddleware, ...(config.middleware ?? [])],
+
+      // A child started attached ends with its parent's run.
+      cancelOn: [...(config.cancelOn ?? []), parentEndedCancel],
+
+      // An agent's reads wake it as soon as a message lands, and a reader left
+      // waiting beside its work never holds the run back.
+      optimizeParallelism: false,
+      ...(quietOptimizeParallelism as object),
+      triggers: [
+        ...ownEvents.map((name) => {
+          // A `quiet` message is for a live run only: it never starts one.
+          return {
+            event: name,
+            if: ownTriggerFilter(name, ref),
+          };
+        }),
+
+        ...triggers.map((trigger) => {
+          return trigger.fnTrigger;
+        }),
+
+        // What the thread run forwards. Under the thread's singleton in
+        // `skip` mode it either starts a run, carrying the batch, or is
+        // skipped and reaches the live run through its inbox; lost at that
+        // boundary it leaves the agent late rather than wrong, because the
+        // thread still holds the entries and the next read hands them back.
+        { event: threadForward.name, if: threadAgentFilter(ref) },
+      ],
+      singleton: { key: threadExpression, mode: "skip" },
+    },
+    async (ctx) => {
+      const { event, step, defer, runId, logger } = ctx;
+      const { events: _events, ...functionContext } = ctx;
+
+      // The thread a run belongs to comes from its trigger: a message names it,
+      // any other trigger event gives it by the expression of its trigger.
+      const found = triggers.find((t) => {
+        return t.event === event.name;
+      });
+      const data = startData(ref, found, event);
+
+      // A message names its thread, and the thread's key can carry tags that
+      // prove relations (parent, child, peer). A key a start made for another
+      // agent is not this agent's thread: running under it would borrow its
+      // reach.
+      if (!found) {
+        const owner = taggedKeyAddress(data.thread);
+
+        if (owner !== undefined && owner !== ref) {
+          throw new NonRetriableError(
+            `The thread ${data.thread} belongs to ${owner}, not to ${ref}`,
+          );
+        }
+      }
+      // Read by `agent.loop()` once the body's inbox exists.
+      const questions = new QuestionBook();
+      const bridge: AgentBridge = {
+        questions,
+        codeTools: codeAgentTools(config.discovery),
+      };
+
+      // Run-scoped KV keys end with the run, whichever way it ends, and the
+      // thread is marked idle.
+      defer("kv-cleanup", {
+        function: cleanup,
+        data: { runId, thread: data.thread },
+      });
+
+      const thread = threadHandle(client, ref, data.thread);
+
+      // The KV scopes of the thread and session come from the trigger, which
+      // for an event of `triggers` does not carry them: the whole run reads them
+      // from here.
+      async function main() {
+        // Opened before anything else the run does, the thread start included
+        // (on the ledger that is a subscription, a read and a write, which can
+        // take a second or more). A message that arrives before this op matches
+        // no inbox, and the thread's singleton skips it as a trigger, so it is
+        // lost: the gap is kept to the run's first request. Everything the
+        // sources need is known from the trigger. The open is awaited here so
+        // the thread start does not share a request with it.
+        // Closed when the run's work is done, whichever way it ends. That only
+        // ends the inbox.
+        // ONE RESOLVER PER EVENT. This is the run's inbox and its one source is
+        // the thread's forwards; the thread run holds every other subscription
+        // - the agent layer's own events, the agent's triggers, each `inbox`
+        // source, and every listen asked for at runtime - and forwards what
+        // arrives here as one event per batch.
+        //
+        // The rule is that an agent run never subscribes to anything its
+        // thread subscribes to, which is not quite the same as holding exactly
+        // one subscription. A run that awaits a child's `result()` opens an
+        // inbox of its own for `agent/message.result` (see `threads/thread.ts`),
+        // and that is allowed: the thread neither subscribes to that event nor
+        // forwards it, so no event has two resolvers. Routing results through
+        // the thread instead would make `result()` depend on the thread
+        // forwarding them, for no safety gain, and would put
+        // code-waits-for-a-child traffic through the conversation's log.
+        //
+        // What the rule prevents: two subscriptions that match the SAME
+        // arriving event each save it, only the drained one is read, and the
+        // message is lost with no duplicate and no error anywhere. An
+        // arbitrary survivor and silent loss is the signature, and no type
+        // checker will ever catch it. So anything else this run needs from its
+        // thread is a request/response or a write, never a subscription on an
+        // event the thread already takes.
+        //
+        // The requirement this places on the primitive: `step.subscribe` must
+        // hand over everything that matched while the subscription was open,
+        // whether or not a read was outstanding when it arrived. Without that,
+        // the thread's log is not authoritative and "late, not wrong" becomes
+        // "wrong", silently, for every agent.
+        await using subscription = step.subscribe("inbox", [
+          { event: threadForward.name, if: threadFilter(ref, data.thread) },
+        ]);
+
+        await inboxOpenedPromise(subscription);
+
+        // The thread's state, obtained with the request for it: the wait and
+        // the send are issued together, so the executor registers the wait
+        // before the send executes and no arriving write can reach this run by
+        // neither route. Do not reorder them, and do not serve the answer from
+        // anywhere else - a precomputed answer reopens the gap this closes.
+        // A forward that started this run may carry the thread's state with
+        // it, in which case there is nothing to ask for.
+        const forwardedStart = (event.name as string) === threadForward.name;
+        const handed = forwardedStart
+          ? (event.data as ThreadForwardData).state
+          : undefined;
+        const threadState = await obtainThreadState({
+          client,
+          step: step as unknown as StepWithSubscribe,
+          ref,
+          thread: data.thread,
+          runId,
+          ...(handed && { given: handed }),
+          // The event that started this run travels with the read so the log
+          // holds it even when the thread never saw it - but NOT when a
+          // forward started the run. The thread logged that batch itself, and
+          // the forward is its own event: handing it over would put an
+          // `agent/thread.forward` in the thread's log as though it were
+          // something that had arrived.
+          ...(forwardedStart
+            ? {}
+            : {
+                arrival: {
+                  ...(event.id !== undefined && { id: event.id }),
+                  name: event.name,
+                  data: event.data,
+                },
+              }),
+        });
+
+        // The model's `listen` and `unlisten` tools, and the handler's
+        // `thread.listen()`, reach the thread through this.
+        bridge.thread = threadState;
+
+        if (!threadState.answered) {
+          traceWarning(
+            logger,
+            "thread.unanswered",
+            `No thread run answered ${ref} for ${data.thread}, so this run works from an empty thread. The thread run starts from the same events, so this is either the first moment of the thread or a thread run that was lost.`,
+          );
+        }
+
+        // Writes what `thread.state()` shows. One step per change.
+        // One writer per thread, so a plain read and write where the newest
+        // run wins is enough: there is nothing to compare against.
+        const recorder = threadRecorder(store, ref, runId, true);
+
+        // The grant a start carries, checked: a start that claims a starter
+        // but has no valid grant fails for good, so limits, report routes and
+        // lends only come from a signed grant. What a sub-agent inherited is
+        // kept on its thread, so a later run that a plain message starts has
+        // the same limits.
+        const startGrant = startGrantOf(client, event, data.thread);
+        const passed = startGrant?.limits;
+        // What the start event lends, with its signature checked before the
+        // thread records anything. Whether the thread may use it is decided
+        // once the record is written.
+        const claim = lendOf(client, event, data.thread, startGrant);
+        const startWith = async (inStep?: string) => {
+          return {
+            started: await recorder.running(
+              passed,
+              startInflight(found, event) ?? null,
+              inStep,
+              undefined,
+              claim && {
+                parentRun: claim.parentRun,
+                tools: lentToolNames(claim.machines),
+              },
+            ),
+            previousRun: (await readLastRun(store, ref, inStep)) ?? null,
+          };
+        };
+
+        // The record and how the run before this one ended, read and written
+        // BETWEEN steps rather than inside one.
+        //
+        // This is not a style choice. A write to the thread is an event, so it
+        // is a step of its own, and a step cannot be issued inside another
+        // step's callback - the run would wait on itself. Writing from inside
+        // a `step.run` would also mean the write is applied to this run's own
+        // view only in the request where that callback actually ran: a replay
+        // skips a memoized callback, and the run would then read a view
+        // missing its own writes. Between steps, each write is its own
+        // memoized step and the view is rebuilt in the same order on every
+        // replay.
+        if (data.fresh) {
+          // Through the client's own logger, not the handler's: the handler's
+          // is quiet while a run replays, and this line is reached after the
+          // run's first step, so on the first request it has not run yet and
+          // on every later one the handler's logger would swallow it. Once per
+          // run and process, like the inbox's own drop warnings.
+          traceWarning(
+            freshWarned.has(`${runId}:${data.thread}`)
+              ? undefined
+              : client[internalLoggerSymbol],
+            "thread.fresh",
+            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+          );
+          freshWarned.add(`${runId}:${data.thread}`);
+        }
+
+        const begun = await startWith();
+        const started = begun.started as ThreadRecord;
+        const previousRun = begun.previousRun ?? undefined;
+
+        recorder.observe({
+          usage: started.usage,
+          restarts: started.restarts ?? 0,
+        });
+
+        // Limits apply to the agents this run starts. The usage is the
+        // thread's so far, and each turn adds to it.
+        const instance = getAsyncCtxSync()?.execution?.instance;
+
+        if (!instance) {
+          throw new Error("An agent must run inside an Inngest function");
+        }
+
+        if (startGrant) {
+          registerGrant(instance, startGrant);
+        }
+
+        const limits = registerLimits(
+          instance,
+          // The thread's kept limits.
+          narrowLimits(
+            config.limits,
+            narrowInherited(started.inherited, passed),
+            {
+              appId: client.id,
+              ...(discovery && {
+                agents: discovery.agents,
+                tools: discovery.tools,
+              }),
+            },
+          ),
+          { ...started.usage },
+        );
+
+        // What each inbox source's events are checked against, by the name of
+        // the source's event.
+        const sourceSchemas = new Map<string, StandardSchemaV1>();
+
+        // The thread key of each source's events, by the name of the event.
+        const sourceKeys = new Map<
+          string,
+          { source: string; key: (event: unknown) => string | undefined }
+        >();
+
+        const noteSource = (source: InboxSource) => {
+          const expression = source.thread ?? config.thread;
+
+          if (expression) {
+            sourceKeys.set(eventNameOf(source.event), {
+              source: expression,
+              key: compileKey(expression).key,
+            });
+          }
+
+          const schema =
+            typeof source.event === "object" ? source.event.schema : undefined;
+
+          if (schema) {
+            sourceSchemas.set(
+              eventNameOf(source.event),
+              schema as StandardSchemaV1,
+            );
+          }
+        };
+
+        for (const source of inboxSources) {
+          noteSource(source);
+        }
+
+        // A plain agent (no `invoke()` trigger) that `step.invoke` started with
+        // `{ agent, thread, content }` reads that as the `agent/message` it is.
+        const invokedAsMessage =
+          !found && (event.name as string) === internalEvents.FunctionInvoked;
+        const { from: _told, ...invokedData } = (event.data ?? {}) as Record<
+          string,
+          unknown
+        >;
+
+        // The event that started the run is the inbox's first message, made
+        // from the run's own state: it costs no step. The inbox can receive it
+        // too, when it was sent just before the inbox opened: it is read once.
+        // What the SDK told an invoked agent in `from` is not the caller's
+        // input, except for an `agent/message`, whose `from` is its sender.
+        const told =
+          (event.name as string) === internalEvents.FunctionInvoked &&
+          "from" in ((event.data ?? {}) as object);
+        // A run the thread started carries the batch that woke it: its first
+        // entry is the event that started the run, and the rest lead the inbox.
+        const forwarded =
+          (event.name as string) === threadForward.name
+            ? ((event.data as ThreadForwardData).events ?? [])
+            : undefined;
+        const startMessage =
+          forwarded?.[0] !== undefined
+            ? entryAsMessage(forwarded[0])
+            : (addEventIs({
+                id: event.id ?? "",
+                name: invokedAsMessage ? agentMessageEvent : event.name,
+                data: invokedAsMessage
+                  ? event.data
+                  : told
+                    ? invokedData
+                    : event.data,
+                ts: event.ts ?? 0,
+                user: {},
+              }) as unknown as UntypedInboxMessage);
+
+        // The entries the thread holds that nothing has taken up, then the
+        // rest of the batch that woke this run. Reading them is how a run that
+        // lost a forward catches up: late, not wrong.
+        //
+        // The batch that woke this run is itself untaken in the state the
+        // forward carried - the thread appends, then forwards, and `took` only
+        // comes back later - so its own entries are left out here. They are
+        // handed over in their own order: the first as the event that started
+        // the run, the rest trailing it. Without that, entries two onwards
+        // would lead the inbox and the run would see the batch out of order.
+        const batched = new Set(
+          (forwarded ?? []).map((entry) => {
+            return entry.seq;
+          }),
+        );
+        const pending = threadState.pending();
+
+        // The event that started the run, when the thread holds it as an entry
+        // too, carries that entry's position. It is handed over as the run's
+        // own event rather than as a message leading the inbox, so this is the
+        // only way its position is ever confirmed - and a run whose only entry
+        // is the one that started it would otherwise leave the watermark where
+        // it was, and every later run would be handed that entry again.
+        const startedAt = pending.find((entry) => {
+          return (
+            entry.id !== undefined &&
+            entry.id !== "" &&
+            entry.id === startMessage.id
+          );
+        });
+
+        if (startedAt) {
+          atPosition(startMessage, startedAt.seq);
+        }
+
+        const caughtUp = pending.filter((entry) => {
+          return (
+            !batched.has(entry.seq) &&
+            (entry.id === undefined || entry.id !== startMessage.id)
+          );
+        });
+        const lead = caughtUp.map(entryAsMessage);
+
+        // The rest of the batch that woke this run, which comes after the
+        // entry that started it rather than before.
+        const trail = (forwarded ?? []).slice(1).map(entryAsMessage);
+
+        // The same event must not become two messages. The thread forwards
+        // what this run is also subscribed to, so whichever arrives second is
+        // dropped without a word.
+        // Each message's ID is noted as it is handed over, so whichever copy
+        // arrives second is dropped. Nothing is noted ahead of time: the event
+        // that started the run goes through the same check, and must pass it.
+        const delivered = new Set<string>();
+        const expand = (raw: UntypedInboxMessage) => {
+          const entries = forwardedEntries(raw);
+
+          if (entries === undefined) {
+            return undefined;
+          }
+
+          // Each entry carries its own position, and the inbox confirms a
+          // position when it hands the message over.
+          return entries.map(entryAsMessage);
+        };
+        const seen = (raw: UntypedInboxMessage) => {
+          if (typeof raw.id !== "string" || raw.id === "") {
+            return false;
+          }
+
+          if (delivered.has(raw.id)) {
+            return true;
+          }
+
+          delivered.add(raw.id);
+
+          return false;
+        };
+
+        // The event the handler gets is that message: exactly the event sent.
+        const runEvent = resentAs(startMessage);
+
+        // A `start()` of an agent with an `invoke()` trigger sends its input as
+        // a message, so core did not check it against the trigger's schema: the
+        // child does, here, for every caller. A bad input fails the run for
+        // good, so `result()` throws it.
+        if (
+          !found &&
+          (runEvent.name as string) === internalEvents.FunctionInvoked
+        ) {
+          const problem = await schemaProblem(
+            triggers.filter((trigger) => {
+              return trigger.event === internalEvents.FunctionInvoked;
+            }),
+            runEvent,
+          );
+
+          if (problem) {
+            throw new NonRetriableError(
+              `The input breaks the schema of ${ref}: ${problem}`,
+            );
+          }
+        }
+
+        // The run's time-varying fields are read once, here, at its start.
+        const fields = createRunFields({
+          event: runEvent as unknown as AgentBodyContext["event"],
+          thread: { key: data.thread },
+        });
+
+        // The run's skills: shown to the model, and their files placed in the
+        // first sandbox it can use.
+        const runSkills = collectSkills(
+          (await fields.get(
+            "skills",
+            (config.skills ?? []) as RunField<SkillSources>,
+          )) ?? [],
+        );
+
+        // A lend is signed for its parent run and this thread, and has no
+        // clock: it lasts as long as the parent's run, whose end cancels this
+        // one. The thread's record decides whether this run may use it (the
+        // first run of the start message, or a recovery's resend); any other
+        // message gets none, and its model is told the lent tools are gone.
+        const lent =
+          claim && lendIsOpen(claim, started.lent, runId)
+            ? claim.machines
+            : undefined;
+        const lentEnded =
+          !lent && started.lent ? started.lent.tools : undefined;
+
+        const { opened, closeAll, toolsOnly } = await openRunSandboxes({
+          skills: runSkills,
+          config,
+          client,
+          ref,
+          context: fields.context,
+          thread: data.thread,
+          runId,
+          store,
+          step,
+          logger,
+          defer,
+          cleanup,
+          lent,
+        });
+
+        const agentScore = createAgentScore(client);
+
+        bridge.score = agentScore.score;
+
+        // A run opened through a handle (`start()`, `message()`, `ask()`, or a
+        // model's agent tools) has a sender. Every run is short-lived: it ends
+        // once it has answered and nothing is unread, and the thread starts a
+        // new one when it next has input.
+        // The start message is checked as well as the run's event: a typed
+        // start (an `invoke()` trigger) is handed to the handler as the typed
+        // input, which has no sender, but the message that carried it did.
+        const openedByHandle = [runEvent, startMessage].some((candidate) => {
+          return (
+            (candidate.name === agentMessageEvent ||
+              candidate.name === agentQuestionEvent) &&
+            (candidate.data as { from?: unknown } | undefined)?.from !==
+              undefined
+          );
+        });
+        // A run never waits in quiet: it reads its inbox and ends.
+        const idle = 0;
+
+        bridge.handleOpened = openedByHandle;
+
+        // The starter keeps what each child it started owes in its own thread
+        // state: a report that comes is noted, and a child's `agent/finished`
+        // is given the `missing` that follows from the two. Nothing the
+        // sender wrote in `missing` is believed.
+        const owes = owesRecord(kv.thread, ref);
+        const owesChecked = new WeakSet<object>();
+        const noteOwed = async (raw: UntypedInboxMessage) => {
+          const as = resentAs(raw);
+
+          try {
+            // What a child owes, noted while sandbox code started it.
+            await flushOwes(instance, owes);
+
+            if (isReportMessage(as)) {
+              const child = (as as { from?: { key?: unknown } }).from?.key;
+
+              if (typeof child === "string") {
+                await owes.received(child, as.name);
+              }
+
+              return;
+            }
+
+            if (as.name === agentFinishedEvent && !owesChecked.has(raw)) {
+              owesChecked.add(raw);
+
+              const data = as.data as {
+                from?: { key?: unknown };
+                missing?: string[];
+              };
+              const missing =
+                typeof data.from?.key === "string"
+                  ? await owes.missing(data.from.key)
+                  : undefined;
+
+              if (missing === undefined) {
+                delete data.missing;
+              } else {
+                data.missing = missing;
+              }
+            }
+          } catch (error) {
+            logger.warn(
+              { error: error instanceof Error ? error.message : String(error) },
+              "could not read or write what a started child owes",
+            );
+          }
+        };
+
+        const { inbox } = threadInbox(
+          {
+            inbox: subscription as unknown as Inbox<UntypedInboxMessage>,
+            lead,
+            trail,
+            expand,
+            seen,
+            took: async (messages) => {
+              // The highest position in this batch, confirmed where the batch
+              // was handed over. Fire and forget, like every write, and it
+              // fails in the right direction: a lost confirmation means the
+              // next run is handed those entries again, which is duplication
+              // rather than loss, and the thread's own watermark never goes
+              // backwards.
+              const highest = messages.reduce((top, message) => {
+                return Math.max(top, positionOf(message) ?? 0);
+              }, 0);
+
+              if (highest > 0) {
+                await threadState.took(highest);
+              }
+            },
+          },
+          async function problemOf(raw, started) {
+            // A report is taken only from a thread this thread started: the
+            // `from` of an event is whatever its sender wrote, and the key's
+            // tag is what proves it. Anything else is dropped.
+            const presented = resentAs(raw as UntypedInboxMessage);
+            const senderProblem = reportSenderProblem(
+              client,
+              data.thread,
+              presented,
+            );
+
+            if (senderProblem) {
+              return senderProblem;
+            }
+
+            // A message that relies on its sender's grant carries a proof
+            // made for this very message; a message from the thread that
+            // started this one may renew this run's grant.
+            if (
+              !started &&
+              (presented.name === agentMessageEvent ||
+                presented.name === agentQuestionEvent)
+            ) {
+              const grantProblem = messageGrantProblem(
+                client,
+                presented,
+                data.thread,
+              );
+
+              if (grantProblem) {
+                return grantProblem;
+              }
+
+              const renew = (
+                presented.data as {
+                  from?: { key?: unknown };
+                  "::agents"?: { renew?: unknown };
+                }
+              )?.["::agents"]?.renew;
+
+              if (renew && startGrant) {
+                const until = renewedUntil(
+                  client,
+                  startGrant,
+                  renew,
+                  (presented.data as { from?: { key?: unknown } }).from?.key,
+                );
+
+                if (until !== undefined) {
+                  noteRenewal(
+                    instance,
+                    renew as { until: number; sig: string },
+                  );
+                }
+              }
+            }
+
+            await noteOwed(raw as UntypedInboxMessage);
+
+            if (isOwnEvent(raw.name)) {
+              return undefined;
+            }
+
+            // An event of an inbox source with nothing at its thread path
+            // reaches no thread.
+            const keyed = sourceKeys.get(raw.name);
+
+            if (keyed && keyed.key(raw) === undefined) {
+              return `it has nothing at its thread path (${keyed.source}), so it reaches no thread`;
+            }
+
+            // An event of an inbox source is checked against its event type.
+            const sourceSchema = sourceSchemas.get(raw.name);
+
+            if (sourceSchema) {
+              return dataProblem(sourceSchema, raw.data ?? {});
+            }
+
+            if (started) {
+              return undefined;
+            }
+
+            return schemaProblem(
+              triggers.filter((t) => {
+                return t.event === raw.name;
+              }),
+              raw,
+            );
+          },
+          recorder,
+          client[internalLoggerSymbol],
+          runId,
+          startMessage,
+          idle,
+          {
+            open: () => {
+              return openChildren(instance);
+            },
+            settle: (key) => {
+              settleChild(instance, key);
+            },
+            wait: () => {
+              return childWait.ms;
+            },
+          },
+          (from) => {
+            return senderFrom(client, from);
+          },
+          (question, given) => {
+            // Marked first: a question that code answered costs the model no
+            // turn, and the model cannot answer it again.
+            questions.markReplied(question.data.id);
+
+            return answerQuestion(client, question, given);
+          },
+          (data) => {
+            questions.receive(data);
+          },
+          // Only the default body reads in the background: a handler of the
+          // agent's own does exactly what it says with the inbox.
+          bodyOrDefault === undefined && config.model
+            ? {
+                sleep: (id, ms) => {
+                  return step.sleep(id, ms);
+                },
+              }
+            : undefined,
+        );
+
+        // What the run owes: the reports its start event carries, and which of
+        // them it has sent.
+        const reportSpec = reportsOf(
+          { name: event.name, data: event.data },
+          startGrant,
+        );
+        const reportBook: ReportBook | undefined = reportSpec && {
+          spec: reportSpec,
+          sent: new Set(),
+          ...(startGrant && {
+            proof: (id: string, target: string) => {
+              return proofOf(
+                client,
+                startGrant,
+                id,
+                target,
+                renewalOfExecution(instance),
+              );
+            },
+          }),
+        };
+
+        bridge.reports = reportBook;
+
+        // Code in a `runCode` can send the run's reports too.
+        if (reportBook) {
+          bridge.codeTools = {
+            ...bridge.codeTools,
+            report: codeReportTool(reportBook) as unknown as SandboxTool,
+          };
+        }
+
+        // The loop reads this when it runs, inside the agent, whichever way
+        // the app made it.
+        bridge.wiring = createLoopWiring({
+          reports: reportBook,
+          config,
+          inbox,
+          limits,
+          recorder,
+          threadKey: thread.key,
+          questions,
+          ...(startMessage.id && { triggerId: startMessage.id }),
+          agent: ref,
+          // A turn is recorded BETWEEN steps, not inside the model call's own
+          // step. A write to the thread is an event and so a step of its own,
+          // and a write made inside a memoized callback is applied to this
+          // run's view only in the request where that callback ran: a replay
+          // skips it and the run reads a view missing its own writes.
+          recordInStep: false,
+        });
+
+        // Who started the thread and who opened this run, for the briefing. A
+        // starting agent is read from the signed grant, else from the key a
+        // start made (the tools that reach it check the key's tag).
+        const opening = [runEvent, startMessage]
+          .map((candidate) => {
+            return (candidate.data as { from?: SenderData } | undefined)?.from;
+          })
+          .find((from) => {
+            return from !== undefined;
+          });
+        const starterAddress =
+          startGrant?.par?.address || starterOfKey(data.thread);
+        const starter: BriefingParty | undefined = starterAddress
+          ? {
+              kind: "agent",
+              address: starterAddress,
+              ...((startGrant?.par?.key ??
+                (opening?.kind === "agent" && opening.address === starterAddress
+                  ? opening.key
+                  : undefined)) !== undefined && {
+                thread: (startGrant?.par?.key ?? opening?.key) as string,
+              }),
+            }
+          : undefined;
+        const opener =
+          opening === undefined
+            ? undefined
+            : {
+                ...(opening.kind === "agent"
+                  ? {
+                      kind: "agent" as const,
+                      address: opening.address,
+                      thread: opening.key,
+                    }
+                  : { kind: "function" as const, run: opening.id }),
+                start: opening.thread !== undefined,
+              };
+        const runBriefing: RunBriefingFacts = {
+          agent: ref,
+          thread: data.thread,
+          loop: bodyOrDefault === undefined ? "default" : "handler",
+          ...(starter && { starter }),
+          ...(opener && { opener }),
+
+          reports: Object.entries(reportSpec ?? {}).map(([type, entry]) => {
+            return {
+              type,
+              required: entry.required === true,
+              ...(entry.schema !== undefined && { schema: entry.schema }),
+              to: [
+                ...new Set(
+                  entry.to.map((destination) => {
+                    return destination.agent;
+                  }),
+                ),
+              ],
+            };
+          }),
+          ...(limits.limits.depth !== undefined && {
+            depth: limits.limits.depth,
+          }),
+        };
+
+        registerBriefingFacts(instance, runBriefing);
+
+        const handlerLoop = await createHandlerLoop({
+          client,
+          logger,
+          config,
+          fields,
+          skills: runSkills,
+          lentEnded,
+          briefing: runBriefing,
+          related: starter !== undefined,
+          addedTools: {
+            ...sandboxTools(opened),
+            ...(reportBook && { report: reportTool(reportBook) }),
+          },
+        });
+
+        let result: unknown;
+
+        try {
+          result = await body({
+            ...functionContext,
+            logger,
+
+            // Slot: event. What started the run, exactly as sent.
+            event: runEvent as unknown as AgentBodyContext["event"],
+            depth: invokeDepthOf(
+              event as unknown as { data?: Record<string, unknown> },
+            ),
+
+            // Slot: kv. What the thread keeps for the user's code, which is
+            // sugar over the thread's log: a get is local, a set is one write,
+            // and a write inside a step's callback throws rather than being
+            // durable but invisible to the run that made it.
+            kv: { thread: threadKeysFor(threadState.handle) },
+
+            // Slot: thread. The handle to the run's own thread.
+            thread: {
+              key: data.thread,
+              ...{ [handleAddressKey]: { agent: ref, thread: data.thread } },
+              report: async (
+                type: { name: string; schema?: StandardSchemaV1 },
+                reported: Record<string, unknown>,
+              ) => {
+                if (!reportBook) {
+                  throw new Error(
+                    "This run was not started with reports, so it has none to send.",
+                  );
+                }
+
+                await sendReport(
+                  reportBook,
+                  type.name,
+                  reported,
+                  async (value) => {
+                    const checked =
+                      await type.schema?.["~standard"].validate(value);
+
+                    return checked?.issues
+                      ?.map((issue) => {
+                        return issue.message;
+                      })
+                      .join("; ");
+                  },
+                );
+              },
+              listen: async (
+                event: string | { name: string },
+                where?: Record<string, string | number | boolean>,
+              ) => {
+                const filter = listenFilter(where);
+
+                return threadState.listen({
+                  event: typeof event === "string" ? event : event.name,
+                  ...(filter !== undefined && { if: filter }),
+                });
+              },
+              unlisten: async (
+                event: string | { name: string },
+                where?: Record<string, string | number | boolean>,
+              ) => {
+                const filter = listenFilter(where);
+
+                return threadState.listen(
+                  {
+                    event: typeof event === "string" ? event : event.name,
+                    ...(filter !== undefined && { if: filter }),
+                  },
+                  true,
+                );
+              },
+              message: async (content: Json) => {
+                const execution = getAsyncCtxSync()?.execution;
+
+                if (!execution) {
+                  throw new Error(
+                    "thread.message() must be called inside the run",
+                  );
+                }
+
+                await step.sendEvent(
+                  `thread:${data.thread}:message:${nextCount(execution.instance, "thread.message")}`,
+                  agentMessage.create(
+                    {
+                      agent: ref,
+                      thread: data.thread,
+                      content,
+                      from: senderOf(execution),
+                    },
+                    { meta: { sessions: threadSessions(data.thread) } },
+                  ),
+                );
+              },
+            },
+
+            // Slot: sandboxes. The agent's sandboxes and their tools.
+            sandboxes: Object.fromEntries(
+              Object.entries(opened)
+                .filter(([name]) => {
+                  // A machine lent for its tools only is not the code's.
+                  return !toolsOnly.has(name);
+                })
+                .map(([name, lazy]) => {
+                  return [name, agentSandbox(lazy)];
+                }),
+            ) as unknown as AgentBodyContext["sandboxes"],
+
+            // Slot: inbox. The thread's messages and how the run before this
+            // one ended.
+            inbox,
+            previousRun,
+            get restarts() {
+              return recorder.restarts;
+            },
+
+            // Slot: score. The run's own scores.
+            score: agentScore.score,
+
+            // Slot: loop. The agent's own loop: its model, system and tools,
+            // with the model's `inbox_listen` and `inbox_close` among them.
+            loop: handlerLoop,
+          });
+
+          // The last thread work is done: end the inbox. The thread-state
+          // copies stay until the sandboxes have closed, since closing them
+          // touches thread state (a second close, from the scope exit, does
+          // nothing).
+          await flushOwes(instance, owes).catch(() => undefined);
+
+          await inbox.close();
+
+          // A score the handler did not await is still written.
+          await agentScore.flush();
+        } catch (error) {
+          await closeAll();
+
+          throw error;
+        }
+
+        const rejected = await closeAll();
+
+        // The body succeeded, so an eager sandbox nothing used that failed to
+        // create is a warning, not a failed run.
+        if (rejected) {
+          logger.warn(
+            `An unused eager sandbox failed to create: ${
+              rejected.reason instanceof Error
+                ? rejected.reason.message
+                : String(rejected.reason)
+            }`,
+          );
+        }
+
+        return result;
+      }
+
+      const als = getAsyncCtxSync();
+
+      // A run started by a message keeps what its trigger carries.
+      return als?.execution
+        ? runWithAsyncCtx(
+            {
+              ...als,
+              execution: {
+                ...als.execution,
+                agent: { thread: thread.key, ref },
+                agentBridge: bridge,
+              },
+            },
+            main,
+          )
+        : main();
+    },
+  );
+
+  return {
+    fn,
+    cleanup,
+    finished,
+    ...(() => {
+      // Two functions hold a thread: the supervisor keeps its key and the
+      // holder holds its state. See `threadRun.ts` for why it cannot be one.
+      const thread = createThreadFunctions({
+        client,
+        config,
+        ref,
+        triggers,
+        inboxSources,
+      });
+
+      return { threadRun: thread.supervisor, threadHolder: thread.holder };
+    })(),
+    ref,
+    card: cardOf(client.id, config.id, fn, {
+      card: config.card,
+      description: config.description,
+      ...(source && { source }),
+      tools: cardToolsOf(config),
+      logger: client[internalLoggerSymbol],
+      skills: definedSkills.map((skill) => {
+        return { name: skill.name, description: skill.description };
+      }),
+    }),
+    thread(key) {
+      return threadHandle(client, ref, key);
+    },
+    id: config.id,
+    address: ref,
+    start(input, options) {
+      return startThread(
+        {
+          client,
+          id: config.id,
+          address: ref,
+          typed: triggers.some((trigger) => {
+            return trigger.event === internalEvents.FunctionInvoked;
+          }),
+          ...(options?.thread !== undefined && { thread: options.thread }),
+          ...(options?.reports && { reports: options.reports }),
+        },
+        input,
+        options,
+      );
+    },
+  };
+}

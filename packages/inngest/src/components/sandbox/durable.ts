@@ -1,3 +1,4 @@
+import { asyncDispose } from "../../helpers/asyncDispose.ts";
 import type { DeferHandle, StepOptionsOrId } from "../../types.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
@@ -21,6 +22,7 @@ import { checkExit, commandText } from "./commandError.ts";
 import { createDollar } from "./dollar.ts";
 import { destroyQuietly } from "./group.ts";
 import { runManagedCommand } from "./managedCommand.ts";
+import { expandMcpTools } from "./mcp.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -34,6 +36,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import { createShell } from "./shell.ts";
 import { validateShims, withShims } from "./shims.ts";
 import { bundledToolBinary } from "./toolBinary.ts";
 import type { SandboxToolsRequest } from "./tools.ts";
@@ -774,12 +777,18 @@ export const createDurableSandboxFacade = (
     options,
   ) => {
     const {
-      tools: ownTools,
+      tools: givenTools,
       toolOptions,
       exitCodes,
       shims,
+      "~shell": shell,
       ...commandOptions
     } = options ?? {};
+    // An MCP server in `tools` becomes its tools, named after its key; the
+    // list is a step of the command.
+    const ownTools =
+      givenTools &&
+      (await expandMcpTools(givenTools, getStepOptions(idOrOptions).id));
 
     parseWithSchema(exitCodesSchema.optional(), exitCodes, "exitCodes");
 
@@ -801,7 +810,7 @@ export const createDurableSandboxFacade = (
 
     const tools =
       ownTools || shimmed ? { ...ownTools, ...shimmed?.tools } : undefined;
-    const text = commandText(command);
+    const text = shell?.text ?? commandText(command);
     const timeoutMs =
       commandOptions.timeout === undefined
         ? undefined
@@ -827,6 +836,7 @@ export const createDurableSandboxFacade = (
         text,
         timeoutMs,
         exitCodes: exitCodes ?? "any",
+        strip: shell?.strip,
       });
     }
 
@@ -879,7 +889,13 @@ export const createDurableSandboxFacade = (
       operation,
       !tools && exitCodes && exitCodes !== "any"
         ? (wire) => {
-            checkExit(exitCodes, { command: text, ...toResult(wire) });
+            const seen = toResult(wire);
+
+            checkExit(exitCodes, {
+              command: text,
+              ...seen,
+              stdout: shell ? shell.strip(seen.stdout) : seen.stdout,
+            });
 
             return wire;
           }
@@ -901,6 +917,9 @@ export const createDurableSandboxFacade = (
   };
   const facade: DurableSandbox = {
     $: createDollar(run),
+    shell: (shellOptions) => {
+      return createShell(run, shellOptions);
+    },
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({ run }),
@@ -1076,11 +1095,6 @@ export const readParsedFile = <T>(
   return fileParserOf(sandbox)(idOrOptions, path, parse) as Promise<T>;
 };
 
-// Node before 20.5 lacks the symbol that `await using` looks up.
-(Symbol as { asyncDispose?: symbol }).asyncDispose ??= Symbol.for(
-  "Symbol.asyncDispose",
-);
-
 export const createSandboxTools = (
   rawToolResolver: SandboxRawToolResolver,
   registerCleanup?: SandboxCleanupRegistrar,
@@ -1103,21 +1117,17 @@ export const createSandboxTools = (
       // that read is what marks the sandbox as scoped. A plain create never
       // reads it and is left running when the run ends.
       let cleanup: DeferHandle | undefined;
-      const disposable = Object.defineProperty(
-        { ...sandbox },
-        Symbol.asyncDispose,
-        {
-          get: () => {
-            cleanup ??= registerCleanup?.(id, {
-              sandboxId: result.sandbox.id,
-            });
+      const disposable = Object.defineProperty({ ...sandbox }, asyncDispose, {
+        get: () => {
+          cleanup ??= registerCleanup?.(id, {
+            sandboxId: result.sandbox.id,
+          });
 
-            return async () => {
-              await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
-            };
-          },
+          return async () => {
+            await destroyQuietly(sandbox, `${id}:destroy`, cleanup);
+          };
         },
-      ) as DurableSandbox & AsyncDisposable;
+      }) as DurableSandbox & AsyncDisposable;
       Object.freeze(disposable);
       fileParsers.set(disposable, fileParserOf(sandbox));
 

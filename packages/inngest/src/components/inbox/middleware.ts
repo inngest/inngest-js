@@ -115,6 +115,22 @@ export class InboxMiddleware extends Middleware.BaseMiddleware {
 
       // What the user wrote for each read, learnt when the read is reported.
       const statements = new Map<string, string>();
+
+      // Which subscription an op belongs to, at debug level. A run can hold
+      // more than one inbox, and a read that never settles is otherwise
+      // unattributable: the spans of two subscriptions look alike, so nothing
+      // says whose read is waiting. This is how to find out.
+      const log = this.client[internalLoggerSymbol];
+      const noted = (what: string, op: string) => {
+        log.debug(
+          {
+            inbox: id,
+            op,
+            run: getAsyncCtxSync()?.execution?.ctx.runId,
+          },
+          `inbox ${what}`,
+        );
+      };
       const statementOf = (op: string) => {
         return op.endsWith(":read") ? op.slice(0, -":read".length) : op;
       };
@@ -124,6 +140,8 @@ export class InboxMiddleware extends Middleware.BaseMiddleware {
         id,
         open: async (_op, opened) => {
           let opening: { id: string } | undefined;
+
+          noted("subscribe", id);
 
           await step["~inboxOpen"](inboxStatement(id, "subscribe", id), {
             sources: opened,
@@ -146,6 +164,8 @@ export class InboxMiddleware extends Middleware.BaseMiddleware {
           return hashedStepId(`${prefix}${op}`);
         },
         wait: (op, inbox, seen, timeout) => {
+          noted("next", op);
+
           return step["~inboxWait"](inboxStatement(op, "next", op), {
             inbox,
             seen,
@@ -171,7 +191,9 @@ export class InboxMiddleware extends Middleware.BaseMiddleware {
         },
         batch: (op, read) => {
           const name = read.drain ? "drain" : "nextBatch";
+
           statements.set(op, name);
+          noted(name, op);
 
           return step["~inboxWait"](inboxStatement(op, name, op), {
             inbox: read.inbox,
@@ -243,6 +265,8 @@ export class InboxMiddleware extends Middleware.BaseMiddleware {
           );
         },
         close: (op, closing) => {
+          noted("close", op);
+
           return step["~inboxClose"](
             inboxStatement(op, "close", op),
             closing,

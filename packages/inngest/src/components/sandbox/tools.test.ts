@@ -13,7 +13,7 @@ import { tool, toolDefinitions } from "./tools.ts";
 const input = z4.object({ id: z4.string().describe("Customer ID") });
 
 describe("toolDefinitions", () => {
-  test("describes tool.step and tool.group and leaves out output schemas", () => {
+  test("describes tool.step and tool.group, with the output schema as a Returns line", () => {
     const definitions = toolDefinitions({
       getCustomer: tool.step({
         description: "Looks up a customer",
@@ -34,7 +34,7 @@ describe("toolDefinitions", () => {
     expect(definitions).toEqual([
       {
         name: "getCustomer",
-        description: "Looks up a customer",
+        description: "Looks up a customer. Returns: { name: string }",
         input_schema: z4.toJSONSchema(input),
       },
       { name: "refund", input_schema: z4.toJSONSchema(input) },
@@ -136,5 +136,24 @@ describe("toolDefinitions", () => {
       toolDefinitions({ ping: () => "pong" });
 
     expect(tools).toHaveLength(1);
+  });
+});
+
+describe("tool() id", () => {
+  test("a tool without an id is defined, and the key names it", () => {
+    const found = tool({ input, run: () => "x" });
+
+    expect(found.id).toBeUndefined();
+    expect(
+      toolDefinitions({ found }).map((definition) => {
+        return definition.name;
+      }),
+    ).toEqual(["found"]);
+  });
+
+  test("an id that is not a valid name still throws", () => {
+    expect(() => {
+      return tool({ id: "not valid", run: () => "x" });
+    }).toThrow(/Invalid tool name/);
   });
 });

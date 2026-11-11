@@ -10,6 +10,7 @@
  */
 
 import { NonRetriableError, referenceFunction } from "inngest";
+import { snapshotEntry } from "../cache/names.ts";
 import { deployedRepo } from "../github/deployRepo.ts";
 import {
   buildOf,
@@ -68,7 +69,12 @@ export const requestAppJob = async (
     ownKey: "",
     // One request per job and input at a time, so apps that ask together
     // share the one build.
-    cacheKey: stepId,
+    entry: snapshotEntry({
+      kind: "run",
+      rootRunId: rootRunIdOf(run),
+      jobId: stepId,
+      ownKey: "",
+    }),
     chain,
     askedByApp: true,
     rootRunId: rootRunIdOf(run),
