@@ -82,43 +82,6 @@ export type TriggerEvent<TName extends string = string, TData = unknown> = {
 export type ThreadStatus = "running" | "waiting" | "idle";
 
 /**
- * What the agent function keeps about a thread's state.
- */
-export interface ThreadState {
-  status: ThreadStatus;
-
-  /**
-   * The loop turn of the latest model call (it starts again from 1 with each
-   * `agent.loop()`), 0 before the first.
-   */
-  turn: number;
-
-  /**
-   * The latest non-empty model reply, cut to `summaryLength` characters.
-   */
-  summary: string | undefined;
-
-  /**
-   * Tokens used by every model call of the thread, across runs, and what they
-   * cost in US dollars when the model reports its own cost.
-   */
-  usage: { input: number; output: number; usd?: number };
-
-  /**
-   * The keys your code set in the thread's KV scope.
-   */
-  keys: Record<string, unknown>;
-
-  /**
-   * How the last run that ended, ended: `completed`, `failed` or
-   * `cancelled`, with the error for a failure and what recovery did. Written
-   * when the executor reports the ending, so it appears a moment after the
-   * run stops. `undefined` before any run has ended.
-   */
-  lastRun: LastRun | undefined;
-}
-
-/**
  * What the agent function keeps in the thread KV (key `__state:<agent>`, see
  * `threadRecordKey`) for the thread state. Keys starting with `__` are hidden
  * from `keys`.
@@ -332,32 +295,6 @@ export function stepContext() {
   const execution = getAsyncCtxSync()?.execution;
 
   return execution && !execution.executingStep ? execution : undefined;
-}
-
-/**
- * The thread state record as the handle shows it. A thread with no record has
- * never run.
- * @param agent The agent, as `"appId/functionId"`.
- * @param record What the agent function kept, if anything.
- * @param all The thread's whole KV scope.
- */
-export function threadStateOf(
-  agent: string,
-  record: ThreadRecord | undefined,
-  all: Record<string, unknown>,
-): ThreadState {
-  return {
-    status: record?.status ?? "idle",
-    turn: record?.turn ?? 0,
-    summary: record?.summary,
-    usage: record?.usage ?? { input: 0, output: 0 },
-    lastRun: all[lastRunRecordKey(agent)] as LastRun | undefined,
-    keys: Object.fromEntries(
-      Object.entries(all).filter(([name]) => {
-        return !name.startsWith("__");
-      }),
-    ),
-  };
 }
 
 /**

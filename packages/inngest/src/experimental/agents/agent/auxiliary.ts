@@ -96,7 +96,10 @@ export const createCleanupFunction = (
         return;
       }
 
-      // A run's own keys live in the run, so there is nothing to clear.
+      // A run's own keys are in a store of their own, so they are cleared
+      // here: nothing else would, and they would outlive the run.
+      await store.scope("run", runId).clear();
+
       if (thread) {
         await markThreadIdle(store, ref, thread, runId, true);
       }

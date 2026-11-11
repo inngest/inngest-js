@@ -530,10 +530,14 @@ export const threadSandboxOwner = (
     takePaused: async (name) => {
       const key = typedKey<PausedSandbox>(sandboxPausedKey(ref, name));
 
-      // A thread's state has one writer and this record is per agent, with one
-      // live run per agent per thread, so a plain read and delete is enough:
-      // the newest run's claim stands. There is no atomic take to use, and
-      // nothing here needs one.
+      // A plain read and delete, with no atomic take anywhere near it.
+      //
+      // A thread's state has ONE writer - its holder - and this record is per
+      // agent, with one live run per agent per thread, so the newest run's
+      // claim stands and there is nothing to race. This is the one-writer
+      // invariant paying for itself: it bought a simplification rather than
+      // costing one. An atomic take added back here would be solving a problem
+      // the design has already removed.
       const held = await scope.get(key);
 
       if (held) {

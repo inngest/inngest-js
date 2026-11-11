@@ -470,7 +470,6 @@ export type {
   AskOptions,
   RunHandle,
   ThreadHandle,
-  ThreadState,
   ThreadStatus,
   TriggerEvent,
 } from "../threads/thread.ts";

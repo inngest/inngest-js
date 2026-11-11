@@ -38,12 +38,17 @@
  * Accepted gaps, stated here because they are properties of this protocol
  * rather than bugs in it:
  *
- * - **4MB.** A thread's whole log travels on the rollover event. Past 4MB the
- *   event is rejected and the thread is lost. There is no store to spill to.
+ * - **Size.** A thread's whole log travels on a handover - as the invoke's
+ *   return value and then as the next holder's input, not on an event, so
+ *   nothing about it can be skipped or dropped. It is still subject to the
+ *   platform's own limits on what a run can return and be given, and past them
+ *   the thread is lost: there is no store to spill to. The state a forward
+ *   carries is capped well under the event limit for the same reason, and a
+ *   thread past that cap simply forwards without it.
  * - A write to a thread with **no live run** reaches nothing, and nobody is
  *   told.
  * - **Permanent failure of a thread run loses the log since the last
- *   rollover**, including the case where an agent was told its write landed
+ *   handover**, including the case where an agent was told its write landed
  *   and is later handed state without it.
  * - **Dormancy.** Nothing re-animates a thread nobody is asking after.
  */

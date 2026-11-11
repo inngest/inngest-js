@@ -52,21 +52,28 @@ const readTimeout = "30s";
 const listenTimeout = "30s";
 
 /*
- * The thread run holds **every** key of its thread's scope while an agent run
- * has it: what the user's code sets, the model's history, and the agent's own
+ * THE THREAD RUN HOLDS EVERY KEY OF ITS THREAD'S SCOPE while an agent run has
+ * it: what the user's code sets, the model's history, and the agent's own
  * record of the thread.
  *
- * It has to be every key rather than a chosen few, because an agent run must
- * hold exactly one subscription (the thread's forwards) and the ledger's
- * client opens one of its own for a read or a write. Reaching the ledger from
- * inside an agent run would put a second resolver in the run, which loses
- * messages silently.
+ * It has to be every key rather than a chosen few, because of the rule that an
+ * agent run never subscribes to anything its thread subscribes to. A store's
+ * client that opens a subscription of its own for a read or a write would put
+ * a second resolver in the run, and two resolvers on one event lose messages
+ * with an arbitrary survivor and no error.
  *
- * What that costs until the ledger is retired: `thread.state()` read from
- * outside a run, and the cleanup and finished functions, still read the ledger,
- * so they see only what they wrote themselves. Those are the call sites the
- * retirement has to move, and they are listed in `21-thread-design.md`.
+ * Every function that touches thread state therefore obtains the thread's own
+ * handle first - the agent run, its cleanup, and the function that records how
+ * it ended - and after that `kv.thread` reads what the run already holds and
+ * writes by sending the thread an event. There is no store behind any of it.
+ *
+ * And there is **no public read of thread state**. A read is a request to the
+ * holder and a wait for its answer, which is a step, so it works inside a
+ * function run and nowhere else; inside a run it is near-redundant with
+ * `kv.thread.get`, which is local. Serving it from a route handler would need
+ * an API call, which this layer does not make.
  */
+
 /**
  * One agent run's view of its thread.
  */
