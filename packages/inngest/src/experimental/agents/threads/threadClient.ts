@@ -424,6 +424,15 @@ export const obtainThreadState = async (options: {
       });
     },
     async took(seq) {
+      // WHAT MATTERS IS THAT `taken` ADVANCED, NOT THAT A TAKE WAS WRITTEN.
+      //
+      // Nothing is written when the thread has already moved its watermark
+      // past this position, which it does as soon as a run hands over the
+      // event that started it: the thread appends that entry and counts it as
+      // taken in the same breath, because the run that handed it over has it.
+      // So a thread can be perfectly up to date with no take op anywhere in
+      // the stream. Anything - a test, a dashboard, a monitor - that watches
+      // for the EVENT rather than the state will under-report, and silently.
       if (seq <= state.taken) {
         return;
       }

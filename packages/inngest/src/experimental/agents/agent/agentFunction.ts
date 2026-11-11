@@ -214,6 +214,12 @@ import type {
 } from "./types.ts";
 
 /**
+ * The runs whose fresh-thread warning has been said, so a replay does not say
+ * it again. Bounded: a run says it once.
+ */
+const freshWarned = new Set<string>();
+
+/**
  * The handler of an agent with a `model` and no handler of its own: each batch
  * goes to the model through the loop, and the final answer is the run's
  * output. The run is short-lived: it ends once the inbox is empty, and the
@@ -612,10 +618,10 @@ export function createAgentFunction(
         // anywhere else - a precomputed answer reopens the gap this closes.
         // A forward that started this run may carry the thread's state with
         // it, in which case there is nothing to ask for.
-        const handed =
-          (event.name as string) === threadForward.name
-            ? (event.data as ThreadForwardData).state
-            : undefined;
+        const forwardedStart = (event.name as string) === threadForward.name;
+        const handed = forwardedStart
+          ? (event.data as ThreadForwardData).state
+          : undefined;
         const threadState = await obtainThreadState({
           client,
           step: step as unknown as StepWithSubscribe,
@@ -623,11 +629,21 @@ export function createAgentFunction(
           thread: data.thread,
           runId,
           ...(handed && { given: handed }),
-          arrival: {
-            ...(event.id !== undefined && { id: event.id }),
-            name: event.name,
-            data: event.data,
-          },
+          // The event that started this run travels with the read so the log
+          // holds it even when the thread never saw it - but NOT when a
+          // forward started the run. The thread logged that batch itself, and
+          // the forward is its own event: handing it over would put an
+          // `agent/thread.forward` in the thread's log as though it were
+          // something that had arrived.
+          ...(forwardedStart
+            ? {}
+            : {
+                arrival: {
+                  ...(event.id !== undefined && { id: event.id }),
+                  name: event.name,
+                  data: event.data,
+                },
+              }),
         });
 
         // The model's `listen` and `unlisten` tools, and the handler's
@@ -687,11 +703,19 @@ export function createAgentFunction(
         // memoized step and the view is rebuilt in the same order on every
         // replay.
         if (data.fresh) {
+          // Through the client's own logger, not the handler's: the handler's
+          // is quiet while a run replays, and this line is reached after the
+          // run's first step, so on the first request it has not run yet and
+          // on every later one the handler's logger would swallow it. Once per
+          // run and process, like the inbox's own drop warnings.
           traceWarning(
-            logger,
+            freshWarned.has(`${runId}:${data.thread}`)
+              ? undefined
+              : client[internalLoggerSymbol],
             "thread.fresh",
             `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
           );
+          freshWarned.add(`${runId}:${data.thread}`);
         }
 
         const begun = await startWith();
@@ -820,7 +844,8 @@ export function createAgentFunction(
             return entry.seq;
           }),
         );
-        const caughtUp = threadState.pending().filter((entry) => {
+        const pending = threadState.pending();
+        const caughtUp = pending.filter((entry) => {
           return (
             !batched.has(entry.seq) &&
             (entry.id === undefined || entry.id !== startMessage.id)
@@ -834,9 +859,19 @@ export function createAgentFunction(
 
         // The highest position of the log this run has been handed, which it
         // confirms to the thread when its work is done.
+        //
+        // EVERY entry the thread held and nothing had taken up is handed to
+        // this run - the catch-up, the batch that woke it, and the entry that
+        // started it - so the watermark covers all of them, not only the ones
+        // that lead the inbox. The entry that started the run is the one to
+        // watch: it is left out of the catch-up because it is handed over as
+        // the run's own event, and a watermark that left it out too would
+        // never advance for a run whose only entry is the one that started it.
+        // The thread would then hand that entry to every later run on the
+        // thread, for ever, and the log would never get shorter.
         let took = Math.max(
           0,
-          ...caughtUp.map((entry) => {
+          ...pending.map((entry) => {
             return entry.seq;
           }),
           ...(forwarded ?? []).map((entry) => {

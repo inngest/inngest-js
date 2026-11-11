@@ -625,3 +625,63 @@ describe("the holder's reads", () => {
     }
   });
 });
+
+describe("the watermark", () => {
+  test("a run a forward started hands over no arrival: the thread logged the batch itself", async () => {
+    freshKv();
+
+    const { fn } = reader();
+    // No state on the forward, so the run falls back to a read - and the read
+    // must not hand the forward itself over as something that arrived.
+    const { sent } = await run(fn, {
+      forward: false,
+      event: forward(["one"]),
+    });
+    const read = sent.find((event) => {
+      return event.name === "agent/thread.read";
+    });
+
+    expect(read).toBeDefined();
+    expect((read?.data as { arrival?: unknown }).arrival).toBeUndefined();
+  });
+
+  test("a run whose only entry is the one that started it still advances it", async () => {
+    freshKv();
+
+    const { fn } = reader();
+    // A cold thread: the holder logged the arrival that started it and nothing
+    // has taken it up, and this run was started by that same event rather than
+    // by a forward.
+    const { sent } = await run(fn, {
+      event: message("hi"),
+      thread: held({
+        seq: 1,
+        taken: 0,
+        entries: [
+          {
+            seq: 1,
+            id: "evt-1",
+            name: "agent/message",
+            data: { agent: ref, thread: "t1", content: "hi" },
+            ts: 0,
+          },
+        ],
+      }),
+    });
+    const takes = sent.flatMap((event) => {
+      return event.name === "agent/thread.write"
+        ? ((event.data as { ops?: { kind: string; seq?: number }[] }).ops ?? [])
+            .filter((op) => {
+              return op.kind === "take";
+            })
+            .map((op) => {
+              return op.seq;
+            })
+        : [];
+    });
+
+    // Without this the thread would hand that entry to every later run on the
+    // thread, for ever, and the log would never get shorter.
+    expect(takes).toContain(1);
+  });
+});
