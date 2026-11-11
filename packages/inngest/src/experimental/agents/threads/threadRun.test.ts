@@ -9,6 +9,7 @@ import { Inngest } from "../../../components/Inngest.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { createAgentFunction } from "../agent/agentFunction.ts";
 import { freshKv, run } from "../agent/test-helpers.ts";
+import { kv as internalKv } from "../kv/kv.ts";
 import {
   applyThreadWrite,
   applyThreadWriteEvent,
@@ -708,14 +709,14 @@ describe("write ids", () => {
       async ({ inbox, kv, step }) => {
         await inbox.next();
 
-        // Between steps.
+        // Between steps, which is the only place a user's code may write.
         await kv.thread.set("one", 1);
 
-        // And from inside a step's callback, which is the path that cannot
-        // issue a step of its own and sends the event directly.
+        // And from inside a step's callback, as the SDK's own writers do: that
+        // path cannot issue a step of its own, so it sends the event directly.
         await step.run("work", async () => {
-          await kv.thread.set("two", 2);
-          await kv.thread.set("three", 3);
+          await internalKv.thread.set("two", 2);
+          await internalKv.thread.set("three", 3);
 
           return null;
         });
@@ -737,6 +738,71 @@ describe("write ids", () => {
     // and nothing anywhere says so.
     expect(ids.length).toBeGreaterThanOrEqual(3);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("a step whose name holds a colon cannot be mistaken for another step's write", async () => {
+    freshKv();
+
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox, step }) => {
+        await inbox.next();
+
+        // A step named like the start of another step's write id. Unescaped,
+        // `<run>:work:0:0` and `<run>:work:0` read the same way round.
+        await step.run("work:0", async () => {
+          await internalKv.thread.set("one", 1);
+
+          return null;
+        });
+        await step.run("work", async () => {
+          await internalKv.thread.set("two", 2);
+
+          return null;
+        });
+
+        return null;
+      },
+    );
+    const { sent } = await run(made.fn, { event: message("go") });
+    const ids = idsOf(sent);
+
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("a user's write inside a step's callback throws, and says what to do instead", async () => {
+    freshKv();
+
+    const made = createAgentFunction(
+      client(),
+      { id: "bot" },
+      async ({ inbox, kv, step }) => {
+        await inbox.next();
+
+        try {
+          await step.run("work", async () => {
+            await kv.thread.set("held", true);
+
+            return null;
+          });
+        } catch (error) {
+          return (error as Error).message;
+        }
+
+        return "it did not throw";
+      },
+    );
+    const { output } = await run(made.fn, { event: message("go") });
+    const said = String(output);
+
+    // It would be durable and the run could not read it back, which is a
+    // surprise rather than an obvious mistake: so it fails on the first
+    // attempt, and says why and what to do.
+    expect(said).toContain("cannot be called inside a step's callback");
+    expect(said).toContain("could not read it back");
+    expect(said).toContain("Return the value from the step");
   });
 
   test("the thread drops a write whose id it has already applied", () => {

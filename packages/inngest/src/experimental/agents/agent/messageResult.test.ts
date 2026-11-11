@@ -35,11 +35,9 @@ const setup = () => {
     fetch: (async (_url: unknown, init?: { body?: string }) => {
       // A run's own talk with its thread is not what these tests are about.
       sent.push(
-        ...(JSON.parse(init?.body ?? "[]") as { name?: string }[]).filter(
-          (event) => {
-            return !String(event.name).startsWith("agent/thread.");
-          },
-        ),
+        ...(JSON.parse(init?.body ?? "[]") as typeof sent).filter((event) => {
+          return !String(event.name).startsWith("agent/thread.");
+        }),
       );
 
       return new Response(JSON.stringify({ ids: ["1"], status: 200 }));

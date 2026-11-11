@@ -116,11 +116,13 @@ export const reportDataProblem = (
  * name, with its routing in `report`.
  *
  * This is the runtime half, and it works: a report arrives under its own
- * type's name with its own data. The TYPES cannot narrow to it -
- * `msg.is(finding)` gives `never` - and the reason, the cast that works around
- * it, and why a permissive union member would be the wrong repair are written
- * on `AgentMessage` in `agent/types.ts`. A reader who lands here wondering
- * why their report is not typed wants that comment.
+ * type's name with its own data. The TYPES cannot narrow to it - `is()` gives
+ * `never`, and comparing the name is rejected outright because the union's
+ * names are literals. The reason, the form that does compile, and why a
+ * permissive union member would be the wrong repair are written on
+ * `AgentMessage` in `agent/types.ts`, and the form is compiled by
+ * `agent/reportTypes.test.ts`. A reader who lands here wondering why their
+ * report is not typed wants that comment.
  */
 export const isReportMessage = (message: unknown): boolean => {
   return (

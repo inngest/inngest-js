@@ -130,6 +130,7 @@ import {
   entryAsMessage,
   forwardedEntries,
   obtainThreadState,
+  threadKeysFor,
 } from "../threads/threadClient.ts";
 import {
   type ThreadForwardData,
@@ -1340,23 +1341,10 @@ export function createAgentFunction(
             ),
 
             // Slot: kv. What the thread keeps for the user's code, which is
-            // sugar over the thread's log: a get is local, a set is one write.
-            kv: {
-              thread: {
-                get: (key: string) => {
-                  return threadState.handle.get(key) as Promise<never>;
-                },
-                set: (key: string, value: Json) => {
-                  return threadState.handle.set(key, value);
-                },
-                delete: (key: string) => {
-                  return threadState.handle.delete(key);
-                },
-                all: () => {
-                  return threadState.handle.all();
-                },
-              },
-            },
+            // sugar over the thread's log: a get is local, a set is one write,
+            // and a write inside a step's callback throws rather than being
+            // durable but invisible to the run that made it.
+            kv: { thread: threadKeysFor(threadState.handle) },
 
             // Slot: thread. The handle to the run's own thread.
             thread: {

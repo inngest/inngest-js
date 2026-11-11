@@ -43,7 +43,8 @@ import type { Inngest } from "../../../components/Inngest.ts";
 import type { UntypedInboxMessage } from "../../../components/inbox/Inbox.ts";
 import { addEventIs } from "../../../components/triggers/triggers.ts";
 import { nextCount } from "../agent/executionCounter.ts";
-import type { StepWithSubscribe } from "../agent/types.ts";
+import type { AgentThreadKeys, StepWithSubscribe } from "../agent/types.ts";
+import type { Json } from "../json.ts";
 import { type KvScopeHandle, setThreadHandle } from "../kv/kv.ts";
 import {
   emptySnapshot,
@@ -133,6 +134,67 @@ export interface ThreadClient {
    */
   handle: KvScopeHandle;
 }
+
+/**
+ * What `kv.thread` gives a user's code: the handle, with writes refused inside
+ * a step's callback.
+ *
+ * A write made in there WORKS - it is durable and the thread applies it - and
+ * the run that made it cannot read it back, because it is applied to the run's
+ * own view only in the request where that callback ran and a replay skips the
+ * callback. Measured in a running app: a run wrote three keys, read two of
+ * them back as missing, and the thread ended up holding all three. "Works,
+ * durable, invisible" is the shape of a surprise that costs days, so it throws
+ * instead, on the first attempt, with the way to do it properly.
+ *
+ * The mitigation not taken, because it is the first thing anyone proposes:
+ * overlaying the run's own in-callback writes onto what `get` returns would
+ * work only in the request where the callback ran. On every later request the
+ * overlay is empty, so `get` would answer differently across requests of the
+ * same run - which is exactly the replay non-determinism that the write-id
+ * collision was.
+ *
+ * Internal writers keep the in-callback path: they do not read their own
+ * writes back in the same run, and they carry the write ids that make a
+ * step's retry harmless.
+ * @param handle The run's thread handle.
+ */
+export const threadKeysFor = (handle: KvScopeHandle): AgentThreadKeys => {
+  const refuseInStep = (call: string) => {
+    const executing = getAsyncCtxSync()?.execution?.executingStep;
+
+    if (!executing) {
+      return;
+    }
+
+    throw new Error(
+      [
+        `kv.thread.${call}() cannot be called inside a step's callback.`,
+        "The write would be durable and would reach the thread, but this run could not read it back: a write made inside a callback is applied to the run's own view only in the request where that callback ran, and a replay skips the callback. So the value would look missing to the code right after it.",
+        'Return the value from the step and set it outside:\n\n  const result = await step.run("work", async () => {\n    // ...\n    return value;\n  });\n\n  await kv.thread.set("result", result);',
+      ].join(" "),
+    );
+  };
+
+  return {
+    get<T = unknown>(key: string) {
+      return handle.get(key) as Promise<T | undefined>;
+    },
+    set(key: string, value: Json) {
+      refuseInStep("set");
+
+      return handle.set(key, value);
+    },
+    delete(key: string) {
+      refuseInStep("delete");
+
+      return handle.delete(key);
+    },
+    all() {
+      return handle.all();
+    },
+  };
+};
 
 /**
  * The entries of a forward, or nothing when the message is not one.
@@ -272,7 +334,13 @@ export const obtainThreadState = async (options: {
         threadWrite.create({
           agent: ref,
           thread,
-          id: `${runId}:${executing.id}:${nth}`,
+          // The step part is escaped, because a step's id is its NAME and a
+          // name may contain a colon - the SDK's own do. Unescaped, a step
+          // named `work:0` writing once and a step named `work` writing at
+          // index 0 would produce the same id, and the thread would drop one
+          // of them. Same shape as before, `<run>:<step>:<n>`, but the middle
+          // can no longer be mistaken for the ends.
+          id: `${runId}:${encodeURIComponent(executing.id)}:${nth}`,
           ops,
           run: runId,
         }),

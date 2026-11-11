@@ -813,55 +813,78 @@ export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
  * triggers, one for each of its `inbox` sources, and one for each of the
  * `agent/*` messages the agent layer sends.
  *
- * ## A KNOWN LIMITATION: `msg.is()` on an arriving REPORT narrows to `never`
+ * ## A KNOWN LIMITATION: an arriving REPORT cannot be narrowed to
  *
  * A report a started agent sends back arrives as a message like any other, and
  * **the runtime is correct**: it is re-presented under its own type's name,
  * with the report's own data, its sender in `from`, and what it relies on in
- * `report`. The TYPE cannot say so, and narrowing it fails:
+ * `report`. The TYPE cannot say so. Both of the obvious ways to ask fail, and
+ * the second fails in a way that reads like a broken SDK, so here is all of
+ * it.
+ *
+ * **`is()` gives you `never`.**
  *
  * ```ts
- * const finding = eventType("demo/finding", { schema });
- *
- * for await (const msg of inbox) {
- *   if (msg.is(finding)) {
- *     msg.data.severity;   // `msg` is `never` here
+ * for await (const message of inbox) {
+ *   if (message.is(finding)) {
+ *     message.data.severity;   // `message` is `never` here
  *   }
  * }
  * ```
  *
- * Why it fails, from the mechanics, because the reason is not guessable from
- * the error: `is()` is a type predicate on `this`
- * (`is(types): this is EventTypesToShape<T>`), and
- * TypeScript narrows a union by intersecting the asserted shape with each
- * member in turn. An arriving report is none of this union's members - not a
- * trigger, not an `inbox` source, not an `agent/*` message - so every
- * intersection is empty and the result is `never`.
+ * `is()` is a type predicate on `this` (`is(types): this is
+ * EventTypesToShape<T>`), and TypeScript narrows a union by intersecting the
+ * asserted shape with each member in turn. An arriving report is none of this
+ * union's members - not a trigger, not an `inbox` source, not an `agent/*`
+ * message - so every intersection is empty and the result is `never`.
  *
- * The workaround is to match the name yourself. Note what `is()` was doing
- * for a report besides narrowing: it checks the data against the report type's
- * own schema and refuses the match if it does not fit, because the data is
- * whatever the SENDER wrote. So a bare cast trusts the sender. Validate with
- * the same schema instead, which is both typed and checked:
+ * **Comparing the name is REJECTED, which is the surprising one.**
  *
  * ```ts
- * const schema = z.object({ severity: z.string() });
- * const finding = eventType("demo/finding", { schema });
+ * if (message.name === finding.name) {   // error TS2367: no overlap
+ *   message.data;                        // error TS2339: on type `never`
+ * }
+ * ```
  *
- * for await (const msg of inbox) {
- *   if (msg.name === finding.name) {
- *     const found = schema.parse(msg.data);
+ * Every name in the union is a string LITERAL, so TypeScript knows the two
+ * sides can never be equal and refuses the comparison outright rather than
+ * just answering `false`. The "no overlap" error names a union of literals
+ * that looks nothing like what you asked about, and it is baffling the first
+ * time.
+ *
+ * **What works: widen to the two fields the check needs, then parse.**
+ *
+ * ```ts
+ * const findingSchema = z.object({ severity: z.string() });
+ * const finding = eventType("review/finding", { schema: findingSchema });
+ *
+ * for await (const message of inbox) {
+ *   const named: { name: string; data: unknown } = message;
+ *
+ *   if (named.name === finding.name) {
+ *     const found = findingSchema.parse(named.data);
  *
  *     found.severity;
  *   }
  * }
  * ```
  *
+ * The widening is a local alias, so `message` itself is untouched and narrows
+ * as it always did for the agent's own events. This form is compiled by
+ * `reportTypes.test.ts`, so it is checked rather than hoped for.
+ *
+ * It PARSES rather than casts, and that is not pedantry. `is()` was doing two
+ * things for a report: narrowing it, and checking its data against the report
+ * type's own schema - refusing the match when it does not fit, because a
+ * report's data is whatever the SENDER wrote. A bare `as` cast is therefore
+ * typed and TRUSTED, and silently drops that check. Parsing with the same
+ * schema keeps it.
+ *
  * ## Why this is not fixed, so nobody fixes it the cheap way
  *
  * The obvious repair is a permissive member here (`name: string`, `data:
  * Record<string, unknown>`). It would make a report narrow, and it would also
- * intersect with EVERY other narrowing: `msg.is(order)` would then give
+ * intersect with EVERY other narrowing: `message.is(order)` would then give
  * `data: OrderData | Record<string, unknown>`, so every correct narrowing in
  * every agent gets weaker to buy this one case. Do not add it.
  *

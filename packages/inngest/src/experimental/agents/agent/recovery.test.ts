@@ -107,11 +107,9 @@ describe("the finished function", () => {
 
         // A run's own talk with its thread is not what these tests are about.
         sent.push(
-          ...(JSON.parse(init?.body ?? "[]") as { name?: string }[]).filter(
-            (event) => {
-              return !String(event.name).startsWith("agent/thread.");
-            },
-          ),
+          ...(JSON.parse(init?.body ?? "[]") as typeof sent).filter((event) => {
+            return !String(event.name).startsWith("agent/thread.");
+          }),
         );
 
         return new Response(JSON.stringify({ ids: ["1"], status: 200 }));
@@ -127,7 +125,7 @@ describe("the finished function", () => {
     const taking = (body: string) => {
       for (const event of JSON.parse(body) as {
         name?: string;
-        data?: { ops?: ThreadWriteOp[] };
+        data?: unknown;
       }[]) {
         if (event.name !== "agent/thread.write") {
           continue;

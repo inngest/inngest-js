@@ -21,7 +21,7 @@ const setup = (
     id: testClientId,
     eventKey: "key",
     fetch: (async (_url: unknown, init?: { body?: string }) => {
-      const sent = JSON.parse(init?.body ?? "null") as { name?: string }[];
+      const sent = JSON.parse(init?.body ?? "null") as typeof bodies;
 
       // A run's own talk with its thread is not what these tests are about.
       bodies.push(
