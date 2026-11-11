@@ -114,6 +114,13 @@ export const reportDataProblem = (
 /**
  * Whether an inbox message is a report: one the inbox showed under its type's
  * name, with its routing in `report`.
+ *
+ * This is the runtime half, and it works: a report arrives under its own
+ * type's name with its own data. The TYPES cannot narrow to it -
+ * `msg.is(finding)` gives `never` - and the reason, the cast that works around
+ * it, and why a permissive union member would be the wrong repair are written
+ * on `AgentMessage` in `agent/types.ts`. A reader who lands here wondering
+ * why their report is not typed wants that comment.
  */
 export const isReportMessage = (message: unknown): boolean => {
   return (

@@ -808,6 +808,74 @@ export type AgentMessageOf<TTypes extends AgentTypes> = AgentMessage<
   AgentTypesOf<TTypes>["sources"]
 >;
 
+/**
+ * A message as the agent reads it: one member for each of the agent's
+ * triggers, one for each of its `inbox` sources, and one for each of the
+ * `agent/*` messages the agent layer sends.
+ *
+ * ## A KNOWN LIMITATION: `msg.is()` on an arriving REPORT narrows to `never`
+ *
+ * A report a started agent sends back arrives as a message like any other, and
+ * **the runtime is correct**: it is re-presented under its own type's name,
+ * with the report's own data, its sender in `from`, and what it relies on in
+ * `report`. The TYPE cannot say so, and narrowing it fails:
+ *
+ * ```ts
+ * const finding = eventType("demo/finding", { schema });
+ *
+ * for await (const msg of inbox) {
+ *   if (msg.is(finding)) {
+ *     msg.data.severity;   // `msg` is `never` here
+ *   }
+ * }
+ * ```
+ *
+ * Why it fails, from the mechanics, because the reason is not guessable from
+ * the error: `is()` is a type predicate on `this`
+ * (`is(types): this is EventTypesToShape<T>`), and
+ * TypeScript narrows a union by intersecting the asserted shape with each
+ * member in turn. An arriving report is none of this union's members - not a
+ * trigger, not an `inbox` source, not an `agent/*` message - so every
+ * intersection is empty and the result is `never`.
+ *
+ * The workaround is to match the name yourself. Note what `is()` was doing
+ * for a report besides narrowing: it checks the data against the report type's
+ * own schema and refuses the match if it does not fit, because the data is
+ * whatever the SENDER wrote. So a bare cast trusts the sender. Validate with
+ * the same schema instead, which is both typed and checked:
+ *
+ * ```ts
+ * const schema = z.object({ severity: z.string() });
+ * const finding = eventType("demo/finding", { schema });
+ *
+ * for await (const msg of inbox) {
+ *   if (msg.name === finding.name) {
+ *     const found = schema.parse(msg.data);
+ *
+ *     found.severity;
+ *   }
+ * }
+ * ```
+ *
+ * ## Why this is not fixed, so nobody fixes it the cheap way
+ *
+ * The obvious repair is a permissive member here (`name: string`, `data:
+ * Record<string, unknown>`). It would make a report narrow, and it would also
+ * intersect with EVERY other narrowing: `msg.is(order)` would then give
+ * `data: OrderData | Record<string, unknown>`, so every correct narrowing in
+ * every agent gets weaker to buy this one case. Do not add it.
+ *
+ * The other apparent repair - a predicate that asserts a type which is not a
+ * member of this union - is not expressible: TypeScript requires a type
+ * predicate's asserted type to be assignable to the declared type it narrows.
+ *
+ * ## The shape of the real fix, if it is ever picked up
+ *
+ * The agent would declare the report types it accepts, the way it declares its
+ * `inbox` sources (`agents.agent({ id: "lead", reports: [finding] }, …)`),
+ * and those members would join this union - narrowing exactly, weakening
+ * nothing. It was considered and left out of scope rather than rejected.
+ */
 export type AgentMessage<TEvent = TriggerEvent, TSources = undefined> =
   | TriggerMessage<TEvent>
   | SourceMessages<TSources>
