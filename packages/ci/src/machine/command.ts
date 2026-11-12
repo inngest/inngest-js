@@ -1324,9 +1324,11 @@ const showProgress = async (scope: CiJobScope): Promise<void> => {
  * multi-byte UTF-8 character split across two chunks of the same stream
  * survives instead of becoming U+FFFD replacement characters. Sharing one
  * decoder across streams — or decoding each chunk on its own — corrupts
- * any character a chunk boundary falls inside. A final flush turns a
- * character the output genuinely ends inside into a replacement
- * character, as before.
+ * any character a chunk boundary falls inside. A character the output
+ * genuinely ends inside becomes a replacement character, as before: each
+ * decoder is flushed at its own stream's last chunk, so the replacement
+ * lands where that stream's output ends in `merged` instead of after
+ * later output from the other stream.
  */
 export const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
@@ -1336,11 +1338,25 @@ export const decodeChunks = (output: {
     stderr: new TextDecoder(),
   };
 
+  const chunks = output?.chunks ?? [];
+
+  // The index of each stream's last chunk, so its decoder can be flushed
+  // the moment the stream is done.
+  const lastIndex = { stdout: -1, stderr: -1 };
+
+  chunks.forEach((chunk, index) => {
+    if (chunk.stream === "STDERR") {
+      lastIndex.stderr = index;
+    } else {
+      lastIndex.stdout = index;
+    }
+  });
+
   let stdout = "";
   let stderr = "";
   let merged = "";
 
-  for (const chunk of output?.chunks ?? []) {
+  chunks.forEach((chunk, index) => {
     const isStderr = chunk.stream === "STDERR";
 
     const decoder = isStderr ? decoders.stderr : decoders.stdout;
@@ -1357,14 +1373,21 @@ export const decodeChunks = (output: {
     } else {
       stdout += text;
     }
-  }
 
-  const stdoutTail = decoders.stdout.decode();
-  const stderrTail = decoders.stderr.decode();
+    const isLast = index === (isStderr ? lastIndex.stderr : lastIndex.stdout);
 
-  stdout += stdoutTail;
-  stderr += stderrTail;
-  merged += stdoutTail + stderrTail;
+    if (isLast) {
+      const tail = decoder.decode();
+
+      merged += tail;
+
+      if (isStderr) {
+        stderr += tail;
+      } else {
+        stdout += tail;
+      }
+    }
+  });
 
   return { stdout, stderr, merged };
 };

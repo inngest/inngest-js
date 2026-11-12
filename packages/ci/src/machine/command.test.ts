@@ -73,6 +73,49 @@ describe("decodeChunks", () => {
     });
   });
 
+  test("flushes an incomplete character where its stream ends, not after later output", () => {
+    const chunks = [
+      { stream: "STDOUT", data: bytes("€").subarray(0, 2) },
+      { stream: "STDERR", data: "warn\n" },
+    ];
+
+    expect(decodeChunks({ chunks })).toEqual({
+      stdout: "�",
+      stderr: "warn\n",
+      merged: "�warn\n",
+    });
+  });
+
+  test("flushes each stream at its own last chunk when both end incomplete", () => {
+    const chunks = [
+      { stream: "STDERR", data: bytes("π").subarray(0, 1) },
+      { stream: "STDOUT", data: bytes("€").subarray(0, 2) },
+      { stream: "STDERR", data: "done\n" },
+    ];
+
+    expect(decodeChunks({ chunks })).toEqual({
+      stdout: "�",
+      stderr: "done\n�",
+      merged: "�done\n�",
+    });
+  });
+
+  test("still joins a character split across chunks with another stream in between", () => {
+    const euro = bytes("€");
+
+    const chunks = [
+      { stream: "STDOUT", data: euro.subarray(0, 1) },
+      { stream: "STDERR", data: "x" },
+      { stream: "STDOUT", data: euro.subarray(1) },
+    ];
+
+    expect(decodeChunks({ chunks })).toEqual({
+      stdout: "€",
+      stderr: "x",
+      merged: "x€",
+    });
+  });
+
   test("handles missing and empty output", () => {
     expect(decodeChunks({})).toEqual({ stdout: "", stderr: "", merged: "" });
 
