@@ -1317,29 +1317,44 @@ const showProgress = async (scope: CiJobScope): Promise<void> => {
   );
 };
 
-const decoder = new TextDecoder();
-
-const decodeChunks = (output: {
+/**
+ * Decode captured output chunks into text. Each stream has a decoder of its
+ * own, kept across its chunks, so a multi-byte character split between two
+ * chunks decodes whole instead of as replacement characters.
+ */
+export const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
 }): { stdout: string; stderr: string; merged: string } => {
+  const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
   let stdout = "";
   let stderr = "";
   let merged = "";
 
   for (const chunk of output?.chunks ?? []) {
+    const isStderr = chunk.stream === "STDERR";
     const text =
       typeof chunk.data === "string"
         ? chunk.data
-        : decoder.decode(chunk.data as Uint8Array);
+        : decoders[isStderr ? "stderr" : "stdout"].decode(
+            chunk.data as Uint8Array,
+            { stream: true },
+          );
 
     merged += text;
 
-    if (chunk.stream === "STDERR") {
+    if (isStderr) {
       stderr += text;
     } else {
       stdout += text;
     }
   }
+
+  // Flush a character left unfinished when its stream ended.
+  const stdoutRest = decoders.stdout.decode();
+  const stderrRest = decoders.stderr.decode();
+  stdout += stdoutRest;
+  stderr += stderrRest;
+  merged += stdoutRest + stderrRest;
 
   return { stdout, stderr, merged };
 };
