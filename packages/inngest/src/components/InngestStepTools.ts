@@ -568,6 +568,122 @@ export const createStepTools = <
    */
   const tools = {
     /**
+     * The op that opens an inbox. Used by the `step.subscribe` that
+     * `inboxMiddleware` adds.
+     */
+    "~inboxOpen": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          sources: { event: string; if?: string }[];
+
+          // Called with the op, which the engine gives its final ID later.
+          track?: (op: { id: string }) => void;
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      const op = {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.Subscribe,
+        name: id,
+        displayName: name ?? id,
+        opts: { sources: opts.sources },
+        userland: { id },
+      };
+
+      opts.track?.(op);
+
+      return op;
+    }),
+
+    /**
+     * The op that closes an inbox. Used by the `step.subscribe` that
+     * `inboxMiddleware` adds. It settles with the cut the executor saved: the
+     * last message the inbox had.
+     */
+    "~inboxClose": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: { inbox: string },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeClose,
+        name: id,
+        displayName: name ?? id,
+        opts: { inbox: opts.inbox },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The op of a read of an inbox that has nothing unread. Used by the
+     * `step.subscribe` that `inboxMiddleware` adds. It is never answered from
+     * state: the executor wakes the run and the read finds its message there.
+     */
+    "~inboxWait": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          seen: string;
+          timeout?: string;
+          batch?: { drain?: boolean; unread?: boolean; max?: number };
+        },
+      ) => Promise<unknown>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.SubscribeWait,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          seen: opts.seen,
+          ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+          ...(opts.batch === undefined ? {} : { batch: opts.batch }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
+     * The lazy op that reports the messages a read took. Used by the
+     * `step.subscribe` that `inboxMiddleware` adds. It rides on the next
+     * message to the executor and has no answer.
+     */
+    "~inboxRead": createTool<
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: {
+          inbox: string;
+          messages: string[];
+          draw: boolean;
+          row?: string;
+        },
+      ) => Promise<void>
+    >(({ id, name }, opts) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.SubscribeRead,
+        name: id,
+        displayName: name ?? id,
+        opts: {
+          inbox: opts.inbox,
+          messages: opts.messages,
+          ...(opts.draw ? { draw: true } : {}),
+          ...(opts.row === undefined ? {} : { row: opts.row }),
+        },
+        userland: { id },
+      };
+    }),
+
+    /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried
      * and not sent multiple times due to memoisation.

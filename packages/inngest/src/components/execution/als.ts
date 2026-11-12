@@ -2,6 +2,7 @@ import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
+import type { InboxRead } from "./inboxState.ts";
 
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
@@ -91,6 +92,54 @@ export interface AsyncContext {
      * nested step, which is not allowed.
      */
     insideExperimentSelect?: boolean;
+
+    /**
+     * What the executor said it supports on this request. Undefined when
+     * unknown.
+     */
+    executorCapabilities?: string[];
+
+    /**
+     * What an inbox (`step.subscribe()`) reads from the run's state: its
+     * messages in the order the executor saved them, and the last step of the
+     * stack this request loaded.
+     */
+    inbox?: {
+      read: (inbox: string, taken: number, wait: string) => InboxRead;
+      unread: (inbox: string, taken: number, upTo?: string) => string[];
+      message: (id: string) => unknown;
+      lastSeen: () => string;
+
+      /**
+       * Settles when replay reaches the message step `id` in the run's stack,
+       * after every found step earlier in the stack has been handed back.
+       */
+      place: (id: string) => Promise<void>;
+
+      /**
+       * Puts a message read from the run's state through `wrapStep`, as every
+       * other step's value is: a message is a step of its own, and the answer
+       * the executor gives a waiting read already goes through it, so a read
+       * answered from state must too or the same read would hand back a
+       * different shape depending on whether the run was waiting.
+       * @param op The unhashed ID of the read's op.
+       * @param id The message's step ID.
+       */
+      transform: (op: string, id: string, message: unknown) => Promise<unknown>;
+    };
+
+    /**
+     * Tells the engine that a step was skipped because its answer was already
+     * in the state, so it is not waited for. Only inboxes use it.
+     */
+    skipStep?: (id: string) => Promise<void>;
+
+    /**
+     * The answer the run's state holds for a step, if it has one. Only
+     * inboxes use it, to tell a read that timed out from one that has not
+     * been answered.
+     */
+    stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
 

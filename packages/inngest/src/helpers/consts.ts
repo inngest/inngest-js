@@ -242,6 +242,12 @@ export enum internalEvents {
  */
 export const deferExperimentKey = "_inngestExperiment";
 
+/**
+ * The capability an executor lists in `ctx.capabilities` when it supports the
+ * inbox opcodes behind `step.subscribe`.
+ */
+export const subscribeCapability = "subscribe";
+
 export const logPrefix: string = "[Inngest]";
 
 export const debugPrefix = "inngest";

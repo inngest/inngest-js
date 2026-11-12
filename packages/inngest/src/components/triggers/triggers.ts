@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { EventMeta } from "../../types.ts";
+import type { EventTypeToShape, ExactNameThis } from "./typeHelpers.ts";
 
 /**
  * Represents a cron trigger for scheduled function execution.
@@ -23,8 +24,7 @@ type EventTrigger = {
   event: string;
   if?: string;
 
-  // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
-  schema?: StandardSchemaV1<any>;
+  schema?: StandardSchemaV1<Record<string, unknown>>;
 };
 
 /**
@@ -105,8 +105,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
   TName,
-  // biome-ignore lint/suspicious/noExplicitAny: any is fine
-  any
+  StandardSchemaV1<Record<string, unknown>> | undefined
 >;
 
 /**
@@ -144,6 +143,18 @@ export class EventType<
     this.name = name;
     this.schema = schema;
     this.version = version;
+  }
+
+  /**
+   * Narrows any value, including plain JSON such as the result of an
+   * `invoke`, to this event type. A name check: the name must be equal, so an
+   * event type with a wildcard name (`user/*`) cannot be used here.
+   */
+  is<TValue>(
+    this: this & ExactNameThis<TName>, // not an event type with a wildcard name
+    value: TValue, // the value to check
+  ): value is TValue & EventTypeToShape<EventType<TName, TSchema>> {
+    return hasEventName(value, this.name);
   }
 
   /**
@@ -203,10 +214,49 @@ export class EventType<
 }
 
 /**
+ * Whether a value is an object carrying the given event name.
+ */
+export function hasEventName(value: unknown, name: string): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  return (value as { name?: unknown }).name === name;
+}
+
+/**
+ * Adds `is()` to an event the SDK hands to user code. The method is not
+ * enumerable, so the event serialises and compares as it did before.
+ */
+export function addEventIs<TEvent extends object>(event: TEvent): TEvent {
+  if (typeof event !== "object" || event === null || "is" in event) {
+    return event;
+  }
+
+  // Middleware may hand the function a frozen or sealed event, which cannot
+  // take a new property, so `is()` goes on a copy of it instead.
+  const target = Object.isExtensible(event) ? event : ({ ...event } as TEvent);
+
+  Object.defineProperty(target, "is", {
+    value: (types: { name: string } | readonly { name: string }[]): boolean => {
+      const list = Array.isArray(types) ? types : [types];
+
+      return list.some((type) => {
+        return hasEventName(target, type.name);
+      });
+    },
+    enumerable: false,
+    configurable: true,
+  });
+
+  return target;
+}
+
+/**
  * This type's only purpose is to clearly highlight static type error messages
  * in our codebase. To end users, it's exactly the same as a normal string.
  */
-type StaticTypeError<TMessage extends string> = TMessage;
+export type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
  * Ensure that users don't use transforms in their schemas, since we don't
