@@ -349,6 +349,60 @@ export interface StepTools<
   TMiddleware extends Middleware.Class[],
 > {
   /**
+   * The op that opens an inbox. Used by the `step.subscribe` that
+   * `inboxMiddleware` adds.
+   */
+  "~inboxOpen": (
+    idOrOptions: StepOptionsOrId,
+    opts: {
+      sources: { event: string; if?: string }[];
+
+      // Called with the op, which the engine gives its final ID later.
+      track?: (op: { id: string }) => void;
+    },
+  ) => Promise<unknown>;
+
+  /**
+   * The op that closes an inbox. Used by the `step.subscribe` that
+   * `inboxMiddleware` adds. It settles with the cut the executor saved: the
+   * last message the inbox had.
+   */
+  "~inboxClose": (
+    idOrOptions: StepOptionsOrId,
+    opts: { inbox: string },
+  ) => Promise<unknown>;
+
+  /**
+   * The op of a read of an inbox that has nothing unread. Used by the
+   * `step.subscribe` that `inboxMiddleware` adds. It is never answered from
+   * state: the executor wakes the run and the read finds its message there.
+   */
+  "~inboxWait": (
+    idOrOptions: StepOptionsOrId,
+    opts: {
+      inbox: string;
+      seen: string;
+      timeout?: string;
+      batch?: { drain?: boolean; unread?: boolean; max?: number };
+    },
+  ) => Promise<unknown>;
+
+  /**
+   * The lazy op that reports the messages a read took. Used by the
+   * `step.subscribe` that `inboxMiddleware` adds. It rides on the next
+   * message to the executor and has no answer.
+   */
+  "~inboxRead": (
+    idOrOptions: StepOptionsOrId,
+    opts: {
+      inbox: string;
+      messages: string[];
+      draw: boolean;
+      row?: string;
+    },
+  ) => Promise<void>;
+
+  /**
    * Send one or many events to Inngest. Should always be used in place of
    * `inngest.send()` to ensure that the event send is successfully retried
    * and not sent multiple times due to memoisation.
