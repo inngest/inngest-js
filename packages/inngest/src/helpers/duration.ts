@@ -12,7 +12,7 @@ export type DurationInput = number | string | DurationLike;
  * Parse an `ms` string, or a compound string like `"1h30m"` or `"1h 30m"`
  * (the sum of its parts), to milliseconds.
  */
-const parseString = (input: string): number | undefined => {
+export const parseString = (input: string): number | undefined => {
   // Split between a unit and the next number, so each part is an `ms` string.
   const parts = input.trim().split(/(?<=[a-z])\s*(?=\d)/i);
 

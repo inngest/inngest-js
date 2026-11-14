@@ -44,6 +44,16 @@ describe("timeStr", () => {
     expect(timeStr("1 day")).toEqual("1d");
   });
 
+  test("sums compound duration strings", () => {
+    expect(timeStr("1h30m")).toEqual("1h30m");
+    expect(timeStr("1h 30m")).toEqual("1h30m");
+    expect(timeStr("90m")).toEqual("1h30m");
+  });
+
+  test("throws on an unparseable duration string", () => {
+    expect(() => timeStr("not a duration")).toThrow();
+  });
+
   describe("sub-second durations", () => {
     test("rounds sub-second values up to 1s instead of dropping them", () => {
       expect(timeStr(1)).toEqual("1s");
