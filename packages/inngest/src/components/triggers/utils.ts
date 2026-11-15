@@ -63,16 +63,21 @@ class EventValidationError extends NonRetriableError {
  * member); other Standard Schema libraries have neither and get the plain
  * line.
  */
-function formatIssue(issue: StandardSchemaV1.Issue): string[] {
+function formatIssue(
+  issue: StandardSchemaV1.Issue,
+  parentPath: readonly (PropertyKey | StandardSchemaV1.PathSegment)[] = [],
+): string[] {
+  const fullPath = [...parentPath, ...(issue.path ?? [])];
   const path =
-    issue.path && issue.path.length > 0
-      ? issue.path.map(pathSegmentToString).join(".")
-      : "value";
+    fullPath.length > 0 ? fullPath.map(pathSegmentToString).join(".") : "value";
   const lines = [`${path}: ${issue.message}`];
 
-  for (const memberIssues of unionMemberIssues(issue)) {
-    for (const memberIssue of memberIssues) {
-      lines.push(...formatIssue(memberIssue));
+  for (const member of unionMemberIssues(issue)) {
+    // Zod 4's member paths are relative to this union's position, so carry the
+    // enclosing path into them; Zod 3's member paths are already absolute.
+    const memberParent = member.relative ? fullPath : [];
+    for (const memberIssue of member.issues) {
+      lines.push(...formatIssue(memberIssue, memberParent));
     }
   }
 
@@ -90,16 +95,20 @@ function pathSegmentToString(
 
 function unionMemberIssues(
   issue: StandardSchemaV1.Issue,
-): readonly (readonly StandardSchemaV1.Issue[])[] {
+): readonly { relative: boolean; issues: readonly StandardSchemaV1.Issue[] }[] {
   const candidate = issue as {
     errors?: unknown;
     unionErrors?: unknown;
   };
 
+  // Zod 4: member issue paths are relative to this union's position.
   if (Array.isArray(candidate.errors)) {
-    return candidate.errors.filter(isIssueArray);
+    return candidate.errors
+      .filter(isIssueArray)
+      .map((issues) => ({ relative: true, issues }));
   }
 
+  // Zod 3: member issue paths are already absolute.
   if (Array.isArray(candidate.unionErrors)) {
     return candidate.unionErrors
       .map((error: unknown) =>
@@ -107,7 +116,8 @@ function unionMemberIssues(
           ? (error as { issues: unknown }).issues
           : undefined,
       )
-      .filter(isIssueArray);
+      .filter(isIssueArray)
+      .map((issues) => ({ relative: false, issues }));
   }
 
   return [];
