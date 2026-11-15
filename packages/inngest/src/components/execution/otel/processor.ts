@@ -425,6 +425,13 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spanCleanup.unregister(span);
     this.#spansToExport.delete(span);
     this.#traceParents.delete(spanId);
+
+    // If this is a root span that ran a step, its ID was added to
+    // `#checkpointingRoots` in `declareStepExecution` and is otherwise never
+    // removed, so the set grows by one entry per execution for the life of the
+    // process. The ID is only needed while the root span is live, so drop it
+    // here. For non-root spans this is a no-op.
+    this.#checkpointingRoots.delete(spanId);
   }
 
   /**
