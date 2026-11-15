@@ -138,6 +138,76 @@ describe("Edge endpointAdapter", () => {
     });
   });
 
+  describe("durable endpoint requests", () => {
+    // The API decodes the event's `body` as bytes (base64); a raw JSON body
+    // used to fail the new run's checkpoint with "Invalid request body".
+    test("creates the run with the request body base64-encoded", async () => {
+      const inngest = new Inngest({
+        id: "test-app",
+        isDev: true,
+        endpointAdapter,
+      });
+      const checkpointNewRun = vi.fn().mockResolvedValue({
+        data: {
+          fn_id: "fn",
+          app_id: "app",
+          run_id: "run",
+          token: "token",
+          realtime_token: "rt",
+        },
+      });
+      inngest["inngestApi"]["checkpointNewRun"] = checkpointNewRun;
+
+      const body = JSON.stringify({ name: "Ada", note: "héllo 🎉" });
+      const res = await inngest.endpoint(
+        async (_req: Request) => new Response("ok"),
+      )(
+        new Request("https://example.com/api/patients", {
+          method: "POST",
+          headers: { host: "example.com", "Content-Type": "application/json" },
+          body,
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(checkpointNewRun).toHaveBeenCalledTimes(1);
+      const { event } = checkpointNewRun.mock.calls[0]![0];
+      expect(event.data.body).toBe(
+        Buffer.from(body, "utf8").toString("base64"),
+      );
+      expect(Buffer.from(event.data.body, "base64").toString("utf8")).toBe(
+        body,
+      );
+    });
+
+    test("creates the run with an empty body for a request without one", async () => {
+      const inngest = new Inngest({
+        id: "test-app",
+        isDev: true,
+        endpointAdapter,
+      });
+      const checkpointNewRun = vi.fn().mockResolvedValue({
+        data: {
+          fn_id: "fn",
+          app_id: "app",
+          run_id: "run",
+          token: "token",
+          realtime_token: "rt",
+        },
+      });
+      inngest["inngestApi"]["checkpointNewRun"] = checkpointNewRun;
+
+      await inngest.endpoint(async (_req: Request) => new Response("ok"))(
+        new Request("https://example.com/api/patients", {
+          method: "GET",
+          headers: { host: "example.com" },
+        }),
+      );
+
+      expect(checkpointNewRun.mock.calls[0]![0].event.data.body).toBe("");
+    });
+  });
+
   describe("integration with Inngest client", () => {
     test("client can create endpoint and proxy handlers", () => {
       const inngest = new Inngest({

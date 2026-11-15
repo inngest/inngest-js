@@ -201,3 +201,23 @@ export const hashSigningKey = (signingKey: string | undefined): string => {
 export function removeSigningKeyPrefix(signingKey: string): string {
   return signingKey.replace(/^signkey-[\w]+-/, "");
 }
+
+/**
+ * Encode a string's UTF-8 bytes as standard base64, in any runtime: `Buffer`
+ * where it exists (Node, Bun, Deno), `btoa` otherwise (edge runtimes).
+ */
+export const base64Encode = (input: string): string => {
+  // biome-ignore lint/suspicious/noExplicitAny: `Buffer` isn't in every runtime's types
+  const buffer = (globalThis as any).Buffer;
+  if (buffer) {
+    return buffer.from(input, "utf8").toString("base64");
+  }
+
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  // Chunked, so a large body doesn't exceed the argument limit of `fromCharCode`.
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+};
