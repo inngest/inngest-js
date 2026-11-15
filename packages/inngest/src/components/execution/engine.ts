@@ -642,6 +642,14 @@ class InngestExecutionEngine
     }
   }
 
+  /**
+   * Empty the checkpointing buffer and return what was in it, so a sync run's
+   * last checkpoint also carries any steps buffered by `bufferedSteps`.
+   */
+  private takeBufferedSteps(): OutgoingOp[] {
+    return this.state.checkpointingStepBuffer.splice(0);
+  }
+
   private async checkpointAndSwitchToAsync(
     steps: OutgoingOp[],
     stepError?: unknown,
@@ -892,6 +900,7 @@ class InngestExecutionEngine
     try {
       if (this.options.createResponse) {
         await this.checkpoint([
+          ...this.takeBufferedSteps(),
           {
             op: StepOpCode.RunComplete,
             id: hashId(RUN_COMPLETE_STEP_ID),
@@ -1167,6 +1176,7 @@ class InngestExecutionEngine
 
         // Non-streaming path
         await this.checkpoint([
+          ...this.takeBufferedSteps(),
           {
             op: StepOpCode.RunComplete,
             id: hashId(RUN_COMPLETE_STEP_ID),
@@ -1194,6 +1204,7 @@ class InngestExecutionEngine
           void (async () => {
             try {
               await this.checkpoint([
+                ...this.takeBufferedSteps(),
                 {
                   id: hashId(RUN_COMPLETE_STEP_ID),
                   op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
@@ -1227,6 +1238,7 @@ class InngestExecutionEngine
         // Retryable — checkpoint the error and switch to async mode.
         // checkpointAndSwitchToAsync handles closing the stream.
         return this.checkpointAndSwitchToAsync([
+          ...this.takeBufferedSteps(),
           {
             id: hashId(RUN_COMPLETE_STEP_ID),
             op: StepOpCode.StepError,
@@ -1251,9 +1263,10 @@ class InngestExecutionEngine
         // If we're entering parallelism or async mode, checkpoint and switch
         // to async.
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
-          return this.checkpointAndSwitchToAsync(
-            steps.map((step) => ({ ...step, id: step.hashedId })),
-          );
+          return this.checkpointAndSwitchToAsync([
+            ...this.takeBufferedSteps(),
+            ...steps.map((step) => ({ ...step, id: step.hashedId })),
+          ]);
         }
 
         // Otherwise we're good to start executing things right now.
@@ -1268,7 +1281,7 @@ class InngestExecutionEngine
 
         if (result.error) {
           return this.checkpointAndSwitchToAsync(
-            [transformed.step],
+            [...this.takeBufferedSteps(), transformed.step],
             result.error,
           );
         }
@@ -1286,17 +1299,27 @@ class InngestExecutionEngine
         // emit a false positive NESTING_STEPS warning.
         delete this.state.executingStep;
 
-        // Checkpoint with transformed data from middleware
-        const stepForCheckpoint = {
+        // Checkpoint with transformed data from middleware, once
+        // `bufferedSteps` steps have run (every step by default).
+        this.state.checkpointingStepBuffer.push({
           ...stepToResume,
           data: transformed.step.data,
-        };
+        });
 
-        return void (await this.checkpoint([stepForCheckpoint]));
+        const bufferedSteps = this.options.checkpointingConfig?.bufferedSteps;
+        if (
+          !bufferedSteps ||
+          this.state.checkpointingStepBuffer.length >= bufferedSteps
+        ) {
+          return void (await this.checkpoint(this.takeBufferedSteps()));
+        }
+
+        return;
       },
 
       "checkpointing-runtime-reached": () => {
         return this.checkpointAndSwitchToAsync([
+          ...this.takeBufferedSteps(),
           {
             op: StepOpCode.DiscoveryRequest,
 

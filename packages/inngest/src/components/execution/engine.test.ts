@@ -883,6 +883,97 @@ describe("Execution engine checkpoint retry behavior", () => {
       // Subsequent steps use checkpointSteps
       expect(mockCheckpointSteps).toHaveBeenCalled();
     });
+
+    describe("bufferedSteps", () => {
+      const mocks = () => ({
+        checkpointNewRun: vi.fn().mockResolvedValue({
+          data: { app_id: "app-123", fn_id: "fn-456", token: "token-789" },
+        }),
+        checkpointSteps: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Each checkpoint's ops, in order: a step by name, or the run's end.
+      const checkpoints = (api: ReturnType<typeof mocks>) =>
+        [
+          ...api.checkpointNewRun.mock.calls,
+          ...api.checkpointSteps.mock.calls,
+        ].map(([{ steps }]) =>
+          (steps as { op: StepOpCode; displayName?: string }[]).map((step) =>
+            step.op === StepOpCode.RunComplete
+              ? "run-complete"
+              : step.op === StepOpCode.StepError
+                ? "step-error"
+                : step.displayName,
+          ),
+        );
+
+      test("checkpoints every step by default", async () => {
+        const api = mocks();
+        await runExecution({
+          mockApi: api,
+          handler: async ({ step }) => {
+            await step.run("step-1", () => 1);
+            await step.run("step-2", () => 2);
+            return "done";
+          },
+          stepMode: StepMode.Sync,
+        });
+
+        expect(checkpoints(api)).toEqual([
+          ["step-1"],
+          ["step-2"],
+          ["run-complete"],
+        ]);
+      });
+
+      test("checkpoints steps in batches, and the rest with the result", async () => {
+        const api = mocks();
+        const { result } = await runExecution({
+          mockApi: api,
+          handler: async ({ step }) => {
+            await step.run("step-1", () => 1);
+            await step.run("step-2", () => 2);
+            await step.run("step-3", () => 3);
+            return "done";
+          },
+          stepMode: StepMode.Sync,
+          checkpointingConfig: {
+            bufferedSteps: 2,
+            maxRuntime: 0,
+            maxInterval: 0,
+          },
+        });
+
+        expect(result.type).toBe("function-resolved");
+        expect(checkpoints(api)).toEqual([
+          ["step-1", "step-2"],
+          ["step-3", "run-complete"],
+        ]);
+      });
+
+      test("checkpoints buffered steps before a failed step", async () => {
+        const api = mocks();
+        await runExecution({
+          mockApi: api,
+          handler: async ({ step }) => {
+            await step.run("step-1", () => 1);
+            await step.run("step-2", () => {
+              throw new Error("fails");
+            });
+            return "done";
+          },
+          stepMode: StepMode.Sync,
+          checkpointingConfig: {
+            bufferedSteps: 5,
+            maxRuntime: 0,
+            maxInterval: 0,
+          },
+        });
+
+        // One checkpoint carries the buffered step and the error.
+        expect(checkpoints(api)).toEqual([["step-1", "step-error"]]);
+      });
+    });
   });
 
   describe("StepMode.Sync (SSE streaming)", () => {

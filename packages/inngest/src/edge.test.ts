@@ -1,7 +1,7 @@
 import fetch, { Headers, Response } from "cross-fetch";
 import * as EdgeHandler from "./edge.ts";
 import { endpointAdapter } from "./edge.ts";
-import { Inngest } from "./index.ts";
+import { Inngest, step } from "./index.ts";
 import { createClient, testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
@@ -135,6 +135,49 @@ describe("Edge endpointAdapter", () => {
       expect(mockGetRunOutput).toHaveBeenCalledWith("run-123", "token-abc");
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ data: "test-result" });
+    });
+  });
+
+  describe("durable endpoint checkpointing", () => {
+    const run = async (options: ConstructorParameters<typeof Inngest>[0]) => {
+      const inngest = new Inngest({ ...options, endpointAdapter });
+      const checkpointNewRun = vi.fn().mockResolvedValue({
+        data: { fn_id: "fn", app_id: "app", run_id: "run", token: "token" },
+      });
+      const checkpointSteps = vi.fn().mockResolvedValue(undefined);
+      inngest["inngestApi"]["checkpointNewRun"] = checkpointNewRun;
+      inngest["inngestApi"]["checkpointSteps"] = checkpointSteps;
+
+      const res = await inngest.endpoint(async (_req: Request) => {
+        await step.run("step-1", () => 1);
+        await step.run("step-2", () => 2);
+        await step.run("step-3", () => 3);
+        return new Response("ok");
+      })(
+        new Request("https://example.com/api/endpoint", {
+          method: "GET",
+          headers: { host: "example.com" },
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      return (
+        checkpointNewRun.mock.calls.length + checkpointSteps.mock.calls.length
+      );
+    };
+
+    test("checkpoints after every step by default", async () => {
+      expect(await run({ id: "test-app", isDev: true })).toBe(4);
+    });
+
+    test("buffers steps by the client's checkpointing.bufferedSteps", async () => {
+      expect(
+        await run({
+          id: "test-app",
+          isDev: true,
+          checkpointing: { bufferedSteps: 10 },
+        }),
+      ).toBe(1);
     });
   });
 
