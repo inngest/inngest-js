@@ -60,4 +60,68 @@ describe("InngestSpanProcessor", () => {
       server.close();
     }
   });
+
+  test("holds nothing for an execution once its root span ends", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const addr = server.address();
+    if (!addr || typeof addr === "string") {
+      throw new Error("expected a TCP address");
+    }
+
+    const app = new Inngest({
+      id: "test",
+      baseUrl: `http://localhost:${addr.port}`,
+      eventKey: "ek",
+      signingKey: "signkey-test-abc",
+    });
+    const processor = new InngestSpanProcessor(app);
+    const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+    const tracer = provider.getTracer("test");
+
+    // The processor's sets are private, so record every Set the root span ID
+    // is added to while the execution runs.
+    const setsHoldingId = new Set<Set<unknown>>();
+    let rootSpanId = "";
+    const add = Set.prototype.add;
+    const addSpy = vi.spyOn(Set.prototype, "add").mockImplementation(function (
+      this: Set<unknown>,
+      value: unknown,
+    ) {
+      if (rootSpanId && value === rootSpanId) setsHoldingId.add(this);
+      return add.call(this, value);
+    });
+
+    try {
+      await getAsyncLocalStorage();
+      runWithAsyncCtx({ app }, () => {
+        const span = tracer.startSpan("inngest.execution");
+        rootSpanId = span.spanContext().spanId;
+        processor.declareStartingSpan({
+          span,
+          runId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+          traceparent: `00-${span.spanContext().traceId}-${rootSpanId}-01`,
+          tracestate: undefined,
+        });
+        processor.declareStepExecution(rootSpanId, "step", 0, "hashed", 1);
+        processor.clearStepExecution(rootSpanId);
+        span.end();
+      });
+    } finally {
+      addSpy.mockRestore();
+    }
+
+    try {
+      expect(setsHoldingId.size).toBeGreaterThan(0);
+      for (const set of setsHoldingId) {
+        expect(set.has(rootSpanId)).toBe(false);
+      }
+    } finally {
+      await provider.shutdown();
+      server.close();
+    }
+  });
 });
