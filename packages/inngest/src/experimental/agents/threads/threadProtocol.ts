@@ -53,10 +53,7 @@
  * - **Dormancy.** Nothing re-animates a thread nobody is asking after.
  */
 
-import {
-  eventType,
-  staticSchema,
-} from "../../../components/triggers/triggers.ts";
+import { eventType, staticSchema } from "../../../components/triggers/triggers.ts";
 import type { AgentRouting } from "../inbox/events.ts";
 import { quote } from "../inbox/threadInbox.ts";
 
@@ -190,10 +187,7 @@ export const emptySnapshot = (): ThreadSnapshot => {
  * Applies one write to the state. The only writer, so there is nothing to
  * reconcile against.
  */
-export const applyThreadWrite = (
-  state: ThreadSnapshot,
-  op: ThreadWriteOp,
-): void => {
+export const applyThreadWrite = (state: ThreadSnapshot, op: ThreadWriteOp): void => {
   switch (op.kind) {
     case "set": {
       const value: ThreadKeyValue = {
@@ -247,10 +241,7 @@ export const applyThreadWrite = (
  *
  * @returns Whether the write was applied; `false` means the thread had seen it.
  */
-export const applyThreadWriteEvent = (
-  state: ThreadSnapshot,
-  write: ThreadWriteData,
-): boolean => {
+export const applyThreadWriteEvent = (state: ThreadSnapshot, write: ThreadWriteData): boolean => {
   state.writes ??= [];
 
   const seen = state.writes;
@@ -496,9 +487,7 @@ export const threadControlEvents: string[] = [
  */
 export const isThreadControl = (name: string): boolean => {
   return (
-    threadControlEvents.includes(name) ||
-    name === threadForward.name ||
-    name === threadLost.name
+    threadControlEvents.includes(name) || name === threadForward.name || name === threadLost.name
   );
 };
 
@@ -507,8 +496,9 @@ export const isThreadControl = (name: string): boolean => {
  * @param ref The agent, as `"appId/functionId"`.
  * @param thread The thread key.
  */
-export const threadFilter = (ref: string, thread: string): string => {
-  return `event.data.agent == ${quote(ref)} && event.data.thread == ${quote(thread)}`;
+export const threadSubscriptionFilter = (ref: string, thread: string): string => {
+  // async represents the new incoming event
+  return `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(thread)}`;
 };
 
 /**
@@ -517,7 +507,9 @@ export const threadFilter = (ref: string, thread: string): string => {
  * from the event.
  * @param ref The agent, as `"appId/functionId"`.
  */
-export const threadAgentFilter = (ref: string): string => {
+export const threadTriggerFilter = (ref: string): string => {
+  // NOTE: this filters triggers (not events), so must stay as
+  // filtering `event.data` instead of async.data
   return `event.data.agent == ${quote(ref)}`;
 };
 
@@ -527,11 +519,7 @@ export const threadAgentFilter = (ref: string): string => {
  * @param thread The thread key.
  * @param runId The run doing the reading.
  */
-export const readSignal = (
-  ref: string,
-  thread: string,
-  runId: string,
-): string => {
+export const readSignal = (ref: string, thread: string, runId: string): string => {
   return `agents/read:${ref}:${thread}:${runId}`;
 };
 
@@ -542,12 +530,7 @@ export const readSignal = (
  * @param runId The run asking.
  * @param nth Which listen of that run this is.
  */
-export const listenSignal = (
-  ref: string,
-  thread: string,
-  runId: string,
-  nth: number,
-): string => {
+export const listenSignal = (ref: string, thread: string, runId: string, nth: number): string => {
   return `agents/listen:${ref}:${thread}:${runId}:${nth}`;
 };
 
@@ -587,10 +570,7 @@ export const threadRunTriggers: readonly string[] = [
  * The protocol's events that a thread run subscribes to and is NEVER triggered
  * by. See `threadRunTriggers` for why the distinction is load-bearing.
  */
-export const threadRunSubscribedOnly: readonly string[] = [
-  threadForward.name,
-  threadLost.name,
-];
+export const threadRunSubscribedOnly: readonly string[] = [threadForward.name, threadLost.name];
 
 /**
  * Every event name of the protocol, in one place. Read these rather than

@@ -87,13 +87,13 @@ import {
   type ThreadReadData,
   type ThreadSnapshot,
   type ThreadWriteData,
-  threadAgentFilter,
   threadDone,
-  threadFilter,
   threadForward,
   threadListen,
   threadLost,
   threadRead,
+  threadSubscriptionFilter,
+  threadTriggerFilter,
   threadWrite,
 } from "./threadProtocol.ts";
 import { type CompiledTrigger, singletonKey } from "./threadTrigger.ts";
@@ -310,7 +310,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         // The protocol's own, for this thread.
         ...[threadRead, threadWrite, threadListen, threadDone].map((type) => {
-          return { event: type.name, if: threadFilter(ref, thread) };
+          return {
+            event: type.name,
+            if: threadSubscriptionFilter(ref, thread),
+          };
         }),
       ]);
 
@@ -638,7 +641,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         // live run starts one, which is what makes the first message of a
         // conversation work.
         ...[threadRead, threadWrite, threadListen, threadDone].map((type) => {
-          return { event: type.name, if: threadAgentFilter(ref) };
+          return { event: type.name, if: threadTriggerFilter(ref) };
         }),
       ],
     },

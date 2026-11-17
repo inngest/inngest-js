@@ -136,9 +136,9 @@ import {
 } from "../threads/threadClient.ts";
 import {
   type ThreadForwardData,
-  threadAgentFilter,
-  threadFilter,
   threadForward,
+  threadSubscriptionFilter,
+  threadTriggerFilter,
 } from "../threads/threadProtocol.ts";
 import { createThreadFunctions } from "../threads/threadRun.ts";
 import {
@@ -522,7 +522,7 @@ export function createAgentFunction(
         // skipped and reaches the live run through its inbox; lost at that
         // boundary it leaves the agent late rather than wrong, because the
         // thread still holds the entries and the next read hands them back.
-        { event: threadForward.name, if: threadAgentFilter(ref) },
+        { event: threadForward.name, if: threadTriggerFilter(ref) },
       ],
       singleton: { key: threadExpression, mode: "skip" },
     },
@@ -609,7 +609,10 @@ export function createAgentFunction(
         // the thread's log is not authoritative and "late, not wrong" becomes
         // "wrong", silently, for every agent.
         await using subscription = step.subscribe("inbox", [
-          { event: threadForward.name, if: threadFilter(ref, data.thread) },
+          {
+            event: threadForward.name,
+            if: threadSubscriptionFilter(ref, data.thread),
+          },
         ]);
 
         await inboxOpenedPromise(subscription);
