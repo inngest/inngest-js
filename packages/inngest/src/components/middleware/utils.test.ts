@@ -41,6 +41,28 @@ describe("stepTypeFromOpCode", () => {
     ).toBe("sendEvent");
   });
 
+  test("StepPlanned with type 'step.sendSignal' returns 'sendSignal' and is not warned about", () => {
+    const warnings: unknown[] = [];
+    const quiet = {
+      ...logger,
+      warn: (...args: unknown[]) => {
+        warnings.push(args);
+      },
+    };
+
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        {
+          type: "step.sendSignal",
+          signal: "my-signal",
+        },
+        quiet as never,
+      ),
+    ).toBe("sendSignal");
+    expect(warnings).toEqual([]);
+  });
+
   test("StepPlanned with type 'step.realtime.publish' returns 'realtime.publish'", () => {
     expect(
       stepTypeFromOpCode(
