@@ -153,13 +153,23 @@ export const buildArgv = (
 };
 
 /**
- * Render a `$.sh` template into a single shell string, escaping interpolated
- * values so they can't break out of their argument.
+ * each value in a `$.sh` template is escaped.  heredoc bodies ignore single
+ * quotes, so templates with values reject `<<` in static text, including
+ * quoted or escaped literals.
  */
 export const buildShellString = (
   strings: readonly string[],
   values: CommandValue[],
 ): string => {
+  if (
+    values.some(isPresent) &&
+    strings.join("").replace(/\\\n/g, "").includes("<<")
+  ) {
+    throw new CiUsageError(
+      "A $.sh template with values can't contain << in its static text, as heredoc bodies ignore shell quoting. Use printf %s ${value} to pass text without a heredoc.",
+    );
+  }
+
   let out = "";
 
   for (const [index, chunk] of strings.entries()) {
@@ -1441,6 +1451,10 @@ export const createCommandTag = (
  * ```ts
  * await $.sh`pnpm build && pnpm test | tee test.log`;
  * ```
+ *
+ * templates with values reject `<<` in static text, including quoted or
+ * escaped literals, because heredoc bodies ignore single quotes.  use
+ * `printf %s ${value}` to pass text without a heredoc.
  *
  * @throws {CiUsageError} When called outside a job, since there's no machine
  * to run on.

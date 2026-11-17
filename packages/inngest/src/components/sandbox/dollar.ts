@@ -114,7 +114,10 @@ export interface DollarPromise extends Promise<SandboxCommandResult> {
  * the sandbox's `PATH` like any exec, not the shell profile's. For pipes,
  * redirects, `&&`, builtins or the profile's `PATH`, use
  * `` sandbox.$.sh`git status | head` ``, which runs a shell script with each
- * value quoted. A value can't go inside quotes of the script, which throws.
+ * value quoted.  values inside quotes or after a backslash throw because
+ * single quotes do not protect them there.  templates with values also reject
+ * `<<` in static text, including quoted or escaped literals, because heredoc
+ * bodies ignore single quotes.  use `printf %s ${value}` to pass text instead.
  *
  * `sandbox.$(options)` is a `$` with options set, to keep or to use once.
  * `sandbox.$({ id: "build" })` also names the step, in place of one made from
@@ -195,8 +198,8 @@ const shellEscape = (value: string): string => {
 };
 
 /**
- * Whether the end of `text` is inside a quote or right after a backslash, so
- * that text appended there is not the shell's own word.
+ * quotes and backslashes prevent the shell from reading an escaped value as
+ * a separate word.
  */
 const endsInShellContext = (text: string): boolean => {
   let current = "";
@@ -227,14 +230,23 @@ const endsInShellContext = (text: string): boolean => {
 };
 
 /**
- * The shell string of a `$.sh` template, with each value escaped. A value
- * inside quotes of the template, or after a backslash, is an error: the
- * shell would not read its escaping as the value's own.
+ * each value in a `$.sh` template is escaped.  heredoc bodies ignore single
+ * quotes, so templates with values reject `<<` in static text, including
+ * quoted or escaped literals.
  */
 export const buildShellString = (
   strings: readonly string[],
   values: readonly DollarValue[],
 ): string => {
+  if (
+    values.some(isPresent) &&
+    strings.join("").replace(/\\\n/g, "").includes("<<")
+  ) {
+    throw new SandboxValidationError(
+      "A $.sh template with values can't contain << in its static text, as heredoc bodies ignore shell quoting. Use printf %s ${value} to pass text without a heredoc.",
+    );
+  }
+
   let out = "";
 
   for (const [index, chunk] of strings.entries()) {
