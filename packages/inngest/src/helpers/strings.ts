@@ -1,8 +1,8 @@
 import hashjs from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
-import ms from "ms";
 import { Temporal } from "temporal-polyfill";
 import type { Logger } from "../middleware/logger.ts";
+import { parseString } from "./duration.ts";
 import { warnOnce } from "./log.ts";
 import {
   type DurationLike,
@@ -130,7 +130,15 @@ export const timeStr = (
       relativeTo: Temporal.Now.plainDateTimeISO("UTC").toString(),
     });
   } else if (typeof input === "string") {
-    milliseconds = ms(input as `${number}`);
+    // Parse the same way as `durationToMs`, so compound strings like `"1h30m"`
+    // (the `TimeStr` format used elsewhere) are summed rather than silently
+    // becoming `""` (a 0-duration wait). A string that cannot be parsed throws
+    // instead of being dropped.
+    const parsed = parseString(input);
+    if (parsed === undefined) {
+      throw new Error(`Could not parse "${input}" as a duration`);
+    }
+    milliseconds = parsed;
   } else {
     milliseconds = input as number;
   }
