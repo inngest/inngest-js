@@ -1341,6 +1341,7 @@ const createDeferredTools = <T extends object>(
   name: "step" | "group",
   base: object,
   getTools: (ctx: Context.Any) => unknown,
+  prefix: string[] = [],
 ): T => {
   const getCurrentTools = (): Record<PropertyKey, unknown> => {
     const als = getAsyncCtxSync();
@@ -1376,13 +1377,19 @@ const createDeferredTools = <T extends object>(
         try {
           let parent: unknown = getCurrentTools();
           for (const key of path.slice(0, -1)) {
-            parent = (parent as Record<string, unknown>)[key];
+            parent =
+              parent != null && typeof parent === "object"
+                ? (parent as Record<string, unknown>)[key]
+                : undefined;
           }
 
-          const tool = (parent as Record<string, unknown>)[path.at(-1) ?? ""];
+          const tool =
+            parent != null && typeof parent === "object"
+              ? (parent as Record<string, unknown>)[path.at(-1) ?? ""]
+              : undefined;
           if (typeof tool !== "function") {
             throw new TypeError(
-              `\`${name}.${path.join(".")}\` is not a function`,
+              `\`${[name, ...prefix, ...path].join(".")}\` is not a function`,
             );
           }
 
@@ -1445,11 +1452,13 @@ export const step: GenericStepTools = createDeferredTools(
       "step",
       { models: { ...models } },
       (ctx) => ctx.step.ai,
+      ["ai"],
     ),
     realtime: createDeferredTools(
       "step",
       {},
       (ctx) => (ctx.step as GenericStepTools).realtime,
+      ["realtime"],
     ),
   },
   (ctx) => ctx.step,

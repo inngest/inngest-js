@@ -265,6 +265,74 @@ describe("global step and group", () => {
       expect(type).toBe("function-rejected");
     });
 
+    test("a saved nested reference rejects with its full path when its namespace is missing on the run client", async () => {
+      const { create } = step.sandbox;
+      const plain = createPlain();
+      let caught: unknown;
+      const fn = plain.createFunction(
+        {
+          id: "global-missing-namespace",
+          triggers: [{ event: "global/missing-namespace" }],
+        },
+        async ({ step: ctxStep }) => {
+          try {
+            await create("saved-box", createOptions);
+          } catch (err) {
+            caught = err;
+          }
+
+          return ctxStep.run("done", () => "ok");
+        },
+      );
+
+      await runFnWithStack(fn, {});
+
+      expect(caught).toBeInstanceOf(TypeError);
+      expect((caught as Error).message).toBe(
+        "`step.sandbox.create` is not a function",
+      );
+    });
+
+    test("unknown tools under `step.ai` and `step.realtime` include their namespace prefix in the error", async () => {
+      const { client } = createScopeClient();
+      const errors: string[] = [];
+      const fn = client.createFunction(
+        {
+          id: "global-nested-prefix-error",
+          triggers: [{ event: "global/nested-prefix-error" }],
+        },
+        async ({ step: ctxStep }) => {
+          for (const call of [
+            () =>
+              (
+                globalStep.ai as unknown as { nope: () => Promise<void> }
+              ).nope(),
+            () =>
+              (
+                globalStep.realtime as unknown as {
+                  nope: () => Promise<void>;
+                }
+              ).nope(),
+          ]) {
+            try {
+              await call();
+            } catch (err) {
+              errors.push((err as Error).message);
+            }
+          }
+
+          return ctxStep.run("done", () => "ok");
+        },
+      );
+
+      await runFnWithStack(fn, {});
+
+      expect(errors).toEqual([
+        "`step.ai.nope` is not a function",
+        "`step.realtime.nope` is not a function",
+      ]);
+    });
+
     test("tools added by custom middleware work and are typed", async () => {
       class DoubleMiddleware extends Middleware.BaseMiddleware {
         readonly id = "test:double";
