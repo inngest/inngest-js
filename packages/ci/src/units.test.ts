@@ -130,6 +130,50 @@ describe("$ parsing", () => {
     ).toBe(`echo 'it'\\''s fine' && pnpm test`);
   });
 
+  test.each([
+    "cat <<EOF\n",
+    "cat <<-EOF\n\t",
+    "cat <<'EOF'\n",
+    'cat <<"EOF"\n',
+    "cat <\\\n<EOF\n",
+    "# '\ncat <<EOF\n'\n",
+    'echo "$(cat <<EOF\n"\n',
+    "cat <<EOF\nstatic\nEOF\nprintf %s ",
+  ])("$.sh rejects interpolated heredocs in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(CiUsageError);
+  });
+
+  test.each([
+    "echo `cat <\\\\\n<EOF\n",
+    "echo `cat <<EOF\n",
+    "echo `echo ",
+    'echo "`echo `" ',
+    "echo '`' ",
+    "echo \\` ",
+  ])("$.sh rejects values in a template with a backtick in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF\n`"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(CiUsageError);
+  });
+
+  test("$.sh preserves static backticks and backticks in data", () => {
+    expect(buildShellString(["echo `date`"], [])).toBe("echo `date`");
+    expect(buildShellString(["printf %s ", ""], ["`date`"])).toBe(
+      "printf %s '`date`'",
+    );
+  });
+
+  test("$.sh preserves static heredocs and heredoc markers in data", () => {
+    expect(buildShellString(["cat <<EOF\nstatic\nEOF"], [])).toBe(
+      "cat <<EOF\nstatic\nEOF",
+    );
+    expect(buildShellString(["printf %s ", ""], ["<<EOF"])).toBe(
+      "printf %s '<<EOF'",
+    );
+  });
+
   test("shellEscape quotes quotes", () => {
     expect(shellEscape("a'b")).toBe(`'a'\\''b'`);
   });
