@@ -85,6 +85,9 @@ Worker-initiated, gateway responds.
    - Gateway forwards ACK to executor via gRPC
 
 4. **Worker begins execution + starts lease extension interval**
+   - Execution must produce a response within 2h. If the main thread does not
+     respond in time, the worker times out the request and stops tracking its
+     lease.
 
 5. **Worker → Gateway:** `WORKER_REQUEST_EXTEND_LEASE` (every `extendLeaseIntervalMs`, default 5s)
    - Fields: requestId, accountId, envId, appId, functionSlug, stepId, systemTraceCtx, userTraceCtx, runId, leaseId (current)
@@ -270,6 +273,7 @@ Worker should close WebSocket with:
 | WS write timeout (gateway) | 5s | `wsWriteTimeout` |
 | Handshake timeout (gateway) | 5s | context timeout on initial read |
 | Handshake timeout (worker) | 10s | setTimeout in establishConnection |
+| Execution request timeout (JS SDK) | 2h | `DEFAULT_CONNECT_EXECUTION_REQUEST_TIMEOUT_MS` |
 | Drain grace period | 5s | `time.After(5 * time.Second)` after GATEWAY_CLOSING |
 | Max apps per connection | 100 | `MaxAppsPerConnection` |
 | WS subprotocol | `v0.connect.inngest.com` | `types.GatewaySubProtocol` |
