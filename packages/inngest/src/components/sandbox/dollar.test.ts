@@ -480,6 +480,48 @@ EOF`;
     }).toThrow(SandboxValidationError);
   });
 
+  test.each([
+    "echo `cat <\\\\\n<EOF\n",
+    "echo `cat <<EOF\n",
+    "echo `echo ",
+    'echo "`echo `" ',
+    "echo '`' ",
+    "echo \\` ",
+  ])("$.sh refuses values in a template with a backtick in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF\n`"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh refuses values after a closed backtick substitution", () => {
+    expect(() => {
+      return shell`echo \`date\` ${"safe"}`;
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh preserves static backticks, dropped values, and backticks in data", () => {
+    expect(shell`echo \`date\``).toBe("echo `date`");
+    expect(shell`echo \`date\` ${false}${null}${undefined}`).toBe(
+      "echo `date` ",
+    );
+    expect(shell`printf %s ${"`date`"}`).toBe("printf %s '`date`'");
+  });
+
+  test("$.sh keeps a value with backticks literal inside $()", () => {
+    const input = "x`; printf INJECTED >&2; echo `y";
+    const result = spawnSync(
+      "/bin/sh",
+      ["-c", shell`echo $(printf %s ${input})`],
+      {
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${input}\n`);
+    expect(result.stderr).toBe("");
+  });
+
   test("$.sh writes untrusted text literally with printf", () => {
     const input = "$(printf INJECTED >&2)\n`printf INJECTED >&2`\n'\nEOF";
     const result = spawnSync("/bin/sh", ["-c", shell`printf %s ${input}`], {

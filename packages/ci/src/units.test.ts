@@ -143,6 +143,26 @@ describe("$ parsing", () => {
     }).toThrow(CiUsageError);
   });
 
+  test.each([
+    "echo `cat <\\\\\n<EOF\n",
+    "echo `cat <<EOF\n",
+    "echo `echo ",
+    'echo "`echo `" ',
+    "echo '`' ",
+    "echo \\` ",
+  ])("$.sh rejects values in a template with a backtick in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF\n`"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(CiUsageError);
+  });
+
+  test("$.sh preserves static backticks and backticks in data", () => {
+    expect(buildShellString(["echo `date`"], [])).toBe("echo `date`");
+    expect(buildShellString(["printf %s ", ""], ["`date`"])).toBe(
+      "printf %s '`date`'",
+    );
+  });
+
   test("$.sh preserves static heredocs and heredoc markers in data", () => {
     expect(buildShellString(["cat <<EOF\nstatic\nEOF"], [])).toBe(
       "cat <<EOF\nstatic\nEOF",
