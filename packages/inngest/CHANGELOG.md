@@ -1,5 +1,69 @@
 # inngest
 
+## 4.27.0
+
+### Minor Changes
+
+- [#1878](https://github.com/inngest/inngest-js/pull/1878) [`addf9cb0`](https://github.com/inngest/inngest-js/commit/addf9cb0130d6424dfffb2e5712c7f0a5d2e0434) Thanks [@tonyhb](https://github.com/tonyhb)! - Add support for `INNGEST_CONNECT_INSTANCE_ID` to set the connect instance ID when the `instanceId` option is omitted. Checkpoint requests now include the connected app's instance ID in the `x-inngest-instance-id` header. Outside of connect, checkpoint requests use `INNGEST_CONNECT_INSTANCE_ID` when it is set.
+
+- [#1870](https://github.com/inngest/inngest-js/pull/1870) [`2caf225a`](https://github.com/inngest/inngest-js/commit/2caf225a6a384231f8e2ae66e44914ad994f0fba) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Narrow an event by its type with `is()`. `myEvent.is(value)` checks any value, including plain JSON such as the result of `step.invoke`, and the `event` your function receives has `event.is(types)`, which takes one event type or an array of them. A multi-trigger function can narrow `event` the same way.
+
+  ```ts
+  const issueOpened = eventType("issue.opened", {
+    schema: z.object({ id: z.string() }),
+  });
+  const issueClosed = eventType("issue.closed");
+
+  inngest.createFunction(
+    { id: "issues", triggers: [issueOpened, issueClosed] },
+    async ({ event }) => {
+      if (event.is(issueOpened)) {
+        return event.data.id;
+      }
+
+      if (event.is([issueOpened, issueClosed])) {
+        return event.name;
+      }
+    },
+  );
+  ```
+
+- [#1870](https://github.com/inngest/inngest-js/pull/1870) [`2caf225a`](https://github.com/inngest/inngest-js/commit/2caf225a6a384231f8e2ae66e44914ad994f0fba) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental `step.subscribe()` and `Inbox`, behind `inboxMiddleware()` from `inngest/experimental`. `step.subscribe(id, sources)` opens an inbox inside a run: every event that matches one of the sources and arrives afterwards becomes a message the run can read with `inbox.next()`, in the order the messages arrive, whether or not the run is waiting at that moment. On an executor that does not support inboxes (an older Dev Server or Cloud), `step.subscribe` fails at once with an error that says what to upgrade instead of leaving a read waiting.
+
+  ```ts
+  import { Inngest } from "inngest";
+  import { inboxMiddleware } from "inngest/experimental";
+
+  const inngest = new Inngest({
+    id: "my-app",
+    middleware: [inboxMiddleware()],
+  });
+
+  inngest.createFunction(
+    { id: "reviews", triggers: [{ event: "pr/opened" }] },
+    async ({ event, step }) => {
+      await using inbox = step.subscribe("reviews", {
+        event: "pr/reviewed",
+        if: "async.data.pr == event.data.pr",
+      });
+
+      const review = await inbox.next();
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#1895](https://github.com/inngest/inngest-js/pull/1895) [`c7aec433`](https://github.com/inngest/inngest-js/commit/c7aec43395f378015c5dba7e3e96f00d8be43b4f) Thanks [@jacobheric](https://github.com/jacobheric)! - Fix a remaining memory leak with Extended Traces: when the tracer's sampler dropped an execution's root span, `InngestSpanProcessor` could still keep that span's ID for the life of the process. The execution engine now tells the processor when an execution finishes, so cleanup no longer depends on the root span being recorded.
+
+- [#1892](https://github.com/inngest/inngest-js/pull/1892) [`4904ed28`](https://github.com/inngest/inngest-js/commit/4904ed28712679edf2cd5287ddc48381e6185b43) Thanks [@adityankale190895](https://github.com/adityankale190895)! - Fix a memory leak with Extended Traces: `InngestSpanProcessor` now forgets an execution's root span ID once that span ends, instead of keeping one ID per run for the life of the process.
+
+- [#1893](https://github.com/inngest/inngest-js/pull/1893) [`ac300751`](https://github.com/inngest/inngest-js/commit/ac3007516bb4e8fbf0da991f800172290e1a0925) Thanks [@tonyhb](https://github.com/tonyhb)! - Fix errant `step.sendSignal` "Unknown step type" warning. Middleware now sees `stepType: "sendSignal"` instead of `"unknown"`.
+
+- [#1894](https://github.com/inngest/inngest-js/pull/1894) [`241046a5`](https://github.com/inngest/inngest-js/commit/241046a5d886629920227c678a5fbffeaa9539b0) Thanks [@tonyhb](https://github.com/tonyhb)! - Reject `$.sh` templates that combine interpolated values with `<<` in static text before starting the command. Heredoc bodies ignore the single quotes added around values, which allowed command substitution in untrusted text to execute. This conservative restriction includes quoted or escaped `<<` literals and values outside the heredoc body. Static heredocs and `<<` passed as data remain supported. Use `$.sh` with `printf %s ${value}` to write untrusted text instead.
+
+  Templates with interpolated values also reject backticks in static text, including quoted or escaped literals. The shell removes one level of backslashes inside backticks, which hid `<<` from the check, and a backtick in a value ended the substitution and ran the rest of the value as a command. Static backticks and backticks passed as data remain supported. Use `$(command)` instead.
+
 ## 4.26.2
 
 ### Patch Changes
