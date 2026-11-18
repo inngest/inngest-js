@@ -73,6 +73,15 @@ or function run (when retries are exhausted or the error is non-retriable).
 Intermediate retry attempts still set span error status and add breadcrumbs, but
 won't create Sentry events. Set to `false` to capture every attempt.
 
+### `includeEventPayload`
+
+**Default: `false`**
+
+When `true`, the full triggering event (including `data`) is stored on the
+request span as `inngest.event`. Event payloads often include personal data, so
+this is off by default. Event id and name are still set as Sentry tags either
+way.
+
 ### `disableAutomaticFlush`
 
 **Default: `false`**

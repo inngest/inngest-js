@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/core";
 import type { Span } from "@sentry/types";
 import { Middleware } from "inngest";
+import { sentryEventSpanAttributes } from "./event-span-attributes";
 
 /**
  * Options used to configure the Sentry middleware.
@@ -43,6 +44,15 @@ export interface SentryMiddlewareOptions {
    * @default false
    */
   captureStepErrors?: boolean;
+
+  /**
+   * If `true`, the full triggering event (including `data`) is stored on the
+   * request span as `inngest.event`. Event payloads often hold personal data,
+   * so this is off by default. Event id and name are still set as tags.
+   *
+   * @default false
+   */
+  includeEventPayload?: boolean;
 }
 
 /**
@@ -73,6 +83,11 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
    * See {@link SentryMiddlewareOptions} for more information.
    */
   protected captureStepErrors = false;
+
+  /**
+   * See {@link SentryMiddlewareOptions} for more information.
+   */
+  protected includeEventPayload = false;
 
   // Isolation scope created in wrapRequest. Used for setting tags and
   // breadcrumbs scoped to this function run.
@@ -191,10 +206,9 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
 
     Object.assign(this.#tags, eventTags);
     this.#scope?.setTags(eventTags);
-    this.#requestSpan?.setAttributes({
-      ...eventTags,
-      "inngest.event": JSON.stringify(ctx.event),
-    });
+    this.#requestSpan?.setAttributes(
+      sentryEventSpanAttributes(ctx.event, this.includeEventPayload),
+    );
 
     return await next();
   }
@@ -330,10 +344,16 @@ export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
     captureStepErrors = false,
     disableAutomaticFlush = false,
     onlyCaptureFinalAttempt = true,
+    includeEventPayload = false,
   } = opts ?? {};
 
   // Return the base class directly when all options match defaults.
-  if (!captureStepErrors && !disableAutomaticFlush && onlyCaptureFinalAttempt) {
+  if (
+    !captureStepErrors &&
+    !disableAutomaticFlush &&
+    onlyCaptureFinalAttempt &&
+    !includeEventPayload
+  ) {
     return SentryMiddleware;
   }
 
@@ -341,6 +361,7 @@ export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
     protected override captureStepErrors = captureStepErrors;
     protected override disableAutomaticFlush = disableAutomaticFlush;
     protected override onlyCaptureFinalAttempt = onlyCaptureFinalAttempt;
+    protected override includeEventPayload = includeEventPayload;
   };
 };
 
