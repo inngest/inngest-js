@@ -271,6 +271,22 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
+   * Forget the starting span of an execution that has finished.
+   *
+   * A span that ends is cleaned up in `onEnd`, but a starting span dropped by
+   * the sampler is non-recording and never reaches the processor, so the
+   * engine declares the end itself. Call this after `span.end()`: cleaning up
+   * first would stop a recording span from being exported.
+   */
+  public clearStartingSpan(span: Span): void {
+    processorDevDebug(
+      "clearStartingSpan: spanId=%s",
+      span.spanContext().spanId,
+    );
+    this.cleanupSpan(span);
+  }
+
+  /**
    * A getter for retrieving resource attributes for the current process. This
    * is used to set the resource attributes for the spans that are exported to
    * the Inngest endpoint, and cache them for later use.

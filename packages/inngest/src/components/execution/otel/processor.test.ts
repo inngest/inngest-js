@@ -1,5 +1,10 @@
 import { createServer } from "node:http";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  AlwaysOffSampler,
+  AlwaysOnSampler,
+  BasicTracerProvider,
+} from "@opentelemetry/sdk-trace-base";
+import { runFnWithStack } from "../../../test/helpers.ts";
 import { Inngest } from "../../Inngest.ts";
 import { getAsyncLocalStorage, runWithAsyncCtx } from "../als.ts";
 import { InngestSpanProcessor } from "./processor.ts";
@@ -61,7 +66,23 @@ describe("InngestSpanProcessor", () => {
     }
   });
 
-  test("holds nothing for an execution once its root span ends", async () => {
+  test.each([
+    {
+      ending: "its root span ends",
+      sampler: new AlwaysOnSampler(),
+      hasTraceparent: true,
+      engineClears: false,
+    },
+    {
+      //
+      // A dropped root span is non-recording, so it never reaches `onEnd`,
+      // and without a traceparent it isn't registered for cleanup on GC.
+      ending: "the engine clears a root span the sampler dropped",
+      sampler: new AlwaysOffSampler(),
+      hasTraceparent: false,
+      engineClears: true,
+    },
+  ])("holds nothing for an execution once $ending", async (scenario) => {
     const server = createServer((_req, res) => {
       res.writeHead(200);
       res.end();
@@ -79,7 +100,10 @@ describe("InngestSpanProcessor", () => {
       signingKey: "signkey-test-abc",
     });
     const processor = new InngestSpanProcessor(app);
-    const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+    const provider = new BasicTracerProvider({
+      sampler: scenario.sampler,
+      spanProcessors: [processor],
+    });
     const tracer = provider.getTracer("test");
 
     // The processor's sets are private, so record every Set the root span ID
@@ -103,12 +127,15 @@ describe("InngestSpanProcessor", () => {
         processor.declareStartingSpan({
           span,
           runId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-          traceparent: `00-${span.spanContext().traceId}-${rootSpanId}-01`,
+          traceparent: scenario.hasTraceparent
+            ? `00-${span.spanContext().traceId}-${rootSpanId}-01`
+            : undefined,
           tracestate: undefined,
         });
         processor.declareStepExecution(rootSpanId, "step", 0, "hashed", 1);
         processor.clearStepExecution(rootSpanId);
         span.end();
+        if (scenario.engineClears) processor.clearStartingSpan(span);
       });
     } finally {
       addSpy.mockRestore();
@@ -122,6 +149,28 @@ describe("InngestSpanProcessor", () => {
     } finally {
       await provider.shutdown();
       server.close();
+    }
+  });
+
+  test("is told by the engine when an execution finishes", async () => {
+    const app = new Inngest({ id: "test", isDev: true });
+    const processor = new InngestSpanProcessor(app);
+    const declared = vi.spyOn(processor, "declareStartingSpan");
+    const cleared = vi.spyOn(processor, "clearStartingSpan");
+
+    const fn = app.createFunction(
+      { id: "fn", triggers: [{ event: "foo" }] },
+      () => "done",
+    );
+
+    try {
+      await runFnWithStack(fn, {});
+
+      expect(cleared).toHaveBeenCalledExactlyOnceWith(
+        declared.mock.calls[0]?.[0].span,
+      );
+    } finally {
+      await processor.shutdown();
     }
   });
 });
