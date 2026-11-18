@@ -153,13 +153,32 @@ export const buildArgv = (
 };
 
 /**
- * Render a `$.sh` template into a single shell string, escaping interpolated
- * values so they can't break out of their argument.
+ * each value in a `$.sh` template is escaped.  heredoc bodies ignore single
+ * quotes, so templates with values reject `<<` in static text, including
+ * quoted or escaped literals.  the shell removes one backslash level from
+ * text inside backticks and ends the substitution at a backtick in a value,
+ * so templates with values also reject backticks in static text.
  */
 export const buildShellString = (
   strings: readonly string[],
   values: CommandValue[],
 ): string => {
+  if (values.some(isPresent)) {
+    const text = strings.join("");
+
+    if (text.includes("`")) {
+      throw new CiUsageError(
+        "A $.sh template with values can't contain a backtick in its static text, as backtick substitution removes backslashes and ends at a backtick in a value. Use $(command) instead.",
+      );
+    }
+
+    if (text.replace(/\\\n/g, "").includes("<<")) {
+      throw new CiUsageError(
+        "A $.sh template with values can't contain << in its static text, as heredoc bodies ignore shell quoting. Use printf %s ${value} to pass text without a heredoc.",
+      );
+    }
+  }
+
   let out = "";
 
   for (const [index, chunk] of strings.entries()) {
@@ -1441,6 +1460,12 @@ export const createCommandTag = (
  * ```ts
  * await $.sh`pnpm build && pnpm test | tee test.log`;
  * ```
+ *
+ * templates with values reject `<<` in static text, including quoted or
+ * escaped literals, because heredoc bodies ignore single quotes.  use
+ * `printf %s ${value}` to pass text without a heredoc.  templates with
+ * values reject backticks in static text too, because a backtick in a value
+ * ends the substitution.  use `$(command)` instead.
  *
  * @throws {CiUsageError} When called outside a job, since there's no machine
  * to run on.

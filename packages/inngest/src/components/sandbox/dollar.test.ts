@@ -5,6 +5,7 @@
  * and the step IDs of commands that repeat or run together.
  */
 
+import { spawnSync } from "node:child_process";
 import { runFnWithStack } from "../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../types.ts";
 import { _internals } from "../execution/engine.ts";
@@ -15,6 +16,7 @@ import {
   buildArgv,
   buildShellString,
   commandId,
+  createDollar,
   type DollarValue,
 } from "./dollar.ts";
 import {
@@ -395,6 +397,140 @@ describe("templates", () => {
     expect(() => {
       return shell`echo "a" ${"b"} 'c d' ${input} "e\\"f" ${input}`;
     }).not.toThrow();
+  });
+
+  test.each([
+    "cat <<EOF\n",
+    "cat <<-EOF\n\t",
+    "cat <<'EOF'\n",
+    'cat <<"EOF"\n',
+    "cat <<E'OF'\n",
+    "cat <<\\EOF\n",
+    "cat 3<<EOF\n",
+    "cat <<FIRST <<SECOND\n",
+    "cat <<EOF\n'\"\\\n",
+    "cat <\\\n<EOF\n",
+    "cat \\\n<<EOF\n",
+    "echo $(cat <<EOF\n",
+    "# '\ncat <<EOF\n'\n",
+    'echo "$(cat <<EOF\n"\n',
+    "cat <<EOF\nstatic\nEOF\nprintf %s ",
+  ])("$.sh refuses values after a heredoc operator in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh refuses interpolated heredoc delimiters and arrays", () => {
+    expect(() => {
+      return shell`cat <<${"EOF"}\nstatic\nEOF`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`cat <<EOF\n${["$(printf INJECTED >&2)"]}\nEOF`;
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh rejects heredoc injection before starting a command", () => {
+    const run = vi.fn<DurableSandbox["commands"]["run"]>();
+    const dollar = createDollar(run);
+    const input = "$(printf INJECTED >&2)";
+
+    expect(() => {
+      return dollar.sh`cat <<EOF
+${input}
+EOF`;
+    }).toThrow(SandboxValidationError);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("$.sh rejects values even outside the heredoc body", () => {
+    expect(() => {
+      return shell`printf %s ${"safe"}; cat <<EOF\nstatic\nEOF`;
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh rejects quoted and escaped heredoc markers in static text", () => {
+    expect(() => {
+      return shell`printf %s '<<EOF' ${"safe"}`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`printf %s "<<EOF" ${"safe"}`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`printf %s \\<<EOF ${"safe"}`;
+    }).toThrow(SandboxValidationError);
+    expect(() => {
+      return shell`printf %s \\<\\<EOF ${"safe"}`;
+    }).not.toThrow();
+  });
+
+  test("$.sh preserves static heredocs, dropped values, and markers in data", () => {
+    expect(shell`cat <<EOF\nstatic\nEOF`).toBe("cat <<EOF\nstatic\nEOF");
+    expect(shell`cat <<EOF\n${false}${null}${undefined}\nEOF`).toBe(
+      "cat <<EOF\n\nEOF",
+    );
+    expect(shell`printf %s ${"<<EOF"} ${"safe"}`).toBe(
+      "printf %s '<<EOF' 'safe'",
+    );
+  });
+
+  test("$.sh rejects heredoc markers split by dropped values", () => {
+    expect(() => {
+      return shell`cat <${false}<EOF\n${"$(printf INJECTED >&2)"}\nEOF`;
+    }).toThrow(SandboxValidationError);
+  });
+
+  test.each([
+    "echo `cat <\\\\\n<EOF\n",
+    "echo `cat <<EOF\n",
+    "echo `echo ",
+    'echo "`echo `" ',
+    "echo '`' ",
+    "echo \\` ",
+  ])("$.sh refuses values in a template with a backtick in %j", (prefix) => {
+    expect(() => {
+      return buildShellString([prefix, "\nEOF\n`"], ["$(printf INJECTED >&2)"]);
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh refuses values after a closed backtick substitution", () => {
+    expect(() => {
+      return shell`echo \`date\` ${"safe"}`;
+    }).toThrow(SandboxValidationError);
+  });
+
+  test("$.sh preserves static backticks, dropped values, and backticks in data", () => {
+    expect(shell`echo \`date\``).toBe("echo `date`");
+    expect(shell`echo \`date\` ${false}${null}${undefined}`).toBe(
+      "echo `date` ",
+    );
+    expect(shell`printf %s ${"`date`"}`).toBe("printf %s '`date`'");
+  });
+
+  test("$.sh keeps a value with backticks literal inside $()", () => {
+    const input = "x`; printf INJECTED >&2; echo `y";
+    const result = spawnSync(
+      "/bin/sh",
+      ["-c", shell`echo $(printf %s ${input})`],
+      {
+        encoding: "utf8",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${input}\n`);
+    expect(result.stderr).toBe("");
+  });
+
+  test("$.sh writes untrusted text literally with printf", () => {
+    const input = "$(printf INJECTED >&2)\n`printf INJECTED >&2`\n'\nEOF";
+    const result = spawnSync("/bin/sh", ["-c", shell`printf %s ${input}`], {
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(input);
+    expect(result.stderr).toBe("");
   });
 
   test("the default step ID is the command, cut to 60 characters", () => {
