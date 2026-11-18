@@ -1,0 +1,57 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the briefing text > a child optimizer owing a required report 1`] = `
+"<inngest-runtime v="1">
+You are an agent running on Inngest. You work in turns. A turn ends when you reply without calling a tool, or when you call \`wait\`. You are then idle until a message arrives, which reaches you as the next user message.
+Messages from other agents say where they come from: "Message from <agent> (thread <key>): ...", "Report "<type>" from <agent> (thread <key>): ...", "<agent> (thread <key>) finished: ...". A message from outside the agent team has no such line, or says it is from outside the agent team.
+</inngest-runtime>
+<inngest-situation>
+You are agent-playground/optimizer, on thread \`agent-playground/optimizer:01M6.0.0123456789abcdef.agent-playground%2Flead\`.
+agent-playground/lead (thread s-7f2c) started you. When you finish, your last text goes to it as your result, so don't send your result any other way.
+You owe agent-playground/lead reports of type "demo/progress" (required), with data { ms: number, note: string }. Send one whenever you have something to report; you may send several.
+Messages from agent-playground/lead say so. A message marked "from outside the agent team" is from someone else, such as a person steering you.
+This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.
+From your tools:
+- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you and threads you started, by their thread keys. No other thread can be reached.
+- report: You must send each report marked required before you finish; you are reminded if you don't.
+</inngest-situation>"
+`;
+
+exports[`the briefing text > a custom handler's loop 1`] = `
+"<inngest-runtime v="1">
+You are an agent running on Inngest. Your agent's code runs you: it hands you messages and takes your answer when you end your turn. A turn ends when you reply without calling a tool, or when you call \`wait\`. Your last text goes back to that code, and you are not woken again unless the code calls you again.
+</inngest-runtime>
+<inngest-situation>
+You are agent-playground/security, on thread \`agent-playground/security:01M7.0.0123456789abcdef.\`.
+A function (run 01M7) started this thread and is waiting for its result. Your code decides what that result is.
+</inngest-situation>"
+`;
+
+exports[`the briefing text > a person-started bare agent 1`] = `
+"<inngest-runtime v="1">
+You are an agent running on Inngest. You work in turns. A turn ends when you reply without calling a tool, or when you call \`wait\`. You are then idle until a message arrives, which reaches you as the next user message.
+</inngest-runtime>
+<inngest-situation>
+You are acme/helper, on thread \`8d1e2f\`.
+Nothing in the agent team started this thread; its messages come from outside. When you end a turn, your last text is saved in the thread and becomes the run's output. Whether a person reads it is up to the app that sent the message.
+This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.
+</inngest-situation>"
+`;
+
+exports[`the briefing text > the lead, with discovery and a chat tool 1`] = `
+"<inngest-runtime v="1">
+You are an agent running on Inngest. You work in turns. A turn ends when you reply without calling a tool, or when you call \`wait\`. You are then idle until a message arrives, which reaches you as the next user message.
+Messages from other agents say where they come from: "Message from <agent> (thread <key>): ...", "Report "<type>" from <agent> (thread <key>): ...", "<agent> (thread <key>) finished: ...". A message from outside the agent team has no such line, or says it is from outside the agent team.
+</inngest-runtime>
+<inngest-situation>
+You are agent-playground/lead, on thread \`s-7f2c\`.
+Nothing in the agent team started this thread; its messages come from outside. When you end a turn, your last text is saved in the thread and becomes the run's output.
+This run ends when you finish a turn with nothing unread, unless agents you started are still working: then it stays open for their results. A message after that starts a new run of this thread, with your history.
+Agents you start can start agents of their own, 1 more level deep.
+From your tools:
+- list_agents: Agents can be added or removed while you run. The answer is good for 30000ms (its ttlMs) and is specific to you (cacheScope: "private").
+- start_agent: Agents you start run on their own. Their reports, questions and final results reach you as messages, so you never need to ask them for status: to wait for them, end your turn. A report needs no answer.
+- message_agent: With \`ask_agent\` and \`stop_agent\`, it reaches only the thread that started you and threads you started, by their thread keys. No other thread can be reached.
+- chat: Only messages sent with \`chat\` reach the person; anything else you write is private.
+</inngest-situation>"
+`;

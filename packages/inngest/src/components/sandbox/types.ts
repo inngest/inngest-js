@@ -2,6 +2,11 @@ import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
 import type { SandboxDollar } from "./dollar.ts";
 import type { SandboxImage } from "./image.ts";
+import type {
+  SandboxShell,
+  SandboxShellOptions,
+  ShellSession,
+} from "./shell.ts";
 import type { SandboxToolsOptions } from "./tools.ts";
 
 export const sandboxProtocolVersion = 1 as const;
@@ -177,6 +182,11 @@ export interface SandboxCommandOptions {
   environment?: Record<string, string>;
   cwd?: string;
   timeout?: SandboxDuration;
+  /**
+   * @internal Set by `sandbox.shell()`: what the command reads as in errors,
+   * and how to take its session report off stdout before the exit is judged.
+   */
+  "~shell"?: { text: string; strip: (stdout: string) => string };
 }
 
 /**
@@ -580,12 +590,51 @@ export interface SandboxClient {
   };
 }
 
+/**
+ * The commands and files of a sandbox, which the tools and a sandbox's `setup`
+ * use.
+ */
+export type SandboxIO = Pick<DurableSandbox, "commands" | "files">;
+
+/**
+ * A sandbox as the tools listed on it see it (`context.sandbox` of a
+ * `tool.group()`): its commands and files are durable steps with scoped IDs,
+ * its commands carry the sandbox's `shims`, and it opens on first use.
+ */
+export interface SandboxHandle extends SandboxIO {
+  /**
+   * Where relative paths and commands start: the sandbox's `cwd`, or the
+   * repository's path when it has one. Default `/tmp` without a repo.
+   */
+  readonly cwd: string;
+
+  /**
+   * Runs a command as one step, from a tagged template: `` $`git status` ``,
+   * `` $.sh`a | b` ``, or `$(options)`. Its steps are scoped like `commands`,
+   * carry the sandbox's `shims`, and start in `cwd`.
+   */
+  readonly $: DurableSandbox["$"];
+
+  /**
+   * The shell the tools of this sandbox share (`run`, `read`, `edit`,
+   * `search`): commands that keep their working directory and exported
+   * environment. Made once per sandbox, in the place the thread's last run left
+   * it.
+   */
+  shell(): Promise<ShellSession>;
+}
+
 export interface DurableSandbox {
   /**
    * Run a command as one step, from a tagged template. `$.sh` runs a shell
    * script, and `$(options)` gives a `$` with options set. See `SandboxDollar`.
    */
   readonly $: SandboxDollar;
+  /**
+   * A shell session on this sandbox, whose commands share a working
+   * directory and exported environment. See `SandboxShell`.
+   */
+  shell(options?: SandboxShellOptions): SandboxShell;
   readonly kind: "inngest/sandbox";
   readonly version: 1;
   readonly id: string;

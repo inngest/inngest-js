@@ -10,12 +10,8 @@ import { describe, expect, test } from "vitest";
 
 import { deleteRunSnapshots } from "../machine/machine.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
-import {
-  deleteSnapshot,
-  resolveCacheKey,
-  resolveTakenName,
-  usableFor,
-} from "./cache.ts";
+import { deleteSnapshot, resolveCacheKey, takeStepOf } from "./cache.ts";
+import { buildEntryOf, snapshotEntry } from "./names.ts";
 
 /** Step results by ID, kept across the "replays" of one test. */
 type Memo = Map<string, unknown>;
@@ -92,137 +88,6 @@ describe("deleteSnapshot", () => {
   });
 });
 
-describe("resolveTakenName", () => {
-  /** A run whose only snapshot holds the name, recording what is deleted. */
-  const holding = (
-    deleted: string[],
-    /** When the holder was created, in place of now. */
-    createdAt = new Date().toISOString(),
-  ): CiRunScope => {
-    const holder = {
-      id: "main-snapshot",
-      name: "ci/main/base/k",
-      status: "READY",
-      createdAt,
-    };
-
-    const snapshots = {
-      list: async () => {
-        return { items: [holder] };
-      },
-      get: async (id: string) => {
-        return {
-          delete: async () => {
-            deleted.push(id);
-          },
-        };
-      },
-    };
-
-    return {
-      runId: "01TESTRUN",
-      createdSnapshots: new Set<string>(),
-      ci: { client: { sandboxes: { snapshots } } },
-      step: {
-        run: async (_options: unknown, body: () => Promise<unknown>) => {
-          return body();
-        },
-      },
-      // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
-    } as any;
-  };
-
-  test("an excluded holder that isn't known to be broken is left alone", async () => {
-    const deleted: string[] = [];
-
-    const taken = await resolveTakenName(
-      holding(deleted),
-      "name-taken",
-      "ci/main/base/k",
-      undefined,
-      "main-snapshot",
-    );
-
-    expect(deleted).toEqual([]);
-    expect(taken.cleared).toBe(false);
-  });
-
-  test("an excluded holder that is broken is deleted, freeing the name", async () => {
-    const deleted: string[] = [];
-
-    const taken = await resolveTakenName(
-      holding(deleted),
-      "name-taken",
-      "ci/main/base/k",
-      undefined,
-      "main-snapshot",
-      true,
-    );
-
-    expect(deleted).toEqual(["main-snapshot"]);
-    expect(taken.cleared).toBe(true);
-  });
-
-  test("a holder that is too old is replaced without being known to be broken", async () => {
-    const deleted: string[] = [];
-
-    const taken = await resolveTakenName(
-      holding(deleted, "2020-01-01T00:00:00.000Z"),
-      "name-taken",
-      "ci/main/base/k",
-      { key: "k", maxAge: "1m" },
-    );
-
-    expect(deleted).toEqual(["main-snapshot"]);
-    expect(taken.cleared).toBe(true);
-  });
-});
-
-describe("usableFor", () => {
-  const ago = (ms: number): string => {
-    return new Date(Date.now() - ms).toISOString();
-  };
-
-  const soon = new Date(Date.now() + 60_000).toISOString();
-
-  test.each([
-    ["ready and fresh", undefined, undefined, {}, true],
-    ["still creating", undefined, undefined, { status: "CREATING" }, false],
-    ["the excluded one", undefined, "s1", {}, false],
-    ["about to expire", undefined, undefined, { expiresAt: soon }, false],
-    ["younger than maxAge", "1h", undefined, { createdAt: ago(60_000) }, true],
-    [
-      "older than maxAge",
-      "1h",
-      undefined,
-      { createdAt: ago(7_200_000) },
-      false,
-    ],
-    ["an unreadable createdAt", "1h", undefined, { createdAt: "?" }, true],
-    [
-      "old with no maxAge",
-      undefined,
-      undefined,
-      { createdAt: ago(1e10) },
-      true,
-    ],
-  ] as const)("%s", (_name, maxAge, exclude, overrides, expected) => {
-    const usable = usableFor(
-      maxAge ? { key: "k", maxAge } : undefined,
-      exclude,
-    );
-
-    expect(
-      usable({
-        id: "s1",
-        status: "READY",
-        createdAt: ago(0),
-        ...overrides,
-      }),
-    ).toBe(expected);
-  });
-});
-
 describe("resolveCacheKey", () => {
   const run = {} as CiRunScope;
 
@@ -237,5 +102,49 @@ describe("resolveCacheKey", () => {
     const { named } = await resolveCacheKey(run, { kind: "release" });
 
     expect(named).toEqual({ kind: "release" });
+  });
+});
+
+describe("the steps of a build's cache calls", () => {
+  test("keep the IDs and names of earlier releases", () => {
+    expect(takeStepOf("base › snapshot", "name-taken")).toMatchObject({
+      id: "base › snapshot › name-taken",
+      name: "Resolve cache name",
+    });
+
+    expect(takeStepOf("base › snapshot", "replaced")).toMatchObject({
+      id: "base › snapshot › replaced",
+      name: "Delete replaced cache",
+    });
+  });
+});
+
+describe("the entry a build is asked for", () => {
+  test("is the entry the invoker sent", () => {
+    const entry = snapshotEntry({
+      kind: "cache",
+      scope: "pr:7",
+      jobId: "base",
+      ownKey: "slot0001/key00001",
+    });
+
+    expect(entry).toEqual({
+      scope: "ci/pr:7",
+      key: "base/slot0001",
+      generation: "key00001",
+    });
+    expect(buildEntryOf({ entry })).toBe(entry);
+  });
+
+  test("is rebuilt from the cacheKey of an earlier release, to the same name", () => {
+    const entry = buildEntryOf({ cacheKey: "ci/pr:7/base/slot0001/key00001" });
+
+    expect([entry.scope, entry.key, entry.generation].join("/")).toBe(
+      "ci/pr:7/base/slot0001/key00001",
+    );
+  });
+
+  test("is refused when the data has neither", () => {
+    expect(() => buildEntryOf({})).toThrow();
   });
 });

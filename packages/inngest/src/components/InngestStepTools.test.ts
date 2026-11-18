@@ -1512,3 +1512,56 @@ describe("step.sendEvent session propagation gating", () => {
     expect(payload).toEqual({ name: "app/child", data: {} });
   });
 });
+
+describe("the global step with a tool the run does not have", () => {
+  test("throws a clear error naming the middleware to add", async () => {
+    const { getAsyncLocalStorage, runWithAsyncCtx } = await import(
+      "./execution/als.ts"
+    );
+
+    await getAsyncLocalStorage();
+    const { step } = await import("./InngestStepTools.ts");
+    const run = () => {
+      return runWithAsyncCtx(
+        {
+          app: {} as never,
+          execution: {
+            instance: {} as never,
+            ctx: { step: { run: () => undefined } } as never,
+          },
+        },
+        () => {
+          return (step as unknown as Record<string, unknown>).sandbox;
+        },
+      );
+    };
+
+    expect(run).toThrow(/step\.sandbox.*middleware/);
+  });
+
+  test("still returns the tools the run has", async () => {
+    const { getAsyncLocalStorage, runWithAsyncCtx } = await import(
+      "./execution/als.ts"
+    );
+
+    await getAsyncLocalStorage();
+    const { step } = await import("./InngestStepTools.ts");
+    const fake = () => {
+      return undefined;
+    };
+    const found = runWithAsyncCtx(
+      {
+        app: {} as never,
+        execution: {
+          instance: {} as never,
+          ctx: { step: { run: fake } } as never,
+        },
+      },
+      () => {
+        return step.run;
+      },
+    );
+
+    expect(found).toBe(fake);
+  });
+});

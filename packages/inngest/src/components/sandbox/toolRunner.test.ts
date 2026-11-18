@@ -19,6 +19,7 @@ import {
 } from "./protocol.ts";
 
 import { createClient, runToEnd, sandboxResource } from "./test-helpers.ts";
+import { toolErrorOf } from "./toolError.ts";
 import { runCommandWithTools, type ToolsHost } from "./toolRunner.ts";
 import { type SandboxTools, tool } from "./tools.ts";
 import { sdkOrigin } from "./trace.ts";
@@ -485,7 +486,7 @@ describe("commands.run with tools", () => {
         {
           id: 1,
           error:
-            "count returned an invalid result: n: Expected number, received string",
+            "count returned an invalid result: n: Expected number, received string. Its output schema refused it, so this is a fault in the tool, not in the call.",
         },
       ],
       steps: [],
@@ -546,6 +547,23 @@ describe("commands.run with tools", () => {
         idempotencyKey: "run-1:exec:tool:getCustomer:1",
       }),
     );
+  });
+
+  test("an error result is an error to the code, not a value", async () => {
+    const { fake, sandbox } = createFakeSandbox(
+      sendAll([request(1, "missing"), request(2, "broken")]),
+    );
+    const { host } = createHost(sandbox);
+
+    await run(host, {
+      missing: tool.step({ run: () => toolErrorOf("no such thread") }),
+      broken: tool.step({ run: () => toolErrorOf({ code: 7 }) }),
+    });
+
+    expect(replies(fake)).toEqual([
+      { id: 1, error: "no such thread" },
+      { id: 2, error: '{"code":7}' },
+    ]);
   });
 
   test("a tool that outlives its timeout fails with a timeout error", async () => {
@@ -1046,6 +1064,33 @@ describe("commands.run with tools trace rows", () => {
     });
   });
 
+  test("a tool's displayName names its step and row", async () => {
+    const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
+    const { host, spans } = createHost(sandbox);
+
+    await inExecution(() => {
+      return run(host, {
+        getCustomer: tool.step({
+          input: z.object({}),
+          displayName: () => {
+            return "Look up customer";
+          },
+          run: () => {
+            return { id: "cus_1" };
+          },
+        }),
+      });
+    });
+
+    expect(spans.get("exec:tool:getCustomer:1")).toEqual([
+      expect.objectContaining({
+        id: "exec:tool:getCustomer:1",
+        name: "Look up customer",
+        kind: "tool",
+      }),
+    ]);
+  });
+
   test("a runner's group of the same kind holds the steps, without another", async () => {
     const { sandbox } = createFakeSandbox(sendAll([request(1, "getCustomer")]));
     const { host, spans } = createHost(sandbox);
@@ -1429,6 +1474,21 @@ describe("shims and long commands on commands.run", () => {
     expect(request?.toolOptions).toEqual({ toolTimeout: "2m" });
   });
 
+  test("$ passes tools to the command, like commands.run", async () => {
+    const { rawTool, sandbox } = facade();
+    const lookup = tool.step({
+      input: z.object({ id: z.string() }),
+      run: ({ id }) => {
+        return id;
+      },
+    });
+
+    await sandbox.$({ tools: { lookup } }).sh`node script.mjs`;
+
+    const [, , , request] = vi.mocked(rawTool).mock.calls[0] ?? [];
+    expect(Object.keys(request?.tools ?? {})).toEqual(["lookup"]);
+  });
+
   test("an empty shims object is no shims", async () => {
     const { rawTool, sandbox } = facade();
 
@@ -1466,7 +1526,7 @@ describe("shims and long commands on commands.run", () => {
 
     await run(host, {
       mine: {
-        run: async (ctx: { sandbox?: unknown }) => {
+        run: async (_input: unknown, ctx: { sandbox?: unknown }) => {
           seen = ctx.sandbox;
 
           return "ok";
@@ -1662,5 +1722,393 @@ describe("commands.run with tools in a function", () => {
     expect(ran).toEqual(["box", "hello"]);
     expect(wrapped).toHaveLength(1);
     expect(stdout).toBe("hello\n");
+  });
+});
+
+describe("commands.run with tools that wait", () => {
+  /**
+   * A sandbox whose code makes `calls` in order, like the stub: it answers
+   * the first calls from the journal it was started with, sends a request for
+   * each of the rest, exits 75 when told to yield, and exits 0 after the last.
+   */
+  const createReplaySandbox = (
+    calls: string[],
+    { exitCode = 75, marker = true, replayedLine = true, big = false } = {},
+  ) => {
+    const log: string[] = [];
+    const uploads = new Map<string, string>();
+    const dirs = new Set<string>();
+    const starts: { journal: string[] }[] = [];
+    const removed: string[] = [];
+    // The segment running now: how many calls it has made and its journal
+    let current: { at: number; journal: string[]; done: boolean } | undefined;
+
+    const advance = (): void => {
+      while (current && !current.done && current.at < calls.length) {
+        if (current.at < current.journal.length) {
+          current.at += 1;
+
+          if (current.at === current.journal.length && replayedLine) {
+            log.push('{"op":"replayed"}\n');
+          }
+
+          continue;
+        }
+
+        log.push(request(current.at + 1, calls[current.at] as string));
+
+        return;
+      }
+
+      if (current && !current.done) {
+        current.done = true;
+        log.push(
+          `${JSON.stringify({ op: "exit", code: 0, stdout: base64(big ? "x".repeat(3 * 1024 * 1024) : `${current.journal.length} replayed\n`), stderr: "" })}\n`,
+        );
+      }
+    };
+
+    const sandbox = {
+      commands: {
+        run: async (command: string[]) => {
+          if (command[0] === "rm") {
+            removed.push(String(command[2]));
+
+            return { stdout: "", stderr: "", exitCode: 0 };
+          }
+
+          const [, , , , , lines, , ...replies] = command;
+
+          for (const reply of replies) {
+            const line = JSON.parse(reply);
+
+            if (!current || current.done) {
+              continue;
+            }
+
+            if (line.yield) {
+              current.done = true;
+              if (marker) {
+                log.push('{"op":"yielded"}\n');
+              }
+              log.push(
+                `${JSON.stringify({ op: "exit", code: exitCode, stdout: "", stderr: "" })}\n`,
+              );
+            } else {
+              current.at += 1;
+              advance();
+            }
+          }
+
+          return {
+            stdout: log
+              .slice(Number(lines))
+              .map((line) => {
+                return `${line}`.trimEnd();
+              })
+              .map((line) => {
+                return `${line}\n`;
+              })
+              .join(""),
+            stderr: "",
+            exitCode: 0,
+          };
+        },
+      },
+      files: {
+        upload: async ({ path, data }: { path: string; data: unknown }) => {
+          uploads.set(path, String(data));
+
+          return { path, bytesWritten: 0 };
+        },
+      },
+      processes: {
+        start: async ({
+          command,
+          environment,
+        }: {
+          command: string[];
+          environment?: Record<string, string>;
+        }) => {
+          const dir = command[4] as string;
+
+          if (dirs.has(dir)) {
+            return { id: "again" };
+          }
+
+          dirs.add(dir);
+          // Each segment has its own log
+          log.length = 0;
+
+          const journalPath = environment?.INNGEST_TOOLS_JOURNAL;
+          const journal = journalPath
+            ? String(uploads.get(journalPath)).split("\n").filter(Boolean)
+            : [];
+
+          starts.push({ journal });
+          current = { at: 0, journal, done: false };
+          advance();
+
+          return { id: "proc" };
+        },
+      },
+    } as unknown as Sandbox;
+
+    return { sandbox, starts, removed };
+  };
+
+  const noop = (extra: SandboxTools): SandboxTools => {
+    return {
+      a: () => {
+        return 1;
+      },
+      b: () => {
+        return 2;
+      },
+      ...extra,
+    };
+  };
+
+  const fakeStep = {
+    run: async (_id: string, fn: () => unknown) => {
+      return fn();
+    },
+  };
+
+  const inFunction = <T>(fn: () => T): T => {
+    return runWithAsyncCtx(
+      {
+        app: {} as never,
+        execution: { ctx: { step: fakeStep } } as never,
+      },
+      fn,
+    );
+  };
+
+  test("a call to a tool that waits ends the process, runs the tool, and replays the earlier calls", async () => {
+    const { sandbox, starts, removed } = createReplaySandbox([
+      "a",
+      "pause",
+      "b",
+    ]);
+    const { host, executed } = createHost(sandbox);
+    const ran: string[] = [];
+    const tools: SandboxTools = {
+      a: () => {
+        ran.push("a");
+
+        return 1;
+      },
+      pause: tool.group({
+        waits: true,
+        run: async () => {
+          ran.push("pause");
+
+          return step.run("sleep", () => {
+            return "rested";
+          });
+        },
+      }),
+      b: () => {
+        ran.push("b");
+
+        return 2;
+      },
+    };
+
+    const result = await inFunction(() => {
+      return run(host, tools);
+    });
+
+    expect(ran).toEqual(["a", "pause", "b"]);
+    expect(
+      starts.map((start) => {
+        return start.journal.length;
+      }),
+    ).toEqual([0, 2]);
+    expect(
+      starts[1]?.journal.map((line) => {
+        return JSON.parse(line).result;
+      }),
+    ).toEqual([1, "rested"]);
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toMatch(/\.journal$/);
+    expect(stdoutOf(result)).toBe("2 replayed\n");
+    expect(executed).toEqual([
+      "exec",
+      "exec:tool:a:1",
+      "exec:wait:1",
+      "exec:wait:2",
+      "exec:resume:1",
+      "exec:r1:tool:b:3",
+      "exec:wait:3",
+      "exec:journal",
+    ]);
+  });
+
+  test("a tool that waits runs in the same pass as the group tool before it, which is not run again after the resume", async () => {
+    const { sandbox } = createReplaySandbox(["start", "pause", "after"]);
+    const { host } = createHost(sandbox);
+    const kept: string[] = [];
+    const seen: string[][] = [];
+    const tools: SandboxTools = {
+      start: tool.group({
+        run: async () => {
+          kept.push("thread-1");
+
+          return 1;
+        },
+      }),
+      pause: tool.group({
+        waits: true,
+        run: async () => {
+          seen.push([...kept]);
+
+          return 2;
+        },
+      }),
+      after: () => {
+        return 3;
+      },
+    };
+
+    await inFunction(() => {
+      return run(host, tools);
+    });
+
+    // The body of `start` ran once, before `pause`; the journal answered it
+    // in the resumed segment without calling the host, so only the
+    // execution's own state (not a per-segment one) can carry what it kept.
+    expect(kept).toEqual(["thread-1"]);
+    expect(seen).toEqual([["thread-1"]]);
+  });
+
+  test("a process that exits with another code than 75 is not resumed", async () => {
+    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
+      exitCode: 0,
+    });
+    const { host } = createHost(sandbox);
+    const ran: string[] = [];
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        ran.push("pause");
+
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, noop({ pause }));
+    });
+
+    expect(starts).toHaveLength(1);
+    expect(ran).toEqual([]);
+    expect(result).toMatchObject({ result: { exitCode: 0 } });
+  });
+
+  test("a replay that exits 0 without using the whole journal fails", async () => {
+    const { sandbox } = createReplaySandbox(["a", "pause", "b"], {
+      replayedLine: false,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, {
+        a: () => {
+          return 1;
+        },
+        pause,
+        b: () => {
+          return 2;
+        },
+      });
+    });
+
+    expect(result).toMatchObject({ result: { exitCode: 76 } });
+    expect((result as { result: { stderr: string } }).result.stderr).toContain(
+      "replay diverged",
+    );
+  });
+
+  test("a short replay that printed more than the output limit stays marked as cut", async () => {
+    const { sandbox } = createReplaySandbox(["a", "pause", "b"], {
+      replayedLine: false,
+      big: true,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, noop({ pause }));
+    });
+
+    const { result: wire } = result as unknown as {
+      result: {
+        stdout: string;
+        stderr: string;
+        encoding: "utf8" | "base64";
+        output: {
+          truncated: boolean;
+          originalBytes: { stdout: number };
+          retainedBytes: { stderr: number };
+        };
+      };
+    };
+    const decode = (text: string) => {
+      return wire.encoding === "utf8"
+        ? Buffer.from(text)
+        : Buffer.from(text, "base64");
+    };
+
+    expect(result).toMatchObject({
+      result: { exitCode: 76, output: { truncated: true } },
+    });
+    expect(decode(wire.stderr).toString()).toContain("replay diverged");
+    expect(wire.output.retainedBytes.stderr).toBe(decode(wire.stderr).length);
+    expect(wire.output.originalBytes.stdout).toBe(3 * 1024 * 1024);
+  });
+
+  test("an exit 75 the stub didn't write a yield for is the script's own", async () => {
+    const { sandbox, starts } = createReplaySandbox(["a", "pause", "b"], {
+      marker: false,
+    });
+    const { host } = createHost(sandbox);
+    const pause = tool.group({
+      waits: true,
+      run: async () => {
+        return 1;
+      },
+    });
+
+    const result = await inFunction(() => {
+      return run(host, noop({ pause }));
+    });
+
+    expect(starts).toHaveLength(1);
+    expect(result).toMatchObject({ result: { exitCode: 75 } });
+  });
+
+  test("a tool that waits needs a group", () => {
+    expect(() => {
+      return tool({
+        id: "pause",
+        waits: true,
+        run: () => {
+          return 1;
+        },
+      });
+    }).toThrow(/needs group: true/);
   });
 });
