@@ -1,4 +1,8 @@
-import { retryWithBackoff, runAsPromise } from "./promises.ts";
+import {
+  goIntervalTiming,
+  retryWithBackoff,
+  runAsPromise,
+} from "./promises.ts";
 
 describe("runAsPromise", () => {
   describe("synchronous functions", () => {
@@ -187,5 +191,38 @@ describe("retryWithBackoff", () => {
 
       vi.useRealTimers();
     });
+  });
+});
+
+describe("goIntervalTiming", () => {
+  test("defaults to starting the interval at invocation time", async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+
+    const { resultPromise, interval } = await goIntervalTiming(() => "value");
+
+    await expect(resultPromise).resolves.toBe("value");
+    expect(interval.a).toBe(now * 1_000_000);
+    expect(interval.b).toBe(0);
+
+    vi.useRealTimers();
+  });
+
+  test("anchors the interval at a caller-supplied start", async () => {
+    vi.useFakeTimers();
+    const start = Date.now() - 500;
+
+    const { resultPromise, interval } = await goIntervalTiming(
+      () => "value",
+      start,
+    );
+
+    await expect(resultPromise).resolves.toBe("value");
+    // The interval starts at the supplied origin, not at the moment
+    // goIntervalTiming was invoked, so `a + b` still lands on `t_end`.
+    expect(interval.a).toBe(start * 1_000_000);
+    expect(interval.b).toBe(500 * 1_000_000);
+
+    vi.useRealTimers();
   });
 });
