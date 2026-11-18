@@ -122,6 +122,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   #spanCleanup = new FinalizationRegistry<string>((spanId) => {
     if (spanId) {
       this.#traceParents.delete(spanId);
+      this.#checkpointingRoots.delete(spanId);
     }
   });
 
@@ -425,6 +426,10 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spanCleanup.unregister(span);
     this.#spansToExport.delete(span);
     this.#traceParents.delete(spanId);
+
+    // When this is an execution's root span, the run is over: forget that it
+    // was checkpointing so long-lived processes don't keep one ID per run.
+    this.#checkpointingRoots.delete(spanId);
   }
 
   /**
