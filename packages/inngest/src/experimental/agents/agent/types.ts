@@ -68,6 +68,7 @@ import type { AgentToolSet } from "./agentTools.ts";
 import type { BriefingOption } from "./briefing.ts";
 import type { LendOptions } from "./lending.ts";
 import type { AgentLimits } from "./limits.ts";
+import type { ListenSource } from "./listenSources.ts";
 import type { AgentFunctionOptions } from "./options.ts";
 import type { LastRun } from "./recovery.ts";
 import type { RunField, RunFieldContext } from "./runField.ts";
@@ -391,6 +392,36 @@ export interface AgentFunctionConfig<
     : readonly InboxSourceInput[];
 
   /**
+   * EXPERIMENTAL: the events the model may ask its thread to watch with the
+   * `listen` tool.  each entry has a `scope` that decides which events of that
+   * name the thread may bring to the model, and the model can only make it
+   * narrower.  an agent with no list does not get the `listen` and `unlisten`
+   * tools.  the handler's `thread.listen()` is not limited by the list.
+   *
+   * @example
+   * ```ts
+   * listen: [
+   *   {
+   *     event: prReviewed,
+   *     scope: ({ thread }) => {
+   *       return { "data.repo": thread.key };
+   *     },
+   *   },
+   *   {
+   *     event: [
+   *       "billing/invoice.paid",
+   *       "billing/invoice.failed",
+   *     ],
+   *     scope: ({ event }) => {
+   *       return { "data.org": event.data.org };
+   *     },
+   *   },
+   * ],
+   * ```
+   */
+  listen?: readonly ListenSource<AgentTypesOf<TTypes>["event"]>[];
+
+  /**
    * The agent's skills: know-how the model reads, in the `SKILL.md` format.
    * A value such as `[skills.folder("./skills")]`, or a function of
    * `{ event, thread }` read once at the start of each run. The model sees
@@ -577,8 +608,10 @@ export interface AgentThread {
    *
    * The **thread** holds the subscription, not this run, so the watch outlives
    * the run that asked for it and is re-established after a rollover. The
-   * model has the same thing as a tool (`listen`), because what to watch for
-   * is usually its decision rather than the handler's.
+   * model has the same thing as a tool (`listen`) when the agent has a
+   * `listen` list. That list limits the model and does not limit this call.
+   * A name with a `*`, and the events of the agent layer (`agent/`) and of
+   * the platform (`inngest/`), are refused with an error.
    *
    * ```ts
    * await thread.listen(prReviewed, { "data.number": 412 });

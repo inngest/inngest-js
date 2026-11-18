@@ -617,8 +617,6 @@ describe("inbox sources", () => {
         "ask_agent",
         "stop_agent",
         "wait",
-        "listen",
-        "unlisten",
       ],
     ]);
   });
@@ -646,7 +644,7 @@ describe("inbox sources", () => {
 
     await run(fn, { event: trigger("go") });
 
-    expect(asked).toEqual([["wait", "listen", "unlisten"]]);
+    expect(asked).toEqual([["wait"]]);
   });
 
   test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {

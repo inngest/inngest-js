@@ -135,6 +135,7 @@ import {
   threadKeysFor,
 } from "../threads/threadClient.ts";
 import {
+  reservedListenEvent,
   type ThreadForwardData,
   threadForward,
   threadSubscriptionFilter,
@@ -157,11 +158,9 @@ import {
 import {
   agentToolsFor,
   codeAgentTools,
+  createListenTools,
   handlerWaitTool,
-  listenFilter,
-  listenTool,
   replyTool,
-  unlistenTool,
   waitTool,
 } from "./agentTools.ts";
 import { createCleanupFunction, createFinishedFunction } from "./auxiliary.ts";
@@ -191,6 +190,12 @@ import {
   parentEndedCancel,
 } from "./lending.ts";
 import { narrowInherited, narrowLimits, registerLimits } from "./limits.ts";
+import {
+  type CompiledListenSource,
+  compileListenSources,
+  type ListenSource,
+  listenFilter,
+} from "./listenSources.ts";
 import { createLoopWiring } from "./loopWiring.ts";
 import { functionOptions } from "./options.ts";
 import { finishedOf } from "./recovery.ts";
@@ -287,6 +292,11 @@ const createHandlerLoop = async (options: {
    * an agent started it.
    */
   related: boolean;
+
+  /**
+   * the agent's `listen` list, checked when the agent was defined.
+   */
+  listenSources: readonly CompiledListenSource[];
 }): Promise<AgentHandlerLoop> => {
   const {
     client,
@@ -298,6 +308,7 @@ const createHandlerLoop = async (options: {
     lentEnded,
     briefing,
     related,
+    listenSources,
   } = options;
 
   if (typeof config.loop === "function") {
@@ -363,6 +374,10 @@ const createHandlerLoop = async (options: {
     }) as unknown as AgentHandlerLoop;
   }
 
+  const watching =
+    listenSources.length > 0
+      ? createListenTools(listenSources, fields.context)
+      : undefined;
   const own = {
     ...agentToolsFor(config.discovery, related),
     ...addedTools,
@@ -371,13 +386,17 @@ const createHandlerLoop = async (options: {
     ...(!(tools && Object.hasOwn(tools, "wait")) && {
       wait: briefing.loop === "default" ? waitTool : handlerWaitTool,
     }),
-    // Asks the thread to watch for an event. The model decides what to watch
-    // while it works, so this cannot be configuration. A tool of the agent's
-    // own by either name wins.
-    ...(!(tools && Object.hasOwn(tools, "listen")) && { listen: listenTool }),
-    ...(!(tools && Object.hasOwn(tools, "unlisten")) && {
-      unlisten: unlistenTool,
-    }),
+    // asks the thread to watch for an event.  only an agent with a `listen`
+    // list gets these, and the list decides what the model may watch.  a tool
+    // of the agent's own with the same name is used instead.
+    ...(watching &&
+      !(tools && Object.hasOwn(tools, "listen")) && {
+        listen: watching.listen,
+      }),
+    ...(watching &&
+      !(tools && Object.hasOwn(tools, "unlisten")) && {
+        unlisten: watching.unlisten,
+      }),
   } as SandboxTools;
   // Shared tools the definition lists are called through their hosted
   // function; the others `discovery.tools` allows are added beside them.
@@ -456,6 +475,12 @@ export function createAgentFunction(
     validateDiscoveryList(config.id, "agents", discovery.agents);
     validateDiscoveryList(config.id, "tools", discovery.tools);
   }
+
+  // a bad `listen` entry is an error here, when the agent is defined.
+  const listenSources = compileListenSources(
+    config.id,
+    config.listen as readonly ListenSource[] | undefined,
+  );
 
   // A source written as just an event is placed by the agent's `thread`.
   const inboxSources = (config.inbox ?? []).map((source): InboxSource => {
@@ -1333,6 +1358,7 @@ export function createAgentFunction(
           lentEnded,
           briefing: runBriefing,
           related: starter !== undefined,
+          listenSources,
           addedTools: {
             ...sandboxTools(opened),
             ...(reportBook && { report: reportTool(reportBook) }),
@@ -1392,10 +1418,20 @@ export function createAgentFunction(
                 event: string | { name: string },
                 where?: Record<string, string | number | boolean>,
               ) => {
+                const name = typeof event === "string" ? event : event.name;
+
+                // the handler is the developer's code, so the agent's
+                // `listen` list does not apply.  the reserved names do.
+                if (reservedListenEvent(name)) {
+                  throw new Error(
+                    `A thread cannot watch "${name}": a name with a \`*\`, and the events of the agent layer (\`agent/\`) and of the platform (\`inngest/\`), are reserved`,
+                  );
+                }
+
                 const filter = listenFilter(where);
 
                 return threadState.listen({
-                  event: typeof event === "string" ? event : event.name,
+                  event: name,
                   ...(filter !== undefined && { if: filter }),
                 });
               },

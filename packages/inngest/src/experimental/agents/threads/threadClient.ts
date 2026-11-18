@@ -50,6 +50,7 @@ import {
   emptySnapshot,
   listenSignal,
   readSignal,
+  sameListen,
   type ThreadEntry,
   type ThreadForwardData,
   type ThreadListen,
@@ -677,15 +678,19 @@ export const obtainThreadState = async (options: {
         }),
       ]);
 
-      if (heard) {
-        state.listens = remove
-          ? state.listens.filter((held) => {
-              return !(held.event === listen.event && held.if === listen.if);
-            })
-          : [...state.listens, listen];
+      // the thread run answers a listen it refused with `listening: false`.
+      const confirmed =
+        Boolean(heard) && (remove === true || heard?.data?.listening !== false);
+
+      if (confirmed) {
+        const others = state.listens.filter((held) => {
+          return !sameListen(held, listen);
+        });
+
+        state.listens = remove ? others : [...others, listen];
       }
 
-      return Boolean(heard);
+      return confirmed;
     },
     handle,
   };

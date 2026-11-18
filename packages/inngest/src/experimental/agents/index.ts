@@ -35,6 +35,13 @@ export type {
 export { briefingFacts, renderBriefing } from "./agent/briefing.ts";
 export type { AgentLimits } from "./agent/limits.ts";
 export { AgentLimitError } from "./agent/limits.ts";
+export type {
+  ListenEvent,
+  ListenScope,
+  ListenScopeContext,
+  ListenSource,
+  ListenWhere,
+} from "./agent/listenSources.ts";
 export type { RunField, RunFieldContext } from "./agent/runField.ts";
 export type { ResultOptions } from "./agent/runResults.ts";
 export {

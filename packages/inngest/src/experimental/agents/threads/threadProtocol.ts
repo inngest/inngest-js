@@ -87,10 +87,41 @@ export interface ThreadListen {
   if?: string;
 
   /**
+   * the part of `if` that the model wrote, when the model's `listen` tool
+   * made the request.  the thread finds a subscription to drop by `event` and
+   * this, so a scope that changed between two runs still finds it.
+   */
+  where?: string;
+
+  /**
    * What the model (or handler) asked for, as it asked, for the record.
    */
   asked?: string;
 }
+
+/**
+ * whether two listens are the same subscription.  a listen from the model's
+ * tool is compared by `event` and `where`.  a listen with no `where` is
+ * compared by `event` and `if`.
+ */
+export const sameListen = (a: ThreadListen, b: ThreadListen): boolean => {
+  return a.event === b.event && (a.where ?? a.if) === (b.where ?? b.if);
+};
+
+/**
+ * whether a thread must not subscribe to an event name.  the thread run
+ * applies an `agent/` event by its name alone, so a subscription to one
+ * would apply the reads and writes of other threads to this thread.  a name
+ * with a `*` matches no event.
+ */
+export const reservedListenEvent = (name: string): boolean => {
+  return (
+    name === "" ||
+    name.includes("*") ||
+    name.startsWith("agent/") ||
+    name.startsWith("inngest/")
+  );
+};
 
 /**
  * Everything one thread holds. It travels whole: to an agent run as the answer

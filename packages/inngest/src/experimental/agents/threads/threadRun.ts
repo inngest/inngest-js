@@ -81,8 +81,9 @@ import {
   forwardStateLimit,
   isThreadControl,
   rememberedWrites,
+  reservedListenEvent,
+  sameListen,
   type ThreadEntry,
-  type ThreadListen,
   type ThreadListenData,
   type ThreadReadData,
   type ThreadSnapshot,
@@ -301,12 +302,16 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         // Every listen an agent asked for, re-established: the primitive is
         // forward-only, so a new generation has to subscribe again.
-        ...(input.carried?.listens ?? []).map((listen) => {
-          return {
-            event: listen.event,
-            ...(listen.if !== undefined && { if: listen.if }),
-          };
-        }),
+        ...(input.carried?.listens ?? [])
+          .filter((listen) => {
+            return !reservedListenEvent(listen.event);
+          })
+          .map((listen) => {
+            return {
+              event: listen.event,
+              ...(listen.if !== undefined && { if: listen.if }),
+            };
+          }),
 
         // The protocol's own, for this thread.
         ...[threadRead, threadWrite, threadListen, threadDone].map((type) => {
@@ -473,23 +478,35 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
             }
             case threadListen.name: {
               const asked = message.data as ThreadListenData;
-              const same = (listen: ThreadListen) => {
-                return (
-                  listen.event === asked.listen.event &&
-                  listen.if === asked.listen.if
-                );
-              };
-              const already = state.listens.some(same);
+              const held = state.listens.find((listen) => {
+                return sameListen(listen, asked.listen);
+              });
+              const others = state.listens.filter((listen) => {
+                return !sameListen(listen, asked.listen);
+              });
 
-              if (asked.remove) {
-                if (already) {
-                  state.listens = state.listens.filter((listen) => {
-                    return !same(listen);
-                  });
+              // the agent run checks the name before it asks.  this check is
+              // for a listen event that something else sent.
+              const refused =
+                !asked.remove && reservedListenEvent(asked.listen.event);
+
+              if (refused) {
+                logger.warn(
+                  {
+                    agent: ref,
+                    thread,
+                    event: asked.listen.event,
+                  },
+                  "thread refused to watch a reserved event name",
+                );
+              } else if (asked.remove) {
+                if (held) {
+                  state.listens = others;
                   applied.listened = true;
                 }
-              } else if (!already) {
-                state.listens.push(asked.listen);
+              } else if (!held || held.if !== asked.listen.if) {
+                // the same request with a new scope replaces the old one.
+                state.listens = [...others, asked.listen];
                 applied.listened = true;
               }
 
@@ -498,7 +515,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
                 await step.sendSignal(`listen:${nth}`, {
                   signal: asked.signal,
-                  data: { listening: !asked.remove, event: asked.listen.event },
+                  data: {
+                    listening: !asked.remove && !refused,
+                    event: asked.listen.event,
+                  },
                 });
               }
 

@@ -601,6 +601,201 @@ describe("listening, which the model asks for at runtime", () => {
   });
 });
 
+describe("what the thread does with a listen", () => {
+  /**
+   * Runs one generation of the thread run, started by `first`, with `more`
+   * arriving after it and a `done` at the end. Gives back what the thread
+   * handed over and the signals it sent.
+   */
+  const heldAfter = async (
+    first: Record<string, unknown>,
+    more: Record<string, unknown>[] = [],
+    carried?: ThreadSnapshot,
+  ) => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const asListen = (data: Record<string, unknown>, nth: number) => {
+      return {
+        name: "agent/thread.listen",
+        data: {
+          agent: ref,
+          thread: "t1",
+          signal: listenSignal(ref, "t1", "reader", nth),
+          run: "reader",
+          ...data,
+        },
+      };
+    };
+    const { signals, output, ops } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 1,
+          start: asListen(first, 0),
+          ...(carried && { carried }),
+        },
+      },
+      incoming: [
+        ...more.map((data, at) => {
+          return asListen(data, at + 1);
+        }),
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+    const handed = output as
+      | { ended?: string; handover?: ThreadSnapshot }
+      | undefined;
+    const heard = (nth: number) => {
+      return signals.find((one) => {
+        return one.signal === listenSignal(ref, "t1", "reader", nth);
+      })?.data as { listening?: boolean } | undefined;
+    };
+    const sources = ops.flatMap((op) => {
+      return (
+        (op.opts as { sources?: { event: string; if?: string }[] })?.sources ??
+        []
+      );
+    });
+
+    return { handed, heard, sources };
+  };
+
+  test.each([
+    ["agent/thread.write"],
+    ["agent/thread.forward"],
+    ["inngest/function.finished"],
+    ["billing/*"],
+  ])("a reserved name is refused and the asker is told: %s", async (event) => {
+    const { handed, heard } = await heldAfter({ listen: { event } });
+
+    expect(heard(0)).toMatchObject({ listening: false });
+    expect(handed?.handover?.listens ?? []).toEqual([]);
+  });
+
+  test("the same request with a new scope replaces the old one", async () => {
+    const carried: ThreadSnapshot = {
+      ...emptySnapshot(),
+      listens: [
+        {
+          event: "billing/invoice.paid",
+          if: 'async.data.org == "acme" && async.data.invoice == "inv_9"',
+          where: 'async.data.invoice == "inv_9"',
+        },
+      ],
+    };
+    const next = {
+      event: "billing/invoice.paid",
+      if: 'async.data.org == "globex" && async.data.invoice == "inv_9"',
+      where: 'async.data.invoice == "inv_9"',
+    };
+    const { handed, heard } = await heldAfter({ listen: next }, [], carried);
+
+    expect(heard(0)).toMatchObject({ listening: true });
+    expect(handed?.handover?.listens).toEqual([next]);
+  });
+
+  test("a drop finds the watch by its event and the model's where, whatever its scope", async () => {
+    const carried: ThreadSnapshot = {
+      ...emptySnapshot(),
+      listens: [
+        {
+          event: "billing/invoice.paid",
+          if: 'async.data.org == "acme" && async.data.invoice == "inv_9"',
+          where: 'async.data.invoice == "inv_9"',
+        },
+        {
+          event: "billing/invoice.paid",
+          if: 'async.data.org == "acme"',
+          where: "",
+        },
+      ],
+    };
+    const { handed } = await heldAfter(
+      {
+        remove: true,
+        listen: {
+          event: "billing/invoice.paid",
+          if: 'async.data.invoice == "inv_9"',
+          where: 'async.data.invoice == "inv_9"',
+        },
+      },
+      [],
+      carried,
+    );
+
+    expect(handed?.handover?.listens).toEqual([
+      {
+        event: "billing/invoice.paid",
+        if: 'async.data.org == "acme"',
+        where: "",
+      },
+    ]);
+  });
+
+  test("a drop from the model also finds a watch recorded with no where", async () => {
+    const carried: ThreadSnapshot = {
+      ...emptySnapshot(),
+      listens: [
+        {
+          event: "app/user.message",
+        },
+        {
+          event: "ci/status",
+          if: 'async.data.state == "red"',
+        },
+      ],
+    };
+    const { handed } = await heldAfter(
+      {
+        remove: true,
+        listen: {
+          event: "ci/status",
+          if: 'async.data.state == "red"',
+          where: 'async.data.state == "red"',
+        },
+      },
+      [],
+      carried,
+    );
+
+    expect(handed?.handover?.listens).toEqual([{ event: "app/user.message" }]);
+  });
+
+  test("a reserved name the thread already has is not subscribed to again", async () => {
+    const carried: ThreadSnapshot = {
+      ...emptySnapshot(),
+      listens: [
+        {
+          event: "agent/thread.forward",
+        },
+        {
+          event: "ci/status",
+          if: 'async.data.state == "red"',
+        },
+      ],
+    };
+    const { sources } = await heldAfter(
+      { listen: { event: "deploy/done" } },
+      [],
+      carried,
+    );
+
+    expect(
+      sources.filter((source) => {
+        return source.event === "agent/thread.forward";
+      }),
+    ).toEqual([]);
+    expect(sources).toContainEqual({
+      event: "ci/status",
+      if: 'async.data.state == "red"',
+    });
+  });
+});
+
 describe("the holder's reads", () => {
   test("a read is armed before the batch in hand is applied, so the busy window is covered", async () => {
     freshKv();

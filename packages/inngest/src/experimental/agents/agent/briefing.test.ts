@@ -430,7 +430,7 @@ describe("the defaults", () => {
 
     await run(fn, { event: outside("hi") });
 
-    expect(toolNames(requests[0])).toEqual(["wait", "listen", "unlisten"]);
+    expect(toolNames(requests[0])).toEqual(["wait"]);
     expect(requests[0]?.system).toContain(
       "This run ends when you finish a turn with nothing unread.",
     );
@@ -454,8 +454,6 @@ describe("the defaults", () => {
       "ask_agent",
       "stop_agent",
       "wait",
-      "listen",
-      "unlisten",
     ]);
   });
 
@@ -478,8 +476,6 @@ describe("the defaults", () => {
       "ask_agent",
       "stop_agent",
       "wait",
-      "listen",
-      "unlisten",
     ]);
     expect(requests[0]?.system).toContain("app/lead started this thread.");
     expect(requests[0]?.system).toContain(
@@ -517,17 +513,8 @@ describe("the defaults", () => {
       { event: outside("hi") },
     );
 
-    expect(toolNames(asked.requests[0])).toEqual([
-      "wait",
-      "listen",
-      "unlisten",
-      "reply",
-    ]);
-    expect(toolNames(plain.requests[0])).toEqual([
-      "wait",
-      "listen",
-      "unlisten",
-    ]);
+    expect(toolNames(asked.requests[0])).toEqual(["wait", "reply"]);
+    expect(toolNames(plain.requests[0])).toEqual(["wait"]);
     expect(replyTool).toBeDefined();
   });
 
@@ -712,8 +699,6 @@ describe("a started child", () => {
       "stop_agent",
       "report",
       "wait",
-      "listen",
-      "unlisten",
     ]);
     expect(request.briefing?.situation).toContain(
       `${testClientId}/lead (thread lead-thread) started you. When you finish, your last text goes to it as your result`,
