@@ -203,19 +203,45 @@ export type FinishedEventPayload = {
 /**
  * The payload for an internal Inngest event that is sent when a function is
  * cancelled.
+ *
+ * @public
  */
-export type CancelledEventPayload = {
+export type CancelledEventPayload<P extends EventPayload = EventPayload> = {
   name: `${internalEvents.FunctionCancelled}`;
   data: {
     function_id: string;
     run_id: string;
     correlation_id?: string;
+
+    /**
+     * The event that triggered the run that was cancelled.
+     */
+    event: P;
   };
 
   /**
    * Meta from the original triggering event, used to group runs.
    */
   meta?: ReceivedEventMeta;
+};
+
+/**
+ * Context arguments specific to a cancellation event.
+ *
+ * @public
+ */
+export type CancelledEventArgs<P extends EventPayload = EventPayload> = {
+  /**
+   * The event data present in the payload.
+   */
+  event: CancelledEventPayload<P>;
+
+  /**
+   * The events that triggered this run. A cancellation handler is only ever
+   * triggered by the single cancellation event, not the main function's
+   * triggers.
+   */
+  events: [CancelledEventPayload<P>];
 };
 
 /**
