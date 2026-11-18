@@ -4036,7 +4036,12 @@ describe("inngest.sandboxes", () => {
             message: "node disconnected",
           },
         })}\n`,
-        { headers: { "Content-Type": "application/x-ndjson" } },
+        {
+          headers: {
+            "Content-Type": "application/x-ndjson",
+            "x-request-id": "req_stream",
+          },
+        },
       );
     });
     const client = createSandboxClient({
@@ -4054,6 +4059,10 @@ describe("inngest.sandboxes", () => {
       action: "process.stream",
       code: "compute_unavailable",
       retryable: true,
+      sandboxId,
+      processId,
+      snapshotId: undefined,
+      requestId: "req_stream",
     });
   });
 
