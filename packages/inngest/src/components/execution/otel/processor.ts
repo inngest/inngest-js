@@ -122,6 +122,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   #spanCleanup = new FinalizationRegistry<string>((spanId) => {
     if (spanId) {
       this.#traceParents.delete(spanId);
+      this.#checkpointingRoots.delete(spanId);
     }
   });
 
@@ -267,6 +268,22 @@ export class InngestSpanProcessor implements SpanProcessor {
   public clearStepExecution(rootSpanId: string): void {
     processorDevDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
     this.#activeStepContext.delete(rootSpanId);
+  }
+
+  /**
+   * Forget the starting span of an execution that has finished.
+   *
+   * A span that ends is cleaned up in `onEnd`, but a starting span dropped by
+   * the sampler is non-recording and never reaches the processor, so the
+   * engine declares the end itself. Call this after `span.end()`: cleaning up
+   * first would stop a recording span from being exported.
+   */
+  public clearStartingSpan(span: Span): void {
+    processorDevDebug(
+      "clearStartingSpan: spanId=%s",
+      span.spanContext().spanId,
+    );
+    this.cleanupSpan(span);
   }
 
   /**
@@ -425,6 +442,10 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spanCleanup.unregister(span);
     this.#spansToExport.delete(span);
     this.#traceParents.delete(spanId);
+
+    // When this is an execution's root span, the run is over: forget that it
+    // was checkpointing so long-lived processes don't keep one ID per run.
+    this.#checkpointingRoots.delete(spanId);
   }
 
   /**

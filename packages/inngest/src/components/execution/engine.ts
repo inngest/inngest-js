@@ -429,6 +429,12 @@ class InngestExecutionEngine
 
               return this._start(() => {
                 span.end();
+                //
+                // A root span dropped by the sampler never reaches the
+                // processor when it ends, so say so explicitly.
+                clientProcessorMap
+                  .get(this.options.client)
+                  ?.clearStartingSpan(span);
                 if (aiMetadataScope) {
                   metadataSpanProcessor.endScope(aiMetadataScope);
                 }
