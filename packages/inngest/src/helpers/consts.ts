@@ -173,6 +173,7 @@ export enum headerKeys {
   ContentType = "content-type",
   Host = "host",
   ForwardedFor = "x-forwarded-for",
+  ForwardedProto = "x-forwarded-proto",
   RealIp = "x-real-ip",
   Location = "location",
   ContentLength = "content-length",
