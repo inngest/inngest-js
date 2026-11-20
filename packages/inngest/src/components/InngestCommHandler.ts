@@ -943,6 +943,12 @@ export class InngestCommHandler<
     // The API decodes `body` as bytes, so it must be base64: a raw body that
     // isn't valid base64 (any JSON body) fails the whole checkpoint.
     const bodyPromise = actions.body(reason).then((body) => {
+      // An adapter may have no body (e.g. Next.js Pages with body parsing off):
+      // leave it out, as before.
+      if (body === undefined) {
+        return undefined;
+      }
+
       return base64Encode(typeof body === "string" ? body : stringify(body));
     });
 
