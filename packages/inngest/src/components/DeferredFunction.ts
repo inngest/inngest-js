@@ -94,8 +94,8 @@ function stripInngestMetadata(event: {
  */
 export class DeferredFunction<
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
+    // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+    StandardSchemaV1<Record<string, any>> | undefined = undefined,
 > extends InngestFunction<
   InngestFunction.Options<[], never>,
   Handler.Any,
@@ -213,7 +213,8 @@ export namespace DeferredFunction {
 type DeferEvent<TSchema> = {
   name: internalEvents.DeferredSchedule;
   data: TSchema extends StandardSchemaV1<
-    infer D extends Record<string, unknown>
+    // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+    infer D extends Record<string, any>
   >
     ? D
     : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
@@ -229,7 +230,8 @@ type DeferEvent<TSchema> = {
 type BaseDeferCtx<
   TClient extends Inngest.Any,
   TFnMiddleware extends Middleware.Class[] | undefined,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends StandardSchemaV1<Record<string, any>> | undefined,
 > = Omit<BaseContext<TClient>, "event" | "events" | "step"> & {
   event: DeferEvent<TSchema>;
   events: [DeferEvent<TSchema>];
@@ -248,7 +250,8 @@ type BaseDeferCtx<
  */
 export type CreateDeferInput<
   TFnMiddleware extends Middleware.Class[] | undefined,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends StandardSchemaV1<Record<string, any>> | undefined,
 > = DeferredFunction.Options & {
   schema?: TSchema;
   middleware?: TFnMiddleware;
@@ -261,7 +264,8 @@ export type CreateDeferInput<
 export type DeferContext<
   TClient extends Inngest.Any,
   TFnMiddleware extends Middleware.Class[] | undefined,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends StandardSchemaV1<Record<string, any>> | undefined,
 > = BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
   ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
   ApplyAllMiddlewareCtxExtensions<
@@ -289,8 +293,8 @@ export type DeferContext<
 export function createDefer<
   TClient extends Inngest.Any,
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
+    // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+    StandardSchemaV1<Record<string, any>> | undefined = undefined,
   const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
   THandler extends Handler.Any = (
     ctx: DeferContext<TClient, TFnMiddleware, TSchema>,

@@ -11,7 +11,6 @@ import type {
 } from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
-type BasicDataUnknown = Record<string, unknown>;
 type BasicDataAny = Record<string, any>;
 
 type InvokeEventName = "inngest/function.invoked";
@@ -69,7 +68,7 @@ export type ExactNameThis<TName extends string> =
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type EventShape<TName, TData extends BasicDataUnknown> = {
+export type EventShape<TName, TData extends BasicDataAny> = {
   data: TData;
   id: string;
   name: TName;
@@ -105,7 +104,7 @@ export type EventIs = {
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<TName, TData extends BasicDataUnknown> = EventShape<
+export type ReceivedEvent<TName, TData extends BasicDataAny> = EventShape<
   TName,
   TData
 > &
@@ -126,7 +125,7 @@ export type EventTypeToShape<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataAny>
     ? EventShape<WildcardToUnknown<TName>, TData>
     : EventShape<WildcardToUnknown<TName>, BasicDataAny>
   : never;
@@ -162,7 +161,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataAny>
     ? ReceivedEvent<WildcardToUnknown<TName>, TData>
     : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
   : never;
@@ -179,7 +178,7 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
 type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
-> = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
+> = TSchema extends StandardSchemaV1<infer TData extends BasicDataAny>
   ? ReceivedEvent<WildcardToUnknown<TName>, TData>
   : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
 
@@ -207,9 +206,7 @@ type ProcessSingleTrigger<
             if?: string;
           }
         ? [
-            TSchema extends StandardSchemaV1<
-              infer TData extends BasicDataUnknown
-            >
+            TSchema extends StandardSchemaV1<infer TData extends BasicDataAny>
               ? ReceivedEvent<WildcardToUnknown<TName>, TData>
               : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
           ]
@@ -441,7 +438,7 @@ export type BaseContextWithTriggers<
 export type ContextWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
-  TOverrides extends BasicDataUnknown = Record<never, never>,
+  TOverrides extends BasicDataAny = Record<never, never>,
 > = Omit<BaseContextWithTriggers<TStepTools, TTriggers>, keyof TOverrides> &
   TOverrides;
 
@@ -457,7 +454,7 @@ export type ContextWithTriggers<
 export type HandlerWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
-  TOverrides extends BasicDataUnknown = Record<never, never>,
+  TOverrides extends BasicDataAny = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to

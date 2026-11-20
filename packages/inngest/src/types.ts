@@ -565,7 +565,8 @@ export type DeferFn = <TFn extends DeferredFunction.Any>(
   options: {
     function: TFn;
     data: TFn extends DeferredFunction<
-      StandardSchemaV1<infer D extends Record<string, unknown>>
+      // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+      StandardSchemaV1<infer D extends Record<string, any>>
     >
       ? D
       : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
