@@ -1615,7 +1615,8 @@ type WaitForEventResult<TOpts> =
   TOpts extends {
     event: EventType<
       infer TName extends string,
-      StandardSchemaV1<infer TData extends Record<string, unknown>>
+      // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+      StandardSchemaV1<infer TData extends Record<string, any>>
     >;
   }
     ? {
@@ -1643,7 +1644,8 @@ type WaitForEventResult<TOpts> =
         TOpts extends {
             event: infer TName extends string;
             schema: StandardSchemaV1<
-              infer TData extends Record<string, unknown>
+              // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+              infer TData extends Record<string, any>
             >;
           }
         ? {
