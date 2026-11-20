@@ -973,6 +973,26 @@ describe("Execution engine checkpoint retry behavior", () => {
         // One checkpoint carries the buffered step and the error.
         expect(checkpoints(api)).toEqual([["step-1", "step-error"]]);
       });
+
+      test("checkpoints buffered steps before a final error", async () => {
+        const api = mocks();
+        const { result } = await runExecution({
+          mockApi: api,
+          handler: async ({ step }) => {
+            await step.run("step-1", () => 1);
+            throw new NonRetriableError("gives up");
+          },
+          stepMode: StepMode.Sync,
+          checkpointingConfig: {
+            bufferedSteps: 5,
+            maxRuntime: 0,
+            maxInterval: 0,
+          },
+        });
+
+        expect(result.type).toBe("function-rejected");
+        expect(checkpoints(api)).toEqual([["step-1"]]);
+      });
     });
   });
 

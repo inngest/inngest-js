@@ -973,9 +973,10 @@ export class InngestCommHandler<
 
   /**
    * The checkpointing options for a durable endpoint's execution: the
-   * function's or client's `bufferedSteps` and `maxInterval`. Without an
-   * options object, every step is checkpointed, as before. There's no
-   * `maxRuntime`: the endpoint's own request runs the function.
+   * function's or client's `bufferedSteps`. Without an options object, every
+   * step is checkpointed, as before. There's no `maxRuntime`: the endpoint's
+   * own request runs the function. `maxInterval` isn't applied yet: its timer
+   * only fires once per execution.
    */
   private durableEndpointCheckpointing(
     fn: InngestFunction.Any,
@@ -992,8 +993,7 @@ export class InngestCommHandler<
     return {
       bufferedSteps:
         options.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
-      maxInterval:
-        options.maxInterval ?? defaultCheckpointingOptions.maxInterval,
+      maxInterval: 0,
       maxRuntime: 0,
     };
   }

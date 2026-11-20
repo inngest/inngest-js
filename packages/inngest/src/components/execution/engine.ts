@@ -1232,6 +1232,20 @@ class InngestExecutionEngine
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (isFinal) {
+          // Save steps still buffered by `bufferedSteps`, as they'd have been
+          // checkpointed one by one without it.
+          const buffered = this.takeBufferedSteps();
+          if (buffered.length) {
+            try {
+              await this.checkpoint(buffered);
+            } catch (err) {
+              this.options.client[internalLoggerSymbol].warn(
+                { err },
+                "Failed to checkpoint buffered steps before a final error",
+              );
+            }
+          }
+
           return this.transformOutput({ error: checkpoint.error });
         }
 
