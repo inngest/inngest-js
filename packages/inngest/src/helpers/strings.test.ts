@@ -2,7 +2,13 @@ import { Temporal } from "temporal-polyfill";
 import { afterEach, beforeEach, vi } from "vitest";
 import { ConsoleLogger } from "../middleware/logger.ts";
 import { signDataWithKey } from "./net.ts";
-import { slugify, stringify, timeStr, timingSafeEqual } from "./strings.ts";
+import {
+  base64Encode,
+  slugify,
+  stringify,
+  timeStr,
+  timingSafeEqual,
+} from "./strings.ts";
 
 const logger = new ConsoleLogger({ level: "silent" });
 
@@ -231,5 +237,45 @@ describe("timingSafeEqual", () => {
 
   it("returns true for identical non-ASCII strings", () => {
     expect(timingSafeEqual("世界 🌍", "世界 🌍")).toBe(true);
+  });
+});
+
+describe("base64Encode", () => {
+  const cases = [
+    { input: "", expected: "" },
+    { input: "{}", expected: "e30=" },
+    { input: '{"name":"Ada"}', expected: "eyJuYW1lIjoiQWRhIn0=" },
+    // Multi-byte UTF-8 is encoded as bytes, not UTF-16 code units.
+    { input: "héllo 🎉", expected: "aMOpbGxvIPCfjok=" },
+  ];
+
+  it("encodes UTF-8 bytes with Buffer", () => {
+    for (const { input, expected } of cases) {
+      expect(base64Encode(input)).toBe(expected);
+    }
+  });
+
+  describe("without Buffer, as on edge runtimes", () => {
+    beforeEach(() => {
+      vi.stubGlobal("Buffer", undefined);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("encodes the same with btoa", () => {
+      for (const { input, expected } of cases) {
+        expect(base64Encode(input)).toBe(expected);
+      }
+    });
+
+    it("encodes a body larger than one chunk", () => {
+      const large = "x".repeat(100_000);
+      vi.unstubAllGlobals();
+      const expected = base64Encode(large);
+      vi.stubGlobal("Buffer", undefined);
+      expect(base64Encode(large)).toBe(expected);
+    });
   });
 });
