@@ -118,8 +118,7 @@ export interface DollarPromise extends Promise<SandboxCommandResult> {
  */
 export interface SandboxDollar {
   (strings: TemplateStringsArray, ...values: DollarValue[]): DollarPromise;
-  (options: DollarOptions): SandboxDollar;
-  (options: DollarOptions & { id: string }): DollarTag & { sh: DollarTag };
+  (options: DollarOptions & { id?: string }): SandboxDollar;
   sh: DollarTag;
 }
 
