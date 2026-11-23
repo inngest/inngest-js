@@ -88,3 +88,13 @@ may be lost.
 
 If you're not in a serverless runtime or otherwise wish to have Sentry handle
 flushing itself, set this to `true`.
+
+### `continueSenderTrace`
+
+**Default: `true`**
+
+When `true`, active Sentry trace context (`sentry-trace` and `baggage`) is
+propagated onto events sent via `inngest.send()`, `step.sendEvent()`, or
+`step.invoke()`, and triggered function runs continue the sender's trace. When
+no sender trace is present, or when `continueSenderTrace` is set to `false`,
+each function run starts an isolated trace derived from its `runId`.

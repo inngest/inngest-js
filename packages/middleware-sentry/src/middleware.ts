@@ -43,6 +43,30 @@ export interface SentryMiddlewareOptions {
    * @default false
    */
   captureStepErrors?: boolean;
+
+  /**
+   * If `true`, propagates active Sentry trace data (`sentry-trace` and
+   * `baggage`) onto outgoing events sent via `inngest.send()`,
+   * `step.sendEvent()`, or `step.invoke()`, and continues the sender's trace
+   * when executing triggered function runs.
+   *
+   * When `false` (or when no sender trace is present), each function run starts
+   * an isolated trace derived deterministically from its `runId`.
+   *
+   * @default true
+   */
+  continueSenderTrace?: boolean;
+}
+
+/**
+ * Internal event data field used to propagate Sentry trace headers across
+ * asynchronous event dispatch.
+ */
+export const SENTRY_TRACE_DATA_KEY = "__inngest_sentry_trace";
+
+interface PropagatedSentryTrace {
+  sentryTrace: string;
+  baggage?: string;
 }
 
 /**
@@ -73,6 +97,11 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
    * See {@link SentryMiddlewareOptions} for more information.
    */
   protected captureStepErrors = false;
+
+  /**
+   * See {@link SentryMiddlewareOptions} for more information.
+   */
+  protected continueSenderTrace = true;
 
   // Isolation scope created in wrapRequest. Used for setting tags and
   // breadcrumbs scoped to this function run.
@@ -109,10 +138,11 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   // wrapRequest always resolves (even when wrapFunctionHandler's next()
   // doesn't, e.g. fresh step discovered), so the finally cleanup (ending
   // spans, flushing) reliably runs inside the Sentry async context.
-  override wrapRequest({
+  override async wrapRequest({
     next,
     fn,
     runId,
+    requestInfo,
   }: Middleware.WrapRequestArgs): Promise<Middleware.Response> {
     // Non-execution requests (GET introspection, PUT registration) have no
     // function context — skip Sentry setup entirely.
@@ -120,61 +150,69 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
       return next();
     }
 
-    this.#traceId = ulidToTraceId(runId);
-    const sentryTrace = `${this.#traceId}-1000000000000000-1`;
+    const propagated = this.continueSenderTrace
+      ? await extractIncomingTrace(requestInfo)
+      : undefined;
+
+    const fallbackTraceId = ulidToTraceId(runId);
+    this.#traceId = propagated
+      ? (extractTraceIdFromSentryTrace(propagated.sentryTrace) ??
+        fallbackTraceId)
+      : fallbackTraceId;
+
+    const sentryTrace =
+      propagated?.sentryTrace ?? `${this.#traceId}-1000000000000000-1`;
+    const baggage = propagated?.baggage;
 
     // startNewTrace breaks out of the auto-instrumented HTTP span so our
-    // trace ID (derived from the run ID) takes effect. continueTrace then
-    // sets the propagation context with our deterministic trace ID.
+    // trace ID (from the sender or derived from the run ID) takes effect.
+    // continueTrace then sets the propagation context on the scope.
     return Sentry.startNewTrace(() => {
-      return Sentry.continueTrace(
-        { sentryTrace, baggage: undefined },
-        async () => {
-          return Sentry.withIsolationScope(async (scope) => {
-            this.#scope = scope;
+      return Sentry.continueTrace({ sentryTrace, baggage }, async () => {
+        return Sentry.withIsolationScope(async (scope) => {
+          this.#scope = scope;
 
-            this.#tags = {
-              "inngest.client.id": this.client.id,
-              "inngest.function.id": fn.id(this.client.id),
-              "inngest.function.name": fn.name,
-              "inngest.run.id": runId,
-            };
+          this.#tags = {
+            "inngest.client.id": this.client.id,
+            "inngest.function.id": fn.id(this.client.id),
+            "inngest.function.name": fn.name,
+            "inngest.run.id": runId,
+          };
 
-            scope.setTags(this.#tags);
-            scope.setTransactionName(`inngest:${fn.name}`);
+          scope.setTags(this.#tags);
+          scope.setTransactionName(`inngest:${fn.name}`);
 
-            return Sentry.startSpanManual(
-              {
-                name: fn.name,
-                op: "request",
-                attributes: this.#tags,
-              },
-              async (span) => {
-                this.#requestSpan = span;
-                try {
-                  return await next();
-                } finally {
-                  if (!this.#hasError) {
-                    this.#requestSpan?.setStatus({ code: 1 });
-                  }
-
-                  // End any step spans that weren't closed by
-                  // onStepComplete/onStepError (e.g. request interrupted
-                  // mid-step).
-                  for (const stepSpan of this.#stepSpans.values()) {
-                    stepSpan.end();
-                  }
-                  this.#requestSpan?.end();
-
-                  if (!this.disableAutomaticFlush) {
-                    await Sentry.flush();
-                  }
+          return Sentry.startSpanManual(
+            {
+              name: fn.name,
+              op: "request",
+              attributes: this.#tags,
+            },
+            async (span) => {
+              this.#requestSpan = span;
+              try {
+                return await next();
+              } finally {
+                if (!this.#hasError) {
+                  this.#requestSpan?.setStatus({ code: 1 });
                 }
-              },
-            );
-          });
-        },
-      );
+
+                // End any step spans that weren't closed by
+                // onStepComplete/onStepError (e.g. request interrupted
+                // mid-step).
+                for (const stepSpan of this.#stepSpans.values()) {
+                  stepSpan.end();
+                }
+                this.#requestSpan?.end();
+
+                if (!this.disableAutomaticFlush) {
+                  await Sentry.flush();
+                }
+              }
+            },
+          );
+        });
+      });
     });
   }
 
@@ -199,7 +237,8 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
     return await next();
   }
 
-  // Injects ctx.sentry so user code can access the Sentry client directly.
+  // Injects ctx.sentry so user code can access the Sentry client directly,
+  // and strips internal trace propagation metadata from event.data.
   //
   // The explicit return type enables TypeScript to infer ctx.sentry in
   // function handlers when this middleware is registered on the client.
@@ -208,7 +247,68 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   ): Middleware.TransformFunctionInputArgs & {
     ctx: { sentry: typeof Sentry };
   } {
-    return { ...arg, ctx: { ...arg.ctx, sentry: Sentry } };
+    const cleanedEvent = stripPropagatedTraceFromEvent(arg.ctx.event);
+    const cleanedEvents = Array.isArray(arg.ctx.events)
+      ? (arg.ctx.events.map((evt) =>
+          stripPropagatedTraceFromEvent(evt),
+        ) as typeof arg.ctx.events)
+      : arg.ctx.events;
+
+    return {
+      ...arg,
+      ctx: {
+        ...arg.ctx,
+        event: cleanedEvent,
+        events: cleanedEvents,
+        sentry: Sentry,
+      },
+    };
+  }
+
+  override transformSendEvent(
+    arg: Middleware.TransformSendEventArgs,
+  ): Middleware.TransformSendEventArgs {
+    if (!this.continueSenderTrace) {
+      return arg;
+    }
+
+    const traceData = getActiveSenderTraceData();
+    if (!traceData) {
+      return arg;
+    }
+
+    return {
+      ...arg,
+      events: arg.events.map((event) =>
+        attachPropagatedTraceToEvent(event, traceData),
+      ),
+    };
+  }
+
+  override transformStepInput(
+    arg: Middleware.TransformStepInputArgs,
+  ): Middleware.TransformStepInputArgs {
+    if (!this.continueSenderTrace || arg.stepInfo.stepType !== "invoke") {
+      return arg;
+    }
+
+    const traceData = getActiveSenderTraceData();
+    if (!traceData) {
+      return arg;
+    }
+
+    return {
+      ...arg,
+      input: arg.input.map((item) => {
+        if (!isRecord(item) || !isRecord(item.payload)) {
+          return item;
+        }
+        return {
+          ...item,
+          payload: attachPropagatedTraceToEvent(item.payload, traceData),
+        };
+      }),
+    };
   }
 
   // Captures function-level errors using the stored isolation scope.
@@ -328,17 +428,24 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
 export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
   const {
     captureStepErrors = false,
+    continueSenderTrace = true,
     disableAutomaticFlush = false,
     onlyCaptureFinalAttempt = true,
   } = opts ?? {};
 
   // Return the base class directly when all options match defaults.
-  if (!captureStepErrors && !disableAutomaticFlush && onlyCaptureFinalAttempt) {
+  if (
+    !captureStepErrors &&
+    continueSenderTrace &&
+    !disableAutomaticFlush &&
+    onlyCaptureFinalAttempt
+  ) {
     return SentryMiddleware;
   }
 
   return class extends SentryMiddleware {
     protected override captureStepErrors = captureStepErrors;
+    protected override continueSenderTrace = continueSenderTrace;
     protected override disableAutomaticFlush = disableAutomaticFlush;
     protected override onlyCaptureFinalAttempt = onlyCaptureFinalAttempt;
   };
@@ -346,6 +453,216 @@ export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
 
 function stepDisplayName(stepOptions: { name?: string; id: string }): string {
   return stepOptions.name ?? stepOptions.id;
+}
+
+const SENTRY_TRACE_HEADER_RE = /^([0-9a-f]{32})-[0-9a-f]{16}(?:-[01])?$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractTraceIdFromSentryTrace(
+  sentryTrace: string,
+): string | undefined {
+  const match = SENTRY_TRACE_HEADER_RE.exec(sentryTrace.trim());
+  return match?.[1]?.toLowerCase();
+}
+
+function getActiveSenderTraceData(): PropagatedSentryTrace | undefined {
+  const activeSpan = Sentry.getActiveSpan();
+  if (activeSpan) {
+    const sentryTrace = Sentry.spanToTraceHeader(activeSpan);
+    const baggage = Sentry.spanToBaggageHeader(activeSpan);
+    return {
+      sentryTrace,
+      ...(baggage ? { baggage } : {}),
+    };
+  }
+
+  const propagationContext = {
+    ...Sentry.getIsolationScope().getPropagationContext(),
+    ...Sentry.getCurrentScope().getPropagationContext(),
+  };
+
+  if (!propagationContext.parentSpanId && !propagationContext.dsc) {
+    return undefined;
+  }
+
+  const sampledSuffix =
+    typeof propagationContext.sampled === "boolean"
+      ? `-${propagationContext.sampled ? "1" : "0"}`
+      : "";
+  const sentryTrace = `${propagationContext.traceId}-${propagationContext.spanId}${sampledSuffix}`;
+
+  let baggage: string | undefined;
+  if (isRecord(propagationContext.dsc)) {
+    const entries = Object.entries(propagationContext.dsc).filter(
+      ([, v]) => typeof v === "string" && v.length > 0,
+    );
+    if (entries.length > 0) {
+      baggage = entries
+        .map(([k, v]) => `sentry-${k}=${encodeURIComponent(String(v))}`)
+        .join(",");
+    }
+  }
+
+  return {
+    sentryTrace,
+    ...(baggage ? { baggage } : {}),
+  };
+}
+
+function attachPropagatedTraceToEvent<T extends { data?: unknown }>(
+  event: T,
+  traceData: PropagatedSentryTrace,
+): T {
+  if (event.data !== undefined && !isRecord(event.data)) {
+    return event;
+  }
+
+  const existingData = isRecord(event.data) ? event.data : {};
+  if (SENTRY_TRACE_DATA_KEY in existingData) {
+    return event;
+  }
+
+  return {
+    ...event,
+    data: {
+      ...existingData,
+      [SENTRY_TRACE_DATA_KEY]: traceData,
+    },
+  };
+}
+
+function stripPropagatedTraceFromEvent<T>(event: T): T {
+  if (!isRecord(event) || !isRecord(event.data)) {
+    return event;
+  }
+
+  if (!(SENTRY_TRACE_DATA_KEY in event.data)) {
+    return event;
+  }
+
+  const { [SENTRY_TRACE_DATA_KEY]: _removed, ...restData } = event.data;
+  return {
+    ...event,
+    data: restData,
+  };
+}
+
+function parsePropagatedTraceCandidate(
+  candidate: unknown,
+): PropagatedSentryTrace | undefined {
+  if (!isRecord(candidate)) {
+    return undefined;
+  }
+
+  const sentryTrace = candidate.sentryTrace;
+  if (
+    typeof sentryTrace !== "string" ||
+    !extractTraceIdFromSentryTrace(sentryTrace)
+  ) {
+    return undefined;
+  }
+
+  const baggage =
+    typeof candidate.baggage === "string" && candidate.baggage.length > 0
+      ? candidate.baggage
+      : undefined;
+
+  return {
+    sentryTrace: sentryTrace.trim(),
+    ...(baggage ? { baggage } : {}),
+  };
+}
+
+function extractTraceFromEventObject(
+  eventObj: unknown,
+): PropagatedSentryTrace | undefined {
+  if (!isRecord(eventObj) || !isRecord(eventObj.data)) {
+    return undefined;
+  }
+
+  const fromCarrier = parsePropagatedTraceCandidate(
+    eventObj.data[SENTRY_TRACE_DATA_KEY],
+  );
+  if (fromCarrier) {
+    return fromCarrier;
+  }
+
+  const directTrace = eventObj.data["sentry-trace"];
+  if (
+    typeof directTrace === "string" &&
+    extractTraceIdFromSentryTrace(directTrace)
+  ) {
+    const directBaggage =
+      typeof eventObj.data.baggage === "string" &&
+      eventObj.data.baggage.length > 0
+        ? eventObj.data.baggage
+        : undefined;
+    return {
+      sentryTrace: directTrace.trim(),
+      ...(directBaggage ? { baggage: directBaggage } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+async function extractIncomingTrace(
+  requestInfo: Middleware.WrapRequestArgs["requestInfo"] | undefined,
+): Promise<PropagatedSentryTrace | undefined> {
+  if (!requestInfo) {
+    return undefined;
+  }
+
+  if (isRecord(requestInfo.headers)) {
+    let headerSentryTrace: string | undefined;
+    let headerBaggage: string | undefined;
+    for (const [key, value] of Object.entries(requestInfo.headers)) {
+      if (typeof value !== "string") continue;
+      const lower = key.toLowerCase();
+      if (lower === "sentry-trace") {
+        headerSentryTrace = value;
+      } else if (lower === "baggage") {
+        headerBaggage = value;
+      }
+    }
+
+    if (headerSentryTrace && extractTraceIdFromSentryTrace(headerSentryTrace)) {
+      return {
+        sentryTrace: headerSentryTrace.trim(),
+        ...(headerBaggage ? { baggage: headerBaggage } : {}),
+      };
+    }
+  }
+
+  try {
+    const rawBody = await requestInfo.body?.();
+    const parsedBody =
+      typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    if (!isRecord(parsedBody)) {
+      return undefined;
+    }
+
+    const fromPrimaryEvent = extractTraceFromEventObject(parsedBody.event);
+    if (fromPrimaryEvent) {
+      return fromPrimaryEvent;
+    }
+
+    if (Array.isArray(parsedBody.events)) {
+      for (const evt of parsedBody.events) {
+        const fromBatchEvent = extractTraceFromEventObject(evt);
+        if (fromBatchEvent) {
+          return fromBatchEvent;
+        }
+      }
+    }
+  } catch {
+    // Ignore body read or JSON parse errors and fall back to runId-derived trace.
+  }
+
+  return undefined;
 }
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
