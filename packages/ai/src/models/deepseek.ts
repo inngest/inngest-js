@@ -38,15 +38,18 @@ export namespace DeepSeek {
   /**
    * IDs of models available in the DeepSeek API.
    */
-  export type Model = "deepseek-chat" | "deepseek-reasoner" | (string & {});
+  export type Model = "deepseek-flash" | "deepseek-v4-pro" | (string & {});
 
   /**
    * Options for creating a DeepSeek model.
    */
   export interface AiModelOptions {
     /**
-     * ID of the model to use. Currently supports 'deepseek-chat' (DeepSeek-V3)
-     * and 'deepseek-reasoner' (DeepSeek-R1).
+     * ID of the model to use. DeepSeek's hosted API lists `deepseek-flash` and
+     * `deepseek-v4-pro`; it no longer accepts `deepseek-chat` or
+     * `deepseek-reasoner`.
+     *
+     * @see https://api-docs.deepseek.com/quick_start/pricing/
      */
     model: Model;
 
