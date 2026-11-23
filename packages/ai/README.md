@@ -15,7 +15,7 @@ import { openai, anthropic, gemini } from "@inngest/ai/models";
 
 // Use with Inngest step.ai
 const result = await step.ai.infer("Analyze this data", {
-  model: openai({ model: "gpt-4" }),
+  model: openai({ model: "gpt-6-luna" }),
   body: {
     messages: [{ role: "user", content: "What is machine learning?" }],
   },
