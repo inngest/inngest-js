@@ -377,6 +377,7 @@ class SandboxRestTransport {
               errorFrame.error,
               sandboxId,
               processId,
+              undefined,
               response.headers.get("x-request-id") ?? undefined,
             );
           }
