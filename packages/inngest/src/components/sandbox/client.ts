@@ -809,7 +809,7 @@ const createDirectSnapshotFacade = (
       waitOptions?: SandboxLifecycleOptions,
     ) =>
       createSandbox(transport, {
-        name: options.name,
+        ...options,
         snapshotId: ref.id,
         runningTimeout: options.runningTimeout ?? waitOptions?.timeout,
       }),
