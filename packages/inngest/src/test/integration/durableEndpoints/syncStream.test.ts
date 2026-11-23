@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import { Stream } from "../../../components/StreamTools.ts";
 import { stream } from "../../../experimental/durable-endpoints/index.ts";
 import { NonRetriableError, step } from "../../../index.ts";
+import { trackStreamAllocations } from "../../helpers.ts";
 
 import {
   getStreamData,
@@ -101,6 +102,8 @@ test("no explicit streaming", async () => {
     return Response.json("done");
   });
 
+  const getStreamAllocations = trackStreamAllocations();
+
   const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     headers: { Accept: "text/event-stream" },
   });
@@ -138,6 +141,11 @@ test("no explicit streaming", async () => {
       }),
     },
   ]);
+
+  // The delivered SSE stream must be backed by exactly one allocation.
+  expect(
+    getStreamAllocations().filter((s) => s.startsWith("TransformStream")),
+  ).toHaveLength(1);
 
   await state.waitForRunComplete();
 });
