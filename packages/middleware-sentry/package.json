@@ -35,14 +35,12 @@
     "@inngest/test-harness": "workspace:*",
     "@types/node": "^22.0.0",
     "@sentry/core": "^8.8.0",
-    "@sentry/types": "^8.8.0",
     "inngest": "^4.0.0",
     "typescript": "~5.8.2",
     "vitest": "^4.0.18"
   },
   "peerDependencies": {
-    "@sentry/core": ">=8.0.0",
-    "@sentry/types": ">=8.0.0",
+    "@sentry/core": ">=8.0.0 <11.0.0",
     "inngest": ">=4.0.0-alpha.6 <5.0.0"
   }
 }
