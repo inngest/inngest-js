@@ -1,5 +1,30 @@
 # @inngest/middleware-validation
 
+> [!IMPORTANT]
+> This package only supports TypeScript SDK v3. In v4, event validation is
+> built in: add a `schema` to an `eventType()` and Inngest validates incoming
+> events against it before your function runs. Events you create with
+> `.create()` are validated when you pass them to `inngest.send()` or
+> `step.sendEvent()`.
+>
+> ```ts
+> import { eventType } from "inngest";
+> import { z } from "zod";
+>
+> const userCreated = eventType("app/user.created", {
+>   schema: z.object({ email: z.string() }),
+> });
+>
+> inngest.createFunction(
+>   { id: "welcome-user", triggers: [userCreated] },
+>   async ({ event }) => {
+>     // event.data has been validated against the schema
+>   },
+> );
+>
+> await inngest.send(userCreated.create({ email: "user@example.com" }));
+> ```
+
 This package provides a validation middleware for Inngest, enabling parsing of
 incoming and outgoing events using Zod schemas provided using `new
 EventSchemas().fromZod()`.
