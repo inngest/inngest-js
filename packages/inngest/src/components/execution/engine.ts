@@ -1929,7 +1929,9 @@ class InngestExecutionEngine
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
         // Emit inngest.commit — step data is finalized.
-        this.streamTools.commit(hashedId);
+        if (this.streamTools.activated) {
+          this.streamTools.commit(hashedId);
+        }
 
         return {
           ...outgoingOp,
@@ -2081,7 +2083,9 @@ class InngestExecutionEngine
     );
 
     // Step's stream should be rolled back
-    this.streamTools.rollback(outgoingOp.id);
+    if (this.streamTools.activated) {
+      this.streamTools.rollback(outgoingOp.id);
+    }
 
     // `transformOutput` runs `retriability(error)` then serializes — pre-serializing
     // here drops `RetryAfterError.retryAfter` (custom property) and breaks the check.
