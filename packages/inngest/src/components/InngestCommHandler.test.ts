@@ -957,3 +957,39 @@ describe("introspection", () => {
     expect(await res.json()).toEqual({ message: "Unauthorized" });
   });
 });
+
+describe("durable endpoint event", () => {
+  const httpEvent = (body: unknown) => {
+    const client = createClient({ id: "test" });
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async () => "done",
+    );
+    const commHandler = new InngestCommHandler({
+      client,
+      frameworkName: "test",
+      functions: [],
+      handler: () => ({}) as never,
+    });
+
+    return commHandler["createHttpEvent"](
+      {
+        body: async () => body,
+        headers: async () => null,
+        method: async () => "POST",
+        url: async () => new URL("https://example.com/api/endpoint"),
+      } as never,
+      fn,
+    );
+  };
+
+  test("base64-encodes the request body", async () => {
+    const event = await httpEvent('{"name":"Ada"}');
+    expect(event.data.body).toBe("eyJuYW1lIjoiQWRhIn0=");
+  });
+
+  test("leaves the body out when the adapter has none", async () => {
+    const event = await httpEvent(undefined);
+    expect(event.data.body).toBeUndefined();
+  });
+});

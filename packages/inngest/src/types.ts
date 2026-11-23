@@ -123,7 +123,8 @@ export type APIStepPayload = {
     query_params: string;
 
     /**
-     * The body of the original request.
+     * The body of the original request, base64-encoded (UTF-8 bytes), as the
+     * API stores it as bytes.
      */
     body?: string;
 
