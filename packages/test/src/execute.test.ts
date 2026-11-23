@@ -84,3 +84,66 @@ it("should pass custom event data to the function", async () => {
   expect(output.result).toBe("hi");
   expect(receivedEvent.data.greeting).toBe("hi");
 });
+
+it.each([
+  { mode: "parallel", idStyle: "string" },
+  { mode: "parallel", idStyle: "object" },
+  { mode: "parallel", idStyle: "mixed" },
+  { mode: "sequential", idStyle: "string" },
+] as const)(
+  "returns duplicate step ID warnings for $mode calls with $idStyle IDs",
+  async ({ mode, idStyle }) => {
+    const inngest = new Inngest({ id: "test-app", logger: silentLogger });
+    const fn = inngest.createFunction(
+      {
+        id: `duplicate-step-ids-${mode}-${idStyle}`,
+        triggers: [{ event: "test/event" }],
+      },
+      async ({ step }) => {
+        const firstId = idStyle === "string" ? "op" : { id: "op" };
+        const secondId = idStyle === "object" ? { id: "op" } : "op";
+        const [first, second] =
+          mode === "parallel"
+            ? await Promise.all([
+                step.run(firstId, () => "first"),
+                step.run(secondId, () => "second"),
+              ])
+            : [
+                await step.run(firstId, () => "first"),
+                await step.run(secondId, () => "second"),
+              ];
+        return { first, second };
+      },
+    );
+
+    const engine = new InngestTestEngine({ function: fn });
+    const firstRun = await engine.execute({ transformCtx: (ctx) => ctx });
+    const secondRun = await engine.execute({ transformCtx: (ctx) => ctx });
+
+    expect(firstRun.result).toEqual({ first: "first", second: "second" });
+    expect(firstRun.warnings).toContainEqual(
+      expect.objectContaining({ code: "AUTOMATIC_PARALLEL_INDEXING" }),
+    );
+    expect(secondRun.warnings).toContainEqual(
+      expect.objectContaining({ code: "AUTOMATIC_PARALLEL_INDEXING" }),
+    );
+    expect(secondRun.warnings).not.toBe(firstRun.warnings);
+  },
+);
+
+it("returns no warnings for distinct step IDs", async () => {
+  const inngest = new Inngest({ id: "test-app", logger: silentLogger });
+  const fn = inngest.createFunction(
+    { id: "distinct-step-ids", triggers: [{ event: "test/event" }] },
+    async ({ step }) => {
+      const first = await step.run("first", () => "a");
+      const second = await step.run("second", () => "b");
+      return { first, second };
+    },
+  );
+
+  const output = await new InngestTestEngine({ function: fn }).execute();
+
+  expect(output.result).toEqual({ first: "a", second: "b" });
+  expect(output.warnings).toEqual([]);
+});

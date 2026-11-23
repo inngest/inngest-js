@@ -34,7 +34,10 @@ export namespace InngestTestRun {
   >;
 
   export interface RunOutput
-    extends Pick<InngestTestEngine.ExecutionOutput, "ctx" | "state"> {
+    extends Pick<
+      InngestTestEngine.ExecutionOutput,
+      "ctx" | "state" | "warnings"
+    > {
     result?: Checkpoint<"function-resolved">["data"];
     error?: Checkpoint<"function-rejected">["error"];
   }
