@@ -135,8 +135,7 @@ export interface DollarPromise extends Promise<SandboxCommandResult> {
  */
 export interface SandboxDollar {
   (strings: TemplateStringsArray, ...values: DollarValue[]): DollarPromise;
-  (options: DollarOptions): SandboxDollar;
-  (options: DollarOptions & { id: string }): DollarTag & { sh: DollarTag };
+  (options: DollarOptions & { id?: string }): SandboxDollar;
   sh: DollarTag;
 }
 
@@ -429,7 +428,7 @@ export const createDollar = (
 
       const { id: callId, ...options } = first;
 
-      return createDollar(run, mergeOptions(defaults, options), callId);
+      return createDollar(run, mergeOptions(defaults, options), callId ?? id);
     }
 
     const argv = buildArgv(first, values);
