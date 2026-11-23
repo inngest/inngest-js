@@ -50,10 +50,12 @@ import {
   type AsyncResponseValue,
   type AuthenticatedIntrospection,
   DefaultMaxRuntime,
+  defaultCheckpointingOptions,
   type EventPayload,
   type FunctionConfig,
   functionConfigSchema,
   type InBandRegisterRequest,
+  type InternalCheckpointingOptions,
   inBandSyncRequestBodySchema,
   type OutgoingOp,
   type RegisterOptions,
@@ -969,6 +971,33 @@ export class InngestCommHandler<
     };
   }
 
+  /**
+   * The checkpointing options for a durable endpoint's execution: the
+   * function's or client's `bufferedSteps`. Without an options object, every
+   * step is checkpointed, as before. There's no `maxRuntime`: the endpoint's
+   * own request runs the function. `maxInterval` isn't applied yet: its timer
+   * only fires once per execution.
+   */
+  private durableEndpointCheckpointing(
+    fn: InngestFunction.Any,
+  ): InternalCheckpointingOptions | undefined {
+    const options =
+      fn.opts.checkpointing ??
+      this.client["options"].checkpointing ??
+      this.client["options"].experimentalCheckpointing;
+
+    if (typeof options !== "object") {
+      return;
+    }
+
+    return {
+      bufferedSteps:
+        options.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
+      maxInterval: 0,
+      maxRuntime: 0,
+    };
+  }
+
   private async handleSyncRequest({
     timer,
     actions,
@@ -1041,6 +1070,7 @@ export class InngestCommHandler<
             version: exeVersion,
           })),
         stepMode: StepMode.Sync,
+        checkpointingConfig: this.durableEndpointCheckpointing(fn),
       },
     });
 
