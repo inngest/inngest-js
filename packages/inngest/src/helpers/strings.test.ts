@@ -83,9 +83,11 @@ describe("timeStr", () => {
       ).toEqual("1h");
     });
 
-    test("zero and negative durations still return an empty string", () => {
+    test("zero, negative, NaN and invalid durations return an empty string", () => {
       expect(timeStr(0)).toEqual("");
       expect(timeStr(-500)).toEqual("");
+      expect(timeStr(NaN)).toEqual("");
+      expect(timeStr("invalid duration")).toEqual("");
     });
 
     test("never returns an empty string for durations of at least 1ms", () => {
