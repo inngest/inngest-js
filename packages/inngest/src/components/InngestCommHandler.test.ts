@@ -29,10 +29,12 @@ const runHandler = async (
     env?: Record<string, string>;
     actionOverrides?: Record<string, unknown>;
     headers?: Record<string, string>;
+    fnId?: string;
   },
 ) => {
+  const fnId = opts?.fnId ?? "test-test";
   const body = opts?.body ?? {
-    ctx: { fn_id: "test-test", run_id: "run-123", step_id: "step" },
+    ctx: { fn_id: fnId, run_id: "run-123", step_id: "step" },
     event: { name: "demo/event.sent", data: {} },
     events: [{ name: "demo/event.sent", data: {} }],
     steps: {},
@@ -41,7 +43,7 @@ const runHandler = async (
 
   const req = httpMocks.createRequest({
     method: "POST",
-    url: "/api/inngest?fnId=test-test&stepId=step",
+    url: `/api/inngest?fnId=${fnId}&stepId=step`,
     headers: {
       host: "localhost:3000",
       "content-type": "application/json",
@@ -104,6 +106,61 @@ describe("ServeHandler", () => {
 
       serve({ client: inngest, functions });
     });
+  });
+
+  describe("lifecycle handler routing", () => {
+    const inngest = createClient({ id: "test", isDev: true });
+
+    const fn = inngest.createFunction(
+      {
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+        onFailure: () => "failure handler",
+        onCancel: () => "cancel handler",
+      },
+      () => "main handler",
+    );
+
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const lifecycleBody = (fnId: string, eventName: string) => {
+      const event = {
+        name: eventName,
+        data: {
+          function_id: "test-test",
+          run_id: "original-run",
+          event: { name: "demo/event.sent", data: {} },
+          error: { name: "Error", message: "boom" },
+        },
+      };
+
+      return {
+        ctx: { fn_id: fnId, run_id: "run-123", step_id: "step" },
+        event,
+        events: [event],
+        steps: {},
+        use_api: false,
+      };
+    };
+
+    test.each([
+      ["test-test", "demo/event.sent", "main handler"],
+      ["test-test-failure", "inngest/function.failed", "failure handler"],
+      ["test-test-cancel", "inngest/function.cancelled", "cancel handler"],
+    ])(
+      "routes %s on %s to the right handler",
+      async (fnId, eventName, expected) => {
+        const result = await runHandler(handler, {
+          fnId,
+          body: lifecycleBody(fnId, eventName),
+        });
+
+        expect(result.status).toBe(206);
+        expect(JSON.parse(result.body)).toMatchObject([
+          { op: "RunComplete", data: expected },
+        ]);
+      },
+    );
   });
 
   describe("streaming: force validation", () => {

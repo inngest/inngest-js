@@ -185,11 +185,12 @@ export namespace DeferredFunction {
   /**
    * The user-facing options accepted by `createDefer(client, opts, handler)`.
    * Mirrors `InngestFunction.Options` minus `triggers` (implicit), `onFailure`
-   * (not yet supported), and `batchEvents` (each `defer(...)` is its own run).
+   * and `onCancel` (not yet supported), and `batchEvents` (each `defer(...)` is
+   * its own run).
    */
   export type Options = Omit<
-    InngestFunction.Options<[], never>,
-    "triggers" | "onFailure" | "batchEvents"
+    InngestFunction.Options<[], never, never>,
+    "triggers" | "onFailure" | "onCancel" | "batchEvents"
   >;
 
   /**
