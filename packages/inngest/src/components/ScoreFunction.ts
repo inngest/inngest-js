@@ -29,8 +29,8 @@ type ScorerResult =
 export function createScorer<
   TClient extends Inngest.Any,
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
+    // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+    StandardSchemaV1<Record<string, any>> | undefined = undefined,
   const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
 >(
   client: TClient,

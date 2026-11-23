@@ -4,8 +4,16 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { EventMeta } from "../../types.ts";
+import { createDefer } from "../DeferredFunction.ts";
 import { Inngest } from "../Inngest.ts";
-import { cron, eventType, invoke, staticSchema } from "./triggers.ts";
+import { createScorer } from "../ScoreFunction.ts";
+import {
+  cron,
+  EventType,
+  eventType,
+  invoke,
+  staticSchema,
+} from "./triggers.ts";
 
 describe("cron", () => {
   test("return", () => {
@@ -806,5 +814,142 @@ describe("ctx.sessions", () => {
         ctx.sessions = { conversation_id: "conv_123" };
       },
     );
+  });
+});
+
+describe("interface payloads", () => {
+  interface BlastSend {
+    subject: string;
+  }
+
+  test("EventType, eventType, staticSchema, and invoke accept interfaces", () => {
+    type IntersectedPayload = { blastID: string } & BlastSend;
+
+    const fromConstructor = new EventType({
+      name: "event/send-blast-email",
+      schema: staticSchema<IntersectedPayload>(),
+    });
+    const fromFactory = eventType("event/blast-created", {
+      schema: staticSchema<BlastSend>(),
+    });
+    const invokeTrigger = invoke(staticSchema<BlastSend>());
+
+    const created = fromConstructor.create({
+      blastID: "blast_1",
+      subject: "Hello",
+    });
+    expectTypeOf(created.data).not.toBeAny();
+    expectTypeOf(created.data).toEqualTypeOf<IntersectedPayload>();
+
+    const inngest = new Inngest({ id: "app" });
+    const child = inngest.createFunction(
+      { id: "child", triggers: [invokeTrigger] },
+      ({ event }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<BlastSend>();
+      },
+    );
+
+    inngest.createFunction(
+      { id: "fn", triggers: [fromConstructor, fromFactory] },
+      async ({ event, step }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<
+          IntersectedPayload | BlastSend
+        >();
+
+        if (event.is(fromConstructor)) {
+          expectTypeOf(event.data).toEqualTypeOf<IntersectedPayload>();
+        }
+
+        const waited = await step.waitForEvent("wait", {
+          event: fromFactory,
+          timeout: 1000,
+        });
+        expectTypeOf(waited).not.toBeAny();
+        expectTypeOf(waited).toEqualTypeOf<{
+          name: "event/blast-created";
+          data: BlastSend;
+          id: string;
+          ts: number;
+          v?: string;
+          meta?: { sessions?: Record<string, string> };
+        } | null>();
+
+        await step.invoke("invoke", {
+          function: child,
+          data: { subject: "Hi" },
+        });
+      },
+    );
+  });
+
+  test("object-literal triggers, waitForEvent schema, defer, and scorer accept interfaces", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    const deferred = createDefer(
+      inngest,
+      { id: "deferred-blast", schema: staticSchema<BlastSend>() },
+      ({ event }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<BlastSend>();
+      },
+    );
+
+    createScorer(
+      inngest,
+      { id: "score-blast", schema: staticSchema<BlastSend>() },
+      ({ event }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<BlastSend>();
+        return null;
+      },
+    );
+
+    inngest.createFunction(
+      {
+        id: "fn-literal",
+        triggers: [
+          { event: "event/literal", schema: staticSchema<BlastSend>() },
+        ],
+      },
+      async ({ defer, event, step }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<BlastSend>();
+
+        defer("send-blast", {
+          function: deferred,
+          data: { subject: "Hello" },
+        });
+
+        const spreadTrigger = eventType("event/spread", {
+          schema: staticSchema<BlastSend>(),
+        });
+        const waited = await step.waitForEvent("wait-literal", {
+          ...spreadTrigger,
+          timeout: 1000,
+        });
+        expectTypeOf(waited).not.toBeAny();
+        expectTypeOf(waited).toEqualTypeOf<{
+          name: "event/spread";
+          data: BlastSend;
+          id: string;
+          ts: number;
+          v?: string;
+          meta?: { sessions?: Record<string, string> };
+        } | null>();
+      },
+    );
+  });
+
+  test("rejects array and primitive schemas even when interfaces are allowed", () => {
+    // @ts-expect-error - Schema must be an object
+    staticSchema<string[]>();
+
+    // @ts-expect-error - Schema must be an object
+    staticSchema<string>();
+
+    // @ts-expect-error - Schema must be an object
+    invoke(z.array(z.object({ a: z.string() })));
   });
 });

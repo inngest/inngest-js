@@ -24,7 +24,8 @@ type EventTrigger = {
   event: string;
   if?: string;
 
-  schema?: StandardSchemaV1<Record<string, unknown>>;
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  schema?: StandardSchemaV1<Record<string, any>>;
 };
 
 /**
@@ -50,10 +51,12 @@ export function cron<T extends string>(schedule: T) {
  * Args for the `EventType.create` method
  */
 type EventCreateArgs<
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends StandardSchemaV1<Record<string, any>> | undefined,
 > = TSchema extends undefined
   ? [
-      data?: Record<string, unknown>,
+      // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+      data?: Record<string, any>,
       options?: {
         id?: string;
         ts?: number;
@@ -105,7 +108,8 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
   TName,
-  StandardSchemaV1<Record<string, unknown>> | undefined
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  StandardSchemaV1<Record<string, any>> | undefined
 >;
 
 /**
@@ -115,9 +119,24 @@ export type EventTypeWithAnySchema<TName extends string> = EventType<
  * @template TName - The event name (e.g., "user.created")
  * @template TSchema - Optional StandardSchema for type-safe event data
  */
+/**
+ * Rejects arrays and functions while allowing both object type literals and
+ * interfaces (which lack an implicit index signature for `Record<string, unknown>`).
+ */
+type NonArrayObject<T> = T extends readonly unknown[]
+  ? never
+  : // biome-ignore lint/suspicious/noExplicitAny: match any function type
+    T extends (...args: any[]) => any
+    ? never
+    : // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+      T extends Record<string, any>
+      ? T
+      : never;
+
 export class EventType<
   TName extends string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends StandardSchemaV1<Record<string, any>> | undefined,
 > {
   /**
    * The event name. This is the same as the `name` property, but is necessary
@@ -268,11 +287,13 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
       undefined
     : TSchema extends StandardSchemaV1<infer TInput, infer TOutput>
       ? // Wrap in tuples to prevent distributive conditional over union types. This ensures that the schema can be a union.
-        [TInput] extends [TOutput]
-        ? // Input and output schemas match, so we're good
-          TSchema
-        : // Return an error message since the input and output schemas don't match
-          StaticTypeError<"Transforms not supported: schema input/output types must match">
+        [TInput] extends [NonArrayObject<TInput>]
+        ? [TInput] extends [TOutput]
+          ? // Input and output schemas match, so we're good
+            TSchema
+          : // Return an error message since the input and output schemas don't match
+            StaticTypeError<"Transforms not supported: schema input/output types must match">
+        : StaticTypeError<"Schema must be an object">
       : // Return an error message since the schema is not a StandardSchemaV1
         StaticTypeError<"Transforms not supported: schema input/output types must match">;
 
@@ -292,8 +313,8 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
 export function eventType<
   TName extends string,
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
+    // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+    StandardSchemaV1<Record<string, any>> | undefined = undefined,
 >(
   name: TName,
   {
@@ -318,8 +339,13 @@ export function eventType<
  * you want event type safety without pulling in a validation library like Zod.
  */
 export function staticSchema<
-  TSchema extends Record<string, unknown>,
->(): StandardSchemaV1<TSchema> {
+  // biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+  TSchema extends Record<string, any>,
+>(
+  ..._invalid: TSchema extends NonArrayObject<TSchema>
+    ? []
+    : [StaticTypeError<"Schema must be an object">]
+): StandardSchemaV1<TSchema> {
   return {
     "~standard": {
       version: 1,
@@ -339,8 +365,12 @@ export function staticSchema<
  * @param schema - StandardSchema defining the invoke payload structure
  * @returns Invoke trigger
  */
-export function invoke<TData extends Record<string, unknown>>(
+// biome-ignore lint/suspicious/noExplicitAny: allow interface payloads
+export function invoke<TData extends Record<string, any>>(
   schema: StandardSchemaV1<TData>,
+  ..._invalid: TData extends NonArrayObject<TData>
+    ? []
+    : [StaticTypeError<"Schema must be an object">]
 ) {
   return new EventType({
     name: "inngest/function.invoked",
