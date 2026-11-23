@@ -386,8 +386,6 @@ export type Mocked<T> = {
       : T[P];
 } & T;
 
-export const mocks: Set<MockInstance> = new Set();
-
 export function isMockFunction(fn: any): fn is MockInstance {
   return (
     typeof fn === "function" && "_isMockFunction" in fn && fn._isMockFunction
@@ -601,22 +599,20 @@ function enhanceSpy<T extends Procedure>(
 
   state.willCall(mockCall);
 
-  mocks.add(stub);
-
   return stub as any;
 }
 
 export function fn<T extends Procedure = Procedure>(
   implementation?: T
 ): Mock<T> {
-  const enhancedSpy = enhanceSpy(
-    tinyspy.internalSpyOn(
-      {
-        spy: implementation || (function () {} as T),
-      },
-      "spy"
-    )
+  const stub = tinyspy.internalSpyOn(
+    {
+      spy: implementation || (function () {} as T),
+    },
+    "spy",
   );
+  tinyspy.spies.delete(stub as any);
+  const enhancedSpy = enhanceSpy(stub);
   if (implementation) {
     enhancedSpy.mockImplementation(implementation);
   }
