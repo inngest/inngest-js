@@ -171,6 +171,17 @@ export const createFinishedFunction = (
       const ended = finishedOf(data);
       const runId = String(data.run_id);
 
+      // The last entry on the forward that started the run. Anything the
+      // thread logged after it reached the run through its inbox or not at
+      // all.
+      const entries =
+        start.name === threadForward.name
+          ? ((start.data as ThreadForwardData | undefined)?.events ?? [])
+          : undefined;
+      const through = entries?.reduce((top, entry) => {
+        return Math.max(top, entry.seq);
+      }, 0);
+
       // How a run ended is thread state, so this run obtains the thread's
       // handle before it writes it. The read reaches the holder, or starts one
       // if the thread has none, because a read is one of its triggers.
@@ -180,6 +191,9 @@ export const createFinishedFunction = (
         ref,
         thread: message.thread,
         runId: `finished:${runId}`,
+        // The run is over, so its singleton is free: anything the thread
+        // forwarded that this run never read can start the next one now.
+        ...(through !== undefined && { ended: through }),
       });
 
       // How the run ended is written first and whatever else happens next.

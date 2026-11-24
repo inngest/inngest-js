@@ -238,6 +238,12 @@ interface Applied {
    * The listens this batch recorded, each still to be acknowledged.
    */
   acks: ListenAck[];
+
+  /**
+   * An agent run ended, and this is the position of the last entry on the
+   * forward that started it.
+   */
+  ended?: number;
 }
 
 /**
@@ -506,6 +512,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
               await answerRead(request);
 
+              if (request.ended !== undefined) {
+                applied.ended = Math.max(applied.ended ?? 0, request.ended);
+              }
+
               break;
             }
             case threadWrite.name: {
@@ -578,6 +588,36 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         }
 
         return applied;
+      };
+
+      /**
+       * What a run that has just ended never read: the entries that arrived
+       * after the forward that started it and that nothing has taken up.
+       *
+       * A forward reaches a run only through an inbox that is open, so one
+       * sent while the run was starting or ending was skipped as a trigger
+       * and seen by nobody. The run is over now, so forwarding those entries
+       * again starts the next one. Worked out once the whole batch is
+       * applied, so a confirmation that came with the read counts.
+       *
+       * It cannot loop: the run this starts is started by these entries, so
+       * when it ends in turn only what arrived after them is left.
+       */
+      const unread = (applied: Applied): ThreadEntry[] => {
+        if (applied.ended === undefined) {
+          return [];
+        }
+
+        const after = Math.max(state.taken, applied.ended);
+        const fresh = new Set(
+          applied.appended.map((entry) => {
+            return entry.seq;
+          }),
+        );
+
+        return state.entries.filter((entry) => {
+          return entry.seq > after && !fresh.has(entry.seq);
+        });
       };
 
       const acknowledge = async (owed: ListenAck[]) => {
@@ -729,7 +769,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         // happens between the two.
         const applied = await applyBatch(batch);
 
-        await forward(applied.appended);
+        await forward([...unread(applied), ...applied.appended]);
 
         const ended = await settle(applied);
 

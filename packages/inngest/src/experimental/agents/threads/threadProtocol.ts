@@ -347,6 +347,18 @@ export type ThreadReadData = AgentRouting & {
    * The run doing the reading, for the trace.
    */
   run?: string;
+
+  /**
+   * Set by the read an agent makes for a run that has ended: the position of
+   * the last entry on the forward that started that run. The thread forwards
+   * again whatever arrived after it and was never read.
+   *
+   * A forward only reaches a run whose inbox is open, so one sent while a run
+   * is starting or ending is skipped as a trigger and seen by nobody. The
+   * entries stay in the log, and without this they wait for the next arrival
+   * to wake a run.
+   */
+  ended?: number;
 };
 
 /**

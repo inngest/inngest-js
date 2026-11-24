@@ -1074,6 +1074,90 @@ describe("a thread a cron tick started", () => {
   });
 });
 
+describe("a run that ended without reading everything", () => {
+  const entry = (seq: number) => {
+    return {
+      seq,
+      id: `evt-${seq}`,
+      name: "agent/message",
+      data: { agent: ref, thread: "t1", content: `m${seq}` },
+      ts: 0,
+    };
+  };
+
+  /**
+   * One generation of the thread run holding three entries, which is read by
+   * a run that has ended. Gives back the positions it forwarded again.
+   */
+  const forwardedAfter = async (taken: number, ended?: number) => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { sent } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 2,
+          carried: held({
+            seq: 3,
+            taken,
+            entries: [entry(1), entry(2), entry(3)],
+          }),
+        },
+      },
+      incoming: [
+        {
+          name: "agent/thread.read",
+          data: {
+            agent: ref,
+            thread: "t1",
+            signal: readSignal(ref, "t1", "finished:r1"),
+            run: "finished:r1",
+            ...(ended !== undefined && { ended }),
+          },
+        },
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+
+    return sent
+      .filter((event) => {
+        return event.name === threadForward.name;
+      })
+      .map((event) => {
+        return (event.data as { events: { seq: number }[] }).events.map(
+          (one) => {
+            return one.seq;
+          },
+        );
+      });
+  };
+
+  test("the thread forwards again what arrived after the run started and nothing took", async () => {
+    // The run was started by entry 1 and confirmed it. Entries 2 and 3 were
+    // forwarded while it was starting or ending, so no inbox saw them.
+    expect(await forwardedAfter(1, 1)).toEqual([[2, 3]]);
+  });
+
+  test("nothing is forwarded again when the run read everything", async () => {
+    expect(await forwardedAfter(3, 1)).toEqual([]);
+  });
+
+  test("what the run was started by is never forwarded again, read or not", async () => {
+    // A handler that never reads its inbox confirms nothing. The entries that
+    // started it are still its own, or every run would start another.
+    expect(await forwardedAfter(0, 3)).toEqual([]);
+    expect(await forwardedAfter(0, 2)).toEqual([[3]]);
+  });
+
+  test("an ordinary read forwards nothing", async () => {
+    expect(await forwardedAfter(0)).toEqual([]);
+  });
+});
+
 describe("the watermark", () => {
   test("a run a forward started hands over no arrival: the thread logged the batch itself", async () => {
     freshKv();

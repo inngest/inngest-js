@@ -321,8 +321,15 @@ export const obtainThreadState = async (options: {
    * run asks for nothing: no read, no round trip, and no window to defer.
    */
   given?: ThreadSnapshot;
+
+  /**
+   * For the read made once an agent run has ended: the position of the last
+   * entry on the forward that started it. The thread forwards again what
+   * arrived after it and was never read.
+   */
+  ended?: number;
 }): Promise<ThreadClient> => {
-  const { client, step, ref, thread, runId, arrival, given } = options;
+  const { client, step, ref, thread, runId, arrival, given, ended } = options;
 
   // A run an event started waits on a signal named by that event. A new
   // thread's run starts from the same event and subscribes a request later, so
@@ -350,6 +357,7 @@ export const obtainThreadState = async (options: {
             signal,
             ...(arrival && { arrival }),
             run: runId,
+            ...(ended !== undefined && { ended }),
           }),
         ),
       ]);
