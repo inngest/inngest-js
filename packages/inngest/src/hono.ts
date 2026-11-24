@@ -23,8 +23,24 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { headerKeys } from "./helpers/consts.ts";
 import type { Env } from "./helpers/env.ts";
 import type { SupportedFrameworkName } from "./types.ts";
+
+/**
+ * Parse an `X-Forwarded-Proto` header value into a scheme we can safely use.
+ *
+ * Proxy chains may append values (`"https, http"`); the first entry is the
+ * scheme the original client used. Anything other than `http` or `https` is
+ * ignored so a malformed header can't produce an unusable URL.
+ */
+const getForwardedProto = (
+  header: string | undefined,
+): "http" | "https" | undefined => {
+  const proto = header?.split(",")[0]?.trim().toLowerCase();
+
+  return proto === "http" || proto === "https" ? proto : undefined;
+};
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -63,9 +79,25 @@ export const serve = (
           return c.body(body, { headers, status });
         },
         url: () => {
+          // Runtimes such as `@hono/node-server` build `c.req.url` from the
+          // socket, so behind a TLS-terminating proxy (Railway, Render, Fly,
+          // a load balancer, etc.) it starts with `http://` even though the
+          // app is publicly served over `https://`. Syncing that URL makes the
+          // executor call the app over plain HTTP, and a proxy redirect to
+          // HTTPS can then turn its POSTs into GETs. Honor the proxy's
+          // `X-Forwarded-Proto` header, as `inngest/node` already does.
+          const forwardedProto = getForwardedProto(
+            c.req.header(headerKeys.ForwardedProto),
+          );
+
           try {
             // If this is an absolute URL, use it right now.
-            return new URL(c.req.url);
+            const url = new URL(c.req.url);
+            if (forwardedProto) {
+              url.protocol = forwardedProto;
+            }
+
+            return url;
           } catch {
             // no-op
           }
@@ -84,13 +116,13 @@ export const serve = (
           // have specified the protocol in `serveOrigin` as a way to force it
           // in their environment, e.g. for testing.
           if (!baseUrl.includes("://")) {
-            let scheme: "http" | "https" = "https";
+            let scheme: "http" | "https" = forwardedProto ?? "https";
             try {
               // If we're in dev, assume `http` instead. Not that we directly
               // access the environment instead of using any helpers here to
               // ensure compatibility with tools with Webpack which will replace
               // this with a literal.
-              if (process.env.NODE_ENV !== "production") {
+              if (!forwardedProto && process.env.NODE_ENV !== "production") {
                 scheme = "http";
               }
             } catch (_err) {
