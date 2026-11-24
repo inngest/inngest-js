@@ -1,10 +1,11 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
+import { serve } from "../../edge.ts";
 import { stream } from "../../experimental/durable-endpoints/index.ts";
 import { createDefer } from "../../experimental.ts";
-import { ExecutionVersion } from "../../helpers/consts.ts";
-import { Middleware } from "../../index.ts";
+import { ExecutionVersion, headerKeys } from "../../helpers/consts.ts";
+import { Inngest, Middleware, RetryAfterError } from "../../index.ts";
 import { createClient } from "../../test/helpers.ts";
 import { type Context, StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
@@ -1509,4 +1510,328 @@ describe("addMetadata", () => {
       { kind: "userland.a", scope: "step", op: "set", values: { a: 3 } },
     ]);
   });
+});
+
+describe("undefined and falsy step rejection handling (#1899)", () => {
+  const createEdgeHandler = (
+    stepFn: () => unknown,
+    opts: { retries?: number } = { retries: 2 },
+  ) => {
+    const client = new Inngest({ id: "repro", isDev: true });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: opts.retries as 0 | 1 | 2,
+        triggers: [{ event: "test/run" }],
+      },
+      async ({ step }) => step.run("target-step", stepFn),
+    );
+    return serve({ client, functions: [fn] });
+  };
+
+  const invokeEdgeStep = async (
+    handler: ReturnType<typeof serve>,
+    { attempt, maxAttempts }: { attempt: number; maxAttempts: number },
+  ) => {
+    const event = { name: "test/run", data: {}, ts: 0 };
+    return handler(
+      new Request("http://localhost/api/inngest?fnId=repro-fn&stepId=step", {
+        method: "POST",
+        headers: { "content-type": "application/json", host: "localhost" },
+        body: JSON.stringify({
+          version: 1,
+          event,
+          events: [event],
+          steps: {},
+          ctx: {
+            run_id: "run-1",
+            attempt,
+            max_attempts: maxAttempts,
+          },
+        }),
+      }),
+    );
+  };
+
+  test("serializes undefined rejection as StepError/StepFailed and sets x-inngest-no-retry", async () => {
+    const handler = createEdgeHandler(() => Promise.reject(undefined), {
+      retries: 2,
+    });
+
+    const firstRes = await invokeEdgeStep(handler, {
+      attempt: 0,
+      maxAttempts: 3,
+    });
+    expect(firstRes.status).toBe(206);
+    expect(firstRes.headers.get(headerKeys.NoRetry)).toBe("false");
+    const [firstOp] = (await firstRes.json()) as Array<Record<string, unknown>>;
+    expect(firstOp).toMatchObject({
+      op: StepOpCode.StepError,
+      data: null,
+      error: {
+        name: "Error",
+        message: "{}",
+        stack: "",
+        __serialized: true,
+      },
+    });
+
+    const finalRes = await invokeEdgeStep(handler, {
+      attempt: 2,
+      maxAttempts: 3,
+    });
+    expect(finalRes.status).toBe(206);
+    expect(finalRes.headers.get(headerKeys.NoRetry)).toBe("true");
+    const [finalOp] = (await finalRes.json()) as Array<Record<string, unknown>>;
+    expect(finalOp).toMatchObject({
+      op: StepOpCode.StepFailed,
+      error: {
+        name: "Error",
+        message: "{}",
+        stack: "",
+        __serialized: true,
+      },
+      data: {
+        __serialized: true,
+        name: "Error",
+        message: "{}",
+        stack: "",
+      },
+    });
+  });
+
+  test("preserves void step success, RetryAfterError, and NonRetriableError", async () => {
+    const okHandler = createEdgeHandler(() => undefined, { retries: 2 });
+    const okRes = await invokeEdgeStep(okHandler, {
+      attempt: 0,
+      maxAttempts: 3,
+    });
+    expect(okRes.status).toBe(206);
+    expect(okRes.headers.get(headerKeys.NoRetry)).toBeNull();
+    const [okOp] = (await okRes.json()) as Array<Record<string, unknown>>;
+    expect(okOp).toMatchObject({
+      op: StepOpCode.StepRun,
+      data: null,
+    });
+    expect(okOp?.error).toBeUndefined();
+
+    const retryHandler = createEdgeHandler(
+      () => {
+        throw new RetryAfterError("rate limited", 600_000);
+      },
+      { retries: 2 },
+    );
+    const retryRes = await invokeEdgeStep(retryHandler, {
+      attempt: 0,
+      maxAttempts: 3,
+    });
+    expect(retryRes.status).toBe(206);
+    expect(retryRes.headers.get(headerKeys.RetryAfter)).toBe("600");
+    expect(retryRes.headers.get(headerKeys.NoRetry)).toBe("false");
+
+    const nonRetriableHandler = createEdgeHandler(
+      () => {
+        throw new NonRetriableError("stop");
+      },
+      { retries: 2 },
+    );
+    const nonRetriableRes = await invokeEdgeStep(nonRetriableHandler, {
+      attempt: 0,
+      maxAttempts: 3,
+    });
+    expect(nonRetriableRes.status).toBe(206);
+    expect(nonRetriableRes.headers.get(headerKeys.NoRetry)).toBe("true");
+    const [nonRetriableOp] = (await nonRetriableRes.json()) as Array<
+      Record<string, unknown>
+    >;
+    expect(nonRetriableOp?.op).toBe(StepOpCode.StepFailed);
+  });
+
+  test.each([
+    { label: "undefined", rejection: undefined },
+    { label: "empty string", rejection: "" },
+  ])(
+    "StepMode.Sync checkpoints $label rejection instead of resuming as StepRun",
+    async ({ rejection }) => {
+      const client = createClient({ id: "test" });
+      const mockCheckpointNewRun = vi.fn().mockResolvedValue({
+        data: { app_id: "app-123", fn_id: "fn-456", token: "token-789" },
+      });
+      const mockCheckpointSteps = vi.fn().mockResolvedValue(undefined);
+      (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
+        checkpointNewRun: mockCheckpointNewRun,
+        checkpointSteps: mockCheckpointSteps,
+      } as Partial<InngestApi> as InngestApi;
+
+      let stepCompleted = false;
+      const fn = new InngestFunction(
+        client,
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
+        async ({ step }) => {
+          await step.run("rejecting-step", () => Promise.reject(rejection));
+          stepCompleted = true;
+          return "should-not-reach";
+        },
+      );
+
+      const execution = fn["createExecution"]({
+        partialOptions: {
+          client,
+          data: fromPartial({
+            event: { name: "test/event", data: {} },
+            attempt: 0,
+            maxAttempts: 3,
+          }),
+          runId: "test-run-id",
+          stepState: {},
+          stepCompletionOrder: [],
+          reqArgs: [],
+          headers: {},
+          stepMode: StepMode.Sync,
+          createResponse: async (data) => ({
+            status: 200,
+            body: JSON.stringify(data),
+            headers: {},
+            version: ExecutionVersion.V2,
+          }),
+        },
+      });
+
+      const result = await execution.start();
+      expect(stepCompleted).toBe(false);
+      expect(result.type).toBe("change-mode");
+      expect(mockCheckpointNewRun).toHaveBeenCalledTimes(1);
+      const checkpointedSteps = mockCheckpointNewRun.mock.calls[0]?.[0]
+        ?.steps as Array<Record<string, unknown>>;
+      expect(checkpointedSteps).toHaveLength(1);
+      expect(checkpointedSteps[0]).toMatchObject({
+        op: StepOpCode.StepError,
+        error: { __serialized: true },
+      });
+      expect(mockCheckpointSteps).not.toHaveBeenCalled();
+    },
+  );
+
+  test("StepMode.Sync SSE streaming closes stream as failed on final undefined step rejection", async () => {
+    const client = createClient({ id: "test" });
+    const mockCheckpointNewRun = vi.fn().mockResolvedValue({
+      data: {
+        app_id: "app-123",
+        fn_id: "fn-456",
+        token: "token-789",
+        realtime_token: "rt-token",
+      },
+    });
+    (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
+      checkpointNewRun: mockCheckpointNewRun,
+      checkpointSteps: vi.fn().mockResolvedValue(undefined),
+      getRealtimeStreamRedirect: vi
+        .fn()
+        .mockResolvedValue({ url: "http://test/sse" }),
+      checkpointStream: vi.fn().mockResolvedValue(undefined),
+    } as Partial<InngestApi> as InngestApi;
+
+    const fn = new InngestFunction(
+      client,
+      { id: "test-fn", retries: 0, triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        stream.push("partial");
+        await step.run("rejecting-step", () => Promise.reject(undefined));
+        return "done";
+      },
+    );
+
+    const execution = fn["createExecution"]({
+      partialOptions: {
+        client,
+        data: fromPartial({
+          event: { name: "test/event", data: {} },
+          attempt: 0,
+          maxAttempts: 1,
+        }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.Sync,
+        acceptsSse: true,
+        createResponse: async (data) => ({
+          status: 200,
+          body: JSON.stringify(data),
+          headers: {},
+          version: ExecutionVersion.V2,
+        }),
+      },
+    });
+
+    const result = await execution.start();
+    expect(result.type).toBe("function-resolved");
+    const sseBody = await (
+      (result as ExecutionResults["function-resolved"]).data as Response
+    ).text();
+    expect(sseBody).toContain('"status":"failed"');
+  });
+
+  test.each([
+    { label: "undefined", rejection: undefined },
+    { label: "empty string", rejection: "" },
+  ])(
+    "StepMode.AsyncCheckpointing returns serialized step-ran error on $label rejection",
+    async ({ rejection }) => {
+      const client = createClient({ id: "test" });
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+      (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
+        checkpointStepsAsync: mockCheckpointStepsAsync,
+      } as Partial<InngestApi> as InngestApi;
+
+      let continuedPastFailure = false;
+      const fn = new InngestFunction(
+        client,
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
+        async ({ step }) => {
+          await step.run("ok-step", () => "ok");
+          await step.run("rejecting-step", () => Promise.reject(rejection));
+          continuedPastFailure = true;
+          return "done";
+        },
+      );
+
+      const execution = fn["createExecution"]({
+        partialOptions: {
+          client,
+          data: fromPartial({
+            event: { name: "test/event", data: {} },
+            attempt: 0,
+            maxAttempts: 3,
+          }),
+          runId: "test-run-id",
+          stepState: {},
+          stepCompletionOrder: [],
+          reqArgs: [],
+          headers: {},
+          stepMode: StepMode.AsyncCheckpointing,
+          queueItemId: "queue-item-123",
+          internalFnId: "internal-fn-456",
+          checkpointingConfig: {
+            bufferedSteps: 5,
+            maxRuntime: 30_000,
+            maxInterval: 5_000,
+          },
+        },
+      });
+
+      const result = await execution.start();
+      expect(continuedPastFailure).toBe(false);
+      // Prior buffered ok-step was flushed via checkpointStepsAsync
+      expect(mockCheckpointStepsAsync).toHaveBeenCalledTimes(1);
+      expect(result.type).toBe("step-ran");
+      const stepRan = result as ExecutionResults["step-ran"];
+      expect(stepRan.retriable).toBe(true);
+      expect(stepRan.step).toMatchObject({
+        op: StepOpCode.StepError,
+        error: { __serialized: true },
+      });
+    },
+  );
 });

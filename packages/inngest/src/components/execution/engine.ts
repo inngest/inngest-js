@@ -145,6 +145,10 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+function isStepErrorOp(op: Pick<OutgoingOp, "op">): boolean {
+  return op.op === StepOpCode.StepError || op.op === StepOpCode.StepFailed;
+}
+
 /**
  * Placeholder step ID used when completing a checkpointed run.
  */
@@ -644,7 +648,7 @@ class InngestExecutionEngine
 
   private async checkpointAndSwitchToAsync(
     steps: OutgoingOp[],
-    stepError?: unknown,
+    stepError?: { error: unknown },
   ): Promise<ExecutionResult> {
     await this.checkpoint(steps);
 
@@ -655,10 +659,10 @@ class InngestExecutionEngine
     const token = this.state.checkpointedRun.token;
 
     if (this.streamTools.activated) {
-      if (stepError && !this.retriability(stepError)) {
+      if (stepError && !this.retriability(stepError.error)) {
         // Permanent failure — close with a failed event so the client
         // sees the error.
-        await this.streamCloseFailed(errorMessage(stepError));
+        await this.streamCloseFailed(errorMessage(stepError.error));
       } else {
         // End stream without a result event — client uses redirect_info
         // to reconnect.
@@ -921,7 +925,9 @@ class InngestExecutionEngine
     const stepRanHandler = async (
       stepResult: OutgoingOp,
     ): Promise<ExecutionResult> => {
-      const transformResult = await this.transformOutput(stepResult);
+      const transformResult = isStepErrorOp(stepResult)
+        ? this.transformOutput({ error: stepResult.error })
+        : this.transformOutput({ data: stepResult.data });
 
       /**
        * Transforming output will always return either function rejection or
@@ -1266,11 +1272,10 @@ class InngestExecutionEngine
           );
         }
 
-        if (result.error) {
-          return this.checkpointAndSwitchToAsync(
-            [transformed.step],
-            result.error,
-          );
+        if (isStepErrorOp(result)) {
+          return this.checkpointAndSwitchToAsync([transformed.step], {
+            error: result.error,
+          });
         }
 
         // Resume the step with original data for user code
@@ -1630,7 +1635,7 @@ class InngestExecutionEngine
               //
               // We know that because we're in this mode, we're always free to
               // checkpoint and continue if we ran a step and it was successful.
-              if (stepResult.error) {
+              if (isStepErrorOp(stepResult)) {
                 // Flush buffered steps before falling back to async,
                 // so previously-successful steps aren't lost.
                 if (this.state.checkpointingStepBuffer.length) {
@@ -2153,13 +2158,19 @@ class InngestExecutionEngine
   /**
    * Using middleware, transform output before returning.
    */
-  private transformOutput(dataOrError: {
-    data?: unknown;
-    error?: unknown;
-  }): ExecutionResult {
-    const { data, error } = dataOrError;
-
-    if (typeof error !== "undefined") {
+  private transformOutput(
+    dataOrError:
+      | {
+          data?: unknown;
+          error?: never;
+        }
+      | {
+          data?: never;
+          error: unknown;
+        },
+  ): ExecutionResult {
+    if ("error" in dataOrError) {
+      const { error } = dataOrError;
       const retriable = this.retriability(error);
       const serializedError = serializeError(error);
 
@@ -2176,7 +2187,7 @@ class InngestExecutionEngine
       type: "function-resolved",
       ctx: this.fnArg,
       ops: this.ops,
-      data: undefinedToNull(data),
+      data: undefinedToNull(dataOrError.data),
     };
   }
 
