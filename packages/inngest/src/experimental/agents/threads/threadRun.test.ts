@@ -19,6 +19,7 @@ import {
   generationKey,
   listenSignal,
   readSignal,
+  startReadSignal,
   type ThreadSnapshot,
   type ThreadWriteData,
   threadForward,
@@ -858,6 +859,76 @@ describe("a thread nothing arrives for", () => {
     // arrival starts an empty thread.
     expect(ended?.ended).toBe("done");
     expect(ended?.handover).toBeUndefined();
+  });
+});
+
+describe("a thread an event started", () => {
+  const started = { ...message("one"), id: "evt-1" };
+
+  test("sends its state to the run the same event started, unasked", async () => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { signals } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: { agent: ref, thread: "t1", generation: 1, start: started },
+      },
+      timeouts: 1,
+    });
+    const pushed = signals.find((sent) => {
+      return sent.signal === startReadSignal(ref, "t1", "evt-1");
+    });
+
+    // The run that reads may have asked before this run subscribed, and that
+    // read reached nothing. The state it would have been answered with is the
+    // log holding the event that started both.
+    expect(pushed).toBeDefined();
+    expect((pushed?.data as ThreadSnapshot).entries).toHaveLength(1);
+  });
+
+  test("sends nothing unasked when a read started it: that read is answered", async () => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { signals } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 1,
+          start: {
+            id: "evt-2",
+            name: "agent/thread.read",
+            data: { agent: ref, thread: "t1", signal: "asked", run: "r1" },
+          },
+        },
+      },
+      timeouts: 1,
+    });
+
+    expect(
+      signals.map((sent) => {
+        return sent.signal;
+      }),
+    ).toEqual(["asked"]);
+  });
+
+  test("the run it started waits on a signal named by that event", async () => {
+    freshKv();
+
+    const { fn } = reader();
+    const { sent } = await run(fn, { forward: false, event: started });
+    const read = sent.find((event) => {
+      return event.name === "agent/thread.read";
+    });
+
+    expect((read?.data as { signal?: string }).signal).toBe(
+      startReadSignal(ref, "t1", "evt-1"),
+    );
   });
 });
 

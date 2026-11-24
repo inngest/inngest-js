@@ -83,6 +83,7 @@ import {
   rememberedWrites,
   reservedListenEvent,
   sameListen,
+  startReadSignal,
   type ThreadEntry,
   type ThreadListenData,
   type ThreadReadData,
@@ -564,6 +565,22 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
             ts: input.start.ts ?? 0,
           } as unknown as UntypedInboxMessage,
         ]);
+
+        // The agent run this same event started asks for the thread's state
+        // at about the moment this run subscribes, and a read that lands
+        // before the subscription reaches nothing. So the state is sent to it
+        // unasked, on the signal that run waits on. A start that is itself a
+        // read was answered just above.
+        if (
+          input.start.id !== undefined &&
+          input.start.id !== "" &&
+          !isThreadControl(input.start.name)
+        ) {
+          await step.sendSignal("start:state", {
+            signal: startReadSignal(ref, thread, input.start.id),
+            data: state,
+          });
+        }
 
         await forward(first.appended);
 

@@ -557,6 +557,22 @@ export const readSignal = (ref: string, thread: string, runId: string): string =
 };
 
 /**
+ * The signal the read of a run that an event started is answered on. It is
+ * named by that event and not by the run, so a thread run the same event
+ * started can answer it without having been asked.
+ * @param ref The agent, as `"appId/functionId"`.
+ * @param thread The thread key.
+ * @param eventId The event that started the run.
+ */
+export const startReadSignal = (
+  ref: string,
+  thread: string,
+  eventId: string,
+): string => {
+  return readSignal(ref, thread, `event:${eventId}`);
+};
+
+/**
  * The signal a listen is acknowledged on.
  * @param ref The agent, as `"appId/functionId"`.
  * @param thread The thread key.

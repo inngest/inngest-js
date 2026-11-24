@@ -51,6 +51,7 @@ import {
   listenSignal,
   readSignal,
   sameListen,
+  startReadSignal,
   type ThreadEntry,
   type ThreadForwardData,
   type ThreadListen,
@@ -321,7 +322,17 @@ export const obtainThreadState = async (options: {
   given?: ThreadSnapshot;
 }): Promise<ThreadClient> => {
   const { client, step, ref, thread, runId, arrival, given } = options;
-  const signal = readSignal(ref, thread, runId);
+
+  // A run an event started waits on a signal named by that event. A new
+  // thread's run starts from the same event and subscribes a request later, so
+  // this read can reach nothing; that thread run sends its state on this
+  // signal once it has subscribed, asked or not. The wait is registered before
+  // the read is sent, so either the read arrives after the subscription and is
+  // answered, or the wait was there before the state was sent.
+  const signal =
+    arrival?.id !== undefined && arrival.id !== ""
+      ? startReadSignal(ref, thread, arrival.id)
+      : readSignal(ref, thread, runId);
   const [answer] = given
     ? [{ signal, data: given }]
     : await Promise.all([
