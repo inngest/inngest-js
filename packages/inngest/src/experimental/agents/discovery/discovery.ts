@@ -34,6 +34,7 @@ import type { Context } from "../../../types.ts";
 import { limitStateOf } from "../agent/limits.ts";
 import { cardsAreSigned, signCards } from "../agent/relations.ts";
 import type { Json, JsonSchema } from "../json.ts";
+import { wakingEvent } from "../threads/wakingEvent.ts";
 import type { AgentCardTool } from "./cardTools.ts";
 import { type AppFunctions, readAppFunctions } from "./functions.ts";
 import {
@@ -1211,7 +1212,7 @@ export const prepareInput = async (
 
   return prepare({
     ...call,
-    event: execution.ctx.event,
+    event: wakingEvent(execution.ctx.event) as typeof execution.ctx.event,
     thread: { key: agent?.thread ?? "" },
   });
 };

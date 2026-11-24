@@ -128,7 +128,7 @@ const reportAwareThread =
   'event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread';
 
 describe("agent function", () => {
-  test("is addressed as appId/functionId and starts on its own non-stop messages", () => {
+  test("is addressed as appId/functionId and starts on its thread's forwards", () => {
     const { fn, ref } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -144,12 +144,9 @@ describe("agent function", () => {
       key: reportAwareThread,
       mode: "skip",
     });
+    // Its own events reach the thread first; the thread's forward is what
+    // starts a run.
     expect(config.triggers.map((t) => t.event)).toEqual([
-      "agent/message",
-      "agent/question",
-      "agent/answer",
-      "agent/finished",
-      "agent/report",
       "agent/thread.forward",
     ]);
     expect(config.triggers[0]?.if).toContain(`"${testClientId}/bot"`);
@@ -232,8 +229,9 @@ describe("agent function", () => {
 
     const { output, ops } = await run(fn, {
       event: trigger("go"),
-      // While the thread starts: the run is asking its thread for state.
-      arrive: [{ event: message("user", "early"), at: "thread:read" }],
+      // While the thread starts: the run is writing its record to the thread,
+      // which is the first step it issues after its inbox opens.
+      arrive: [{ event: message("user", "early"), at: "thread:write" }],
     });
 
     expect(output).toEqual(["go", "early"]);

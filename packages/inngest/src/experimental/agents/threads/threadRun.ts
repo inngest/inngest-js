@@ -158,6 +158,21 @@ interface HolderInput extends Record<string, unknown> {
    * skipped, dropped, or rejected for its size.
    */
   carried?: ThreadSnapshot;
+
+  /**
+   * The listens the last generation recorded and has not acknowledged. This
+   * generation acknowledges them once it has subscribed.
+   */
+  owed?: ListenAck[];
+}
+
+/**
+ * The acknowledgement of one listen: the signal the agent run waits on, and
+ * what it is told.
+ */
+interface ListenAck {
+  signal: string;
+  data: { listening: boolean; event: string };
 }
 
 /**
@@ -175,6 +190,12 @@ interface HolderResult {
    * its state is meant to be gone.
    */
   handover?: ThreadSnapshot;
+
+  /**
+   * The listens this generation recorded and left for the next to
+   * acknowledge.
+   */
+  owed?: ListenAck[];
 }
 
 /**
@@ -212,6 +233,11 @@ interface Applied {
    * a handover.
    */
   listened?: true;
+
+  /**
+   * The listens this batch recorded, each still to be acknowledged.
+   */
+  acks: ListenAck[];
 }
 
 /**
@@ -410,13 +436,22 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         await step.sendEvent(
           `forward:${nth}`,
-          threadForward.create({
-            agent: ref,
-            thread,
-            gen: generation,
-            events: appended,
-            ...(small && { state: JSON.parse(carried) as ThreadSnapshot }),
-          }),
+          threadForward.create(
+            {
+              agent: ref,
+              thread,
+              gen: generation,
+              events: appended,
+              ...(small && { state: JSON.parse(carried) as ThreadSnapshot }),
+            },
+            // The run a forward starts is in the thread's sessions, as a run
+            // an `agent/message` started was.
+            {
+              meta: {
+                sessions: { agent_session: thread, agent_thread: thread },
+              },
+            },
+          ),
         );
       };
 
@@ -441,7 +476,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
       const applyBatch = async (
         batch: UntypedInboxMessage[],
       ): Promise<Applied> => {
-        const applied: Applied = { appended: [] };
+        const applied: Applied = { appended: [], acks: [] };
 
         for (const message of batch) {
           if (!isThreadControl(message.name)) {
@@ -516,9 +551,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
               }
 
               if (asked.signal) {
-                const nth = acks++;
-
-                await step.sendSignal(`listen:${nth}`, {
+                applied.acks.push({
                   signal: asked.signal,
                   data: {
                     listening: !asked.remove && !refused,
@@ -541,9 +574,18 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         return applied;
       };
 
+      const acknowledge = async (owed: ListenAck[]) => {
+        for (const ack of owed) {
+          const nth = acks++;
+
+          await step.sendSignal(`listen:${nth}`, ack);
+        }
+      };
+
       const over = (
         ended: HolderResult["ended"],
         handover?: ThreadSnapshot,
+        owed: ListenAck[] = [],
       ): HolderResult => {
         return {
           thread,
@@ -551,8 +593,45 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           ended,
           entries: state.seq,
           ...(handover && { handover }),
+          ...(owed.length > 0 && { owed }),
         };
       };
+
+      /**
+       * Ends this generation if the batch asks for it, and acknowledges the
+       * batch's listens when it does not.
+       *
+       * A listen that changes what the thread subscribes to makes this run
+       * hand over, and between this run ending and the next one subscribing
+       * nothing is subscribed. An agent run told "recorded" at this point
+       * carries on, and what it sends next - a write, usually - lands in that
+       * gap and reaches nothing. So those listens are acknowledged by the next
+       * generation, after it has subscribed.
+       */
+      const settle = async (
+        applied: Applied,
+      ): Promise<HolderResult | undefined> => {
+        if (applied.done) {
+          await acknowledge(applied.acks);
+
+          return over("done");
+        }
+
+        if (applied.listened) {
+          // A new listen only takes effect in a new subscription, and a
+          // handover is how a subscription is made again. One mechanism rather
+          // than two.
+          return over("handover", state, applied.acks);
+        }
+
+        await acknowledge(applied.acks);
+
+        return undefined;
+      };
+
+      // What the last generation left to acknowledge, now that this one is
+      // subscribed.
+      await acknowledge(input.owed ?? []);
 
       // The first generation takes the arrival that started the thread as its
       // first entry and forwards it, which is what wakes the agent.
@@ -566,15 +645,21 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           } as unknown as UntypedInboxMessage,
         ]);
 
-        // The agent run this same event started asks for the thread's state
-        // at about the moment this run subscribes, and a read that lands
-        // before the subscription reaches nothing. So the state is sent to it
-        // unasked, on the signal that run waits on. A start that is itself a
-        // read was answered just above.
+        // A cron tick or an invoke starts an agent run of its own as well as
+        // this thread, and that run asks for the thread's state at about the
+        // moment this run subscribes. A read that lands before the
+        // subscription reaches nothing, so the state is sent to that run
+        // unasked, on the signal it waits on. Nothing else needs it: every
+        // other start reaches the agent as the forward below, which carries
+        // the state.
+        const startsAgent = triggers.some((trigger) => {
+          return trigger.event === input.start?.name && !trigger.listen;
+        });
+
         if (
+          startsAgent &&
           input.start.id !== undefined &&
-          input.start.id !== "" &&
-          !isThreadControl(input.start.name)
+          input.start.id !== ""
         ) {
           await step.sendSignal("start:state", {
             signal: startReadSignal(ref, thread, input.start.id),
@@ -584,12 +669,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         await forward(first.appended);
 
-        if (first.done) {
-          return over("done");
-        }
+        const ended = await settle(first);
 
-        if (first.listened) {
-          return over("handover", state);
+        if (ended) {
+          return ended;
         }
       }
 
@@ -642,15 +725,10 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
 
         await forward(applied.appended);
 
-        if (applied.done) {
-          return over("done");
-        }
+        const ended = await settle(applied);
 
-        if (applied.listened) {
-          // A new listen only takes effect in a new subscription, and a
-          // handover is how a subscription is made again. One mechanism rather
-          // than two.
-          return over("handover", state);
+        if (ended) {
+          return ended;
         }
       }
     },
@@ -770,6 +848,7 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
           thread,
           generation: generation + 1,
           carried: result.handover,
+          ...(result.owed && { owed: result.owed }),
         };
       }
     },

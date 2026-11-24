@@ -13,6 +13,7 @@ import {
   isInboxMessage,
 } from "../../../components/execution/inboxState.ts";
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
+import { internalEvents } from "../../../helpers/consts.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
 import { type OutgoingOp, StepOpCode } from "../../../types.ts";
 import { type Kv, kv, memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
@@ -54,6 +55,13 @@ export const run = async (
       ts?: unknown;
     };
     key?: string;
+
+    /**
+     * The thread the start event belongs to, when the event does not name it
+     * in `data.thread`: an event of `triggers`, which the thread places by the
+     * trigger's expression before it forwards it.
+     */
+    threadKey?: string;
     saved?: unknown[];
     incoming?: unknown[];
 
@@ -167,9 +175,10 @@ export const run = async (
       data: {
         agent: typeof routing.agent === "string" ? routing.agent : "",
         thread:
-          typeof routing.thread === "string"
+          options.threadKey ??
+          (typeof routing.thread === "string"
             ? routing.thread
-            : (options.key ?? ""),
+            : (options.key ?? "")),
         gen: 0,
         events: [
           {
@@ -424,11 +433,67 @@ export const run = async (
     save(data);
   }
 
+  // An agent run starts from its thread's forward, unless a cron tick or an
+  // invoke started it: nothing else is a trigger of the function. So an event
+  // a test starts a run with reaches it the way a real one does, as the first
+  // entry of a forward that carries the thread's state. A test that answers
+  // the signals itself drives the read, so its forward carries no state.
+  const startEvent = (() => {
+    const given = options.event;
+    const direct = (
+      (fn.opts as { triggers?: { event?: string }[] }).triggers ?? []
+    ).map((trigger) => {
+      return trigger.event;
+    });
+
+    if (
+      !given ||
+      !forwarding ||
+      !direct.includes(threadForward.name) ||
+      direct.includes(given.name) ||
+      given.name === internalEvents.FunctionInvoked
+    ) {
+      return given ?? { name: "sub/run", data: {} };
+    }
+
+    const held = options.thread ?? emptySnapshot();
+
+    // A thread that already holds the event as an entry forwards that entry:
+    // it is not logged a second time.
+    const logged = held.entries.find((entry) => {
+      return entry.id !== undefined && entry.id === given.id;
+    });
+    const before = forwardedFrom;
+    const wrapped = asForward(
+      given as { id?: string; name: string; data?: unknown },
+    );
+    const entry = logged ?? wrapped.data.events[0];
+
+    if (logged) {
+      forwardedFrom = before;
+    }
+
+    return {
+      ...wrapped,
+      data: {
+        ...wrapped.data,
+        events: entry ? [entry] : [],
+        ...(options.signals === undefined && {
+          state: logged
+            ? held
+            : {
+                ...held,
+                seq: entry?.seq ?? held.seq,
+                entries: [...held.entries, ...(entry ? [entry] : [])],
+              },
+        }),
+      },
+    };
+  })();
+
   for (let request = 0; request < 80; request++) {
     // A fresh copy per request: defer functions strip metadata from the event.
-    const event = structuredClone(
-      options.event ?? { name: "sub/run", data: {} },
-    );
+    const event = structuredClone(startEvent);
     const result = await runFnWithStack(fn, state, {
       // A clone for the call as well as for `events`: a deferred function
       // strips its own metadata off the event in place, and a planned step

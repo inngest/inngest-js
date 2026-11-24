@@ -158,7 +158,9 @@ describe("an agent run and its thread", () => {
     freshKv();
 
     const { fn } = reader();
-    const { sent } = await run(fn, { event: message("go") });
+    // A forward with no state on it: the thread was too big to travel, so the
+    // run asks.
+    const { sent } = await run(fn, { forward: false, event: forward(["go"]) });
     const read = sent.find((event) => {
       return event.name === "agent/thread.read";
     });
@@ -167,11 +169,20 @@ describe("an agent run and its thread", () => {
     expect((read?.data as { signal?: string }).signal).toBe(
       readSignal(ref, "t1", "run"),
     );
-    // The event that started the run travels with the read, so the thread's
-    // log holds it even when the thread never saw it.
-    expect((read?.data as { arrival?: { name?: string } }).arrival?.name).toBe(
-      "agent/message",
-    );
+  });
+
+  test("a message starts it as its thread's forward, which costs no read", async () => {
+    freshKv();
+
+    const { fn, seen } = reader();
+    const { sent } = await run(fn, { event: message("go") });
+
+    expect(seen).toEqual(["go"]);
+    expect(
+      sent.filter((event) => {
+        return event.name === "agent/thread.read";
+      }),
+    ).toEqual([]);
   });
 
   test("a forward that carries the thread's state costs no read at all", async () => {
@@ -546,7 +557,7 @@ describe("listening, which the model asks for at runtime", () => {
     });
   });
 
-  test("the thread records it, acknowledges it, and re-establishes it", async () => {
+  test("the thread records it, hands over, and leaves the acknowledgement to the next run", async () => {
     freshKv();
 
     const { threadHolder } = createAgentFunction(client(), { id: "bot" });
@@ -584,18 +595,28 @@ describe("listening, which the model asks for at runtime", () => {
       ],
     });
 
-    expect(
-      signals.find((one) => {
-        return one.signal === listenSignal(ref, "t1", "reader", 0);
-      })?.data,
-    ).toMatchObject({ listening: true });
-
     // A new listen only takes effect in a new subscription, so recording one
     // hands the thread over - and the listen travels with the state, which is
     // how it outlives the run that asked for it.
     const handed = output as
-      | { ended?: string; handover?: ThreadSnapshot }
+      | {
+          ended?: string;
+          handover?: ThreadSnapshot;
+          owed?: { signal: string; data: unknown }[];
+        }
       | undefined;
+
+    // This run does not acknowledge it. Nothing is subscribed between this
+    // run ending and the next one subscribing, so an asker told "recorded"
+    // now would send its next write into that gap. The acknowledgement is
+    // handed to the next run instead.
+    expect(signals).toEqual([]);
+    expect(handed?.owed).toEqual([
+      {
+        signal: listenSignal(ref, "t1", "reader", 0),
+        data: { listening: true, event: "github/pull_request.review" },
+      },
+    ]);
 
     expect(handed?.ended).toBe("handover");
     expect(handed?.handover?.listens).toEqual([
@@ -650,13 +671,25 @@ describe("what the thread does with a listen", () => {
       ],
     });
     const handed = output as
-      | { ended?: string; handover?: ThreadSnapshot }
+      | {
+          ended?: string;
+          handover?: ThreadSnapshot;
+          owed?: { signal: string; data: { listening?: boolean } }[];
+        }
       | undefined;
+
+    // What the asker is told, whichever generation tells it: this one, or the
+    // next one for a listen that made this one hand over.
     const heard = (nth: number) => {
-      return signals.find((one) => {
-        return one.signal === listenSignal(ref, "t1", "reader", nth);
+      const signal = listenSignal(ref, "t1", "reader", nth);
+
+      return [...signals, ...(handed?.owed ?? [])].find((one) => {
+        return one.signal === signal;
       })?.data as { listening?: boolean } | undefined;
     };
+    const told = signals.map((one) => {
+      return one.signal;
+    });
     const sources = ops.flatMap((op) => {
       return (
         (op.opts as { sources?: { event: string; if?: string }[] })?.sources ??
@@ -664,7 +697,7 @@ describe("what the thread does with a listen", () => {
       );
     });
 
-    return { handed, heard, sources };
+    return { handed, heard, sources, told };
   };
 
   test.each([
@@ -677,6 +710,60 @@ describe("what the thread does with a listen", () => {
 
     expect(heard(0)).toMatchObject({ listening: false });
     expect(handed?.handover?.listens ?? []).toEqual([]);
+  });
+
+  test("a listen that changes nothing is acknowledged at once: there is no handover to wait for", async () => {
+    const carried: ThreadSnapshot = {
+      ...emptySnapshot(),
+      listens: [{ event: "billing/invoice.paid" }],
+    };
+    const { handed, told } = await heldAfter(
+      { listen: { event: "billing/invoice.paid" } },
+      [],
+      carried,
+    );
+
+    expect(told).toEqual([listenSignal(ref, "t1", "reader", 0)]);
+    expect(handed?.owed).toBeUndefined();
+    expect(handed?.ended).toBe("done");
+  });
+
+  test("the next run acknowledges what it was handed, after it has subscribed", async () => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const owed = {
+      signal: listenSignal(ref, "t1", "reader", 0),
+      data: { listening: true, event: "billing/invoice.paid" },
+    };
+    const order: string[] = [];
+    const { signals } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 2,
+          carried: {
+            ...emptySnapshot(),
+            listens: [{ event: "billing/invoice.paid" }],
+          },
+          owed: [owed],
+        },
+      },
+      onOp: (op) => {
+        order.push(String(op.op));
+      },
+      incoming: [
+        { name: "agent/thread.done", data: { agent: ref, thread: "t1" } },
+      ],
+    });
+
+    expect(signals).toMatchObject([owed]);
+    expect(signals).toHaveLength(1);
+    // The subscription is the first thing the run does.
+    expect(order[0]).toBe("Subscribe");
   });
 
   test("the same request with a new scope replaces the old one", async () => {
@@ -862,23 +949,38 @@ describe("a thread nothing arrives for", () => {
   });
 });
 
-describe("a thread an event started", () => {
-  const started = { ...message("one"), id: "evt-1" };
+describe("a thread a cron tick started", () => {
+  // A cron tick starts an agent run of its own as well as the thread: the
+  // thread does not subscribe to it, so it cannot be forwarded to a live run.
+  const tick = {
+    id: "evt-1",
+    name: "inngest/scheduled.timer",
+    data: { cron: "0 * * * *" },
+  };
+  const nightly = () => {
+    return createAgentFunction(
+      client(),
+      { id: "bot", triggers: { cron: "0 * * * *" } },
+      async () => {
+        return null;
+      },
+    );
+  };
 
-  test("sends its state to the run the same event started, unasked", async () => {
+  test("sends its state to the run the same tick started, unasked", async () => {
     freshKv();
 
-    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { threadHolder } = nightly();
     const { signals } = await run(threadHolder, {
       forward: false,
       event: {
         name: "inngest/function.invoked",
-        data: { agent: ref, thread: "t1", generation: 1, start: started },
+        data: { agent: ref, thread: "bot", generation: 1, start: tick },
       },
       timeouts: 1,
     });
     const pushed = signals.find((sent) => {
-      return sent.signal === startReadSignal(ref, "t1", "evt-1");
+      return sent.signal === startReadSignal(ref, "bot", "evt-1");
     });
 
     // The run that reads may have asked before this run subscribed, and that
@@ -888,10 +990,38 @@ describe("a thread an event started", () => {
     expect((pushed?.data as ThreadSnapshot).entries).toHaveLength(1);
   });
 
+  test("sends nothing unasked for a message: its forward carries the state", async () => {
+    freshKv();
+
+    const { threadHolder } = nightly();
+    const { signals, sent } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 1,
+          start: { ...message("one"), id: "evt-1" },
+        },
+      },
+      timeouts: 1,
+    });
+
+    expect(signals).toEqual([]);
+    expect(
+      (
+        sent.find((event) => {
+          return event.name === threadForward.name;
+        })?.data as { state?: ThreadSnapshot }
+      ).state?.entries,
+    ).toHaveLength(1);
+  });
+
   test("sends nothing unasked when a read started it: that read is answered", async () => {
     freshKv();
 
-    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { threadHolder } = nightly();
     const { signals } = await run(threadHolder, {
       forward: false,
       event: {
@@ -917,17 +1047,17 @@ describe("a thread an event started", () => {
     ).toEqual(["asked"]);
   });
 
-  test("the run it started waits on a signal named by that event", async () => {
+  test("the run it started waits on a signal named by that tick", async () => {
     freshKv();
 
-    const { fn } = reader();
-    const { sent } = await run(fn, { forward: false, event: started });
+    const { fn } = nightly();
+    const { sent } = await run(fn, { forward: false, event: tick });
     const read = sent.find((event) => {
       return event.name === "agent/thread.read";
     });
 
     expect((read?.data as { signal?: string }).signal).toBe(
-      startReadSignal(ref, "t1", "evt-1"),
+      startReadSignal(ref, "bot", "evt-1"),
     );
   });
 });
@@ -956,10 +1086,9 @@ describe("the watermark", () => {
 
     const { fn } = reader();
     // A cold thread: the holder logged the arrival that started it and nothing
-    // has taken it up, and this run was started by that same event rather than
-    // by a forward.
+    // has taken it up, and its forward of that entry started this run.
     const { sent } = await run(fn, {
-      event: message("hi"),
+      event: { ...message("hi"), id: "evt-1" },
       thread: held({
         seq: 1,
         taken: 0,

@@ -77,9 +77,7 @@ import {
   inflightOf,
   isOwnEvent,
   missingThreadFilter,
-  ownEvents,
   ownInboxFilter,
-  ownTriggerFilter,
   quote,
   type RawEvent,
   resentAs,
@@ -154,7 +152,9 @@ import {
   dataProblem,
   schemaProblem,
   singletonKey,
+  type ThreadTriggerEvent,
 } from "../threads/threadTrigger.ts";
+import { wakingEvent } from "../threads/wakingEvent.ts";
 import {
   agentToolsFor,
   codeAgentTools,
@@ -530,17 +530,21 @@ export function createAgentFunction(
       optimizeParallelism: false,
       ...(quietOptimizeParallelism as object),
       triggers: [
-        ...ownEvents.map((name) => {
-          // A `quiet` message is for a live run only: it never starts one.
-          return {
-            event: name,
-            if: ownTriggerFilter(name, ref),
-          };
-        }),
-
-        ...triggers.map((trigger) => {
-          return trigger.fnTrigger;
-        }),
+        // Only what the thread does not subscribe to starts a run directly: a
+        // cron tick and an invoke. Everything else - the agent layer's own
+        // events and every trigger a live run listens for - reaches the
+        // thread first, and the thread's forward below is what starts the
+        // run, carrying the thread's state. A run those events started
+        // directly had to ask the thread for its state while the thread run
+        // the same event started was still on its way up, and an ask that
+        // went unanswered left the run working from an empty thread.
+        ...triggers
+          .filter((trigger) => {
+            return !trigger.listen;
+          })
+          .map((trigger) => {
+            return trigger.fnTrigger;
+          }),
 
         // What the thread run forwards. Under the thread's singleton in
         // `skip` mode it either starts a run, carrying the batch, or is
@@ -699,12 +703,18 @@ export function createAgentFunction(
         // lends only come from a signed grant. What a sub-agent inherited is
         // kept on its thread, so a later run that a plain message starts has
         // the same limits.
-        const startGrant = startGrantOf(client, event, data.thread);
+        //
+        // A run the thread's forward started reads both from the entry that
+        // woke it, which is the event as it was sent: the forward is the
+        // thread's envelope and carries neither.
+        const origin = wakingEvent(event);
+        const wokenBy = forwardedStart && origin !== event ? origin : undefined;
+        const startGrant = startGrantOf(client, origin, data.thread);
         const passed = startGrant?.limits;
         // What the start event lends, with its signature checked before the
         // thread records anything. Whether the thread may use it is decided
         // once the record is written.
-        const claim = lendOf(client, event, data.thread, startGrant);
+        const claim = lendOf(client, origin, data.thread, startGrant);
         const startWith = async (inStep?: string) => {
           return {
             started: await recorder.running(
@@ -733,7 +743,24 @@ export function createAgentFunction(
         // missing its own writes. Between steps, each write is its own
         // memoized step and the view is rebuilt in the same order on every
         // replay.
-        if (data.fresh) {
+        // The trigger behind the entry that woke a forward-started run. The
+        // forward names the thread and not how the thread was placed, so
+        // whether the event had nothing at its thread path is worked out
+        // again from the event.
+        const placedBy =
+          found ??
+          (wokenBy &&
+            triggers.find((trigger) => {
+              return trigger.event === wokenBy.name;
+            }));
+        const fresh =
+          data.fresh ??
+          (wokenBy !== undefined &&
+            placedBy !== undefined &&
+            placedBy.thread.key(origin as unknown as ThreadTriggerEvent) ===
+              undefined);
+
+        if (fresh) {
           // Through the client's own logger, not the handler's: the handler's
           // is quiet while a run replays, and this line is reached after the
           // run's first step, so on the first request it has not run yet and
@@ -744,7 +771,7 @@ export function createAgentFunction(
               ? undefined
               : client[internalLoggerSymbol],
             "thread.fresh",
-            `${event.name} has nothing at its thread path${found ? ` (${found.thread.source})` : ""}, so it started a thread of its own.`,
+            `${origin.name} has nothing at its thread path${placedBy ? ` (${placedBy.thread.source})` : ""}, so it started a thread of its own.`,
           );
           freshWarned.add(`${runId}:${data.thread}`);
         }
@@ -982,6 +1009,25 @@ export function createAgentFunction(
           if (problem) {
             throw new NonRetriableError(
               `The input breaks the schema of ${ref}: ${problem}`,
+            );
+          }
+        }
+
+        // An event of `triggers` used to start the run itself, so core
+        // checked it against the trigger's schema. It now arrives inside the
+        // thread's forward, which core checks as a forward, so the event that
+        // woke the run is checked here and fails the run the same way.
+        if (forwardedStart) {
+          const problem = await schemaProblem(
+            triggers.filter((trigger) => {
+              return trigger.event === runEvent.name;
+            }),
+            runEvent,
+          );
+
+          if (problem) {
+            throw new NonRetriableError(
+              `${runEvent.name} breaks the schema of its trigger on ${ref}: ${problem}`,
             );
           }
         }
@@ -1257,7 +1303,7 @@ export function createAgentFunction(
         // What the run owes: the reports its start event carries, and which of
         // them it has sent.
         const reportSpec = reportsOf(
-          { name: event.name, data: event.data },
+          { name: origin.name, data: origin.data },
           startGrant,
         );
         const reportBook: ReportBook | undefined = reportSpec && {
@@ -1397,7 +1443,7 @@ export function createAgentFunction(
             // Slot: event. What started the run, exactly as sent.
             event: runEvent as unknown as AgentBodyContext["event"],
             depth: invokeDepthOf(
-              event as unknown as { data?: Record<string, unknown> },
+              origin as unknown as { data?: Record<string, unknown> },
             ),
 
             // Slot: kv. What the thread keeps for the user's code, which is

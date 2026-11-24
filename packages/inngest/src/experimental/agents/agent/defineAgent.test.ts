@@ -136,6 +136,7 @@ describe("the handler's event, thread and inbox", () => {
 
     await run(fn, {
       event: { name: "shop/order", data: { id: "o1", total: 5 } },
+      threadKey: "o1",
     });
 
     expect(seen).toEqual({
@@ -158,6 +159,7 @@ describe("the handler's event, thread and inbox", () => {
 
     await run(fn, {
       event: { name: "shop/order", data: { id: "o1", total: 5 } },
+      threadKey: "o1",
     });
 
     expect(seen).not.toHaveProperty("trigger");
@@ -196,7 +198,9 @@ describe("a trigger with nothing at its thread path", () => {
     const steps: { name?: string; metadata?: unknown }[] = [];
 
     await run(fn, {
-      event: { name: "shop/order", data: { id: "e1" } },
+      event: { id: "e1", name: "shop/order", data: { id: "e1" } },
+      // Where the thread places an event with nothing at its thread path.
+      threadKey: "fresh:e1",
       onStep: (op) => {
         steps.push({ name: op.name, metadata: op.metadata });
       },
@@ -229,7 +233,10 @@ describe("a trigger with nothing at its thread path", () => {
       },
     );
 
-    await run(fn, { event: { name: "shop/order", data: { pr: "p7" } } });
+    await run(fn, {
+      event: { name: "shop/order", data: { pr: "p7" } },
+      threadKey: "p7",
+    });
 
     expect(key).toBe("p7");
     // No card was given, so defining the agent warns about capabilities
@@ -268,6 +275,7 @@ describe("a message after the run ended", () => {
       const thread = held.get(id) ?? { ...emptySnapshot(), fresh: false };
       const { output, sent } = await run(fn, {
         event: { name: "shop/order", data: { id } },
+        threadKey: id,
         thread,
       });
       const after = { ...thread, keys: { ...thread.keys } };

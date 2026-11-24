@@ -107,7 +107,7 @@ describe("events", () => {
 });
 
 describe("triggers", () => {
-  test("an event type reaches the function as itself, so core validates it", () => {
+  test("an event type reaches the thread's function as itself, so core validates it", () => {
     const agent = agents.agent(
       {
         id: "u1",
@@ -119,18 +119,14 @@ describe("triggers", () => {
       },
       noop,
     );
-    const options = fnOptions(agent.fn);
+    const options = fnOptions(agent.threadRun);
 
-    expect(options.triggers).toEqual([
-      expect.objectContaining({ event: "agent/message" }),
-      expect.objectContaining({ event: "agent/question" }),
-      expect.objectContaining({ event: "agent/answer" }),
-      expect.objectContaining({ event: "agent/finished" }),
-      expect.objectContaining({ event: "agent/report" }),
-      { event: order, if: "event.data.total > 5" },
-      { event: ping },
-      expect.objectContaining({ event: "agent/thread.forward" }),
-    ]);
+    expect(options.triggers).toEqual(
+      expect.arrayContaining([
+        { event: order, if: "event.data.total > 5" },
+        { event: ping },
+      ]),
+    );
   });
 
   test("a cron starts one thread per agent by default", () => {
@@ -187,7 +183,7 @@ describe("triggers", () => {
     );
     const options = fnOptions(agent.fn);
 
-    expect(options.triggers[5]).toEqual({ cron: "0 3 * * *" });
+    expect(options.triggers[0]).toEqual({ cron: "0 3 * * *" });
     expect(options.singleton.key).toBe(
       'event.name == "inngest/scheduled.timer" ? ("u2") : event.name == "agent/report" ? event.data["::agents"].thread : event.data.thread',
     );

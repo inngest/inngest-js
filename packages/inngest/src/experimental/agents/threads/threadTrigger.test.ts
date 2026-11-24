@@ -47,14 +47,7 @@ describe("thread key from a trigger", () => {
       opts.triggers.map((t) => {
         return t.event;
       }),
-    ).toEqual([
-      "agent/message",
-      "agent/question",
-      "agent/answer",
-      "agent/finished",
-      "agent/report",
-      "agent/thread.forward",
-    ]);
+    ).toEqual(["agent/thread.forward"]);
     expect(opts.singleton.key).toBe(reportAwareThread);
   });
 
@@ -79,14 +72,9 @@ describe("thread key from a trigger", () => {
     );
     const opts = agent.fn["opts"] as unknown as ReturnType<typeof options>;
 
+    // The thread subscribes to both events, so neither starts a run: the
+    // thread's forward does.
     expect(opts.triggers).toEqual([
-      expect.objectContaining({ event: "agent/message" }),
-      expect.objectContaining({ event: "agent/question" }),
-      expect.objectContaining({ event: "agent/answer" }),
-      expect.objectContaining({ event: "agent/finished" }),
-      expect.objectContaining({ event: "agent/report" }),
-      { event: "chat/message", if: "event.data.bot != true" },
-      { event: "gh/comment" },
       expect.objectContaining({ event: "agent/thread.forward" }),
     ]);
     expect(opts.singleton.mode).toBe("skip");

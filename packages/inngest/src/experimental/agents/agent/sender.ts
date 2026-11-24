@@ -6,6 +6,7 @@
 
 import type { getAsyncCtxSync } from "../../../components/execution/als.ts";
 import type { SenderData } from "../inbox/events.ts";
+import { wakingEvent } from "../threads/wakingEvent.ts";
 
 /**
  * The execution a sender is read from.
@@ -21,8 +22,11 @@ export const senderOf = (
   execution: NonNullable<Execution>,
 ): Extract<SenderData, { depth?: number }> => {
   const { ctx } = execution;
-  const parent = (ctx.event as { data?: { from?: { depth?: unknown } } }).data
-    ?.from;
+  // A run its thread's forward started was sent by whoever sent the event
+  // that woke it, not by the thread.
+  const parent = (
+    wakingEvent(ctx.event) as { data?: { from?: { depth?: unknown } } }
+  ).data?.from;
   const depth = typeof parent?.depth === "number" ? parent.depth : 0;
   const self = execution.agent;
 
