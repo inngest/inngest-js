@@ -34,7 +34,7 @@ export const generatePost = inngest.createFunction(
       stepName: string,
     ) => {
       const stream = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-6-luna",
         stream: true,
         messages: [
           { role: "system", content: system },
