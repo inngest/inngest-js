@@ -28,6 +28,7 @@ import {
 import type { RawEvent } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import { threadSessions } from "../threads/thread.ts";
+import { wakingEvent } from "../threads/wakingEvent.ts";
 import { finishedOf } from "./recovery.ts";
 
 /**
@@ -38,15 +39,18 @@ const startedByTool = (path: string): string => {
 };
 
 /**
- * The first event of a run, as the executor reports it in
+ * The event that started a run, from what the executor reports in
  * `inngest/function.finished`.
  */
 export const startOfFinished = (
   data: Record<string, unknown>,
 ): RawEvent | undefined => {
-  return ((data.events as RawEvent[] | undefined)?.[0] ?? data.event) as
+  const first = ((data.events as RawEvent[] | undefined)?.[0] ?? data.event) as
     | RawEvent
     | undefined;
+
+  // A run its thread's forward started was woken by the forward's first entry.
+  return first && wakingEvent(first);
 };
 
 /**
@@ -115,7 +119,14 @@ export const agentFinishedFunction = (
       triggers: [
         {
           event: "inngest/function.finished",
-          if: `${startedByTool("event.data.event")} || ${startedByTool("event.data.events[0]")}`,
+          if: [
+            "event.data.event",
+            "event.data.events[0]",
+            "event.data.event.data.events[0]",
+            "event.data.events[0].data.events[0]",
+          ]
+            .map(startedByTool)
+            .join(" || "),
         },
       ],
     },

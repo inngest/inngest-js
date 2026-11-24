@@ -33,6 +33,39 @@ describe("run end", () => {
     expect(finishedNotice(data({ ...from, via: undefined }))).toBeUndefined();
   });
 
+  test("finishedNotice: a run its thread's forward started is told by what woke it", () => {
+    const from = {
+      kind: "agent",
+      address: "app/parent",
+      key: "p1",
+      thread: "c1",
+      via: "start_agent",
+      target: "app/child",
+    };
+    const forward = {
+      name: "agent/thread.forward",
+      data: {
+        agent: "app/child",
+        thread: "c1",
+        gen: 1,
+        events: [{ seq: 1, ts: 0, name: "agent/message", data: { from } }],
+      },
+    };
+
+    expect(
+      finishedNotice({
+        function_id: "app-child",
+        result: "ok",
+        events: [forward],
+      }),
+    ).toMatchObject({
+      agent: "app/parent",
+      thread: "p1",
+      from: { kind: "agent", address: "app/child", key: "c1" },
+      outcome: "completed",
+    });
+  });
+
   test("owed reports: the required ones the run has not sent", async () => {
     const spec = {
       a: { required: true as const, to: [] },

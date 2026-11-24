@@ -21,6 +21,10 @@ import {
 } from "../sandboxes/threadSandboxes.ts";
 import { agentMessageEvent, threadSessions } from "../threads/thread.ts";
 import { obtainThreadState } from "../threads/threadClient.ts";
+import {
+  type ThreadForwardData,
+  threadForward,
+} from "../threads/threadProtocol.ts";
 import { markThreadIdle, recordEnd } from "../threads/threadState.ts";
 import type { CompiledTrigger } from "../threads/threadTrigger.ts";
 import { finishedNotice } from "./finishedRelay.ts";
@@ -109,10 +113,17 @@ export const createCleanupFunction = (
 
 /**
  * The IDs of the messages a run took whose senders wait for its result: the
- * message that started it.
+ * message that started it, or every message on the forward that did.
  */
 const senderIdsOf = (start: RawEvent): string[] => {
-  return start.name === agentMessageEvent && start.id ? [start.id] : [];
+  const taken =
+    start.name === threadForward.name
+      ? ((start.data as ThreadForwardData | undefined)?.events ?? [])
+      : [start];
+
+  return taken.flatMap((event) => {
+    return event.name === agentMessageEvent && event.id ? [event.id] : [];
+  });
 };
 
 /**
@@ -189,8 +200,10 @@ export const createFinishedFunction = (
 
       // The sender of each message the run took hears how the run ended.
       const messageIds = [
-        ...senderIdsOf(start),
-        ...(record.folded?.run === runId ? record.folded.ids : []),
+        ...new Set([
+          ...senderIdsOf(start),
+          ...(record.folded?.run === runId ? record.folded.ids : []),
+        ]),
       ];
 
       if (messageIds.length > 0) {

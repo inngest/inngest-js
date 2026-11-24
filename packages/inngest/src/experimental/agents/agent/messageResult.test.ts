@@ -131,6 +131,38 @@ describe("the finished function tells the sender of the message that started the
 
     expect(sent).toEqual([]);
   });
+
+  test("a run its thread's forward started tells the sender of every message on the forward", async () => {
+    const { agent, sent } = setup();
+    const forward = {
+      id: "fwd",
+      name: "agent/thread.forward",
+      data: {
+        agent: `${testClientId}/bot`,
+        thread: "t1",
+        gen: 1,
+        events: [
+          { seq: 1, ts: 0, ...trigger("m5") },
+          { seq: 2, ts: 0, id: "c1", name: "chat/message", data: {} },
+          { seq: 3, ts: 0, ...trigger("m6") },
+        ],
+        state: emptySnapshot(),
+      },
+    };
+
+    await run(agent.finished, {
+      event: finished(forward as unknown as ReturnType<typeof trigger>, {
+        _inngest: { status: "Completed" },
+        result: "built",
+      }),
+    });
+
+    expect(sent).toMatchObject([
+      { name: "agent/message.result", data: { id: "m5", output: "built" } },
+      { name: "agent/message.result", data: { id: "m6", output: "built" } },
+    ]);
+    expect(sent).toHaveLength(2);
+  });
 });
 
 describe("messages folded into a live run", () => {
