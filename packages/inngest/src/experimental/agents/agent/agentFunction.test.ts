@@ -645,7 +645,7 @@ describe("inbox sources", () => {
     expect(asked).toEqual([["wait"]]);
   });
 
-  test("the first read returns the trigger from state, and still draws its row at no step cost", async () => {
+  test("the first read returns the event the run started with, at no step cost", async () => {
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -664,13 +664,14 @@ describe("inbox sources", () => {
     });
 
     expect(output).toEqual(["agent/message", "agent/message"]);
-    expect(reads).toContain("inbox:start");
-    // The read is lazy: it is not one of the ops that cost a step.
+    // The forward that started the run carried the event, so the first read
+    // asks for nothing: only the second is a read of the inbox.
     expect(
-      ops.map((op) => {
-        return op.id;
+      ops.filter((op) => {
+        return op.op === "wait";
       }),
-    ).not.toContain("inbox:start");
+    ).toHaveLength(1);
+    expect(reads).toHaveLength(1);
   });
 
   test("an improver-shaped definition: five sources with an if against the trigger are one inbox", async () => {
@@ -999,7 +1000,7 @@ describe("thread state", () => {
   });
 
   test("a message waited for after the first marks the thread waiting", async () => {
-    const kv = freshKv();
+    freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
@@ -1015,22 +1016,22 @@ describe("thread state", () => {
     expect(recorded(sent)).toMatchObject({ status: "waiting", runId: "run" });
   });
 
-  test("a batch waited for after the first marks the thread waiting", async () => {
+  test("batches() ends with nothing unread, so the thread is not left waiting", async () => {
     freshKv();
     const { fn } = createAgentFunction(
       makeClient(),
       { id: "bot" },
       async ({ inbox }) => {
         for await (const _batch of inbox.batches()) {
-          // Each batch is answered, then the next one is waited for.
+          // Each batch is answered, then whatever is unread is the next one.
         }
       },
     );
 
-    // The second read finds nothing, so the run ends waiting.
-    const { sent } = await run(fn, { event: trigger("one") });
+    const { sent, waiting } = await run(fn, { event: trigger("one") });
 
-    expect(recorded(sent)).toMatchObject({ status: "waiting", runId: "run" });
+    expect(waiting).toBe(false);
+    expect(recorded(sent)).toMatchObject({ status: "running", runId: "run" });
   });
 
   test("a delivered batch after the first marks the thread running with its message in flight", async () => {

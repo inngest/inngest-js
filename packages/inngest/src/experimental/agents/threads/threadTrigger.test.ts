@@ -83,7 +83,7 @@ describe("thread key from a trigger", () => {
     );
   });
 
-  test("the run starts from the trigger event: its thread and a subscription per event", async () => {
+  test("the run starts from the trigger event, on the thread its forward names", async () => {
     const seen: { event?: string; if?: string }[] = [];
     let message: unknown;
     const agent = createAgentFunction(
@@ -105,6 +105,8 @@ describe("thread key from a trigger", () => {
 
     const { output } = await run(agent.fn, {
       event: chatMessage,
+      // The thread works the key out and names it on the forward.
+      threadKey: "C1/1.2",
       onOp: (op) => {
         const opts = op.opts as { sources?: { event: string; if?: string }[] };
 
@@ -119,27 +121,13 @@ describe("thread key from a trigger", () => {
       data: { room: "C1", text: "hi" },
     });
 
-    const opened = seen;
+    // The thread run holds the subscription per event. The agent's run
+    // reads what the thread forwards, and nothing else.
     expect(
-      opened.map((s) => {
+      seen.map((s) => {
         return s.event;
       }),
-    ).toEqual([
-      "agent/message",
-      "agent/question",
-      "agent/answer",
-      "agent/finished",
-      "agent/report",
-      "chat/message",
-      "agent/thread.forward",
-    ]);
-    expect(opened[0]?.if).toContain('async.data.thread == "C1/1.2"');
-    expect(opened[5]?.if).toBe(
-      `(event.data.bot != true) && (${chatThread}) == "C1/1.2"`.replaceAll(
-        "event.",
-        "async.",
-      ),
-    );
+    ).toEqual(["agent/thread.forward"]);
   });
 
   test("a message to the thread still starts it by its own thread", async () => {

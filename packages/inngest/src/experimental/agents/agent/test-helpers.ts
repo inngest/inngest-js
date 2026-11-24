@@ -15,7 +15,11 @@ import {
 import type { InngestFunction } from "../../../components/InngestFunction.ts";
 import { internalEvents } from "../../../helpers/consts.ts";
 import { runFnWithStack, testClientId } from "../../../test/helpers.ts";
-import { type OutgoingOp, StepOpCode } from "../../../types.ts";
+import {
+  type EventPayload,
+  type OutgoingOp,
+  StepOpCode,
+} from "../../../types.ts";
 import { type Kv, kv, memoryKvAdapter, setAppKvStore } from "../kv/kv.ts";
 import {
   emptySnapshot,
@@ -493,7 +497,7 @@ export const run = async (
 
   for (let request = 0; request < 80; request++) {
     // A fresh copy per request: defer functions strip metadata from the event.
-    const event = structuredClone(startEvent);
+    const event = structuredClone(startEvent) as EventPayload;
     const result = await runFnWithStack(fn, state, {
       // A clone for the call as well as for `events`: a deferred function
       // strips its own metadata off the event in place, and a planned step

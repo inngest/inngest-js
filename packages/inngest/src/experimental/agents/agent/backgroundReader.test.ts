@@ -182,16 +182,19 @@ describe("the default handler's background reader", () => {
     },
   );
 
-  test("a message that arrives while idle starts the next batch", async () => {
+  test("a message that arrives during a turn's last call starts the next batch", async () => {
     const { fn, calls } = make([say("first"), say("second")]);
     const { waiting, ops } = await run(fn, {
       event: start("go"),
-      incoming: [arriving("wake up")],
+      arrive: [
+        { event: arriving("wake up"), at: "agent:model:1", when: "during" },
+      ],
     });
 
     expect(calls).toHaveLength(2);
     expect(calls[1]).toContain("wake up");
-    expect(waiting).toBe(true);
+    // A run never waits in quiet: with nothing left unread it ends.
+    expect(waiting).toBe(false);
     expect(
       ops.filter((op) => {
         return (

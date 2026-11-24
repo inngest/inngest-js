@@ -103,15 +103,17 @@ const userTexts = (messages: ModelMessage[]) => {
 };
 
 describe("the wait tool", () => {
-  test("ends the turn, and the next message wakes the run with a valid history", async () => {
+  test("ends the turn, and a message left unread starts the next with a valid history", async () => {
     const { fn, requests } = make([calling(wait), say("got it")]);
     const { waiting } = await run(fn, {
       event: message("go"),
-      incoming: [message("the report")],
+      arrive: [
+        { event: message("the report"), at: "agent:model:1", when: "during" },
+      ],
     });
 
-    // One call for the first batch: wait ended the turn. The next message
-    // started the next batch.
+    // One call for the first batch: wait ended the turn. The message that
+    // came during it was unread, so it started the next batch.
     expect(requests).toHaveLength(2);
     expect(userTexts(requests[1] ?? [])).toEqual(["go", "the report"]);
 
@@ -128,15 +130,15 @@ describe("the wait tool", () => {
     });
     expect((results[0] as { isError?: boolean }).isError).not.toBe(true);
     expect(JSON.stringify(results[0])).toContain(waitResult);
-    expect(waiting).toBe(true);
+    expect(waiting).toBe(false);
   });
 
-  test("with no message to come, the run waits as on a reply with no tool call", async () => {
+  test("with nothing unread, the run ends as on a reply with no tool call", async () => {
     const { fn, requests } = make([calling(wait)]);
     const { waiting } = await run(fn, { event: message("go") });
 
     expect(requests).toHaveLength(1);
-    expect(waiting).toBe(true);
+    expect(waiting).toBe(false);
   });
 
   test("other calls of the same reply run, once, and then the turn ends", async () => {
@@ -147,7 +149,9 @@ describe("the wait tool", () => {
 
     await run(fn, {
       event: message("go"),
-      incoming: [message("the report")],
+      arrive: [
+        { event: message("the report"), at: "agent:model:1", when: "during" },
+      ],
     });
 
     // The note ran once over every replay, and no model call came between it

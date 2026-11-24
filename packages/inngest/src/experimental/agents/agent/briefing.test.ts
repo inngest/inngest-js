@@ -303,7 +303,7 @@ describe("an agent run's briefing", () => {
       /^Be brief\.\n\n<inngest-runtime v="1">\n[\s\S]*<\/inngest-runtime>\n<inngest-situation>\n[\s\S]*<\/inngest-situation>$/,
     );
     expect(requests[0]?.system).toContain(
-      "This run ends after 2 minutes with no new message. A message after that starts a new run of this thread, with your history.",
+      "This run ends when you finish a turn with nothing unread. A message after that starts a new run of this thread, with your history.",
     );
   });
 

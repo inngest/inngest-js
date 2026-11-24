@@ -4,6 +4,7 @@
  */
 
 import { Inngest } from "../../../components/Inngest.ts";
+import { InboxMiddleware } from "../../../components/inbox/middleware.ts";
 import { testClientId } from "../../../test/helpers.ts";
 import { freshKv } from "../agent/test-helpers.ts";
 import { threadHandle } from "./thread.ts";
@@ -113,6 +114,8 @@ describe("thread handle", () => {
       const client = new Inngest({
         id: testClientId,
         eventKey: "key",
+        // `createAgents()` registers this on every client it is given.
+        middleware: [InboxMiddleware],
         fetch: (async (_url: unknown, init?: { body?: string }) => {
           bodies.push(JSON.parse(init?.body ?? "null"));
 
