@@ -107,12 +107,16 @@ import { type CompiledTrigger, singletonKey } from "./threadTrigger.ts";
 const handoverAt = 700;
 
 /**
- * How long a holder waits for its next batch.
+ * How long a thread lives with nothing arriving: the longest a holder waits
+ * for its next batch. A read that comes back empty ends the thread, exactly as
+ * an `agent/thread.done` does, so its state is gone and the next arrival
+ * starts an empty one.
  *
- * It is here only so that no read is literally unbounded. It is **not** a
- * recovery mechanism and nothing is built on it: a read that comes back empty
- * means nothing has happened, the holder reads again, and that costs one step
- * twice a day. A holder hands over at its step ceiling and for nothing else.
+ * Everything the holder subscribes to counts as arriving, a read and a write
+ * included. A thread waiting on a listen or an inbox source is still idle, and
+ * ends with the rest: 12 hours is the most a thread can wait for anything, for
+ * now. It is a ceiling to raise once state outlives the run that holds it, and
+ * it exists because a thread that never ends leaves two runs live for ever.
  */
 const readTimeout = "12h";
 
@@ -606,9 +610,8 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
         }
 
         if (batch === null) {
-          // Nothing arrived in the time the read allowed, which says only that
-          // nothing has happened. Read again.
-          continue;
+          // Nothing arrived for as long as a thread may sit idle, so it ends.
+          return over("done");
         }
 
         // The next read is armed before this batch is applied, so the window

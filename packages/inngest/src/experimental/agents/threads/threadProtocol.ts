@@ -51,6 +51,8 @@
  *   handover**, including the case where an agent was told its write landed
  *   and is later handed state without it.
  * - **Dormancy.** Nothing re-animates a thread nobody is asking after.
+ * - **12 hours idle ends a thread.** With nothing arriving for that long the
+ *   thread run ends and its state goes with it, a pending listen included.
  */
 
 import { eventType, staticSchema } from "../../../components/triggers/triggers.ts";

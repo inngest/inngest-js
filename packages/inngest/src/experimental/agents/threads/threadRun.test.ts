@@ -823,14 +823,41 @@ describe("the holder's reads", () => {
       return op.op === "wait";
     });
 
-    // No read is literally unbounded. The timeout is not a recovery
-    // mechanism: an empty read says nothing has happened, and the holder reads
-    // again.
+    // No read is unbounded: the timeout is how long a thread may sit idle.
     expect(waits.length).toBeGreaterThan(0);
 
     for (const wait of waits) {
       expect((wait.opts as { timeout?: unknown }).timeout).toBe("12h");
     }
+  });
+});
+
+describe("a thread nothing arrives for", () => {
+  test("ends, as a done does, when a read comes back empty", async () => {
+    freshKv();
+
+    const { threadHolder } = createAgentFunction(client(), { id: "bot" });
+    const { output } = await run(threadHolder, {
+      forward: false,
+      event: {
+        name: "inngest/function.invoked",
+        data: {
+          agent: ref,
+          thread: "t1",
+          generation: 1,
+          start: message("one"),
+        },
+      },
+      timeouts: 1,
+    });
+    const ended = output as
+      | { ended?: string; handover?: ThreadSnapshot }
+      | undefined;
+
+    // Done and not a handover: nothing carries the state on, so the next
+    // arrival starts an empty thread.
+    expect(ended?.ended).toBe("done");
+    expect(ended?.handover).toBeUndefined();
   });
 });
 
