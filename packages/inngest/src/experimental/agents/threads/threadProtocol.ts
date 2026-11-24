@@ -55,7 +55,10 @@
  *   thread run ends and its state goes with it, a pending listen included.
  */
 
-import { eventType, staticSchema } from "../../../components/triggers/triggers.ts";
+import {
+  eventType,
+  staticSchema,
+} from "../../../components/triggers/triggers.ts";
 import type { AgentRouting } from "../inbox/events.ts";
 import { quote } from "../inbox/threadInbox.ts";
 
@@ -220,7 +223,10 @@ export const emptySnapshot = (): ThreadSnapshot => {
  * Applies one write to the state. The only writer, so there is nothing to
  * reconcile against.
  */
-export const applyThreadWrite = (state: ThreadSnapshot, op: ThreadWriteOp): void => {
+export const applyThreadWrite = (
+  state: ThreadSnapshot,
+  op: ThreadWriteOp,
+): void => {
   switch (op.kind) {
     case "set": {
       const value: ThreadKeyValue = {
@@ -274,7 +280,10 @@ export const applyThreadWrite = (state: ThreadSnapshot, op: ThreadWriteOp): void
  *
  * @returns Whether the write was applied; `false` means the thread had seen it.
  */
-export const applyThreadWriteEvent = (state: ThreadSnapshot, write: ThreadWriteData): boolean => {
+export const applyThreadWriteEvent = (
+  state: ThreadSnapshot,
+  write: ThreadWriteData,
+): boolean => {
   state.writes ??= [];
 
   const seen = state.writes;
@@ -398,6 +407,14 @@ export type ThreadListenData = AgentRouting & {
   signal?: string;
 
   run?: string;
+
+  /**
+   * How far into the log the asking run has read. A listen makes the thread
+   * run hand over, and a confirmation sent just before it can land between
+   * the two thread runs and reach nothing; then the next agent run is handed
+   * entries this one already answered. So the listen says it again.
+   */
+  taken?: number;
 };
 
 /**
@@ -520,7 +537,9 @@ export const threadControlEvents: string[] = [
  */
 export const isThreadControl = (name: string): boolean => {
   return (
-    threadControlEvents.includes(name) || name === threadForward.name || name === threadLost.name
+    threadControlEvents.includes(name) ||
+    name === threadForward.name ||
+    name === threadLost.name
   );
 };
 
@@ -529,7 +548,10 @@ export const isThreadControl = (name: string): boolean => {
  * @param ref The agent, as `"appId/functionId"`.
  * @param thread The thread key.
  */
-export const threadSubscriptionFilter = (ref: string, thread: string): string => {
+export const threadSubscriptionFilter = (
+  ref: string,
+  thread: string,
+): string => {
   // async represents the new incoming event
   return `async.data.agent == ${quote(ref)} && async.data.thread == ${quote(thread)}`;
 };
@@ -552,7 +574,11 @@ export const threadTriggerFilter = (ref: string): string => {
  * @param thread The thread key.
  * @param runId The run doing the reading.
  */
-export const readSignal = (ref: string, thread: string, runId: string): string => {
+export const readSignal = (
+  ref: string,
+  thread: string,
+  runId: string,
+): string => {
   return `agents/read:${ref}:${thread}:${runId}`;
 };
 
@@ -579,7 +605,12 @@ export const startReadSignal = (
  * @param runId The run asking.
  * @param nth Which listen of that run this is.
  */
-export const listenSignal = (ref: string, thread: string, runId: string, nth: number): string => {
+export const listenSignal = (
+  ref: string,
+  thread: string,
+  runId: string,
+  nth: number,
+): string => {
   return `agents/listen:${ref}:${thread}:${runId}:${nth}`;
 };
 
@@ -619,7 +650,10 @@ export const threadRunTriggers: readonly string[] = [
  * The protocol's events that a thread run subscribes to and is NEVER triggered
  * by. See `threadRunTriggers` for why the distinction is load-bearing.
  */
-export const threadRunSubscribedOnly: readonly string[] = [threadForward.name, threadLost.name];
+export const threadRunSubscribedOnly: readonly string[] = [
+  threadForward.name,
+  threadLost.name,
+];
 
 /**
  * Every event name of the protocol, in one place. Read these rather than

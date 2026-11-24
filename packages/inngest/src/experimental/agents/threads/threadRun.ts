@@ -518,6 +518,12 @@ export function createThreadFunctions(deps: ThreadRunDeps): {
             }
             case threadListen.name: {
               const asked = message.data as ThreadListenData;
+
+              // What the asker had read when it asked. Its own confirmation
+              // may be about to land where nothing is subscribed.
+              if (asked.taken !== undefined) {
+                state.taken = Math.max(state.taken, asked.taken);
+              }
               const held = state.listens.find((listen) => {
                 return sameListen(listen, asked.listen);
               });

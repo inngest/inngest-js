@@ -766,6 +766,18 @@ describe("what the thread does with a listen", () => {
     expect(order[0]).toBe("Subscribe");
   });
 
+  test("a listen carries how far its run has read, so that outlives the handover", async () => {
+    const carried: ThreadSnapshot = { ...emptySnapshot(), seq: 3, taken: 1 };
+    const { handed } = await heldAfter(
+      { listen: { event: "billing/invoice.paid" }, taken: 3 },
+      [],
+      carried,
+    );
+
+    expect(handed?.ended).toBe("handover");
+    expect(handed?.handover?.taken).toBe(3);
+  });
+
   test("the same request with a new scope replaces the old one", async () => {
     const carried: ThreadSnapshot = {
       ...emptySnapshot(),

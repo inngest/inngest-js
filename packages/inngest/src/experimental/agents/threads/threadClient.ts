@@ -689,6 +689,7 @@ export const obtainThreadState = async (options: {
             ...(remove && { remove: true as const }),
             signal,
             run: runId,
+            ...(state.taken > 0 && { taken: state.taken }),
           }),
         }),
       ]);
