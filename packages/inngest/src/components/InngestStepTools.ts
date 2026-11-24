@@ -34,7 +34,11 @@ import {
   type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import { getAsyncCtxSync, runWithAsyncCtx } from "./execution/als.ts";
+import {
+  countStepIssued,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
@@ -277,6 +281,25 @@ export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
 };
 
 /**
+ * Run a callback whose steps get no group prefix before their IDs.
+ */
+export const withoutStepIdPrefix = <T>(callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution?.stepIdPrefix) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: { ...currentCtx.execution, stepIdPrefix: undefined },
+    },
+    callback,
+  );
+};
+
+/**
  * Run a callback whose steps get `prefix` before their IDs, so concurrent
  * callers can use the same IDs.
  */
@@ -357,6 +380,11 @@ export const createStepTools = <
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
       const alsCtx = getAsyncCtxSync()?.execution;
       const prefix = alsCtx?.stepIdPrefix;
+
+      if (alsCtx?.instance) {
+        countStepIssued(alsCtx.instance);
+      }
+
       const op = matchOp(
         prefix
           ? {
@@ -1405,6 +1433,12 @@ const createDeferredTools = <T extends object>(
       }
 
       const tools = tryGetCurrentTools();
+
+      if (tools && !(prop in tools)) {
+        throw new Error(
+          `\`${name}.${prop}\` is not available in this run: add the middleware that provides it to the client's \`middleware\` option`,
+        );
+      }
 
       return tools ? tools[prop] : createStandIn([prop]);
     },

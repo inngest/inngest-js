@@ -44,6 +44,16 @@ describe("the step catalog", () => {
       "github › check:test:attempt:1",
       "Report test: retrying (attempt 2 of 3)",
     ],
+    [
+      steps.resolveCacheName("test › snapshot › name-taken"),
+      "test › snapshot › name-taken",
+      "Resolve cache name",
+    ],
+    [
+      steps.deleteReplacedCache("test › snapshot › replaced"),
+      "test › snapshot › replaced",
+      "Delete replaced cache",
+    ],
     [steps.githubHelper("id", "comment"), "id", "github.comment"],
     [
       steps.recordTime("start:test", "test", "ended"),

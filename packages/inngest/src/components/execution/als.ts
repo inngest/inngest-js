@@ -1,12 +1,63 @@
+import type { QuestionBook } from "../../experimental/agents/inbox/questionBook.ts";
+import type { ReportBook } from "../../experimental/agents/inbox/reports.ts";
+import type { AgentLoopWiring } from "../../experimental/agents/loop/loop.ts";
+import type { AgentScoreFn } from "../../experimental/agents/loop/scores.ts";
+import type { ThreadClient } from "../../experimental/agents/threads/threadClient.ts";
 import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
+import type { SandboxTools } from "../sandbox/tools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 import type { InboxRead } from "./inboxState.ts";
 
 /**
  * Note - this structure can be used by other libraries, so cannot have breaking changes.
  */
+/**
+ * What `agent.loop()` reads to wire itself to the agent's inbox, budget and turn record.
+ */
+export interface AgentBridge {
+  wiring?: AgentLoopWiring;
+
+  /**
+   * The run's `score`, which a tool's context shares so that the run waits
+   * for a score a tool did not await.
+   */
+  score?: AgentScoreFn;
+
+  /**
+   * The questions this run received, answered and asked, which the model's
+   * `reply` and `ask_agent` tools read and write.
+   */
+  questions?: QuestionBook;
+
+  /**
+   * Whether the run was opened through a handle, so it ends after its answer
+   * and waits for the children it started.
+   */
+  handleOpened?: boolean;
+
+  /**
+   * The typed reports the run was started with and the types it has sent.
+   */
+  reports?: ReportBook;
+
+  /**
+   * The agent tools sandbox code can call as `tools.<name>(...)` in a `runCode`
+   * the run lists: discovery, `start_agent`, `message_agent`, `stop_agent` and
+   * `agent_result`, which `discovery: false` leaves out, and `report` when the
+   * run owes reports.
+   */
+  codeTools?: SandboxTools;
+
+  /**
+   * The run's view of its thread: the state it obtained when it started, and
+   * the two things it can ask the thread for - a write, and a subscription.
+   * The model's `listen` and `unlisten` tools reach the thread through it.
+   */
+  thread?: ThreadClient;
+}
+
 export interface AsyncContext {
   /**
    * The Inngest App that is currently being used to execute the function.
@@ -17,6 +68,12 @@ export interface AsyncContext {
   app: Inngest.Like;
 
   /**
+   * Set inside a background reader (`withoutStepCount`): the step tools it
+   * calls are not counted by `stepsIssued`.
+   */
+  uncounted?: boolean;
+
+  /**
    * Details of the current function execution context. If this doesn't exist,
    * then we're not currently in a function execution context.
    */
@@ -25,6 +82,11 @@ export interface AsyncContext {
      * The execution instance that is currently running the function.
      */
     instance: IInngestExecution;
+
+    /**
+     * The ID of the function being executed, when the engine knows it.
+     */
+    functionId?: string;
 
     /**
      * The `ctx` object that has been passed in to this function execution,
@@ -94,6 +156,12 @@ export interface AsyncContext {
     insideExperimentSelect?: boolean;
 
     /**
+     * If present, the thread of an agent run whose trigger event
+     * does not carry them. Set by the agent function; read by the agent KV.
+     */
+    agent?: { thread: string; ref?: string };
+
+    /**
      * What the executor said it supports on this request. Undefined when
      * unknown.
      */
@@ -135,6 +203,13 @@ export interface AsyncContext {
     skipStep?: (id: string) => Promise<void>;
 
     /**
+     * The inbox control of the agent run this function execution is, set by the
+     * agent function once it exists. `agent.loop()` uses it to steer
+     * when it is not given its own.
+     */
+    agentBridge?: AgentBridge;
+
+    /**
      * The answer the run's state holds for a step, if it has one. Only
      * inboxes use it, to tell a read that timed out from one that has not
      * been answered.
@@ -142,6 +217,45 @@ export interface AsyncContext {
     stepAnswer?: (id: string) => { found: boolean; data?: unknown };
   };
 }
+
+const issuedSteps = new WeakMap<object, number>();
+
+/**
+ * Notes that the code of `instance` called a step tool. Replays run the same
+ * code, so the count at any point of the code is the same on every request.
+ * A call from a background reader is not counted: how far such a reader gets
+ * before a given point of the code depends on what the request loaded, so
+ * counting it would make the count differ between replays.
+ */
+export const countStepIssued = (instance: object): void => {
+  if (getAsyncCtxSync()?.uncounted) {
+    return;
+  }
+
+  issuedSteps.set(instance, (issuedSteps.get(instance) ?? 0) + 1);
+};
+
+/**
+ * Runs `fn`, and everything it starts, as a background reader: the step tools
+ * it calls are not counted by `stepsIssued`. Internal.
+ * @param fn What reads in the background.
+ */
+export const withoutStepCount = <R>(fn: () => R): R => {
+  const store = getAsyncCtxSync();
+
+  return store ? runWithAsyncCtx({ ...store, uncounted: true }, fn) : fn();
+};
+
+/**
+ * How many step tools the code of this execution has called so far, or
+ * `undefined` outside one. Unlike what the state holds, it is the same at a
+ * given point of the code on a first run and on a replay.
+ */
+export const stepsIssued = (): number | undefined => {
+  const instance = getAsyncCtxSync()?.execution?.instance;
+
+  return instance ? (issuedSteps.get(instance) ?? 0) : undefined;
+};
 
 /**
  * A local-only symbol used as a key in global state to store the async local

@@ -1,6 +1,10 @@
 import { envKeys } from "../../helpers/consts.ts";
 import { getProcessEnv } from "../../helpers/env.ts";
-import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
+import {
+  type Inngest,
+  internalLoggerSymbol,
+  syncHooksSymbol,
+} from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { getHostname } from "./os.ts";
 import { type ConnectionStrategy, createStrategy } from "./strategies/index.ts";
@@ -180,6 +184,31 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     // Delegate to the strategy
     await this.strategy.connect(attempt);
+
+    // The connection is active and the worker is ready, which is what a
+    // `serve()` sync means for a connect app: run the same hooks the comm
+    // handler runs through its PUT branch, so an app that only connects is
+    // discoverable too. They dedupe, so running them on every connect is
+    // safe.
+    await this.runSyncHooks();
+  }
+
+  /**
+   * Runs the hooks each app's client registered for "the app was synced". A
+   * hook that throws is logged and never fails the connection.
+   */
+  private async runSyncHooks(): Promise<void> {
+    for (const app of this.options.apps) {
+      const client = app.client as Inngest.Any;
+
+      for (const hook of client[syncHooksSymbol]) {
+        try {
+          await hook();
+        } catch (err) {
+          client[internalLoggerSymbol].warn({ err }, "A sync hook failed");
+        }
+      }
+    }
   }
 }
 
