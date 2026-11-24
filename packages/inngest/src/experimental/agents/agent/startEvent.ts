@@ -10,6 +10,10 @@ import { inflightOf } from "../inbox/threadInbox.ts";
 import type { Json } from "../json.ts";
 import type { Inflight, TriggerEvent } from "../threads/thread.ts";
 import {
+  type ThreadForwardData,
+  threadForward,
+} from "../threads/threadProtocol.ts";
+import {
   type CompiledTrigger,
   startOf,
   type ThreadTriggerEvent,
@@ -76,6 +80,17 @@ export const startInflight = (
     const content = (event.data as { content?: Json } | undefined)?.content;
 
     return content === undefined ? undefined : { content };
+  }
+
+  // A forward is the thread's envelope, not a message: the turn is the newest
+  // entry it carries. Kept whole, it would put the thread's state inside the
+  // thread's state, and every forward after it would carry one more copy.
+  if (event.name === threadForward.name) {
+    const entries = (event.data as ThreadForwardData | undefined)?.events ?? [];
+
+    return entries.reduce<Inflight | undefined>((turn, entry) => {
+      return inflightOf(entry) ?? turn;
+    }, undefined);
   }
 
   return inflightOf({ ...event, data: event.data });
