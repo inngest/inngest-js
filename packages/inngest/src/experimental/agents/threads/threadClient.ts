@@ -63,11 +63,14 @@ import {
 } from "./threadProtocol.ts";
 
 /**
- * How long an agent run waits for its thread to answer its read. Generous,
- * because an unanswered read means no thread run is live and the run carries
- * on with an empty thread, which is the one answer that must not be wrong.
+ * How long an agent run waits for its thread to answer its read. An unanswered
+ * read means the run carries on with an empty thread and saves its history
+ * over whatever the thread holds, so this must stay well above how long a
+ * live holder takes to answer. It is not lower because a healthy round trip
+ * was measured at about 2s; it is not higher because a new thread whose
+ * holder has not subscribed yet loses the read and waits all of it.
  */
-const readTimeout = "30s";
+const readTimeout = "5s";
 
 /**
  * How long the model's listen tool waits for the thread to record a listen.
