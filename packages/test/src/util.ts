@@ -46,10 +46,12 @@ export const isDeeplyEqual = <T extends object>(
     const subsetValue = subset[key as keyof T];
     const actualValue = actual[key as keyof T];
 
-    // an array? find all of the values
+    // an array? find all of the values, wherever they are in the actual array
     if (Array.isArray(subsetValue) && Array.isArray(actualValue)) {
-      return subsetValue.every((subValue, i) => {
-        return isDeeplyEqual(subValue, actualValue[i]);
+      return subsetValue.every((subValue) => {
+        return actualValue.some((actualItem) => {
+          return isDeeplyEqual(subValue, actualItem);
+        });
       });
     }
 

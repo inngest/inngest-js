@@ -78,6 +78,51 @@ it("should return waitForEvent step without executing it", async () => {
   expect(output.result).toBeUndefined();
 });
 
+it("should run a parallel step that is found after a non-runnable step", async () => {
+  const inngest = new Inngest({ id: "test-app" });
+  const fn = inngest.createFunction(
+    { id: "test-fn", triggers: [{ event: "test/event" }] },
+    async ({ step }) => {
+      const [, work] = await Promise.all([
+        step.sleep("nap", "1h"),
+        step.run("work", () => "worked"),
+      ]);
+      return work;
+    },
+  );
+
+  const t = new InngestTestEngine({ function: fn });
+  const output = await t.executeStep("work");
+  expect(output.result).toBe("worked");
+});
+
+it("should run each parallel step once when the target step is not first", async () => {
+  const inngest = new Inngest({ id: "test-app" });
+  const calls: string[] = [];
+  const fn = inngest.createFunction(
+    { id: "test-fn", triggers: [{ event: "test/event" }] },
+    async ({ step }) => {
+      const [a, b] = await Promise.all([
+        step.run("parallel-a", () => {
+          calls.push("parallel-a");
+          return "a";
+        }),
+        step.run("parallel-b", () => {
+          calls.push("parallel-b");
+          return "b";
+        }),
+      ]);
+      return `${a}-${b}`;
+    },
+  );
+
+  const t = new InngestTestEngine({ function: fn });
+  const output = await t.executeStep("parallel-b");
+  expect(output.result).toBe("b");
+  expect(calls.filter((id) => id === "parallel-a")).toHaveLength(1);
+  expect(calls.filter((id) => id === "parallel-b")).toHaveLength(1);
+});
+
 it("should return error when a step throws", async () => {
   const inngest = new Inngest({ id: "test-app", logger: silentLogger });
   const fn = inngest.createFunction(
