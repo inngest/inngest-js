@@ -4,8 +4,14 @@
  * the MCP server itself and the OAuth endpoints it points to.
  */
 import { describe, expect, test } from "vitest";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import { fakeMcpFetch, memoryOAuthStore } from "./mcpFakes.ts";
-import { assertMcpUrl, isLoopbackUrl } from "./mcpGuard.ts";
+import {
+  assertMcpUrl,
+  isLoopbackUrl,
+  isRedirect,
+  McpRedirectError,
+} from "./mcpGuard.ts";
 import { tool } from "./tools.ts";
 
 describe("assertMcpUrl", () => {
@@ -161,7 +167,7 @@ describe("tool.mcp network guard", () => {
     }).toThrow(/private or internal/);
   });
 
-  test("every request is sent with redirect: error", async () => {
+  test("every request is sent with redirect: manual", async () => {
     const server = fakeMcpFetch({
       tools: { ping: { run: () => "pong" } },
     });
@@ -179,16 +185,18 @@ describe("tool.mcp network guard", () => {
     await hex["~list"]("hex");
 
     expect(redirects.length).toBeGreaterThan(0);
-    expect(redirects.every((value) => value === "error")).toBe(true);
+    expect(redirects.every((value) => value === "manual")).toBe(true);
   });
 
-  test("a redirect is an error, not followed", async () => {
+  test("a redirect is refused, not followed", async () => {
     const hex = tool.mcp({
       id: "hex",
       url: "https://mcp.example.com/mcp",
       fetch: async (_input, init) => {
         if (init?.redirect === "error") {
-          throw new TypeError("redirect mode is set to error");
+          throw new TypeError(
+            'Invalid redirect value, must be one of "follow" or "manual"',
+          );
         }
 
         return new Response(null, {
@@ -198,7 +206,30 @@ describe("tool.mcp network guard", () => {
       },
     });
 
-    await expect(hex["~list"]("hex")).rejects.toThrow();
+    await expect(hex["~list"]("hex")).rejects.toThrow(/refuses redirects/);
+  });
+});
+
+describe("isRedirect", () => {
+  test.each([
+    ["a 3xx", { type: "basic", status: 307, redirected: false }],
+    [
+      "an opaque redirect",
+      { type: "opaqueredirect", status: 0, redirected: false },
+    ],
+    [
+      "a response a custom fetch reached by following one",
+      { type: "basic", status: 200, redirected: true },
+    ],
+  ] satisfies [string, Pick<Response, "type" | "status" | "redirected">][])(
+    "is true for %s",
+    (_name, response) => {
+      expect(isRedirect(response)).toBe(true);
+    },
+  );
+
+  test("is false for a plain answer", () => {
+    expect(isRedirect(new Response("{}", { status: 200 }))).toBe(false);
   });
 });
 
@@ -213,24 +244,32 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
   const redirectUri = "https://app.example.test/oauth/hex";
   const bad = "https://10.0.0.5";
 
-  const signIn = async (
-    endpoints: NonNullable<
-      NonNullable<Parameters<typeof fakeMcpFetch>[0]["oauth"]>["endpoints"]
-    >,
+  const signIn = async ({
+    endpoints = {},
     registration = true,
-  ) => {
+    override = () => undefined,
+  }: {
+    endpoints?: NonNullable<
+      NonNullable<Parameters<typeof fakeMcpFetch>[0]["oauth"]>["endpoints"]
+    >;
+    registration?: boolean;
+    override?: (url: string) => Response | undefined;
+  }) => {
     const server = fakeMcpFetch({
       tools: { ping: { run: () => "pong" } },
       oauth: { endpoints, registration, client: { id: "preset" } },
     });
     const requested: string[] = [];
+    const links: string[] = [];
     const hex = tool.mcp({
       id: "hex",
       url: nextUrl(),
-      fetch: (input, init) => {
-        requested.push(String(input instanceof Request ? input.url : input));
+      fetch: async (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
 
-        return server.fetch(input, init);
+        requested.push(url);
+
+        return override(url) ?? server.fetch(input, init);
       },
       auth: {
         oauth: {
@@ -238,7 +277,9 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
           redirectUri,
           store: memoryOAuthStore(),
           ...(!registration && { clientId: "preset" }),
-          onNeedsAuthorization: () => {},
+          onNeedsAuthorization: (info) => {
+            links.push(info.url);
+          },
         },
       },
     });
@@ -253,7 +294,7 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
         (error: Error) => error,
       );
 
-    return { result, requested };
+    return { result, requested, links };
   };
 
   test.each([
@@ -262,7 +303,7 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
     ["the authorization endpoint", { authorize: `${bad}/authorize` }],
     ["the token endpoint", { token: `${bad}/token` }],
   ])("refuses %s at a private address", async (_name, endpoints) => {
-    const { result, requested } = await signIn(endpoints);
+    const { result, requested } = await signIn({ endpoints });
 
     expect(String(result)).toMatch(/private or internal/);
     expect(requested.some((url) => url.startsWith(bad))).toBe(false);
@@ -270,7 +311,7 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
 
   test("refuses the registration endpoint at a private address", async () => {
     const { result, requested } = await signIn({
-      register: `${bad}/register`,
+      endpoints: { register: `${bad}/register` },
     });
 
     expect(String(result)).toMatch(/private or internal/);
@@ -279,7 +320,7 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
 
   test("refuses an endpoint that is not https", async () => {
     const { result } = await signIn({
-      token: "http://auth.example.com/token",
+      endpoints: { token: "http://auth.example.com/token" },
     });
 
     expect(String(result)).toMatch(/must be https/);
@@ -290,29 +331,90 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
       { token: "http://localhost:9000/token" },
       { authorize: "https://127.0.0.1/authorize" },
     ]) {
-      const { result } = await signIn(endpoints);
+      const { result } = await signIn({ endpoints });
 
       expect(String(result)).toMatch(/https|private or internal/);
     }
   });
 
+  test("a redirecting registration endpoint is refused, not retried", async () => {
+    const { result } = await signIn({
+      override: (url) => {
+        return url.endsWith("/oauth/register")
+          ? new Response(null, {
+              status: 302,
+              headers: { location: "https://elsewhere.example/register" },
+            })
+          : undefined;
+      },
+    });
+
+    expect(result).toBeInstanceOf(McpRedirectError);
+    expect(result).toBeInstanceOf(NonRetriableError);
+    expect(String(result)).toMatch(/refuses redirects/);
+  });
+
+  test("discovery skips a metadata URL that redirects and uses the next", async () => {
+    const authServer = "https://auth.fake.test";
+    const { result, requested, links } = await signIn({
+      override: (url) => {
+        const { pathname } = new URL(url);
+
+        if (pathname === "/.well-known/oauth-protected-resource") {
+          return new Response(null, {
+            status: 301,
+            headers: { location: "https://elsewhere.example/meta" },
+          });
+        }
+
+        if (pathname === "/.well-known/oauth-protected-resource/mcp") {
+          return Response.json({ authorization_servers: [authServer] });
+        }
+
+        return undefined;
+      },
+    });
+    const metadata = requested
+      .map((url) => new URL(url))
+      .filter(({ pathname }) => pathname.startsWith("/.well-known/"))
+      .map(
+        ({ origin, pathname }) =>
+          `${origin === authServer ? "auth" : "mcp"}${pathname}`,
+      );
+
+    expect(result).toBeUndefined();
+    expect(metadata).toEqual([
+      "mcp/.well-known/oauth-protected-resource",
+      "mcp/.well-known/oauth-protected-resource/mcp",
+      "auth/.well-known/oauth-authorization-server",
+    ]);
+    expect(links).toHaveLength(1);
+  });
+
   test("the message names the endpoint once", async () => {
-    const { result } = await signIn({ token: `${bad}/token` });
+    const { result } = await signIn({ endpoints: { token: `${bad}/token` } });
 
     expect(String(result).match(/token endpoint/g)).toHaveLength(1);
   });
 
-  test("every OAuth request is sent with redirect: error", async () => {
+  test("sign-in works on a fetch that rejects redirect: error, as Workers' does", async () => {
     const server = fakeMcpFetch({
       tools: { ping: { run: () => "pong" } },
       oauth: { client: { id: "preset" } },
     });
     const redirects: unknown[] = [];
+    const links: string[] = [];
     const hex = tool.mcp({
       id: "hex",
       url: nextUrl(),
       fetch: (input, init) => {
         redirects.push(init?.redirect);
+
+        if (init?.redirect === "error") {
+          throw new TypeError(
+            'Invalid redirect value, must be one of "follow" or "manual"',
+          );
+        }
 
         return server.fetch(input, init);
       },
@@ -321,7 +423,9 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
           user: "U1",
           redirectUri,
           store: memoryOAuthStore(),
-          onNeedsAuthorization: () => {},
+          onNeedsAuthorization: (info) => {
+            links.push(info.url);
+          },
         },
       },
     });
@@ -337,6 +441,8 @@ describe("tool.mcp network guard on the OAuth endpoints", () => {
 
     // The probe, the metadata, the registration.
     expect(redirects.length).toBeGreaterThanOrEqual(4);
-    expect(redirects.every((value) => value === "error")).toBe(true);
+    expect(redirects.every((value) => value === "manual")).toBe(true);
+    expect(links).toHaveLength(1);
+    expect(links[0]?.startsWith(redirectUri)).toBe(true);
   });
 });
