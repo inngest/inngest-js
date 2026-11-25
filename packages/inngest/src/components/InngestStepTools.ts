@@ -1002,9 +1002,11 @@ export const createStepTools = <
         const { model, body, ...rest } = options;
 
         const modelCopy = { ...model };
+        // eslint-disable-next-line
+        const bodyCopy = { ...body };
 
         // Allow the model to mutate options and body for this call
-        options.model.onCall?.(modelCopy, options.body);
+        model.onCall?.(modelCopy, bodyCopy);
 
         return {
           id,
@@ -1018,7 +1020,7 @@ export const createStepTools = <
             auth_key: modelCopy.authKey,
             format: modelCopy.format,
             // eslint-disable-next-line
-            body,
+            body: bodyCopy,
             // eslint-disable-next-line
             ...rest,
           },
