@@ -507,6 +507,30 @@ describe("ai", () => {
       });
     });
 
+    test("uses each step's model when reusing the same body", async () => {
+      const body = { messages: [] };
+
+      await expect(
+        step.ai.infer("first", {
+          model: openai({ model: "gpt-3.5-turbo" }),
+          body,
+        }),
+      ).resolves.toMatchObject({
+        opts: { body: { model: "gpt-3.5-turbo" } },
+      });
+
+      await expect(
+        step.ai.infer("second", {
+          model: openai({ model: "gpt-4o" }),
+          body,
+        }),
+      ).resolves.toMatchObject({
+        opts: { body: { model: "gpt-4o" } },
+      });
+
+      expect(body).toStrictEqual({ messages: [] });
+    });
+
     test("can overwrite model", async () => {
       await expect(
         step.ai.infer("id", {
