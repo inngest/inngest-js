@@ -2831,8 +2831,8 @@ class InngestExecutionEngine
               // and `input` may be `Promises`. This could also be the case for
               // future middleware applications. For this reason, we'll make sure
               // the values are fully resolved before continuing.
-              void Promise.all([result.data, result.error, result.input]).then(
-                async () => {
+              void Promise.all([result.data, result.error, result.input])
+                .then(async () => {
                   // If the wrapStep chain already ran during discovery in this
                   // same request (checkpointing), reuse its result instead of
                   // firing wrappedHandler() again. This prevents middleware from
@@ -2900,7 +2900,7 @@ class InngestExecutionEngine
                       Promise.resolve(result.data),
                     );
 
-                    step.middleware.wrappedHandler().then(resolve);
+                    step.middleware.wrappedHandler().then(resolve, reject);
                   } else {
                     const stepError = new StepError(opId.id, result.error);
                     this.state.recentlyRejectedStepError = stepError;
@@ -2910,10 +2910,10 @@ class InngestExecutionEngine
                       Promise.reject(stepError),
                     );
 
-                    step.middleware.wrappedHandler().catch(reject);
+                    step.middleware.wrappedHandler().then(resolve, reject);
                   }
-                },
-              );
+                })
+                .catch(reject);
             }
 
             return true;

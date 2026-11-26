@@ -1,10 +1,11 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
+import { serve } from "../../edge.ts";
 import { stream } from "../../experimental/durable-endpoints/index.ts";
 import { createDefer } from "../../experimental.ts";
-import { ExecutionVersion } from "../../helpers/consts.ts";
-import { Middleware } from "../../index.ts";
+import { ExecutionVersion, headerKeys } from "../../helpers/consts.ts";
+import { Inngest, Middleware } from "../../index.ts";
 import { createClient } from "../../test/helpers.ts";
 import { type Context, StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
@@ -1508,5 +1509,313 @@ describe("addMetadata", () => {
     expect(metadataFor(execution, "other")).toEqual([
       { kind: "userland.a", scope: "step", op: "set", values: { a: 3 } },
     ]);
+  });
+});
+
+describe("memoized step wrapStep settlement (#1903)", () => {
+  const invokeEdgeV2 = (
+    handler: ReturnType<typeof serve>,
+    steps: Record<string, unknown>,
+  ) => {
+    const event = { name: "test/event", data: {}, ts: 0 };
+    return handler(
+      new Request("http://localhost/api/inngest?fnId=app-fn&stepId=step", {
+        method: "POST",
+        headers: { "content-type": "application/json", host: "localhost" },
+        body: JSON.stringify({
+          version: 2,
+          event,
+          events: [event],
+          steps,
+          ctx: {
+            run_id: "run-1",
+            attempt: 0,
+            disable_immediate_execution: false,
+            use_api: false,
+            stack: {
+              stack: Object.keys(steps),
+              current: Object.keys(steps).length,
+            },
+          },
+        }),
+      }),
+    );
+  };
+
+  const withTimeout = <T>(promise: Promise<T>, ms = 1500): Promise<T> =>
+    Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Request timed out after ${ms}ms`));
+        }, ms);
+      }),
+    ]);
+
+  const runWithUnhandledTracking = async <T>(fn: () => Promise<T>) => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const result = await fn();
+      return { result, unhandled };
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  };
+
+  test("forwards async wrapStep rejection on memoized step data", async () => {
+    class RejectsMemoizedStep extends Middleware.BaseMiddleware {
+      readonly id = "rejects-memoized-step";
+
+      override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+        const output = await next();
+        if (stepInfo.memoized) {
+          throw new Error("decrypt failed");
+        }
+        return output;
+      }
+    }
+
+    const client = new Inngest({
+      id: "app",
+      isDev: true,
+      checkpointing: false,
+      middleware: [RejectsMemoizedStep],
+    });
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        const a = await step.run("a", () => "a");
+        return step.run("b", () => `${a}b`);
+      },
+    );
+
+    const handler = serve({ client, functions: [fn] });
+    const firstRes = await invokeEdgeV2(handler, {});
+    const [op] = (await firstRes.json()) as Array<{
+      id: string;
+      data: unknown;
+    }>;
+    expect(op).toBeDefined();
+
+    const { result: secondRes, unhandled } = await runWithUnhandledTracking(
+      () =>
+        withTimeout(
+          invokeEdgeV2(handler, {
+            [op!.id]: { type: "data", data: op!.data },
+          }),
+        ),
+    );
+
+    expect(unhandled).toEqual([]);
+    expect(secondRes.status).toBe(500);
+    expect(secondRes.headers.get(headerKeys.NoRetry)).toBe("false");
+    expect(await secondRes.text()).toContain("decrypt failed");
+  });
+
+  test("delivers async wrapStep rejection to handler try/catch on memoized step data", async () => {
+    class RejectsMemoizedStep extends Middleware.BaseMiddleware {
+      readonly id = "rejects-memoized-step-caught";
+
+      override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+        const output = await next();
+        if (stepInfo.memoized) {
+          throw new Error("decrypt failed");
+        }
+        return output;
+      }
+    }
+
+    const client = new Inngest({
+      id: "app",
+      isDev: true,
+      checkpointing: false,
+      middleware: [RejectsMemoizedStep],
+    });
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        try {
+          return await step.run("a", () => "a");
+        } catch (err) {
+          return `caught:${(err as Error).message}`;
+        }
+      },
+    );
+
+    const handler = serve({ client, functions: [fn] });
+    const firstRes = await invokeEdgeV2(handler, {});
+    const [op] = (await firstRes.json()) as Array<{
+      id: string;
+      data: unknown;
+    }>;
+    expect(op).toBeDefined();
+
+    const { result: secondRes, unhandled } = await runWithUnhandledTracking(
+      () =>
+        withTimeout(
+          invokeEdgeV2(handler, {
+            [op!.id]: { type: "data", data: op!.data },
+          }),
+        ),
+    );
+
+    expect(unhandled).toEqual([]);
+    expect(secondRes.status).toBe(200);
+    expect(await secondRes.json()).toBe("caught:decrypt failed");
+  });
+
+  test("forwards synchronous throw from non-async wrapStep on memoized step data", async () => {
+    class SyncThrowMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "sync-throw-memoized-step";
+
+      override wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+        if (stepInfo.memoized) {
+          throw new Error("sync decrypt failure");
+        }
+        return next();
+      }
+    }
+
+    const client = new Inngest({
+      id: "app",
+      isDev: true,
+      checkpointing: false,
+      middleware: [SyncThrowMiddleware],
+    });
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        const a = await step.run("a", () => "a");
+        return `done:${a}`;
+      },
+    );
+
+    const handler = serve({ client, functions: [fn] });
+    const firstRes = await invokeEdgeV2(handler, {});
+    const [op] = (await firstRes.json()) as Array<{
+      id: string;
+      data: unknown;
+    }>;
+    expect(op).toBeDefined();
+
+    const { result: secondRes, unhandled } = await runWithUnhandledTracking(
+      () =>
+        withTimeout(
+          invokeEdgeV2(handler, {
+            [op!.id]: { type: "data", data: op!.data },
+          }),
+        ),
+    );
+
+    expect(unhandled).toEqual([]);
+    expect(secondRes.status).toBe(500);
+    expect(secondRes.headers.get(headerKeys.NoRetry)).toBe("false");
+    expect(await secondRes.text()).toContain("sync decrypt failure");
+  });
+
+  test("resolves memoized error step when wrapStep catches and recovers", async () => {
+    class RecoverMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "recover-memoized-error";
+
+      override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+        try {
+          return await next();
+        } catch (err) {
+          if (stepInfo.memoized) {
+            return "fallback";
+          }
+          throw err;
+        }
+      }
+    }
+
+    const client = new Inngest({
+      id: "app",
+      isDev: true,
+      checkpointing: false,
+      middleware: [RecoverMiddleware],
+    });
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        const a = await step.run("a", () => "a");
+        return `recovered:${a}`;
+      },
+    );
+
+    const handler = serve({ client, functions: [fn] });
+    const firstRes = await invokeEdgeV2(handler, {});
+    const [op] = (await firstRes.json()) as Array<{ id: string }>;
+    expect(op).toBeDefined();
+
+    const { result: secondRes, unhandled } = await runWithUnhandledTracking(
+      () =>
+        withTimeout(
+          invokeEdgeV2(handler, {
+            [op!.id]: {
+              type: "error",
+              error: { name: "Error", message: "boom", stack: "" },
+            },
+          }),
+        ),
+    );
+
+    expect(unhandled).toEqual([]);
+    expect(secondRes.status).toBe(200);
+    expect(await secondRes.json()).toBe("recovered:fallback");
+  });
+
+  test("preserves non-retriable StepError handling when wrapStep rethrows memoized error", async () => {
+    class PassthroughMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "passthrough-memoized-error";
+
+      override async wrapStep({ next }: Middleware.WrapStepArgs) {
+        return await next();
+      }
+    }
+
+    const client = new Inngest({
+      id: "app",
+      isDev: true,
+      checkpointing: false,
+      middleware: [PassthroughMiddleware],
+    });
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test/event" }] },
+      async ({ step }) => {
+        return step.run("a", () => "a");
+      },
+    );
+
+    const handler = serve({ client, functions: [fn] });
+    const firstRes = await invokeEdgeV2(handler, {});
+    const [op] = (await firstRes.json()) as Array<{ id: string }>;
+    expect(op).toBeDefined();
+
+    const { result: secondRes, unhandled } = await runWithUnhandledTracking(
+      () =>
+        withTimeout(
+          invokeEdgeV2(handler, {
+            [op!.id]: {
+              type: "error",
+              error: { name: "Error", message: "boom", stack: "" },
+            },
+          }),
+        ),
+    );
+
+    expect(unhandled).toEqual([]);
+    expect(secondRes.status).toBe(400);
+    expect(secondRes.headers.get(headerKeys.NoRetry)).toBe("true");
+    expect(await secondRes.text()).toContain("boom");
   });
 });
